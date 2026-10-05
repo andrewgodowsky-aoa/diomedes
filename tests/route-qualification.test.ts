@@ -28,6 +28,7 @@ import {
 import { CONVERSATION_LIMITS, respondStream, type RouteBinding } from '../server/engines/model-api-core.js';
 import {
   CACHE_PREFIX,
+  CHECK_CACHE_OFF,
   CHECK_OUTPUT_TOKENS,
   OUTPUT_BOUND_TOKENS,
   plannedCeilingMicroUsd,
@@ -35,6 +36,7 @@ import {
   withCacheOptions,
   type QualificationTarget,
 } from '../server/engines/route-qualification.js';
+import { ModelApiError } from '../server/engines/model-api-core.js';
 import { SpendExposure, type ModelRateCard } from '../server/spend-exposure.js';
 import { chatEvents, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 import { hanging, routeCheckProvider, type CallKind, type Script, type Seen } from './fixtures/route-check-provider.js';
@@ -395,6 +397,13 @@ describe('cache options reach the request only under the namespace the SDK reads
     });
     return bodies[0];
   };
+  /** The same binding with the cache options merged but the route's own body check only, to see what the SDK sends. */
+  const unchecked = (binding: RouteBinding, original: RouteBinding): RouteBinding => ({ ...binding, guard: original.guard });
+  const refusal = async (attempt: Promise<unknown>) => {
+    const error = await attempt.then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ModelApiError);
+    return error as ModelApiError;
+  };
   const chatOk = () =>
     sseResponse(chatEvents({ model: K3, text: 'OK', usage: { prompt_tokens: 20, completion_tokens: 2, total_tokens: 22 } }));
   const responsesOk = () =>
@@ -412,18 +421,31 @@ describe('cache options reach the request only under the namespace the SDK reads
       }),
     );
 
-  test('AWS Chat Completions reads openai; the same option under azure is dropped', async () => {
+  test('AWS Chat Completions reads openai; under azure the SDK drops it, and the body check refuses the call unsent', async () => {
     const chat = aws.awsChatBinding(K3_CONNECTION, 'low', CHECK_OUTPUT_TOKENS, false);
     const card = aws.awsModelRateCard(K3);
-    expect((await one(withCacheOptions(chat, 'openai', { cacheOff: true }), card, AWS_SECRET, chatOk)).prompt_cache_options).toEqual({ mode: 'explicit' });
-    expect(await one(withCacheOptions(chat, 'azure', { cacheOff: true }), card, AWS_SECRET, chatOk)).not.toHaveProperty('prompt_cache_options');
+    expect(chat.cacheNamespace).toBe('openai');
+    expect((await one(withCacheOptions(chat, 'openai', CHECK_CACHE_OFF), card, AWS_SECRET, chatOk)).prompt_cache_options).toEqual({ mode: 'explicit' });
+    expect(await one(unchecked(withCacheOptions(chat, 'azure', CHECK_CACHE_OFF), chat), card, AWS_SECRET, chatOk)).not.toHaveProperty('prompt_cache_options');
+    const before = exposure.list(K3_CONNECTION.id).length;
+    let sent = 0;
+    const error = await refusal(one(withCacheOptions(chat, 'azure', CHECK_CACHE_OFF), card, AWS_SECRET, () => (sent++, chatOk())));
+    expect(error).toMatchObject({ code: 'aws_cache_refused', dispatched: false });
+    expect(sent).toBe(0);
+    // The hold the call reserved was released as not sent.
+    expect(exposure.list(K3_CONNECTION.id).slice(before).map((hold) => hold.state)).toEqual(['released']);
   });
 
-  test('Azure Responses reads azure; the same option under openai is dropped', async () => {
+  test('Azure Responses reads azure; under openai the SDK drops it, and the body check refuses the call unsent', async () => {
     const entry = AZURE_CONNECTION.deployments[0];
     const responses = azureBinding(AZURE_CONNECTION, entry, 'low', false);
     const card = azureRateCard(AZURE_CONNECTION, SOL);
-    expect((await one(withCacheOptions(responses, 'azure', { cacheOff: true }), card, AZURE_SECRET, responsesOk)).prompt_cache_options).toEqual({ mode: 'explicit' });
-    expect(await one(withCacheOptions(responses, 'openai', { cacheOff: true }), card, AZURE_SECRET, responsesOk)).not.toHaveProperty('prompt_cache_options');
+    expect(responses.cacheNamespace).toBe('azure');
+    expect((await one(withCacheOptions(responses, 'azure', CHECK_CACHE_OFF), card, AZURE_SECRET, responsesOk)).prompt_cache_options).toEqual({ mode: 'explicit' });
+    expect(await one(unchecked(withCacheOptions(responses, 'openai', CHECK_CACHE_OFF), responses), card, AZURE_SECRET, responsesOk)).not.toHaveProperty('prompt_cache_options');
+    let sent = 0;
+    const error = await refusal(one(withCacheOptions(responses, 'openai', CHECK_CACHE_OFF), card, AZURE_SECRET, () => (sent++, responsesOk())));
+    expect(error).toMatchObject({ code: 'azure_cache_refused', dispatched: false });
+    expect(sent).toBe(0);
   });
 });

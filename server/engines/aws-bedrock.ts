@@ -53,11 +53,12 @@ import {
   type QualificationProtocol,
   type RouteQualificationReceipt,
 } from '../../shared/route-qualification.js';
+import { cacheNamespace, type CacheRequest } from '../../shared/route-capabilities.js';
 import { digest, HarnessError } from '../harness/policy.js';
 import type { ExposureAttempt, ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { jsonWrite } from '../store.js';
 import { chatEnvelopeUsage, classifyChat } from './chat-completions.js';
-import { withCacheOptions, type QualificationTarget } from './route-qualification.js';
+import type { QualificationTarget } from './route-qualification.js';
 import type { RouteQualifications } from './route-qualification-store.js';
 import {
   classifyEnvelope,
@@ -410,6 +411,8 @@ export function awsResponsesBinding(
       attach: attachBedrockKey,
       requestIdHeaders: AWS_REQUEST_ID_HEADERS,
     },
+    // The Responses model reads cache options under `openai` for a provider not named for Azure.
+    cacheNamespace: cacheNamespace(AWS_BEDROCK_ROUTE, AWS_BEDROCK_PROTOCOL),
     providerOptions: {
       openai: {
         // The prefixed Geo model id does not match the SDK's `gpt-N` pattern, so the SDK
@@ -435,8 +438,8 @@ export function awsResponsesBinding(
 /**
  * The serialized Chat Completions request names the admitted model, streams with a usage report,
  * and carries the call's exact output limit as `max_completion_tokens` with no `max_tokens` beside
- * it, so the one limit sent is the one the hold was reserved for. Fields this check does not name,
- * such as the route checks' `prompt_cache_options` and `prompt_cache_key`, pass.
+ * it, so the one limit sent is the one the hold was reserved for. Fields this check does not name
+ * pass it. The cache fields are checked against the call's own cache request (`withCacheOptions`).
  */
 export function inspectAwsChatBody(modelId: string, maxOutputTokens: number) {
   return (text: string) => {
@@ -497,6 +500,7 @@ export function awsChatBinding(
       inspectBody: inspectAwsChatBody(connection.modelId, maxOutputTokens),
       requestIdHeaders: AWS_REQUEST_ID_HEADERS,
     },
+    cacheNamespace: cacheNamespace(AWS_BEDROCK_ROUTE, AWS_CHAT_PROTOCOL),
     providerOptions: {
       // The Chat Completions model reads only `openai`, whatever the provider instance is named.
       openai: {
@@ -518,8 +522,8 @@ export function awsChatBinding(
 }
 
 /**
- * The route checks' view of this connection: its exact identity and its own binding, the checks'
- * cache options under `openai`, the namespace the SDK reads for either protocol on this route.
+ * The route checks' view of this connection: its exact identity and its own binding, whose cache
+ * namespace is `openai`, the one the SDK reads for either protocol on this route.
  * The checks are the one path that sends a receipt model without a receipt, because they are how
  * it gets one; they run only on the owner's consent and inside this connection's spend limit.
  */
@@ -537,8 +541,7 @@ export function awsQualificationTarget(connection: AwsConnection, effort: 'low' 
     sdk: AWS_BEDROCK_SDK,
     rateCard: card.version,
     card,
-    binding: (extra, maxOutputTokens, offersTools) =>
-      withCacheOptions(awsBinding(parsed, effort, false, maxOutputTokens, offersTools), 'openai', extra),
+    binding: (maxOutputTokens, offersTools) => awsBinding(parsed, effort, false, maxOutputTokens, offersTools),
   };
 }
 
@@ -564,6 +567,10 @@ export async function respondOnce(
     now?: () => Date;
     /** The newest route check receipt for this connection. A model that needs one is refused without it. */
     qualification?: RouteQualificationReceipt | null;
+    /** The stable start of `instructions`, or null where the path has none (`respondStream`). */
+    stablePrefix?: string | null;
+    /** The owner's cache setting for this call; absent sends the request as before. */
+    cache?: CacheRequest | null;
   } & StreamSinks,
 ): Promise<RespondResult> {
   const connection = awsConnectionSchema.parse(input.connection);

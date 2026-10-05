@@ -44,6 +44,7 @@ import {
   type QualificationVerdicts,
   type RouteQualificationReceipt,
 } from '../../shared/route-qualification.js';
+import { cacheRequest, type CacheRequest } from '../../shared/route-capabilities.js';
 import { toolResultMessage } from '../harness/model-api-adapter.js';
 import { HarnessError } from '../harness/policy.js';
 import { secretScrubber } from '../secrets.js';
@@ -57,6 +58,9 @@ import {
   type RespondResult,
   type RouteBinding,
 } from './model-api-core.js';
+
+/** The cache options now travel as a cache request; the merge lives with the exchange. */
+export { withCacheOptions } from './model-api-core.js';
 
 // --- what a route offers the checks ---------------------------------------------------
 
@@ -78,45 +82,21 @@ export interface QualificationTarget {
   /** The rate card every check call is reserved and settled under. */
   card: ModelRateCard;
   /**
-   * The route's own binding for one check call, with that call's cache options and output bound,
-   * and whether the call offers a tool.
+   * The route's own binding for one check call, with that call's output bound and whether the
+   * call offers a tool. It names the namespace its SDK model reads cache options under; each
+   * call's cache request is applied by the exchange.
    */
-  binding(extra: CacheOptions, maxOutputTokens: number, offersTools: boolean): RouteBinding;
+  binding(maxOutputTokens: number, offersTools: boolean): RouteBinding;
 }
 
 /**
- * The cache options one check call carries. Neither is ever set on an ordinary conversation call.
- * Only `cacheOff` is sent today, by the no-cache check; no check sends a key, and the route
- * inspectors let both fields through.
+ * The cache requests the checks send. Every check but the no-cache one sends no cache field at
+ * all, exactly as an ordinary call on the provider's default goes out. The no-cache check sends
+ * exactly what the owner's `off` setting sends, so a receipt that verifies `off` verifies the
+ * shape an ordinary call with that setting carries.
  */
-export interface CacheOptions {
-  cacheKey?: string;
-  cacheOff?: boolean;
-}
-
-/**
- * A route binding with the checks' cache options added under the route's own provider-options
- * namespace. The SDK sends them as `prompt_cache_key` and `prompt_cache_options`, and drops them
- * without a word under the wrong key: its Chat Completions model reads only `openai`, whatever
- * the provider instance is named, and its Responses model reads `azure` when the provider's name
- * contains "azure" and `openai` otherwise. So AWS (Responses or Chat) is `openai` and Azure is
- * `azure`. Everything else in the binding is the route's own, unchanged.
- */
-export function withCacheOptions(binding: RouteBinding, namespace: 'openai' | 'azure', extra: CacheOptions): RouteBinding {
-  if (!extra.cacheKey && !extra.cacheOff) return binding;
-  return {
-    ...binding,
-    providerOptions: {
-      ...binding.providerOptions,
-      [namespace]: {
-        ...binding.providerOptions[namespace],
-        ...(extra.cacheKey ? { promptCacheKey: extra.cacheKey } : {}),
-        // Explicit mode with no breakpoint: the provider is asked to cache nothing at all.
-        ...(extra.cacheOff ? { promptCacheOptions: { mode: 'explicit' } } : {}),
-      },
-    },
-  };
-}
+const PROVIDER_DEFAULT: CacheRequest = cacheRequest({ policy: 'provider-default' })!;
+export const CHECK_CACHE_OFF: CacheRequest = cacheRequest({ policy: 'off' })!;
 
 // --- the fixed requests -----------------------------------------------------------------
 
@@ -180,7 +160,7 @@ interface PlannedCall {
   messages: ModelMessage[];
   tools: readonly ToolDescriptor[];
   limits: RespondLimits;
-  extra: CacheOptions;
+  cache: CacheRequest;
 }
 
 interface Plan {
@@ -205,7 +185,7 @@ function planFor(): Plan {
     messages: [user(SHORT_ANSWER)],
     tools: [],
     limits: checkLimits,
-    extra: {},
+    cache: PROVIDER_DEFAULT,
     ...rest,
   });
   const plannedAnswer: ModelMessage = {
@@ -227,7 +207,7 @@ function planFor(): Plan {
     cacheDefault: [1, 2].map((n) => call('cache-default', n, { instructions: CACHE_PREFIX })) as [PlannedCall, PlannedCall],
     // The no-cache check sends the explicit mode alone: no key and no breakpoint.
     cacheOff: [1, 2].map((n) =>
-      call('cache-off', n, { instructions: CACHE_PREFIX, extra: { cacheOff: true } }),
+      call('cache-off', n, { instructions: CACHE_PREFIX, cache: CHECK_CACHE_OFF }),
     ) as [PlannedCall, PlannedCall],
   };
 }
@@ -247,7 +227,7 @@ export function plannedCeilingMicroUsd(target: QualificationTarget): MicroUsd {
 }
 
 function ceilingOf(target: QualificationTarget, plan: Plan): MicroUsd {
-  const prefix = target.binding({}, CHECK_OUTPUT_TOKENS, false).prefix;
+  const prefix = target.binding(CHECK_OUTPUT_TOKENS, false).prefix;
   return plannedCalls(plan).reduce(
     (sum, call) =>
       sum +
@@ -349,7 +329,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
   const effort = input.effort ?? 'low';
   const id = (input.idFactory ?? newReceiptId)();
   if (!RECEIPT_ID.test(id)) throw new QualificationRefused('qualify_invalid_target', 'The route check could not be named.');
-  const { prefix, label } = target.binding({}, CHECK_OUTPUT_TOKENS, false);
+  const { prefix, label } = target.binding(CHECK_OUTPUT_TOKENS, false);
   const createdAt = now();
   const identity = {
     v: ROUTE_QUALIFICATION_VERSION,
@@ -389,7 +369,9 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
     const started = now().getTime();
     try {
       result = await respondStream({
-        binding: target.binding(planned.extra, planned.limits.maxOutputTokens, planned.tools.length > 0),
+        binding: target.binding(planned.limits.maxOutputTokens, planned.tools.length > 0),
+        cache: planned.cache,
+        stablePrefix: null,
         secret: input.secret,
         card: target.card,
         exposure: input.exposure,
@@ -398,7 +380,7 @@ export async function runRouteQualification(input: QualificationRunInput): Promi
           stepId: `${planned.check}:${planned.n}`,
           attempt: 1,
           requestDigest: createHash('sha256')
-            .update(JSON.stringify({ model: target.model, instructions: planned.instructions, messages, tools: planned.tools, limits: planned.limits, extra: planned.extra }))
+            .update(JSON.stringify({ model: target.model, instructions: planned.instructions, messages, tools: planned.tools, limits: planned.limits, cache: planned.cache }))
             .digest('hex'),
         },
         instructions: planned.instructions,

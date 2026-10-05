@@ -87,6 +87,7 @@ import {
   awsModelRateCard,
   awsModelRefusal,
   awsQualificationFor,
+  awsProtocolFor,
   AwsConnectionRetired,
   respondOnce,
   type AwsConnection,
@@ -94,6 +95,7 @@ import {
 } from './aws-bedrock.js';
 import type { RouteQualifications } from './route-qualification-store.js';
 import {
+  AZURE_OPENAI_PROTOCOL,
   AZURE_OPENAI_ROUTE,
   AZURE_OPENAI_SDK,
   azureAccountRoute,
@@ -102,6 +104,17 @@ import {
   type AzureConnection,
   type AzureConnections,
 } from './azure-openai.js';
+import {
+  cacheNamespace,
+  DEFAULT_CACHE_POLICY,
+  systemParts,
+  type CacheMark,
+  type CacheNamespace,
+  type CachePolicy,
+  type CacheRequest,
+  type RouteCapability,
+} from '../../shared/route-capabilities.js';
+import { awsCapability, azureCapability, LOCAL_CACHE_TENANT, routeCacheRequest, type CachePolicyRoute } from './route-cache.js';
 import {
   OPENROUTER_ROUTE,
   OPENROUTER_SDK,
@@ -148,7 +161,13 @@ import {
 import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
-import { turnRunId, type ModelSessionAdmission, type ModelSessionRuns, type ModelSessionTurn } from '../harness/model-session-run.js';
+import {
+  turnRunId,
+  type ModelSessionAdmission,
+  type ModelSessionRuns,
+  type ModelSessionTurn,
+  type TurnCache,
+} from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import { SpendExposure } from '../spend-exposure.js';
@@ -2519,7 +2538,7 @@ export class EngineService {
                 };
               }
             : undefined,
-        adapter: async (admission, instructions, stop, sinks) => {
+        adapter: async (admission, instructions, stop, sinks, turnCache) => {
           const { handle, secret } = await this.openModelApi(admission);
           const adapter = handle.adapter({
             model: admission.model,
@@ -2530,6 +2549,7 @@ export class EngineService {
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
+            ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions, turnCache)),
           });
           return {
             ...adapter,
@@ -2614,6 +2634,8 @@ export class EngineService {
               signal: attemptSignal,
               transport: api.transport,
               sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
+              // A Work turn has no stable prefix: an explicit setting marks its whole instructions.
+              ...(await cacheCall(handle, admission.model, input.projectId ?? null, input.instructions)),
             });
           } catch (error) {
             // Drain ordered publications before the step can fail; the call's own failure is reported.
@@ -2731,6 +2753,7 @@ export class EngineService {
             effort: route === BONSAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
+            ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions)),
           });
           return {
             ...adapter,
@@ -2823,6 +2846,7 @@ export class EngineService {
         secret,
         exposure: handle.exposure(ledger, request.runId),
         ...callOptions,
+        ...(await cacheCall(handle, admission.model, request.projectId, request.instructions)),
       });
     }
     // Every role re-admits, re-opens and rebuilds the call's adapter
@@ -2849,6 +2873,8 @@ export class EngineService {
           secret: opened.secret,
           exposure: opened.handle.exposure(ledger, pinned.runId),
           ...callOptions,
+          // The owner's cache setting is read again for every step, like the rest of the route.
+          ...(await cacheCall(opened.handle, fresh.model, pinned.projectId, pinned.instructions)),
         });
         callSignal.throwIfAborted();
         const result = await step.complete(call, callSignal, stream);
@@ -2922,6 +2948,17 @@ export interface ModelApiServices {
     /** Tests only: the clock the month's local guard is named by. */
     now?: () => Date;
   };
+  /**
+   * The owner's cache setting for a route (DIO-215), read from Settings each time a route's calls
+   * are prepared. Absent reads as the provider's default: every request goes out as it did before
+   * the setting existed.
+   */
+  cachePolicy?: (route: string) => CachePolicy;
+  /**
+   * The tenant an explicit cache key is scoped to for work in one project: the signed-in
+   * principal's tenant when accounts are on, `local` otherwise. Absent reads as `local`.
+   */
+  cacheTenant?: (projectId: string | null) => string;
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
   /**
@@ -2941,6 +2978,12 @@ interface RouteCallOptions {
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   sinks?: StreamSinks;
+  /** The owner's cache setting for these calls (DIO-215); absent sends them as before. */
+  cache?: CacheRequest | null;
+  /** The stable start of `instructions`, or null where the path has none. */
+  stablePrefix?: string | null;
+  /** Told what each answered call's cache breakpoint marked (a conversation turn's record). */
+  onCacheMarked?: (marked: CacheMark) => void;
 }
 type ConnectedRoute = {
   connected: true;
@@ -2965,6 +3008,11 @@ type ConnectedRoute = {
   exposure(base: SpendExposure, runId: string): CallExposure;
   /** A pure descriptor/profile for loop setup; it cannot dispatch without a credential. */
   descriptor?(options: Omit<RouteCallOptions, 'secret'>): ModelAdapter;
+  /**
+   * The owner's cache setting for calls to one model of this connection (DIO-215), read fresh.
+   * Only routes with the setting have it; their calls carry what it returns.
+   */
+  cache?(model: string, projectId: string | null): Promise<RouteCachePlan>;
   adapter(options: RouteCallOptions): ModelAdapter;
   respond(
     options: RouteCallOptions & {
@@ -3008,6 +3056,67 @@ function localCallLedger(exposure: CallExposure): SpendExposure {
   if (!(exposure instanceof SpendExposure))
     throw new EngineError('RUNTIME_UNAVAILABLE', 'This route requires the local spend ledger admitted for this call. Nothing was sent.', true);
   return exposure;
+}
+
+/** The owner's cache setting for one route's calls, read when they are prepared (DIO-215). */
+interface RouteCachePlan {
+  policy: CachePolicy;
+  request: CacheRequest;
+  /** Where the route's SDK model reads cache options and breakpoints. */
+  namespace: CacheNamespace;
+  /** The capability record of the model the calls go to; null when it could not be read. */
+  record: RouteCapability | null;
+}
+
+/**
+ * The setting's request for one connection and model. An explicit prefix's key is derived from the
+ * whole scope here, on the host; a key that cannot be made refuses the call before anything is held.
+ */
+async function routeCachePlan(
+  api: ModelApiServices,
+  target: {
+    prefix: string;
+    route: CachePolicyRoute;
+    connectionId: string;
+    revision: number;
+    model: string;
+    namespace: CacheNamespace;
+    record: () => Promise<RouteCapability>;
+  },
+  projectId: string | null,
+): Promise<RouteCachePlan> {
+  const policy = api.cachePolicy?.(target.route) ?? DEFAULT_CACHE_POLICY;
+  const request = routeCacheRequest(target.prefix, policy, {
+    tenantId: policy === 'explicit-prefix' ? (api.cacheTenant?.(projectId) ?? LOCAL_CACHE_TENANT) : LOCAL_CACHE_TENANT,
+    route: target.route,
+    connectionId: target.connectionId,
+    connectionRevision: target.revision,
+    model: target.model,
+  });
+  const record = await target.record().catch(() => null);
+  return { policy, request, namespace: target.namespace, record };
+}
+
+/**
+ * The cache fields one opened route's calls carry: the owner's setting read fresh and the stable
+ * prefix where the path has one. A conversation turn also gets the report its context record
+ * keeps: what the setting marks, said before the first call and again after each answered call.
+ * A route with no setting carries nothing.
+ */
+async function cacheCall(
+  handle: ConnectedRoute,
+  model: string,
+  projectId: string | null,
+  instructions: string,
+  turn?: TurnCache,
+): Promise<Pick<RouteCallOptions, 'cache' | 'stablePrefix' | 'onCacheMarked'>> {
+  if (!handle.cache) return {};
+  const plan = await handle.cache(model, projectId);
+  const stablePrefix = turn?.stablePrefix ?? null;
+  if (!turn) return { cache: plan.request, stablePrefix };
+  const report = (marked: CacheMark) => turn.report({ policy: plan.policy, record: plan.record, marked });
+  report(systemParts(instructions, stablePrefix, plan.request, plan.namespace).marked);
+  return { cache: plan.request, stablePrefix, onCacheMarked: report };
 }
 
 /**
@@ -3077,10 +3186,27 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             transport: options.transport,
             limits: options.limits,
             qualification,
+            cache: options.cache,
+            stablePrefix: options.stablePrefix,
+            onCacheMarked: options.onCacheMarked,
             ...options.sinks,
           }),
-        respond: ({ sinks, model: _model, ...options }) =>
+        respond: ({ sinks, model: _model, onCacheMarked: _marked, ...options }) =>
           respondOnce({ connection, card: awsModelRateCard(connection.modelId), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), qualification, ...sinks }),
+        cache: (_model, projectId) =>
+          routeCachePlan(
+            api,
+            {
+              prefix: 'aws',
+              route,
+              connectionId: connection.id,
+              revision: connection.revision,
+              model: connection.modelId,
+              namespace: cacheNamespace(route, awsProtocolFor(connection.modelId)),
+              record: () => awsCapability(api.qualifications, connection, Date.now()),
+            },
+            projectId,
+          ),
       };
     }
     case AZURE_OPENAI_ROUTE: {
@@ -3116,10 +3242,27 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             effort: effortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
+            cache: options.cache,
+            stablePrefix: options.stablePrefix,
+            onCacheMarked: options.onCacheMarked,
             ...options.sinks,
           }),
-        respond: ({ sinks, ...options }) =>
+        respond: ({ sinks, onCacheMarked: _marked, ...options }) =>
           respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
+        cache: (model, projectId) =>
+          routeCachePlan(
+            api,
+            {
+              prefix: 'azure',
+              route,
+              connectionId: connection.id,
+              revision: connection.revision,
+              model,
+              namespace: cacheNamespace(route, AZURE_OPENAI_PROTOCOL),
+              record: () => azureCapability(api.qualifications, connection, model, Date.now()),
+            },
+            projectId,
+          ),
       };
     }
     case OPENROUTER_ROUTE: {

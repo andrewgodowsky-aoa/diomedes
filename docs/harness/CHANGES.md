@@ -1,5 +1,18 @@
 # Harness host integration changes, 2026-09-09
 
+## Prompt caching is the owner's setting per route, 2026-10-05
+
+The owner chooses Provider default, Off or Explicit prefix for AWS Bedrock and for Azure OpenAI in
+AI setup (DIO-215). Provider default, which every route keeps until the owner chooses, sends every
+request byte for byte as before. Off sends the explicit cache mode alone. Explicit prefix sends a
+key scoped to the tenant, route, connection revision and model, made on the host as a hash, with
+the 30-minute lifetime and one breakpoint on the stable start of a conversation's instructions.
+Each route's guard refuses a request whose cache fields differ from what its call asked for. Beside
+the setting, AI setup shows what each model can do, with each fact declared from a cited page,
+observed by a route check, or not known, and whether a route check confirmed caching off. A turn's
+context record says which setting it was sent under and what it marked. No live provider call was
+made to build this; see [the record](../implementation/2026-10-05-route-capabilities-cache.md).
+
 ## Kimi K3 sends after a route check, 2026-10-05
 
 The direct AWS route sends Kimi K3 over Chat Completions, and only under a current route check

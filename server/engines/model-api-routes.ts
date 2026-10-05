@@ -17,7 +17,8 @@
  *
  * The Azure OpenAI and OpenRouter routes' setup mirrors this and is mounted from
  * here (`provider-routes.ts`), so the app mounts every model-API route in one place.
- * So are the owner's route checks for AWS and Azure (`route-qualification-routes.ts`).
+ * So are the owner's route checks for AWS and Azure (`route-qualification-routes.ts`), and their
+ * cache setting and capability records (`route-cache-routes.ts`).
  */
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
@@ -44,6 +45,7 @@ import {
 } from './aws-bedrock.js';
 import { EngineError } from './process.js';
 import { mountProviderRoutes } from './provider-routes.js';
+import { mountRouteCacheRoutes } from './route-cache-routes.js';
 import { mountQualificationRoutes } from './route-qualification-routes.js';
 import type { EngineService } from './service.js';
 
@@ -314,4 +316,5 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
 
   mountProviderRoutes(app, deps, route);
   mountQualificationRoutes(app, deps, route);
+  mountRouteCacheRoutes(app, deps, route);
 }

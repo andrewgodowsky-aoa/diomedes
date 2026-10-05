@@ -18,6 +18,7 @@
  * resumable conversation.
  */
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
+import type { CacheMark, CacheRequest } from '../../shared/route-capabilities.js';
 import type { RouteQualificationReceipt } from '../../shared/route-qualification.js';
 import {
   AWS_BEDROCK_PROTOCOL,
@@ -74,6 +75,16 @@ export interface AwsModelAdapterOptions extends StreamSinks {
   now?: () => Date;
   /** The newest route check receipt for this connection. A model that needs one is refused without it. */
   qualification?: RouteQualificationReceipt | null;
+  /**
+   * The owner's cache setting for every call this adapter makes, as `cacheRequest(...)` made it.
+   * Absent sends each call exactly as before any cache setting existed. Not part of the bound
+   * profile: it changes how a provider may reuse a prefix, never what a saved step means.
+   */
+  cache?: CacheRequest | null;
+  /** The stable start of `instructions`, or null where the path has none. */
+  stablePrefix?: string | null;
+  /** Told what each answered call's cache breakpoint marked. It never changes the call. */
+  onCacheMarked?: (marked: CacheMark) => void;
 }
 
 export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAdapter & { profileHash: string } {
@@ -132,8 +143,8 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
         limits,
         ...call,
       }),
-    respond: (call) =>
-      respondOnce({
+    respond: async (call) => {
+      const result = await respondOnce({
         connection,
         secret: options.secret,
         card: options.card,
@@ -144,7 +155,16 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
         transport: options.transport,
         now: options.now,
         qualification: options.qualification,
+        ...(options.cache ? { cache: options.cache, stablePrefix: options.stablePrefix ?? null } : {}),
         ...call,
-      }),
+      });
+      if (result.marked !== undefined)
+        try {
+          options.onCacheMarked?.(result.marked);
+        } catch {
+          // What was marked is a record; it never decides a call's outcome.
+        }
+      return result;
+    },
   });
 }

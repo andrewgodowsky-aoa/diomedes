@@ -309,6 +309,61 @@
   border-left-color: var(--dm-fault);
 }
 
+/* Prompt caching (DIO-215): the owner's setting for the route, then one ruled block per model
+   with each capability fact, its value and where it comes from. A citation or a route check id is
+   a machine string and wraps inside its row. The source is said in words; nothing relies on colour. */
+.ai-connections .service .ai-prompt-caching {
+  border-top: 1px solid var(--dm-rule-2);
+  margin: 10px 0;
+  padding-top: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-connections .service .ai-prompt-caching h4,
+.ai-connections .service .ai-prompt-caching h5 {
+  margin: 0 0 4px;
+}
+
+.ai-connections .service .ai-prompt-caching p {
+  margin: 0 0 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-connections .service .ai-prompt-caching .radio-row .caption {
+  display: block;
+}
+
+.ai-connections .service .ai-capabilities {
+  margin: 8px 0 0;
+  min-width: 0;
+}
+
+.ai-connections .service .ai-capability-facts {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.ai-connections .service .ai-capability-facts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+  border-left: 3px solid var(--dm-rule);
+  padding-left: 8px;
+}
+
+.ai-connections .service .ai-capability-facts li .ai-fact-source {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Approved read connectors: one ruled block per connector. A name, command or
    tool list is a machine string and wraps inside its row. */
 .read-connectors .read-connector {
