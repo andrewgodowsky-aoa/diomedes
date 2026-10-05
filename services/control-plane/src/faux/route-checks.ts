@@ -49,7 +49,7 @@ export const FAUX_AZURE_CONNECTION: ProviderConnection = Object.freeze({
 });
 
 /** Amazon Bedrock in us-east-1, as the deployed MANAGED_CONNECTIONS approves it: Kimi K3 over Chat Completions only. */
-export const FAUX_AWS_CONNECTION: ProviderConnection = Object.freeze({
+export const FAUX_AWS_CONNECTION: ProviderConnection = Object.freeze<ProviderConnection>({
   id: 'aws-bedrock-us-east-1',
   revision: 1,
   label: 'Amazon Bedrock (us-east-1)',
