@@ -422,6 +422,8 @@ export class NativeWorkService {
     },
     /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
     private profiles?: AgentProfileService,
+    /** Host-discovered local providers have no cloud service switch or payer. */
+    private localRoute?: (engine: Exclude<Route, 'sample'>) => { accountRoute: string } | null,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -533,7 +535,8 @@ export class NativeWorkService {
     const profile = routing.outcome === 'resolved' ? routing.pick : undefined;
     if (profile) input = withProfile(input, profile);
     const engine = input.engine ?? 'codex';
-    if (this.store.settings.services?.[engine] !== true)
+    const local = this.localRoute?.(engine);
+    if (!local && this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
     // Team work runs on every route that can carry the team tools (shared/team-routes.ts).
     // A route that cannot is refused by name; nothing falls back to another route.
@@ -767,10 +770,10 @@ export class NativeWorkService {
       }
       const run: NativeRun = {
         engine,
-        accountRoute:
+        accountRoute: local?.accountRoute ?? (
           typeof this.store.settings.services?.[`${engine}AccountRoute`] === 'string'
             ? String(this.store.settings.services[`${engine}AccountRoute`])
-            : undefined,
+            : undefined),
         threadId: input.threadId ?? input.turnId ?? session.id,
         projectId,
         taskId,

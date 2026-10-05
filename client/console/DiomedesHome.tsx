@@ -44,7 +44,8 @@ import {
 import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
 import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
 import { AccountPlanNotice } from './FreePlanNotice';
-import { readThreadRoute } from './thread-send';
+import { conversationSources, readThreadRoute } from './thread-send';
+import { LocalImageAttachments, LocalModelControls, PrepareLocalModels } from './LocalModelControls';
 import type {
   Conversation,
   Project,
@@ -206,6 +207,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
   // A model the thread pins, which keeps it on its recorded route; null when none is pinned.
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
+  const [modelThread, setModelThread] = useState<Conversation | null>(null);
+  const [imagePaths, setImagePaths] = useState<string[]>([]);
   // All projects' Cloud sharing record, read once that conversation exists; null until then.
   // `sharingReads` asks for it again, after a refusal that another window's change may explain.
   const [sharing, setSharing] = useState<HomeSharing | null>(null);
@@ -367,6 +370,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setRoute(conversation?.engine ?? null);
       setWorkStyle(conversation?.workStyle ?? null);
       setPinnedModel(conversation?.requested?.model ?? null);
+      setModelThread(conversation);
       setTurns(conversation?.turns ?? []);
       setLast(ending && answer !== null && ending.id === answer ? result : null);
     },
@@ -392,6 +396,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setRoute(null);
       setWorkStyle(null);
       setPinnedModel(null);
+      setModelThread(null);
+      setImagePaths([]);
       setSharingOpen(false);
       setTurns([]);
       setLast(null);
@@ -418,6 +424,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setRoute(conversation.engine ?? null);
         setWorkStyle(conversation.workStyle ?? null);
         setPinnedModel(conversation.requested?.model ?? null);
+        setModelThread(conversation);
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
         setKept(keptOf(retained(found)));
@@ -474,7 +481,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   }, [sharable]);
 
   /**
-   * The scope's conversation, made now if it never was. Only a send calls this. Both scopes ask
+   * The scope's conversation, made for a send or an explicit local-model choice. Both scopes ask
    * every time: the provisioner is also where the route default lands and where an unmarked pin
    * is migrated once, so a cached binding can never stand in for the ask. A provisioner that
    * changed nothing writes nothing.
@@ -529,6 +536,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (owns() && !current.cancelled && provisioned) {
         setRoute(provisioned.engine ?? null);
         setPinnedModel(provisioned.requested?.model ?? null);
+        setModelThread(provisioned);
       }
       const result = await transport(found, current.controller.signal, (identity) => {
         current.issued = identity;
@@ -648,13 +656,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const send = async (text: string, presetCommandId?: string): Promise<boolean> => {
     const scope = scopeId;
     const mode = modeFor(restriction);
-    const draft = { text, mode, sources: [] };
+    const draft = { text, mode, sources: [] as { path: string; sha: string }[] };
     capStop.current = null;
     limitStop.current = null;
     const sent = await deliver(
       text,
       () => ensure(scope),
       async (found, signal, onClaim) => {
+        draft.sources = await conversationSources(found.projectId, imagePaths, signal);
         let commandId = presetCommandId;
         if (commandId === undefined) {
           const gate = await beforeSend({
@@ -686,7 +695,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       );
       return sent;
     }
-    if (!stop) return sent;
+    if (!stop) { if (sent) setImagePaths([]); return sent; }
     const again: GateResult = await afterStop({
       status: () => jobStatus(stop.projectId, stop.commandId),
       ask: (prompt) => askCap(prompt),
@@ -904,8 +913,19 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onStop={stopDelivery}
         route={effective}
         routeModel={effective === NECTOVIA_ROUTE ? (nectovia?.tiers?.efficient?.label ?? null) : null}
-        workStyle={binding !== null ? workStyle : undefined}
+        workStyle={binding !== null && effective !== 'bonsai' ? workStyle : undefined}
         onWorkStyle={pickStyle}
+        modelControls={binding && modelThread ? <><LocalModelControls projectId={binding.projectId}
+          thread={modelThread} route={effective} mode={modeFor(restriction)} busy={pending} live={pending}
+          onChanged={conversation => {
+            setModelThread(conversation); setRoute(conversation.engine ?? null);
+            setPinnedModel(conversation.requested?.model ?? null); setWorkStyle(conversation.workStyle ?? null);
+          }} /><LocalImageAttachments projectId={binding.projectId} route={effective} model={pinnedModel}
+            paths={imagePaths} onPaths={setImagePaths} busy={pending} /></> : <PrepareLocalModels onPrepare={async () => {
+              const visit = turn.current;
+              await ensure(scopeId);
+              if (turn.current === visit) await load(scopeId);
+            }} />}
         unavailable={unavailable}
         card={card}
         cardBusy={cardBusy}

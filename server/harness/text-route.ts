@@ -27,6 +27,7 @@ import type { RunService, StepContext, StepDefinition } from './run-service.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { isExternalEngine } from '../../shared/engines.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
+import { BONSAI_ROUTE, bonsaiProfile } from '../../shared/bonsai.js';
 import { CODEX_ACCOUNT_ROUTE } from '../engines/codex-session.js';
 import type {
   CapabilityManifest,
@@ -107,7 +108,7 @@ const dispatchStep = (engine: string, requestId: string): StepDefinition => ({
   // One dispatch per run, ever. An unknown outcome parks for reconciliation;
   // it is never resent on the strength of a retry.
   maxAttempts: 1,
-  destination: 'external',
+  destination: engine === BONSAI_ROUTE ? 'local' : 'external',
 });
 
 export class TextRouteRuntime {
@@ -122,9 +123,6 @@ export class TextRouteRuntime {
   ) {}
   private get owner() {
     return this.options.owner ?? 'text-route';
-  }
-  private get leaseMs() {
-    return this.options.leaseMs ?? 300_000;
   }
 
   private async find(runId: string): Promise<HarnessRun | null> {
@@ -220,7 +218,9 @@ export class TextRouteRuntime {
     };
     request.signal?.addEventListener('abort', cancel, { once: true });
     try {
-      await this.runs.claim(runId, this.owner, this.leaseMs);
+      const localProfile = engine === BONSAI_ROUTE ? bonsaiProfile((request.intent as { model?: unknown }).model) : undefined;
+      const leaseMs = this.options.leaseMs ?? Math.max(300_000, (localProfile?.callTimeoutMs ?? 0) + 60_000);
+      await this.runs.claim(runId, this.owner, leaseMs);
       const admission = await this.runs.step<A>(
         runId,
         this.owner,

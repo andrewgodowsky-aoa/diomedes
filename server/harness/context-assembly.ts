@@ -332,6 +332,7 @@ export function accountContext(input: {
   parts: { history: string; files: string; message: string };
   separatorBytes: number;
   documents: number;
+  images?: number;
   requestLimitBytes: number | null;
   prefix: { sha: string; bytes: number };
   previousPrefixSha: string | null;
@@ -351,7 +352,8 @@ export function accountContext(input: {
     section(
       'project-files',
       utf8Bytes(input.parts.files),
-      input.documents ? `${input.documents} attached, read through tools` : undefined,
+      input.images ? `${input.documents} attached, including ${input.images} images sent as bytes. Image tokens are excluded from the text estimate.`
+        : input.documents ? `${input.documents} attached, read through tools` : undefined,
     ),
     section('history', utf8Bytes(input.parts.history), historyDetail),
     section('message', utf8Bytes(input.parts.message) + input.separatorBytes),

@@ -31,6 +31,7 @@ const CONFIGS = [
   'playwright.journey.config.ts',
   // The built Team journey owns its real scripted host and closes it after the suite.
   'playwright.agent-team.config.ts',
+  'playwright.bonsai.config.ts',
   'docs/implementation/operations-routing-handoff/journey.config.ts',
 ] as const;
 

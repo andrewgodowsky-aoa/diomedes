@@ -74,6 +74,8 @@ export interface DiomedesPageProps {
    */
   workStyle?: WorkStyle | null;
   onWorkStyle?(next: WorkStyle | null): void;
+  /** Optional local profile controls, using the same conversation and model selection as Work. */
+  modelControls?: ReactNode;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
   /** What the last message led to, beyond its answer. Null when the answer is all there is. */
@@ -193,6 +195,7 @@ export function Diomedes({
   routeModel = null,
   workStyle,
   onWorkStyle,
+  modelControls,
   unavailable,
   card,
   cardBusy,
@@ -425,6 +428,7 @@ export function Diomedes({
               )}
               {workers}
               {session}
+              {modelControls}
               {unavailable !== null ? (
                 <p className="composer dio-unavailable">{unavailable}</p>
               ) : (
