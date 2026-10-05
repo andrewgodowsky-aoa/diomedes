@@ -8,19 +8,21 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import { EngineService } from '../server/engines/service.js';
-import { BonsaiError, BonsaiRuntime, type BonsaiHost } from '../server/bonsai/runtime.js';
+import { LocalModelError, LocalModelRuntime, type LocalModelHost } from '../server/bonsai/runtime.js';
 import { localModelIntegrations } from '../server/bonsai/routes.js';
-import { BONSAI_MODEL, type BonsaiStatus, type LocalModelsView, type ModelImage } from '../shared/bonsai.js';
+import type { LocalModelStatus, LocalModelsView } from '../shared/local-model.js';
+import type { ModelImage } from '../shared/model-images.js';
 import type { Conversation, IntegrationStatus, Project } from '../shared/types.js';
 import { conversationSources } from '../client/console/thread-send.js';
 import { turnRunId } from '../server/harness/model-session-run.js';
 import type { RunService } from '../server/harness/run-service.js';
+import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVnQAAAAASUVORK5CYII=', 'base64');
 const headers = { 'content-type': 'application/json', 'X-Diomedes-Client': '1' };
 const realFetch = globalThis.fetch;
 let root: string, base: string, app: Awaited<ReturnType<typeof createApp>>, server: Server;
-let project: Project, thread: Conversation, host: BonsaiHost;
+let project: Project, thread: Conversation, host: LocalModelHost;
 type ChatBody = { model: string; messages: { role: string; content: unknown }[]; tools: { function: { name: string } }[]; reasoning_effort: string };
 let calls: ChatBody[], mode: 'answer' | 'tool' | 'hang' | 'proposal', dispatched: boolean;
 const store = () => app.locals.store as Store;
@@ -33,12 +35,21 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
   return JSON.parse(text) as T;
 }
 const threadPath = () => `/projects/${project.id}/threads/${thread.id}`;
-const select = (model = 'bonsai-gaming', effort = 'xhigh') => api<Conversation>(threadPath(), 'PUT', {
+const select = (model = 'local:gaming', effort = 'xhigh') => api<Conversation>(threadPath(), 'PUT', {
   engine: 'bonsai', requested: { model, effort, agent: 'auto' },
+});
+/** A thread saved before profiles came from the description, with the slug it was saved under. */
+const savedEarlier = (model: string) => store().locked(async () => {
+  const state = store().state(project.id);
+  const saved = state.conversations.find(t => t.id === thread.id)!;
+  saved.engine = 'bonsai';
+  saved.requested = { model, effort: 'xhigh', agent: 'auto' };
+  await store().persist(state);
 });
 const body = (text = 'Hello', sources: { path: string; sha: string }[] = []) => ({
   commandId: randomUUID(), text, sources, mode: 'ask', consent: true,
 });
+// The copied descriptor names this server. The transport answers it; nothing reaches it.
 const transport: typeof fetch = async (url, init) => {
   expect(String(url)).toMatch(/^http:\/\/127\.0\.0\.1:18082\//);
   if (String(url).endsWith('/apply-template')) return Response.json({ prompt: 'Fixture template' });
@@ -57,24 +68,24 @@ const transport: typeof fetch = async (url, init) => {
       ? { content: null, tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'read_source', arguments: '{"path":"note.md"}' } }] }
       : { content: mode === 'proposal' ? JSON.stringify({ summary: 'Write the agreed checklist',
           changes: [{ path: 'checklist.md', text: '# Checklist\n\n- Verify the result\n', summary: 'Add the checklist.' }] })
-        : toolResult ? `Read result: ${String(toolResult.content)}` : 'Bonsai answered locally.' } }],
+        : toolResult ? `Read result: ${String(toolResult.content)}` : 'The local model answered.' } }],
     usage: { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 } });
 };
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'nectovia-bonsai-'));
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-route-app-'));
   calls = []; mode = 'answer'; dispatched = false;
   host = {
-    inspect: vi.fn(async (): Promise<BonsaiStatus> => ({ state: 'unloaded', installed: true, owned: false, mode: null, detail: 'Choose a profile.' })),
+    inspect: vi.fn(async (): Promise<LocalModelStatus> => ({ state: 'unloaded', installed: true, owned: false, mode: null, detail: 'Choose a profile.' })),
     acquire: vi.fn(async profile => ({ status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} })),
   };
   app = await createApp({ dataDir: path.join(root, 'data'), projectRoot: path.join(root, 'projects'),
     engineService: new EngineService(path.join(root, 'engines'), { discover: async () => [] }),
-    reviewerAdapter: null, modelApiTransport: transport, bonsai: { host, configured: true }, automationTickMs: null });
+    reviewerAdapter: null, modelApiTransport: transport, localModel: { host, source: new FixedLocalModel() }, automationTickMs: null });
   server = await new Promise<Server>(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   vi.stubGlobal('fetch', ((url: RequestInfo | URL, init?: RequestInit) => String(url).startsWith('/api/')
     ? realFetch(`${base}${String(url)}`, init) : realFetch(url, init)) as typeof fetch);
-  project = await api<Project>('/projects', 'POST', { name: 'Bonsai fixture' });
+  project = await api<Project>('/projects', 'POST', { name: 'Local model fixture' });
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const folder = store().state(project.id).project.folder;
   await fs.writeFile(path.join(folder, 'picture.png'), png);
@@ -89,33 +100,50 @@ afterEach(async () => {
   if (root) await fs.rm(root, { recursive: true, force: true });
 });
 
-describe('Bonsai through the native Nectovia host', () => {
-  it('offers installed profiles without starting one, wakes the exact selection, and persists separate fields', async () => {
-    const catalog = await api<{ models: { slug: string }[] }>('/engines/bonsai/models');
-    expect(catalog.models.map(p => p.slug)).toEqual(['bonsai-gaming', 'bonsai-full']);
-    expect((await api<LocalModelsView>('/ai/local-models')).status.state).toBe('unloaded');
+describe('the local model through the native Nectovia host', () => {
+  it('offers the described profiles without starting one, wakes the exact selection, and persists separate fields', async () => {
+    const catalog = await api<{ models: { slug: string; name: string }[] }>('/engines/bonsai/models');
+    expect(catalog.models.map(p => [p.slug, p.name])).toEqual([['local:gaming', 'bonsai-2-27b Gaming'], ['local:full', 'bonsai-2-27b Full']]);
+    const view = await api<LocalModelsView>('/ai/local-models');
+    expect(view).toMatchObject({ route: 'bonsai', kind: 'local', name: 'Bonsai 2 Local', status: { state: 'unloaded' } });
     expect(host.acquire).not.toHaveBeenCalled();
-    expect(await select('bonsai-full')).toMatchObject({ engine: 'bonsai', requested: { model: 'bonsai-full', effort: 'xhigh', agent: 'auto' } });
-    expect(await api('/ai/local-models/wake', 'POST', { model: 'bonsai-full' })).toMatchObject({ state: 'ready', mode: 'Full' });
+    expect(await select('local:full')).toMatchObject({ engine: 'bonsai', requested: { model: 'local:full', effort: 'xhigh', agent: 'auto' } });
+    expect(await api('/ai/local-models/wake', 'POST', { model: 'local:full' })).toMatchObject({ state: 'ready', mode: 'Full',
+      model: BONSAI_MODEL, detail: 'bonsai-2-27b Full is ready.' });
     const reopened = new Store(path.join(root, 'data'), path.join(root, 'projects')); await reopened.init();
-    expect(reopened.state(project.id).conversations.find(t => t.id === thread.id)?.requested).toMatchObject({ model: 'bonsai-full', effort: 'xhigh', agent: 'auto' });
+    expect(reopened.state(project.id).conversations.find(t => t.id === thread.id)?.requested).toMatchObject({ model: 'local:full', effort: 'xhigh', agent: 'auto' });
     expect(calls).toEqual([]);
   });
-  it.each(['bonsai-gaming', 'bonsai-full'])('runs %s with its native context, usage and bounded deadline', async model => {
-    await select(model);
+  it('wakes a profile by its saved slug, and refuses a slug the description does not list', async () => {
+    expect(await api('/ai/local-models/wake', 'POST', { model: 'bonsai-gaming' })).toMatchObject({ state: 'ready', mode: 'Gaming' });
+    const unknown = await request('/ai/local-models/wake', 'POST', { model: 'local:turbo' });
+    expect(unknown.status).toBe(400);
+    expect(await unknown.json()).toMatchObject({ error: 'Choose a local model profile.' });
+    expect(vi.mocked(host.acquire).mock.calls.map(call => call[0].slug)).toEqual(['local:gaming']);
+  });
+  it('writes a saved slug back under its listed slug when a choice echoes it', async () => {
+    await savedEarlier('bonsai-full');
+    expect(await api<Conversation>(threadPath(), 'PUT', { requested: { model: 'bonsai-full', effort: 'xhigh', agent: 'auto' } }))
+      .toMatchObject({ requested: { model: 'local:full' } });
+    const refused = await request(threadPath(), 'PUT', { engine: 'bonsai', requested: { model: 'local:turbo', effort: null } });
+    expect(refused.status).toBe(400);
+  });
+  it.each(['local:gaming', 'local:full', 'bonsai-full'])('runs %s with its declared context, usage and bounded deadline', async model => {
+    if (model.startsWith('bonsai-')) await savedEarlier(model); else await select(model);
+    const full = model.endsWith('full');
     expect(await api(`${threadPath()}/work-style`)).toMatchObject({ route: 'bonsai', refusal: null });
     const command = body();
     const answer = await api<{ runId: string }>(`${threadPath()}/messages`, 'POST', command);
-    expect(answer).toMatchObject({ answerText: 'Bonsai answered locally.', interrupted: false });
+    expect(answer).toMatchObject({ answerText: 'The local model answered.', interrupted: false });
     expect(calls[0]).toMatchObject({ model: BONSAI_MODEL, reasoning_effort: 'xhigh' });
     const turns = store().state(project.id).conversations.find(t => t.id === thread.id)!.turns;
-    expect(turns.at(-1)).toMatchObject({ route: 'bonsai', context: { window: { tokens: model === 'bonsai-full' ? 131072 : 16384 },
+    expect(turns.at(-1)).toMatchObject({ route: 'bonsai', context: { window: { tokens: full ? 131072 : 16384 },
       provider: { reportedCalls: 1, inputTokens: 30, outputTokens: 10 } } });
     const child = await (app.locals.harness.runs as RunService).get(turnRunId(answer.runId, command.commandId));
-    expect(child.budget).toMatchObject({ wallMs: model === 'bonsai-full' ? 1_800_000 : 480_000, modelCalls: 8, toolCalls: 16 });
+    expect(child.budget).toMatchObject({ wallMs: full ? 1_800_000 : 480_000, modelCalls: 8, toolCalls: 16 });
   });
   it('delivers actual Full image bytes from the client source path and saves their exact version', async () => {
-    await select('bonsai-full');
+    await select('local:full');
     const sources = await conversationSources(project.id, ['picture.png']);
     const image = await api<ModelImage>(`/projects/${project.id}/image-source?path=picture.png`);
     expect(sources).toEqual([{ path: 'picture.png', sha: image.sha }]);
@@ -132,7 +160,8 @@ describe('Bonsai through the native Nectovia host', () => {
     await select(); const sources = await conversationSources(project.id, ['picture.png']);
     const gaming = await request(`${threadPath()}/messages`, 'POST', body('Describe.', sources));
     expect(gaming.status).toBe(415);
-    await select('bonsai-full');
+    expect(await gaming.json()).toMatchObject({ error: 'This model takes text only. Choose a model that takes images to send them.' });
+    await select('local:full');
     await fs.writeFile(path.join(store().state(project.id).project.folder, 'picture.png'), Buffer.concat([png, Buffer.from('changed')]));
     expect((await request(`${threadPath()}/messages`, 'POST', body('Describe.', sources))).status).toBe(409);
     expect(host.acquire).not.toHaveBeenCalled(); expect(calls).toEqual([]);
@@ -147,35 +176,36 @@ describe('Bonsai through the native Nectovia host', () => {
     expect(calls[1].messages.find(m => m.role === 'tool')?.content).toContain('Only the selected note.');
   });
   it('reports memory failure on wake and sends nothing to any provider', async () => {
-    vi.mocked(host.acquire).mockRejectedValueOnce(new BonsaiError('insufficient-memory', 'Needs 12288 MiB of free VRAM.'));
-    const response = await request('/ai/local-models/wake', 'POST', { model: 'bonsai-full' });
+    vi.mocked(host.acquire).mockRejectedValueOnce(new LocalModelError('insufficient-memory', 'Needs 12288 MiB of free VRAM.'));
+    const response = await request('/ai/local-models/wake', 'POST', { model: 'local:full' });
     expect(response.status).toBe(409); expect(await response.text()).toContain('12288');
     expect((await api<LocalModelsView>('/ai/local-models')).status.state).toBe('insufficient-memory');
     expect(calls).toEqual([]);
   });
-  it('reports the installed model as a local integration with its loaded profile, starting nothing to say so', async () => {
+  it('reports the described model as a local integration with its loaded profile, starting nothing to say so', async () => {
     const local = async (route = '/integrations') =>
       (await api<{ integrations: IntegrationStatus[] }>(route)).integrations.filter(item => item.id === 'bonsai');
-    expect(await local()).toEqual([expect.objectContaining({ id: 'bonsai', kind: 'local', adapter: 'ready',
-      found: true, available: false, loaded: null, status: 'Not running' })]);
+    expect(await local()).toEqual([expect.objectContaining({ id: 'bonsai', name: 'Bonsai 2 Local', kind: 'local', adapter: 'ready',
+      found: true, available: false, loaded: null, status: 'Not running', capabilities: ['text', 'tools', 'images in Full'] })]);
     expect(await local('/integrations/local')).toEqual(await local());
-    vi.mocked(host.inspect).mockResolvedValue({ state: 'ready', installed: true, mode: 'Full', owned: true, detail: 'Bonsai Full is ready.' });
+    vi.mocked(host.inspect).mockResolvedValue({ state: 'ready', installed: true, mode: 'Full', model: BONSAI_MODEL,
+      contextTokens: 131072, owned: true, detail: 'bonsai-2-27b Full is ready.' });
     expect(await local('/integrations/local')).toEqual([expect.objectContaining({ found: true, available: true,
-      loaded: 'bonsai-full', status: 'Running', detail: 'Bonsai Full is ready.' })]);
+      loaded: 'local:full', status: 'Running', detail: 'bonsai-2-27b Full is ready.' })]);
     vi.mocked(host.inspect).mockResolvedValue({ state: 'missing', installed: false, mode: null, owned: false, detail: 'Not installed.' });
     expect(await local('/integrations/local')).toEqual([]);
     expect(await local()).toEqual([]);
     expect(host.acquire).not.toHaveBeenCalled();
-    // A host with no installation is never asked at all.
-    const absent = { inspect: vi.fn(), acquire: vi.fn() } as unknown as BonsaiHost;
-    expect(await localModelIntegrations(new BonsaiRuntime(absent), false)).toEqual([]);
+    // A computer with no folder set is never asked at all.
+    const absent = { inspect: vi.fn(), acquire: vi.fn() } as unknown as LocalModelHost;
+    expect(await localModelIntegrations(new LocalModelRuntime(new FixedLocalModel(null), absent))).toEqual([]);
     expect(absent.inspect).not.toHaveBeenCalled();
   });
   it('never starts the model for a send: a stopped profile is refused, stays chosen, and nothing is sent anywhere', async () => {
-    await select('bonsai-gaming');
+    await select('local:gaming');
     let running: string | null = null;
     vi.mocked(host.acquire).mockImplementation(async (profile, options) => {
-      if (running !== profile.mode && !options?.start) throw new BonsaiError('unloaded', "The local model isn't running. Start it first.");
+      if (running !== profile.mode && !options?.start) throw new LocalModelError('unloaded', "The local model isn't running. Start it first.");
       running = profile.mode;
       return { status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} };
     });
@@ -186,10 +216,10 @@ describe('Bonsai through the native Nectovia host', () => {
     expect(vi.mocked(host.acquire).mock.calls.map(call => call[1])).toEqual([{ start: false }]);
     // Withdrawn, not replaced: the thread keeps its local profile and no tier or cloud route took over.
     expect(store().state(project.id).conversations.find(t => t.id === thread.id))
-      .toMatchObject({ engine: 'bonsai', requested: { model: 'bonsai-gaming' } });
+      .toMatchObject({ engine: 'bonsai', requested: { model: 'local:gaming' } });
     // Only the person's Start may start it, and the next send then runs on it.
-    await api('/ai/local-models/wake', 'POST', { model: 'bonsai-gaming' });
-    expect(await api(`${threadPath()}/messages`, 'POST', body('Again.'))).toMatchObject({ answerText: 'Bonsai answered locally.' });
+    await api('/ai/local-models/wake', 'POST', { model: 'local:gaming' });
+    expect(await api(`${threadPath()}/messages`, 'POST', body('Again.'))).toMatchObject({ answerText: 'The local model answered.' });
     expect(vi.mocked(host.acquire).mock.calls.map(call => call[1])).toEqual([{ start: false }, { start: true }, { start: false }]);
     expect(calls).toHaveLength(1);
   });
@@ -208,7 +238,7 @@ describe('Bonsai through the native Nectovia host', () => {
     expect(calls).toHaveLength(1);
   });
   it('Build proposes a recorded change and waits for the existing exact approval', async () => {
-    await select('bonsai-full'); mode = 'proposal';
+    await select('local:full'); mode = 'proposal';
     const response = await request(`/projects/${project.id}/ask`, 'POST', { threadId: thread.id,
       route: 'bonsai', mode: 'build', text: 'Write a checklist.', consent: true, sources: [] });
     expect(response.status, await response.clone().text()).toBe(200);

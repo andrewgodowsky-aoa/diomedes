@@ -14,20 +14,21 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { testOnlySecretBox } from '../server/connection-secrets.js';
 import { AWS_BEDROCK_SDK, AWS_RESPONSES_ENDPOINTS, awsQualificationIdentity } from '../server/engines/aws-bedrock.js';
-import { BONSAI_CONNECTION } from '../server/engines/bonsai.js';
+import { LOCAL_MODEL_CONNECTION } from '../server/engines/bonsai.js';
 import { RouteQualifications } from '../server/engines/route-qualification-store.js';
 import { EngineService } from '../server/engines/service.js';
 import {
-  BonsaiError,
+  LocalModelError,
   LOCAL_MODEL_NOT_INSTALLED,
   LOCAL_MODEL_NOT_RUNNING,
   LOCAL_MODEL_UNKNOWN_PROFILE,
   localModelOtherProfile,
-  type BonsaiHost,
+  type LocalModelHost,
 } from '../server/bonsai/runtime.js';
 import type { Store } from '../server/store.js';
 import type { HarnessHost } from '../server/harness/host.js';
-import { BONSAI_ACCOUNT, BONSAI_MODEL, type BonsaiMode, type BonsaiStatus } from '../shared/bonsai.js';
+import { LOCAL_MODEL_ACCOUNT as BONSAI_ACCOUNT, type LocalModelStatus } from '../shared/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
 import { AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MODEL_API_PROVIDERS, type AwsConnectionView, type AzureConnectionView } from '../shared/model-api.js';
 import type { HarnessRun } from '../shared/harness.js';
 import type { TeamLeadView } from '../shared/team-delegation.js';
@@ -63,7 +64,7 @@ interface Call {
 
 let root: string, url: string, projectId: string, taskId: string;
 let app: Awaited<ReturnType<typeof createApp>>, server: Server | undefined, service: EngineService;
-let host: BonsaiHost, running: BonsaiMode | null, installed: boolean;
+let host: LocalModelHost, running: string | null, installed: boolean;
 let calls: Call[], admissions: string[];
 let azureConnection: string, awsConnection: { id: string; revision: number; endpoint: string };
 const store = (): Store => app.locals.store;
@@ -141,14 +142,14 @@ async function open(configured = true) {
   admissions = [];
   host = {
     // An inspect only: what runs now. Nothing here starts a profile.
-    inspect: vi.fn(async (): Promise<BonsaiStatus> => !installed
+    inspect: vi.fn(async (): Promise<LocalModelStatus> => !installed
       ? { state: 'missing', installed: false, mode: null, owned: false, detail: 'Not installed.' }
       : running
         ? { state: 'ready', installed: true, mode: running, owned: true, detail: `${running} is ready.` }
         : { state: 'unloaded', installed: true, mode: null, owned: false, detail: 'Choose a profile.' }),
     // A send acquires without starting: a profile that isn't the running one is refused, as the host script does.
     acquire: vi.fn(async (profile, options) => {
-      if (running !== profile.mode && !options?.start) throw new BonsaiError('unloaded', LOCAL_MODEL_NOT_RUNNING);
+      if (running !== profile.mode && !options?.start) throw new LocalModelError('unloaded', LOCAL_MODEL_NOT_RUNNING);
       return { status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} };
     }),
   };
@@ -160,7 +161,8 @@ async function open(configured = true) {
     reviewerAdapter: null,
     secretBox: testOnlySecretBox(),
     modelApiTransport: transport,
-    bonsai: { host, configured },
+    // Bonsai's own descriptor, from a copy; with none, no local model is set up on this computer.
+    localModel: { host, source: new FixedLocalModel(configured ? undefined : null) },
     automationTickMs: null,
   });
   // Every model-API admission, by route: the lead's must never happen when a role refuses.
@@ -241,7 +243,7 @@ async function untilRun(runId: string, expected: HarnessRun['state']) {
 /** Nothing was sent anywhere, nothing was held and no run exists. */
 async function nothingHappened() {
   expect(calls).toEqual([]);
-  for (const connection of [azureConnection, awsConnection.id, BONSAI_CONNECTION]) expect(holds(connection)).toEqual([]);
+  for (const connection of [azureConnection, awsConnection.id, LOCAL_MODEL_CONNECTION]) expect(holds(connection)).toEqual([]);
   expect(store().state(projectId).sessions).toEqual([]);
   expect(await harness().list(projectId)).toEqual([]);
   expect(host.acquire).not.toHaveBeenCalled();
@@ -307,7 +309,7 @@ describe('a three-model H14 team: Sol leads on Azure, the local model works, K3 
     expect(leadHolds.length).toBe(calls.filter((call) => call.route === 'azure-openai').length);
     expect(advisorHolds).toHaveLength(1);
     for (const hold of [...leadHolds, ...advisorHolds]) expect(hold.state).toBe('settled');
-    expect(holds(BONSAI_CONNECTION)).toEqual([]);
+    expect(holds(LOCAL_MODEL_CONNECTION)).toEqual([]);
   });
 });
 
