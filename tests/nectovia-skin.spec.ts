@@ -204,7 +204,13 @@ async function shootHomeWithEveryRow(page: Page, name: string) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects }) });
   });
   await openHome(page);
-  await expect(page.locator('.nv-row.attn')).toBeVisible();
+  // This spec's own project row: the suite shares one service, so earlier specs leave waiting
+  // items and projects of their own on the same home.
+  await expect(
+    page
+      .locator('.nv-row.attn')
+      .filter({ has: page.getByRole('button', { name: `Open ${WORK}`, exact: true }) }),
+  ).toBeVisible();
   await expect(page.locator('.nv-band')).toHaveCount(0);
   await shot(page, name);
   await page.unroute('**/api/projects');
