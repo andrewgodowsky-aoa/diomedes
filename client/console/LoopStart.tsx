@@ -9,7 +9,7 @@ import { selectTaskSources } from '../../shared/task-sources';
 import type { DocumentInfo, Session, Task } from '../../shared/types';
 import {
   defaultLoopGoal, loopStartCommand, loopToolConsent, loopToolConsentRefusal, newLoopCommandId,
-  retainAfterFailure, retainLoopStartCommand,
+  collaborationOfferLabel, retainAfterFailure, retainLoopStartCommand,
   LOOP_REVIEW_PROFILE, type LoopCollaborationOptions, type LoopStartCommand, type LoopToolConsent,
 } from './loop-start-model';
 import './trigger-rules.css';
@@ -275,7 +275,7 @@ export function LoopStart({
             {leads.map(offer => (
               <option key={offer.slotId} value={offer.slotId}
                 disabled={!offer.admitted || offer.slotId === memberSlotId}>
-                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+                {collaborationOfferLabel(offer)}
               </option>
             ))}
           </select>
@@ -288,7 +288,7 @@ export function LoopStart({
             {members.map(offer => (
               <option key={offer.slotId} value={offer.slotId}
                 disabled={!offer.admitted || offer.slotId === leadSlotId}>
-                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+                {collaborationOfferLabel(offer)}
               </option>
             ))}
           </select>
@@ -300,7 +300,7 @@ export function LoopStart({
             <option value="">None</option>
             {helpers.map(offer => (
               <option key={offer.profileId} value={offer.profileId} disabled={!offer.admitted}>
-                {offer.name}{offer.model ? ` · ${offer.model}` : ''}
+                {collaborationOfferLabel(offer)}
               </option>
             ))}
           </select>

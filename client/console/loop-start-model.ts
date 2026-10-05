@@ -20,8 +20,16 @@ export interface LoopHelperSelection {
 interface CollaborationOffer {
   name: string;
   model: string | null;
+  /** How the host names the model for a person, where that differs from its id (a local profile). */
+  modelName?: string;
   admitted: boolean;
   reason: string | null;
+}
+
+/** "Name · model", with the model as the host names it for a person. */
+export function collaborationOfferLabel(offer: CollaborationOffer): string {
+  const model = offer.modelName ?? offer.model;
+  return model ? `${offer.name} · ${model}` : offer.name;
 }
 
 export interface LoopCollaborationOptions {

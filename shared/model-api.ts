@@ -35,6 +35,14 @@ export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
   typeof value === 'string' && (MODEL_API_ROUTES as readonly string[]).includes(value);
 export const isModelApiProvider = (value: unknown): value is ModelApiProvider =>
   typeof value === 'string' && (MODEL_API_PROVIDERS as readonly string[]).includes(value);
+/**
+ * The model routes a team role may run on: the provider routes and the local model on this
+ * computer. The Agent Team grant, its host and the member bindings all ask this one list.
+ */
+export const TEAM_MODEL_ROUTES = [...MODEL_API_PROVIDERS, 'bonsai'] as const;
+export type TeamModelRoute = (typeof TEAM_MODEL_ROUTES)[number];
+export const isTeamModelRoute = (value: unknown): value is TeamModelRoute =>
+  typeof value === 'string' && (TEAM_MODEL_ROUTES as readonly string[]).includes(value);
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   'aws-bedrock': `AWS Bedrock (${lunaLabel(MANAGED_LUNA_ID)})`,

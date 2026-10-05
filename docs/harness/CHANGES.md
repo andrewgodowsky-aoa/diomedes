@@ -13,6 +13,26 @@ observed by a route check, or not known, and whether a route check confirmed cac
 context record says which setting it was sent under and what it marked. No live provider call was
 made to build this; see [the record](../implementation/2026-10-05-route-capabilities-cache.md).
 
+## The local model can be an Agent Team member, 2026-10-05
+
+An Agent Team started from the Console can now take a member on the local model (DIO-216, slice
+B). One list, `TEAM_MODEL_ROUTES` in `shared/model-api.ts`, names the routes a team role may run
+on: the four provider routes and the local model. The Agent Team grant, its host and the member
+bindings all ask it. The person adds a local member by name with a profile, for example
+`{ "name": "Counter", "role": "member", "engine": "bonsai", "model": "local:gaming" }`, the slug
+the local model's folder gives its Gaming profile. A model the folder doesn't list is refused with
+"Choose a local model profile." Where no local model is set up, the add is refused with "The local
+model isn't installed on this computer." The host admits that member only while the person keeps its profile running. It
+reads the status and never starts the model, and a profile that isn't running is refused in the
+runtime's own words, which the start dialog shows beside the member as it shows every refusal. The
+dialog names the member's model by its profile, as the local model's folder names it. The member
+uses the local zero-cost card and holds no spend. Nothing chooses the local model on the Team's
+behalf: "Nectovia chooses" skips it, mail never wakes a local member into a run, and automatic work
+never picks one. `tests/three-model-team-host.test.ts` covers the
+host, and `tests/three-model-team-ui.spec.ts` starts a run in the built Console with a Sol lead, the
+local member and a Kimi K3 helper profile. See
+[the record](../implementation/2026-10-05-three-model-team.md).
+
 ## The local model comes from its own folder, 2026-10-05
 
 The local model is no longer one fixed model with two fixed profiles (DIO-201). It is the model in
@@ -32,7 +52,7 @@ the lease and the one queue. Saved ids keep their values, and the price stays ze
 A Diomedes work loop's worker or advisor can now run on the local model (DIO-216, slice A). The
 loop start asks the same route-on question every send asks: a provider route is on when its
 Settings switch is on, and the local model is on where it is set up. A local role names its profile
-and the local account route, for example `{ "route": "bonsai", "model": "bonsai-gaming",
+and the local account route, for example `{ "route": "bonsai", "model": "local:gaming",
 "accountRoute": "bonsai:local" }`. At the start the host reads which profile the local model is
 running, and never starts it. A profile that isn't the running one is refused with 409 and the
 runtime's own sentence, such as "The local model isn't running. Start it first." A team's roles are
