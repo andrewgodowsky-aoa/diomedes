@@ -1725,9 +1725,9 @@ export async function createApp(options: AppOptions) {
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
   }, subscriptionWorkers, {
-    // The same route-on every send uses. The local model's status is read, never started.
+    // The same route-on every send uses. The local model's status is read now, never started.
     on: (route) => routeOn(route),
-    localRefusal: (model) => localRuntime.refusal(model),
+    localRefusal: (model) => localRuntime.refusal(model, { fresh: true }),
   });
   mountTaskWorkflowRoutes(app, store);
   mountManualHandoffRoutes(app, store);
