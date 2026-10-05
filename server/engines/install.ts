@@ -157,8 +157,10 @@ export async function extractOpenCode(
     args: [
       '-NoProfile',
       '-NonInteractive',
-      '-EncodedCommand',
-      Buffer.from(script, 'utf16le').toString('base64'),
+      // Plain -Command text, not -EncodedCommand: Norton flags that pair on every
+      // launch (DIO-202). psQuote leaves no double quote in the script.
+      '-Command',
+      script.replace(/\n/g, '; '),
     ],
     cwd,
     env: engineEnvironment(),
