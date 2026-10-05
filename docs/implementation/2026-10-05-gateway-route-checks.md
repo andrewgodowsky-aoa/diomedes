@@ -176,3 +176,45 @@ so the Operations app can mark each field. Statuses are unchanged.
 - The binding rules' sentences come from `bindingProblems` in `shared/routing-policy.ts`. A test holds
   the field table to every sentence there, so a new rule fails it until it names its field.
 - Other endpoints' refusals are unchanged and carry no `fields`.
+
+## Escalation controls (phase 2)
+
+Andrew asked (2026-10-05) for a per-customer switch, set from the Operations app, that says whether work
+led by a model that is not Nectovia may hand work to Nectovia's managed tiers, and to which tiers. The
+contract is `shared/escalation-controls.ts` (3bea42b). The gateway enforces it here; the desktop checks
+the same control before it admits the role.
+
+- **Storage.** A scope's `tier_policies` record gains an optional `escalation`, independent of `inherit`:
+  an inherited account scope can still carry its own control. On the global record it is the default for
+  every account. Null or absent inherits. No migration.
+- **Publishing.** `POST /ops/routing/scopes/publish` and `/preview` take the scoped publication plus
+  `escalation`. Omitted keeps the previous revision's control, so an older Operations build never clears
+  it; null clears it; an object sets it. The global scope takes null too, and then the default applies.
+  `routing` stays required: a control-only publish sends the scope's current own routing (null for an
+  inherited or record-less account scope, the current routing on global). A rollback restores the whole
+  record, its control included. The audit detail records the resulting control.
+- **The Ops view.** `GET /ops/routing/scopes/{global | organization/:id | individual/:id}` adds
+  `escalation`, the record's own control (null when it has none or there is no record), and
+  `effectiveEscalation`. A preview answers the same two fields for the would-be record.
+- **The member read.** `GET /account/routing/{organization|individual}/{id}/escalation`, with the same
+  authorization as the policy and access reads, answers the effective control (`escalationViewSchema`).
+  Nothing is added to the routing snapshot or the policy answer, which installed desktops parse strictly.
+- **The gateway.** On `/managed/v1/responses`, a call carrying `X-Nectovia-Escalation` must name worker or
+  advisor, or it is refused with 400 `invalid_header`. After the membership, admission and entitlement
+  checks, and before the body is read and before any hold or send, the scope's effective control is read
+  and a tier it does not allow is refused with 403 and the contract's code and sentence
+  (`escalation_off`, `escalation_tier_off`). Calls without the header are unchanged: no extra read and no
+  new refusal. On the legacy path the effective control is always the default, because any control makes
+  the account versioned.
+- **Versioned routing.** A publish that creates an organization's first record, even one carrying only an
+  escalation control, moves that organization onto versioned routing. It then needs an accepted
+  preference and a global or own routing record before managed calls succeed. On the global scope, a
+  control-only publish makes the global record versioned. So publish the global routing first, or in the
+  same publication. The preview's `routing_setup_required` line is the warning.
+- **Faux cloud.** It runs the same handler and store rules, so the Operations app's Escalation section can
+  be tested against it as it is.
+
+Tests: `services/control-plane/tests/escalation-controls.test.ts` covers inheritance (scope over global
+over default), publish with the control omitted, null and set, an inherited scope with its own control,
+the preview, rollback, refused controls, the member read and its authorization, the strict snapshot
+unchanged, and the gateway's refusals before any hold or send, with calls without the header unchanged.

@@ -76,6 +76,7 @@ import { approvedConnections } from './managed-bindings.js';
 import { registryRow } from './managed-providers.js';
 import type { FundingService } from './funding.js';
 import { bindingProblemFields, routeInputRefusal } from './route-field-refusals.js';
+import { escalationControlSchema } from '../../../shared/escalation-controls.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -219,6 +220,12 @@ export const tierPolicySchema = z.strictObject({
   routing: routingConfigurationSchema.optional(),
   inherit: z.boolean().optional(),
   mandatory: hardRestrictionsSchema.optional(),
+  /**
+   * The scope's own escalation control, independent of `inherit`: an inherited account scope can
+   * still carry one. On the global record it is the default for every account. Null or absent
+   * inherits (`effectiveEscalation`). Never part of the routing snapshot.
+   */
+  escalation: escalationControlSchema.nullable().optional(),
 });
 export type TierPolicy = z.infer<typeof tierPolicySchema>;
 
