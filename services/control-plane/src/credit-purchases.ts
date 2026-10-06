@@ -9,10 +9,16 @@
  * again. A purchase is a pending row (migration 015) until a verified Stripe event pays it, and the event that pays it records the
  * top-up in the same transaction (FundingService.resolveCreditPurchase).
  *
+ * Who pays (DIO-219, pay as you go). A payer is a business, or a person buying for their own Personal work. A person's credits
+ * land in their own Individual billing scope (the `individual` routing scope, whose tenant is the person), never in a business
+ * they belong to, and they buy at the plan rate while they hold an active Individual grant, otherwise at the no-plan rate. Both
+ * payers share one quote, Checkout and webhook path: the purchase row names the payer's billing scope and tenant, and the paid
+ * event credits that row's scope.
+ *
  * Two services, both over FundingService:
- * - CreditPurchaseService: quote, buy and read. It verifies membership and the owner or admin role,
- *   makes sure the business has its one Stripe customer (made at Stripe and stored before its first session), makes the
- *   pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
+ * - CreditPurchaseService: quote, buy and read. For a business it verifies membership and the owner or admin role; for a person,
+ *   their own sign-in and their own billing scope. It makes sure the payer has its one Stripe customer (made at Stripe and stored
+ *   before its first session), makes the pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
  * - StripeWebhookService: the receiver for Stripe's events. It reads the raw body, verifies the
  *   Stripe-Signature header before it parses a byte, refuses an event from the other mode, and hands a verified event to
  *   the router (src/stripe-events.ts), which answers 200 to anything it will not act on.
@@ -31,13 +37,14 @@
  */
 import { z } from 'zod';
 import { AGENT_FEATURE } from '../../../shared/access.js';
+import { INDIVIDUAL_PLAN_ID } from '../../../shared/individual-plan.js';
 import { canSeePurchasedUsage } from '../../../shared/workspaces.js';
 import { CREDIT_PURCHASE_MAX_CREDITS, isAllowedCheckoutUrl,
   type CreditPurchaseStarted as CreditPurchaseAnswer, type CreditPurchaseStatus as CreditPurchaseRead, type CreditQuote } from '../../../shared/credit-purchases.js';
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
 import { FundingError, type FundingService } from './funding.js';
-import { grantState, type CommercialRepository } from './commercial.js';
+import { ensureIndividualAccount, grantState, type CommercialRepository } from './commercial.js';
 import { StripeEventRouter, type StripeEvent, type StripeEventContext, type StripeEventHandler, type StripeMode } from './stripe-events.js';
 import type { AccountService } from './account-service.js';
 
@@ -75,6 +82,7 @@ export const CREDIT_PURCHASES_UNAVAILABLE = 'Buying credits isn\'t available rig
 export const NOT_OWNER_OR_ADMIN = 'Only a Business owner or a Manager can buy credits for this business.';
 export const PAYMENT_PAGE_UNAVAILABLE = 'The payment page couldn\'t be opened. Try again.';
 const UNKNOWN_PURCHASE = 'That purchase was not found for this business.';
+const UNKNOWN_PERSONAL_PURCHASE = 'That purchase was not found.';
 const THOUSANDS = (count: number) => String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const TOO_MUCH = 'That is more than one purchase can cover. Try a smaller amount.';
 
@@ -177,11 +185,38 @@ export const creditPurchaseInput = z.strictObject({ credits: z.number() });
 /** A Stripe customer id, as Stripe makes them. */
 const CUSTOMER_ID = /^cus_[A-Za-z0-9_]{1,128}$/;
 
+// --- the payer ------------------------------------------------------------------------------------------
+
+/**
+ * Who pays for a purchase. `organizationId` is the ledger's historical name for the payer's billing scope: the business itself,
+ * or the person's own Individual billing scope (`individual_...`, tenant = the person). Resolved on the server from a verified
+ * membership or a verified sign-in, never from a request.
+ */
+export type Payer =
+  | { kind: 'organization'; tenantId: string; organizationId: string }
+  | { kind: 'person'; tenantId: string; organizationId: string; personId: string };
+
+/** A person's own Individual billing scope, made the first time they need one. Making it grants no access and no credits. */
+export interface PersonScopes {
+  ensure(person: { id: string; name: string }): Promise<{ id: string; tenantId: string; personId: string }>;
+}
+
+/** The person's Individual billing scope, read or made on the Worker login (billing_scopes: SELECT and INSERT). */
+export class CommercialPersonScopes implements PersonScopes {
+  constructor(private readonly repository: CommercialRepository, private readonly now: () => number = Date.now) {}
+
+  ensure(person: { id: string; name: string }) {
+    return this.repository.transaction((tx) => ensureIndividualAccount(tx, person, new Date(this.now()).toISOString()));
+  }
+}
+
 // --- the plan the payer holds -------------------------------------------------------------------------
 
-/** Whether a business holds an active plan grant, which is what picks its rate. */
+/** Whether a payer holds an active plan grant, which is what picks its rate. */
 export interface PlanLookup {
   hasActivePlan(ref: { tenantId: string; organizationId: string }, atMs: number): Promise<boolean>;
+  /** Whether a person holds an active Individual grant of their own. Read from the person's grants, never a request. */
+  hasActivePersonPlan(personId: string, atMs: number): Promise<boolean>;
 }
 
 /**
@@ -195,6 +230,13 @@ export class GrantPlanLookup implements PlanLookup {
     const grants = await this.repository.transaction((tx) => tx.grants(ref.organizationId));
     return grants.some((grant) => grant.tenantId === ref.tenantId && grantState(grant, atMs) === 'active'
       && (grant.features.includes('managed-inference') || grant.features.includes(AGENT_FEATURE)));
+  }
+
+  /** An Individual grant the person holds, of any feature list, valid now. A business's plan never counts for a person. */
+  async hasActivePersonPlan(personId: string, atMs: number): Promise<boolean> {
+    const grants = await this.repository.transaction((tx) => tx.personGrants(personId));
+    return grants.some((grant) => grant.personId === personId && grant.tenantId === personId && grant.planId === INDIVIDUAL_PLAN_ID
+      && grantState(grant, atMs) === 'active');
   }
 }
 
@@ -268,8 +310,10 @@ export interface CreditPurchaseOptions {
   settings: BillingSettings;
   /** Where a business's one Stripe customer is read, or made and stored the first time, so every purchase reuses it. */
   ledger: Pick<PaymentLedger, 'ensureCustomer'>;
-  /** The business's plan grants, which pick the rate. */
+  /** The payer's plan grants, which pick the rate. */
   plans: PlanLookup;
+  /** Where a person's own billing scope is read, or made the first time. Left out, a person cannot buy here (503). */
+  persons?: PersonScopes;
   /** The transport to Stripe. Tests and the faux cloud pass their own; the Worker uses the global fetch. */
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -287,7 +331,8 @@ const customerSchema = z.object({ id: z.string().regex(CUSTOMER_ID) });
 /** Stripe would not make the business's customer. Kept apart from a database failure, which is not this and is not hidden. */
 class CustomerNotMade extends Error {}
 
-type BuyingFunding = Pick<FundingService, 'startCreditPurchase' | 'attachCheckoutSession' | 'failCreditPurchase' | 'readCreditPurchase'>;
+type BuyingFunding = Pick<FundingService, 'startCreditPurchase' | 'attachCheckoutSession' | 'failCreditPurchase' | 'readCreditPurchase'>
+  & Partial<Pick<FundingService, 'purchasedBalance'>>;
 
 /** The headers every Stripe request carries: the key, the form encoding, the idempotency key and the pinned API version. */
 export function stripeRequestHeaders(secretKey: string, idempotencyKey: string): Record<string, string> {
@@ -300,41 +345,75 @@ export class CreditPurchaseService {
   private readonly send: typeof globalThis.fetch;
   private readonly newId: () => string;
 
-  constructor(private readonly accounts: Pick<AccountService, 'membership'>, private readonly funding: BuyingFunding, private readonly options: CreditPurchaseOptions) {
+  constructor(private readonly accounts: Pick<AccountService, 'membership'> & Partial<Pick<AccountService, 'signIn'>>, private readonly funding: BuyingFunding,
+    private readonly options: CreditPurchaseOptions) {
     this.now = options.now ?? Date.now;
     this.send = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.newId = options.newId ?? (() => `cpurch_${crypto.randomUUID()}`);
   }
 
-  /** Verified membership, and then the rule that only an owner or an admin buys. */
-  private async buyer(token: string, organizationId: string) {
+  /** Verified membership, and then the rule that only an owner or an admin buys. The business is the payer. */
+  private async buyer(token: string, organizationId: string): Promise<{ payer: Payer; personId: string }> {
     const snapshot = await this.accounts.membership(token, organizationId);
     if (!canSeePurchasedUsage(snapshot.membership)) throw new AccountError(403, NOT_OWNER_OR_ADMIN, 'not_owner_or_admin');
-    return snapshot;
+    return { payer: { kind: 'organization', tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id }, personId: snapshot.person.id };
   }
 
   /**
-   * The rate this business buys at right now: the plan rate while it holds an active plan grant, otherwise the free rate. A 503 that says
-   * nothing but that buying is not available when the setting that rate needs is not usable; the Worker's log says which rule.
+   * The signed-in person, paying for their own Personal work: their own Individual billing scope, made the first time. Nothing in a
+   * request names a person, a scope or a business, so a person's credits can only land in their own scope.
    */
-  private async rate(ref: { tenantId: string; organizationId: string }): Promise<CreditRate> {
-    const plan = await this.options.plans.hasActivePlan(ref, this.now());
+  private async personalBuyer(token: string): Promise<{ payer: Payer; personId: string }> {
+    const persons = this.options.persons;
+    if (!persons || !this.accounts.signIn) {
+      console.error(JSON.stringify({ event: 'credit-purchases-personal-unavailable' }));
+      throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    }
+    const { person } = await this.accounts.signIn(token);
+    const scope = await persons.ensure(person);
+    if (scope.personId !== person.id || scope.tenantId !== person.id) throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    return { payer: { kind: 'person', tenantId: person.id, organizationId: scope.id, personId: person.id }, personId: person.id };
+  }
+
+  /**
+   * The rate this payer buys at right now: the plan rate while it holds an active plan grant (a business's plan, or a person's own
+   * Individual grant), otherwise the free rate. A 503 that says nothing but that buying is not available when the setting that rate
+   * needs is not usable; the Worker's log says which rule.
+   */
+  private async rate(payer: Payer): Promise<{ rate: CreditRate; onPlan: boolean }> {
+    const plan = payer.kind === 'person'
+      ? await this.options.plans.hasActivePersonPlan(payer.personId, this.now())
+      : await this.options.plans.hasActivePlan(payer, this.now());
     const kind: RateKind = plan ? 'plan' : 'free';
     const rate = plan ? this.options.settings.creditRatePlan : this.options.settings.creditRateFree;
     if (rate === null) {
       console.error(JSON.stringify({ event: 'credit-purchases-rate-unavailable', setting: plan ? 'CREDIT_RATE_PLAN' : 'CREDIT_RATE_FREE', rule: this.options.settings.rateProblems[kind] ?? 'not-set' }));
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
-    return rate;
+    return { rate, onPlan: plan };
   }
 
   /** What an amount of credits would cost, and the step it is bought in. Writes nothing and asks Stripe nothing. */
   async quote(token: string, organizationId: string, asked: unknown): Promise<CreditQuote> {
-    const snapshot = await this.buyer(token, organizationId);
-    const rate = await this.rate({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id });
+    return this.quoteFor((await this.buyer(token, organizationId)).payer, asked);
+  }
+
+  /** The same quote, for the signed-in person's own Personal work. */
+  async personalQuote(token: string, asked: unknown): Promise<CreditQuote> {
+    return this.quoteFor((await this.personalBuyer(token)).payer, asked);
+  }
+
+  /**
+   * The quote, and whether the payer buys at the plan rate. A payer without a plan is also told the plan's step, a public price, so a
+   * screen can say what the same money buys on a plan; it is null when that setting is not usable.
+   */
+  private async quoteFor(payer: Payer, asked: unknown): Promise<CreditQuote> {
+    const { rate, onPlan } = await this.rate(payer);
     const steps = stepsAsked(asked, rate);
     const { credits, amountCents } = creditStepsCost(steps, rate);
-    return { credits, amountCents, currency: 'usd', steps, stepCredits: rate.credits, stepCents: rate.cents };
+    const plan = this.options.settings.creditRatePlan;
+    return { credits, amountCents, currency: 'usd', steps, stepCredits: rate.credits, stepCents: rate.cents, onPlan,
+      planStep: !onPlan && plan ? { credits: plan.credits, cents: plan.cents } : null };
   }
 
   /**
@@ -344,8 +423,17 @@ export class CreditPurchaseService {
    * leaves the purchase failed, not pending, so it never waits for a payment that cannot come.
    */
   async create(token: string, organizationId: string, input: z.infer<typeof creditPurchaseInput>, returnBase: string): Promise<CreditPurchaseAnswer> {
-    const snapshot = await this.buyer(token, organizationId);
-    const rate = await this.rate({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id });
+    return this.createFor(await this.buyer(token, organizationId), input, returnBase);
+  }
+
+  /** The same purchase, for the signed-in person's own Personal work: the credits land in their own Individual billing scope. */
+  async personalCreate(token: string, input: z.infer<typeof creditPurchaseInput>, returnBase: string): Promise<CreditPurchaseAnswer> {
+    return this.createFor(await this.personalBuyer(token), input, returnBase);
+  }
+
+  private async createFor(buyer: { payer: Payer; personId: string }, input: z.infer<typeof creditPurchaseInput>, returnBase: string): Promise<CreditPurchaseAnswer> {
+    const { payer } = buyer;
+    const { rate } = await this.rate(payer);
     const steps = stepsAsked(input.credits, rate);
     const { credits, amountCents } = creditStepsCost(steps, rate);
     const { stripeSecretKey, keyProblem, mode } = this.options.settings;
@@ -353,7 +441,7 @@ export class CreditPurchaseService {
       console.error(JSON.stringify({ event: 'credit-purchases-stripe-unavailable', setting: 'STRIPE_SECRET_KEY', rule: keyProblem ?? 'not-set' }));
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
-    const ref = { tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId: this.newId() };
+    const ref = { tenantId: payer.tenantId, organizationId: payer.organizationId, purchaseId: this.newId() };
     // The business's one customer, before anything else is written, so a customer that could not be read or made leaves no
     // purchase behind. From our own stored row or Stripe's own answer to our own request: never from a request to us.
     let customerId: string;
@@ -364,7 +452,7 @@ export class CreditPurchaseService {
       if (error instanceof CustomerNotMade) throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
       throw error;
     }
-    await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents, rateCents: rate.cents, rateCredits: rate.credits, environment: mode });
+    await this.funding.startCreditPurchase({ ...ref, personId: buyer.personId, credits, amountCents, rateCents: rate.cents, rateCredits: rate.credits, environment: mode });
     const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase, customerId);
     if (session === null) {
       await this.funding.failCreditPurchase(ref).catch(() => undefined);
@@ -462,12 +550,27 @@ export class CreditPurchaseService {
 
   /** A purchase, for the business that made it, as an owner or an admin. */
   async read(token: string, organizationId: string, purchaseId: string): Promise<CreditPurchaseRead> {
-    const snapshot = await this.buyer(token, organizationId);
+    return this.readFor((await this.buyer(token, organizationId)).payer, purchaseId, UNKNOWN_PURCHASE);
+  }
+
+  /** A purchase the signed-in person made for their own Personal work. A business's purchase, or anyone else's, reads as unknown. */
+  async personalRead(token: string, purchaseId: string): Promise<CreditPurchaseRead> {
+    return this.readFor((await this.personalBuyer(token)).payer, purchaseId, UNKNOWN_PERSONAL_PURCHASE);
+  }
+
+  /** What the signed-in person bought for their own Personal work, and what of it is held or spent. Read-only. */
+  async personalBalance(token: string) {
+    const { payer } = await this.personalBuyer(token);
+    if (!this.funding.purchasedBalance) throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
+    return this.funding.purchasedBalance(payer.tenantId, payer.organizationId);
+  }
+
+  private async readFor(payer: Payer, purchaseId: string, unknown: string): Promise<CreditPurchaseRead> {
     let row;
     try {
-      row = await this.funding.readCreditPurchase({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId });
+      row = await this.funding.readCreditPurchase({ tenantId: payer.tenantId, organizationId: payer.organizationId, purchaseId });
     } catch (error) {
-      if (error instanceof FundingError && error.status === 404) throw new AccountError(404, UNKNOWN_PURCHASE, 'unknown_purchase');
+      if (error instanceof FundingError && error.status === 404) throw new AccountError(404, unknown, 'unknown_purchase');
       throw error;
     }
     return { purchaseId: row.purchaseId, credits: row.credits, amountCents: row.amountCents, state: row.state };

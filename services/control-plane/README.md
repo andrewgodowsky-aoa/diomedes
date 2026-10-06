@@ -596,8 +596,10 @@ Routes, for an owner or an admin of the business, behind the same bearer, origin
 and query rules as the other account routes:
 
 - `GET /account/organizations/:id/credit-purchases/quote?credits=N` answers
-  `{ credits, amountCents, currency: 'usd', steps, stepCredits, stepCents }` at the
-  business's rate; `stepCredits` and `stepCents` are its step, and a request with
+  `{ credits, amountCents, currency: 'usd', steps, stepCredits, stepCents, onPlan, planStep }` at the
+  business's rate; `onPlan` says whether that is the plan rate, and `planStep` (`{ credits, cents }`,
+  or null on a plan or when `CREDIT_RATE_PLAN` is unusable) is one step at the plan rate, a public
+  price, so the buy box can say what the same money buys on a plan; `stepCredits` and `stepCents` are its step, and a request with
   no `credits` is one step, which is how a screen learns the step before it asks
   for more. Credits that are not a whole number of steps inside the bounds are 422.
 - `POST /account/organizations/:id/credit-purchases` `{ credits }` (strict body)
@@ -693,6 +695,54 @@ whole-steps check; and it creates the reserved `billing-system` person row.
 grants and for the audit rows of work the billing system does itself, with the role
 `billing`. It is not a person: it cannot be added as staff, and it never holds a
 session.
+
+### Pay as you go: a person as the payer (migration 019, 2026-10-05, DIO-219)
+
+A person with no plan buys credits for their own Personal work, and while their
+own bought balance is above zero the Nectovia Agent works for them there, funded
+only from it. Bought credits grant no feature.
+
+- `GET /account/credit-purchases/quote?credits=N`, `POST /account/credit-purchases`
+  `{ credits }` and `GET /account/credit-purchases/:purchaseId` are the business
+  routes' twins for the signed-in person, with the same answers, bounds and strict
+  body. Nothing in a request names a person, a scope or a business: the Worker
+  resolves the person from the bearer and their own Individual billing scope (010,
+  made the first time with `CommercialPersonScopes`), so what they buy can only land
+  there. `GET /account/purchased-usage` answers that scope's bought balance.
+- The rate is `CREDIT_RATE_PLAN` while the person holds an active Individual grant
+  of their own (`GrantPlanLookup.hasActivePersonPlan`), otherwise
+  `CREDIT_RATE_FREE`. A business's plan never prices a person. It is locked into
+  the purchase row exactly as for a business, and the same Checkout, customer and
+  webhook path pays it: the row names the person's scope and tenant.
+- `GET /account/routing/individual/:id/access` adds `boughtCredits`: `available`,
+  `spent` or `none`, never the figure (`FundingService.boughtState`, a SELECT the
+  Worker login may run). It changes no other field and adds no feature.
+- Admission (`RoutingService.admit`) admits a person whose plan does not hold the
+  Agent while `boughtCredits` is `available`, with `planId` null, for work they
+  start on the company route only. The team (`team`), automations (`automation`)
+  and any `byo`, `local` or `external-engine` route are refused `plan_required`.
+  With everything spent or held it refuses `insufficient_allowance` with the
+  Personal out-of-credits sentence.
+- The gateway checks again on every call and every attempt
+  (`ManagedInferenceService.admitted`): `plan_required` (403) for the automation
+  usage class, an escalated role (`X-Nectovia-Escalation`) or a plan-only surface;
+  `insufficient_allowance` (402) once the balance is zero, so the step in progress
+  finishes and the next one stops before anything is held or sent. The reservation
+  then runs with `boughtOnly`: with no billing period it draws on bought credits
+  only and binds to the scope's one bought-credits row instead of failing
+  `no_period`. A business scope never takes this path.
+- A business without a plan keeps slice 1's path: it buys at `CREDIT_RATE_FREE`
+  and its quote says `onPlan: false`; its Agent stays refused.
+
+Migration 019 (`019_personal_pay_as_you_go.sql`) points `credit_purchases` at
+`billing_scopes` (015 still pointed it at `organizations`) and requires a
+purchase for an Individual scope to be its own person's; adds a generated
+`billing_customers.person_id` with a unique index per provider, environment and
+person, proved against the scope by a composite reference; and allows the
+bought-credits `credit_periods` row (`plan_id` and `period_id` `bought-credits`,
+granted 0, no source, Individual scopes only). No grant changes. Like 017 it is not
+listed in `scripts/migrate.ts`: numbers are assigned at merge, in merge order, and
+it applies after 017.
 
 The faux cloud buys without Stripe: `CREDIT_RATE_PLAN` and `CREDIT_RATE_FREE` from
 the environment (or the faux test rates, `1000:110` and `1300:100`, when they are
