@@ -23,7 +23,7 @@ import { Store } from '../server/store.js';
 import { AllowanceLedger } from '../server/managed-usage.js';
 import { ManagedGateway, verifyAuthorization } from '../server/managed-gateway.js';
 import { NO_ENTITLEMENT_REASON, NO_ENTITLEMENT_VIEW, type EntitlementView } from '../shared/workspaces.js';
-import { approvedJobCap, dollars, type MicroUsd } from '../shared/managed-usage.js';
+import { creditAmount, dollars, type MicroUsd } from '../shared/managed-usage.js';
 
 const AT = '2026-09-10T09:00:00.000Z';
 const ORG = 'org_gateway';
@@ -51,7 +51,9 @@ function gateway(options: {
     ledger,
     jobCapFor: (_organizationId, jobId) => {
       options.jobCapCalls?.push(jobId);
-      return options.jobCap ?? approvedJobCap('efficient');
+      // These tests are about where the cap comes from and what counts against it, so they hold one fixed
+      // cap of 20 credits whatever a tier's check-in amount is.
+      return options.jobCap ?? creditAmount(20);
     },
     entitlementFor: () => options.entitlement ?? entitled,
     tenantFor: () => TENANT,

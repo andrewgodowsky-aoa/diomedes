@@ -138,7 +138,7 @@ describe('the managed gateway’s funding login', () => {
       expect(funding.some((sql) => sql.startsWith(`INSERT INTO control_plane.${table}(`))).toBe(true);
     expect(tablesOn(FUNDING_URL).every((table) => FUNDING_TABLES.has(table))).toBe(true);
     expect(tablesOn(FUNDING_URL)).toEqual(expect.arrayContaining(['funded_job_refs', 'funded_jobs', 'credit_periods', 'funding_reservations']));
-    expect(tablesOn(DATABASE_URL).sort()).toEqual(['account_routing_preferences', 'agent_admissions', 'credit_price_tables', 'feature_grants', 'memberships',
+    expect(tablesOn(DATABASE_URL).sort()).toEqual(['account_routing_preferences', 'agent_admissions', 'credit_price_tables', 'feature_grants', 'job_check_in_defaults', 'job_check_in_overrides', 'memberships',
       'organization_access', 'organizations', 'route_entries', 'routing_job_constraints', 'tier_policies']);
     expect(fetchSpy).not.toHaveBeenCalled();
   });

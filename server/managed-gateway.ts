@@ -185,8 +185,8 @@ export interface GatewayDependencies {
     suspendedReason: string | null;
   }>;
   /**
-   * The job's cap, from the host's tier map (`APPROVED_JOB_CAP_CREDITS`) and
-   * any one-job raise the host recorded. Never a request field: a caller that
+   * The amount the job checks in at, from the host's tier map (`JOB_CHECK_IN_CREDITS`, or the
+   * business's or staff's own amount) and any one-job raise the host recorded. Never a request field: a caller that
    * could name its own envelope could name any envelope.
    */
   readonly jobCapFor: (organizationId: string, jobId: string) => MicroUsd;

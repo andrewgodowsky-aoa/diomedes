@@ -43,6 +43,8 @@ import { RouteChecksService, postgresRouteCheckSpend, workerFetch } from './rout
 import { routeChecksInputSchema } from '../../../shared/gateway-route-checks.js';
 import { routeInputRefusal } from './route-field-refusals.js';
 import { publishCreditPricesInput } from '../../../shared/credit-prices.js';
+import { publishCheckInDefaultsInput } from '../../../shared/job-check-ins.js';
+import { JobCheckInService, keepGoingInput, setCheckInOverrideInput } from './job-check-ins.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
@@ -112,6 +114,12 @@ export interface HandlerOptions {
   /** Test and faux-cloud seam for per-member credit limits. The Worker entry always uses the funding login. */
   createLimits?: (config: Configuration, accounts: AccountService) => Pick<MemberLimitsService, 'limits' | 'setLimit' | 'setSettings' | 'mine' | 'report' | 'ask' | 'requests' | 'decide'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
+  /**
+   * Test and faux-cloud seam for job check-ins (migration 019): what a job runs before it asks, an
+   * owner's own amounts, and Keep going. The Worker entry reads the settings on the Worker login and
+   * raises a job's cap on the funding login.
+   */
+  createCheckIns?: (config: Configuration, accounts: AccountService) => JobCheckInService;
   /** Test and faux-cloud seam for the managed gateway: the scripted provider instead of Bedrock. */
   createManaged?: (config: Configuration, accounts: AccountService) => ManagedInferenceService;
   /** Test and faux-cloud seam for the phone relay: the faux store and an in-process hub. */
@@ -201,6 +209,11 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     }
     return new MemberLimitsService(accounts, new MemberLimits(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))));
   });
+  // Check-in amounts are read and set on the Worker login; Keep going raises a job's cap, a funding row, so it
+  // runs as the funding login. Without that login a job cannot be kept going.
+  const createCheckIns = options.createCheckIns ?? ((config: Configuration, accounts: AccountService) =>
+    new JobCheckInService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)),
+      config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null,
@@ -476,10 +489,15 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return answer instanceof Response ? answer : json(answer);
       }
 
+      // --- job check-ins: the amounts a business's jobs check in at, set by its owners and admins ---
+      if ((match = route('/account/organizations/:id/job-check-ins').exec(pathname)) && method === 'GET')
+        return json(await createCheckIns(config, accounts).settings(token, match[1]));
+      if ((match = route('/account/organizations/:id/job-check-ins').exec(pathname)) && method === 'POST')
+        return json(await createCheckIns(config, accounts).setOverride(token, match[1], await body(request, setCheckInOverrideInput)));
       if (pathname === '/account/routing-policy' && method === 'GET')
         return json(await createCommercial(config, accounts).routingPolicy(token));
       if (pathname === '/account/individual' && method === 'POST') return json(await createRouting(config, accounts).individual(token));
-      if ((match = new RegExp(`^/account/routing/(organization|individual)/${ID}/(policy|preference|admit|access|escalation)$`).exec(pathname))) {
+      if ((match = new RegExp(`^/account/routing/(organization|individual)/${ID}/(policy|preference|admit|access|escalation|check-ins|check-ins\/keep-going)$`).exec(pathname))) {
         const scope: AccountScope = { kind: match[1] as AccountScope['kind'], id: match[2] }, routing = createRouting(config, accounts);
         if (match[3] === 'policy' && method === 'GET') return json(await routing.snapshot(token, scope, env));
         if (match[3] === 'access' && method === 'GET') return json(await routing.access(token, scope));
@@ -492,6 +510,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
           return json(await routing.acceptPreference(token, input));
         }
         if (match[3] === 'admit' && method === 'POST') return json(await routing.admit(token, scope, await body(request, agentAdmissionInput)));
+        // Job check-ins: the amounts this account's jobs check in at, and Keep going on one job.
+        if (match[3] === 'check-ins' && method === 'GET') return json(await createCheckIns(config, accounts).read(token, scope));
+        if (match[3] === 'check-ins/keep-going' && method === 'POST') return json(await createCheckIns(config, accounts).keepGoing(token, scope, await body(request, keepGoingInput)));
       }
 
       // --- Diomedes staff (Operations app). The bearer is a registered staff key. ---------
@@ -540,6 +561,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         // The credit price table (Model B, migration 018): read with its history, and publish a version.
         if (pathname === '/ops/credit-prices' && method === 'GET') return json(await ops.creditPrices(token));
         if (pathname === '/ops/credit-prices/publish' && method === 'POST') return json(await ops.publishCreditPrices(token, await body(request, publishCreditPricesInput)), 201);
+        // Job check-in defaults (migration 019): how many credits a job of each tier runs before it asks.
+        if (pathname === '/ops/job-check-ins' && method === 'GET') return json(await ops.jobCheckIns(token));
+        if (pathname === '/ops/job-check-ins/publish' && method === 'POST') return json(await ops.publishJobCheckIns(token, await body(request, publishCheckInDefaultsInput)), 201);
         if (pathname === '/ops/staff' && method === 'GET') return json(await ops.staffList(token));
         if (pathname === '/ops/staff' && method === 'POST') return json(await ops.addStaff(token, await body(request, addStaffInput)), 201);
         if ((match = route('/ops/staff/:id').exec(pathname)) && method === 'PATCH') return json(await ops.changeStaff(token, match[1], await body(request, changeStaffInput)));

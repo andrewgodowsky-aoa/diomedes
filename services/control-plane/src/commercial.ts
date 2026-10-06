@@ -80,6 +80,7 @@ import { bindingProblemFields, routeInputRefusal } from './route-field-refusals.
 import { escalationControlSchema } from '../../../shared/escalation-controls.js';
 import { creditPriceTableSchema, publishCreditPricesInput, type CreditPriceTable } from '../../../shared/credit-prices.js';
 import { boundRoutes, ceilingRefusal, overCeiling, withinCeiling } from './credit-prices.js';
+import { checkInDefaultsSchema, publishCheckInDefaultsInput, type CheckInDefaults, type CheckInOverride } from '../../../shared/job-check-ins.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -260,6 +261,7 @@ export const AUDIT_ACTIONS = [
   'route.checked',
   /** One credit price table version published (Model B, migration 018). */
   'credit-prices.published',
+  'job-check-ins.published',
 ] as const;
 export const auditEventSchema = z.strictObject({
   id: accountId,
@@ -269,7 +271,7 @@ export const auditEventSchema = z.strictObject({
   action: z.enum(AUDIT_ACTIONS),
   organizationId: accountId.nullable(),
   /** 'person-grant' events carry organizationId null and the person in `detail.personId`. */
-  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator', 'person-grant', 'credit-prices']),
+  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator', 'person-grant', 'credit-prices', 'job-check-ins']),
   targetId: z.string().min(1).max(128),
   reason: text(1000),
   detail: z.record(z.string(), z.unknown()),
@@ -342,6 +344,19 @@ export interface CommercialTransaction extends RoutingTransaction {
   priceTables(limit: number): Promise<CreditPriceTable[]>;
   /** Append one version. Versions are immutable: a second write of a version is refused. */
   savePriceTable(row: CreditPriceTable): Promise<void>;
+  /**
+   * The staff defaults for job check-in amounts (migration 019): the active version, or one version by
+   * number. Published under `lockPolicy`, like the price table.
+   */
+  checkInDefaults(version?: number): Promise<CheckInDefaults | undefined>;
+  /** Published versions, newest first. */
+  checkInDefaultsHistory(limit: number): Promise<CheckInDefaults[]>;
+  /** Append one version. Versions are immutable: a second write of a version is refused. */
+  saveCheckInDefaults(row: CheckInDefaults): Promise<void>;
+  /** One business's own check-in amounts, or undefined when it has set none. */
+  checkInOverride(tenantId: string, organizationId: string): Promise<CheckInOverride | undefined>;
+  /** Write a business's amounts, replacing its previous setting. */
+  saveCheckInOverride(row: CheckInOverride): Promise<void>;
   /** Serializes staff authority checks and role changes, including the last-admin check. */
   lockStaff(): Promise<void>;
   operator(personId: string): Promise<Operator | undefined>;
@@ -1463,6 +1478,46 @@ export class CommercialService {
         // The table itself stays out of the audit log, which Support reads: the history endpoint serves
         // it to the roles that may publish it.
         detail: { basedOn: current?.version ?? 0, version: row.version },
+      });
+      return row;
+    });
+  }
+
+  // --- job check-in defaults (migration 019) ------------------------------------------------------
+
+  /**
+   * The staff defaults for how many credits a job of each tier runs before it checks in, and their
+   * history, newest first. Staff who publish routing read and publish them.
+   */
+  async jobCheckIns(token: string) {
+    await this.staff(token, 'policy.publish');
+    return this.repository.transaction(async (tx) => ({ defaults: (await tx.checkInDefaults()) ?? null, history: await tx.checkInDefaultsHistory(50) }));
+  }
+
+  /**
+   * Publish a new version of the check-in defaults. It is built on the version the publisher read, and
+   * audited. A business's own setting still wins over a default, and a job already open keeps the
+   * amount it was opened with. Versions are never rewritten.
+   */
+  async publishJobCheckIns(token: string, input: unknown) {
+    const parsed = publishCheckInDefaultsInput.safeParse(input);
+    if (!parsed.success)
+      throw new AccountError(422, 'Give each tier a whole number of credits from 1 to 100,000, and a note saying why.');
+    const actor = await this.staff(token, 'policy.publish');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockPolicy();
+      actor.operator = await this.staffOperator(tx, actor.person.id, 'policy.publish');
+      const current = await tx.checkInDefaults();
+      if ((current?.version ?? 0) !== parsed.data.baseVersion)
+        throw new AccountError(409, `The job check-in defaults are now version ${current?.version ?? 0}. Review them and publish again.`);
+      const row = checkInDefaultsSchema.parse({
+        v: 1, version: (current?.version ?? 0) + 1, amounts: parsed.data.amounts, note: parsed.data.note,
+        publishedAt: this.at(), publishedBy: actor.person.id,
+      });
+      await tx.saveCheckInDefaults(row);
+      await this.audited(tx, actor, {
+        action: 'job-check-ins.published', organizationId: null, targetKind: 'job-check-ins', targetId: String(row.version), reason: row.note,
+        detail: { basedOn: current?.version ?? 0, version: row.version, before: current?.amounts ?? null, after: row.amounts },
       });
       return row;
     });

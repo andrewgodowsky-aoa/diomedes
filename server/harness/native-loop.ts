@@ -73,7 +73,8 @@ import { DELEGATION_LIMITS, SANDBOX_LIMITS, carveBudget } from '../../shared/san
 import { accountContext, reconcileContext } from './context-assembly.js';
 import type { ContextAccount } from '../../shared/context-accounting.js';
 import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter } from './native-agent.js';
-import { isOutOfCreditsRefusal } from '../../shared/managed-usage.js';
+import { isOutOfCreditsRefusal, micro } from '../../shared/managed-usage.js';
+import { UNATTENDED_CHECK_IN_UNKNOWN, isCheckInRefusal, unattendedCheckInLine } from '../../shared/job-caps.js';
 import { canonical, copy, HarnessError, units } from './policy.js';
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
@@ -222,6 +223,11 @@ export interface NativeLoopOptions {
    */
   readonly enterPhase?: (phase: 'build' | 'review') => Promise<void>;
   /**
+   * The amount, in micro-USD, this run's job checks in at, when the host can say it. A stop at the check-in
+   * names it ("after 250 credits"); the local ledger's refusal carries it itself, the account service's does not.
+   */
+  readonly checkInCap?: () => number | null;
+  /**
    * H16: stream-time rules. Each model step attempt opens a watch the adapter's
    * streamed text is handed to; the step does not return until every firing is
    * recorded and handed on, so none is missed by the tool the answer proposes.
@@ -236,7 +242,7 @@ export interface NativeLoopOptions {
 
 export type LoopResult =
   | { readonly kind: 'finished'; readonly claim: string }
-  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' | 'credits' };
+  | { readonly kind: 'stopped'; readonly reason: 'turn-limit' | 'budget' | 'worker' | 'credits' | 'check-in' };
 
 const delegatedTask = z.strictObject({
   task: z.string().trim().min(1).max(LOOP_LIMITS.taskChars),
@@ -650,6 +656,27 @@ export class NativeLoop {
           error = stopping;
         }
       }
+      // The job reached the amount it checks in at: nothing of the next step was sent. The run stops here and
+      // waits for the person in Needs you, where Keep going starts a new attempt with one more amount.
+      if (isCheckInRefusal(error)) {
+        try {
+          const reached = (error as { evidence?: { job?: { capMicroUsd?: unknown } | null } }).evidence?.job?.capMicroUsd;
+          const cap = typeof reached === 'number' ? reached : (this.options.checkInCap?.() ?? null);
+          await this.stop(
+            runId,
+            owner,
+            principal,
+            'check-in',
+            cap === null ? UNATTENDED_CHECK_IN_UNKNOWN : unattendedCheckInLine(micro(cap)),
+            maxTurns,
+            reconciled,
+          );
+          return { kind: 'stopped', reason: 'check-in' };
+        } catch (stopping) {
+          if (stopping instanceof Suspended) throw stopping;
+          error = stopping;
+        }
+      }
       // The business has no credits left for the next step. The step that was refused is recorded as
       // failed and the run ends right there: no retry, no other payer, and every step before it
       // stays on the record. The person reads the sentence the refusal carried.
@@ -712,7 +739,7 @@ export class NativeLoop {
     // Out of credits is said whole, in the sentence the refusal carried (it is already a complete
     // sentence for the person); the other stops are a reason followed by what it means for the goal.
     const detail =
-      reason === 'credits'
+      reason === 'credits' || reason === 'check-in'
         ? short
         : reason === 'worker'
           ? `Stopped: ${short}. The goal was not finished, so nothing was checked. Retry to run that worker again; workers that answered are not run twice.`
@@ -732,7 +759,9 @@ export class NativeLoop {
               ? 'stop:worker'
               : reason === 'credits'
                 ? 'stop:credits'
-                : 'stop:budget',
+                : reason === 'check-in'
+                  ? 'stop:check-in'
+                  : 'stop:budget',
         version: 'v1',
         kind: 'transform',
         effect: 'pure',
@@ -754,7 +783,7 @@ export class NativeLoop {
       },
       principal,
     );
-    await this.runtime.cancel(runId, reason === 'credits' ? 'out of credits' : short, principal);
+    await this.runtime.cancel(runId, reason === 'credits' ? 'out of credits' : reason === 'check-in' ? 'checking in' : short, principal);
   }
 
   /** Assignments and advice already on the record, so a replay counts the same way. */

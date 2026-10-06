@@ -10,7 +10,7 @@
  * real-database cases live in the opt-in postgres.integration.test.ts suite.
  */
 import { isUsageClass, micro, type AttemptSettlement, type FundedAttempt, type MicroUsd, type PeriodTotals,
-  type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass } from '../../../shared/managed-usage.js';
+  type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass, type JobTier } from '../../../shared/managed-usage.js';
 import { isNormalizedUsage, type NormalizedUsage } from '../../../shared/usage-contract.js';
 import type { ChargeSnapshot } from '../../../shared/credit-prices.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, CreditPurchaseRow, FundedJobRow, FundingRepository, FundingTransaction,
@@ -159,6 +159,8 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && {
       tenantId: text(row.tenant_id), organizationId: text(row.organization_id), rootJobId: text(row.root_job_id), runRef: text(row.run_ref),
       capMicroUsd: money(row.cap_micro_usd), capGeneration: Number(row.cap_generation), state: text(row.state) as 'open' | 'closed', openedAt: iso(row.opened_at),
+      // Migration 019. Null on a job opened before check-ins.
+      tier: row.tier === null || row.tier === undefined ? null : text(row.tier) as JobTier,
     };
   }
   async jobRef(tenantId: string, runRef: string): Promise<JobRefRow | undefined> {
@@ -166,8 +168,8 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && { tenantId: text(row.tenant_id), runRef: text(row.run_ref), rootJobId: text(row.root_job_id) };
   }
   async saveJob(row: FundedJobRow) {
-    await this.client.query('INSERT INTO control_plane.funded_jobs(tenant_id,root_job_id,organization_id,run_ref,cap_micro_usd,cap_generation,state,opened_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tenant_id,root_job_id) DO UPDATE SET cap_micro_usd=EXCLUDED.cap_micro_usd,cap_generation=EXCLUDED.cap_generation,state=EXCLUDED.state',
-      [row.tenantId, row.rootJobId, row.organizationId, row.runRef, row.capMicroUsd, row.capGeneration, row.state, row.openedAt]);
+    await this.client.query('INSERT INTO control_plane.funded_jobs(tenant_id,root_job_id,organization_id,run_ref,cap_micro_usd,cap_generation,state,opened_at,tier) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id,root_job_id) DO UPDATE SET cap_micro_usd=EXCLUDED.cap_micro_usd,cap_generation=EXCLUDED.cap_generation,state=EXCLUDED.state',
+      [row.tenantId, row.rootJobId, row.organizationId, row.runRef, row.capMicroUsd, row.capGeneration, row.state, row.openedAt, row.tier ?? null]);
   }
   async saveJobRef(row: JobRefRow) {
     await this.client.query('INSERT INTO control_plane.funded_job_refs(tenant_id,run_ref,root_job_id) VALUES ($1,$2,$3)', [row.tenantId, row.runRef, row.rootJobId]);

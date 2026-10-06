@@ -1474,6 +1474,7 @@ export function createLoopProcedure(deps: {
           sources: input.sources,
           stream: deps.stream ?? null,
           enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),
+          checkInCap: () => rootScopes.get(runId)?.scopedLedger?.jobScope?.capMicroUsd ?? null,
         }).run(runId, owner, input.goal, principal);
       } finally {
         beat();
