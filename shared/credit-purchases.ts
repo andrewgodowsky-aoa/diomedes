@@ -1,28 +1,21 @@
 /**
  * Buying credits (DIO-161 slice 1): the numbers and answers the account service and the desktop agree on.
  *
- * Credits are bought in whole steps of 100. What they cost is the account service's own setting, never a
- * figure in this repository: a client asks for a quote and shows the total it is given. These bounds only
- * say which amounts can be asked for at all, so a screen can step through them and the service can refuse
- * the rest.
+ * Credits are bought in whole steps. What a step is, and what it costs, is the account service's own setting for the
+ * business's plan, never a figure in this repository: a client asks for a quote and shows the total and the step it is given. The
+ * desktop takes the step from the quote (asking with no amount quotes one step), so it never works a price or a step out. The only
+ * bound shared here is the most one purchase can be, so a screen can refuse an amount no service would take.
  */
 
-/** Credits are bought in whole steps of this many. */
-export const CREDIT_PURCHASE_STEP = 100;
-/** The fewest credits one purchase can be. */
-export const CREDIT_PURCHASE_MIN_CREDITS = 100;
 /** The most credits one purchase can be. An engineering cap, held under what a single card charge can be. */
 export const CREDIT_PURCHASE_MAX_CREDITS = 100_000;
 
-/** Whether an amount of credits can be asked for: a whole multiple of the step, inside the bounds. */
-export function isPurchasableCredits(credits: unknown): credits is number {
-  return (
-    typeof credits === 'number' &&
-    Number.isSafeInteger(credits) &&
-    credits >= CREDIT_PURCHASE_MIN_CREDITS &&
-    credits <= CREDIT_PURCHASE_MAX_CREDITS &&
-    credits % CREDIT_PURCHASE_STEP === 0
-  );
+/**
+ * Whether an amount of credits can be asked for at all: a positive whole number inside the cap. Whether it is a whole number of the
+ * business's steps is the account service's to say, from the step in its quote.
+ */
+export function isAskableCredits(credits: unknown): credits is number {
+  return typeof credits === 'number' && Number.isSafeInteger(credits) && credits >= 1 && credits <= CREDIT_PURCHASE_MAX_CREDITS;
 }
 
 /**
@@ -43,13 +36,28 @@ export function isAllowedCheckoutUrl(value: unknown, localCheckoutOrigin: string
   return localCheckoutOrigin !== null && url.origin === localCheckoutOrigin && /^\/faux\/checkout\/cs_faux_[a-z0-9]{24}$/.test(url.pathname);
 }
 
-/** What an amount of credits costs, as the account service quotes it. The only place a price is shown. */
+/** What an amount of credits costs, as the account service quotes it, and the step it is bought in. The only place a price is shown. */
 export interface CreditQuote {
   credits: number;
   /** The total, in US cents. */
   amountCents: number;
   currency: 'usd';
+  /** How many whole steps the amount is. */
+  steps: number;
+  /** One step: `stepCredits` credits for `stepCents` cents. The amount is a whole number of these, and the next amount up is one more. */
+  stepCredits: number;
+  stepCents: number;
+  /** Whether the payer buys at the plan rate: a business on a plan, or a person with an Individual plan of their own. */
+  onPlan: boolean;
+  /**
+   * For a payer without a plan, one step at the plan rate, a public price, so a screen can say what the same money buys on a
+   * plan. Null on a plan, and when the service has no usable plan rate.
+   */
+  planStep: { credits: number; cents: number } | null;
 }
+
+/** The buy box's headline is this many steps: at the published rates, "$130 buys 1,000 credits" and "$100 buys 1,100 credits". */
+export const HEADLINE_STEPS = 10;
 
 /** A purchase just started: where to pay, which the client opens, and what it is for. */
 export interface CreditPurchaseStarted {

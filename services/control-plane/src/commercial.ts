@@ -69,6 +69,7 @@ import { NO_ENTITLEMENT_VIEW, type EntitlementView, type Membership, type Organi
 import { decideAgentAdmission, snapshotFromView, type AgentAdmissionDecision } from '../contract/contract.js';
 import type { AccountService } from './account-service.js';
 import { accountId, NO_IDENTITY_DIRECTORY, type IdentityDirectory } from './domain.js';
+import { isBillingSystemActor } from './billing-system.js';
 import { AccountError } from './errors.js';
 import { modelBindingSchema, routingScopeSchema, routingConfigurationSchema, hardRestrictionsSchema, bindingProblems, type IndividualAccount } from '../../../shared/routing-policy.js';
 import type { RoutingTransaction } from './routing.js';
@@ -589,7 +590,8 @@ export const rollbackPolicyInput = z.strictObject({
   note: z.string().trim().min(1).max(1000),
   baseRevision: epoch,
 });
-export const addStaffInput = z.strictObject({ personId: accountId, role: z.enum(STAFF_ROLES) });
+/** The billing system actor (src/billing-system.ts) is an actor, never staff: it cannot be added to the directory. */
+export const addStaffInput = z.strictObject({ personId: accountId.refine((id) => !isBillingSystemActor(id), 'That is a reserved actor, not a person.'), role: z.enum(STAFF_ROLES) });
 export const changeStaffInput = z.strictObject({ role: z.enum(STAFF_ROLES), state: z.enum(['active', 'disabled']) });
 
 // --- the service -------------------------------------------------------------------------

@@ -27,12 +27,20 @@ export async function loadPurchasedUsage(
   return read<PurchasedUsageState>(`/workspace/organizations/${organizationId}/allowance/purchased`);
 }
 
+/** The signed-in person's own bought credits, for their Personal work (pay as you go, DIO-219). */
+export async function loadPersonalPurchasedUsage(read: Read = api): Promise<PurchasedUsageState> {
+  return read<PurchasedUsageState>('/workspace/personal/allowance/purchased');
+}
+
+const INCLUDED_NOTE = 'Your included monthly usage isn’t part of this.';
+
 const credits = (value: number) => {
   const text = formatCredits(micro(value));
   return `${text} ${text === '1' ? 'credit' : 'credits'}`;
 };
 
-export function PurchasedCreditsView({ state }: { state: PurchasedUsageState }) {
+/** `caption` is the line under the numbers; null leaves it out (Personal work without a plan has no monthly usage to set apart). */
+export function PurchasedCreditsView({ state, caption = INCLUDED_NOTE }: { state: PurchasedUsageState; caption?: string | null }) {
   return (
     <section className="ws-purchased" aria-label="Credits you bought">
       <h4>Credits you bought</h4>
@@ -58,7 +66,7 @@ export function PurchasedCreditsView({ state }: { state: PurchasedUsageState }) 
       ) : (
         <p className="caption ws-boundary">{state.reason}</p>
       )}
-      <p className="caption">Your included monthly usage isn’t part of this.</p>
+      {caption && <p className="caption">{caption}</p>}
     </section>
   );
 }

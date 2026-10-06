@@ -12,9 +12,15 @@ import {
   POLL_SLOW_AFTER_MS,
   POLL_FAST_MS,
   QUOTE_DELAY_MS,
+  INITIAL_FLOW,
+  PERSONAL_PURCHASES,
   checkoutOriginFor,
   createPurchaseFlow,
+  formatPrice,
   formatUsd,
+  maxCreditsFor,
+  parseCredits,
+  startCreditsFor,
   type FlowState,
 } from '../client/console/credit-purchase-flow';
 
@@ -25,16 +31,31 @@ const FAUX_URL = `http://127.0.0.1:5199/faux/checkout/cs_faux_${'a1b2c3d4'.repea
 
 type Call = { path: string; method: string; body: unknown };
 
-/** A desktop that quotes `cents` per 100 credits (an invented figure), and walks a purchase through `states`. */
-function desktop(options: { centsPer100?: number; checkoutUrl?: string; states?: string[]; failStart?: unknown } = {}) {
+/** A quote as the service answers it: whole steps of `stepCredits` credits for `stepCents` cents (invented figures). */
+const quoteOf = (credits: number, stepCredits = 100, stepCents = 1200) => ({
+  credits,
+  amountCents: (credits / stepCredits) * stepCents,
+  currency: 'usd',
+  steps: credits / stepCredits,
+  stepCredits,
+  stepCents,
+});
+
+/** A desktop that quotes steps of `stepCredits` credits for `stepCents` cents (invented figures), and walks a purchase through `states`. */
+function desktop(options: { stepCredits?: number; stepCents?: number; checkoutUrl?: string; states?: string[]; failStart?: unknown } = {}) {
   const calls: Call[] = [];
   const states = [...(options.states ?? ['pending', 'paid'])];
   let last = 'pending';
+  const stepCredits = options.stepCredits ?? 100;
+  const stepCents = options.stepCents ?? 1200;
   const read = vi.fn(async (path: string, method = 'GET', body?: unknown) => {
     calls.push({ path, method, body });
+    // No amount is one step.
+    if (method === 'GET' && path === `${base}/quote`) return quoteOf(stepCredits, stepCredits, stepCents);
     if (method === 'GET' && path.startsWith(`${base}/quote?credits=`)) {
       const credits = Number(path.split('=')[1]);
-      return { credits, amountCents: (credits / 100) * (options.centsPer100 ?? 1200), currency: 'usd' };
+      if (credits % stepCredits !== 0) throw new ApiError(`Credits are bought in steps of ${stepCredits}.`, 422, {});
+      return quoteOf(credits, stepCredits, stepCents);
     }
     if (method === 'POST' && path === base) {
       if (options.failStart) throw options.failStart;
@@ -43,7 +64,7 @@ function desktop(options: { centsPer100?: number; checkoutUrl?: string; states?:
         purchaseId: 'cp_0123456789abcdef',
         checkoutUrl: options.checkoutUrl ?? STRIPE_URL,
         credits,
-        amountCents: (credits / 100) * (options.centsPer100 ?? 1200),
+        amountCents: (credits / stepCredits) * stepCents,
       };
     }
     if (method === 'GET' && path === `${base}/cp_0123456789abcdef`) {
@@ -79,15 +100,63 @@ afterEach(() => {
 });
 
 describe('the quote', () => {
-  it('asks for a quote of the starting amount once, and shows exactly what the desktop answered', async () => {
-    const d = desktop({ centsPer100: 999 });
+  it('asks for one step to learn it, then for a quote of the starting amount, and shows exactly what the desktop answered', async () => {
+    const d = desktop({ stepCents: 999 });
     const { flow } = flowFor(d);
     flow.start();
     await settle();
-    expect(d.calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET ${base}/quote?credits=1000`]);
-    // 999 cents per hundred is nothing the client could have worked out: it only shows the answer.
+    expect(d.calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET ${base}/quote`, `GET ${base}/quote?credits=1000`]);
+    // 999 cents a step is nothing the client could have worked out: it only shows the answer.
     expect(flow.getState().quote).toEqual({ state: 'ready', credits: 1000, amountCents: 9990 });
     expect(flow.getState().input).toBe('1000');
+    expect(flow.getState().step).toEqual({ credits: 100, cents: 999 });
+  });
+
+  it('starts at about 1,000 credits in whole steps of whatever step the business buys in', async () => {
+    const d = desktop({ stepCredits: 110, stepCents: 1000 });
+    const { flow } = flowFor(d);
+    flow.start();
+    await settle();
+    // 1,000 is not a whole number of 110s: the start is nine steps, and no request is ever made for an amount that is not a step.
+    expect(d.calls.map((c) => c.path)).toEqual([`${base}/quote`, `${base}/quote?credits=990`]);
+    expect(flow.getState().input).toBe('990');
+    expect(flow.getState().quote).toEqual({ state: 'ready', credits: 990, amountCents: 9000 });
+    expect(flow.getState().step).toEqual({ credits: 110, cents: 1000 });
+    expect(startCreditsFor(110)).toBe(990);
+    expect(startCreditsFor(100)).toBe(1000);
+    expect(startCreditsFor(2500)).toBe(2500);
+  });
+
+  it('holds an amount to the step it learned: a plan step refuses what the free step accepted, and says its own step', async () => {
+    const d = desktop({ stepCredits: 110, stepCents: 1000 });
+    const { flow } = flowFor(d);
+    flow.start();
+    await settle();
+    d.calls.length = 0;
+    for (const text of ['1000', '100', '0', '100100', '110.5', '']) {
+      flow.setInput(text);
+      await vi.advanceTimersByTimeAsync(QUOTE_DELAY_MS * 3);
+      const quote = flow.getState().quote;
+      expect(quote.state, text).toBe('invalid');
+      expect(quote.state === 'invalid' && quote.message).toBe('Enter 110 credits or more, in steps of 110, up to 99,990.');
+    }
+    expect(d.calls).toEqual([]);
+    flow.setInput('1100');
+    await vi.advanceTimersByTimeAsync(QUOTE_DELAY_MS);
+    expect(flow.getState().quote).toEqual({ state: 'ready', credits: 1100, amountCents: 10000 });
+  });
+
+  it('works out nothing about a step itself: it parses against the step it was given, and any amount inside the cap before it has one', () => {
+    expect(parseCredits('1100', 110)).toBe(1100);
+    expect(parseCredits('1000', 110)).toBeNull();
+    expect(parseCredits('1000', 100)).toBe(1000);
+    expect(parseCredits('150')).toBe(150);
+    expect(parseCredits('100001')).toBeNull();
+    expect(parseCredits('0')).toBeNull();
+    expect(parseCredits('1e3')).toBeNull();
+    expect(maxCreditsFor(110)).toBe(99_990);
+    expect(maxCreditsFor(100)).toBe(100_000);
+    expect(maxCreditsFor(1)).toBe(100_000);
   });
 
   it('waits out typing: several edits in a row make one request, for the last amount', async () => {
@@ -131,25 +200,44 @@ describe('the quote', () => {
     const answers: Array<(value: unknown) => void> = [];
     const read = vi.fn((path: string) => new Promise((resolve) => answers.push((v) => resolve(v))));
     const flow = createPurchaseFlow({ organizationId: ORG, read: read as never, open: () => {}, onPaid: () => {} });
-    flow.start(); // quote for 1000, in flight
+    flow.start(); // the step, in flight
     flow.setInput('300');
     await vi.advanceTimersByTimeAsync(QUOTE_DELAY_MS); // quote for 300, in flight
     expect(read).toHaveBeenCalledTimes(2);
-    answers[1]!({ credits: 300, amountCents: 3600, currency: 'usd' });
+    answers[1]!(quoteOf(300, 100, 1200));
     await settle();
-    answers[0]!({ credits: 1000, amountCents: 12000, currency: 'usd' });
+    // The answer to the older request arrives last and is dropped: it neither sets the amount nor moves the field.
+    answers[0]!(quoteOf(100, 100, 1200));
     await settle();
     expect(flow.getState().quote).toEqual({ state: 'ready', credits: 300, amountCents: 3600 });
+    expect(flow.getState().input).toBe('300');
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it('refuses a quote for a different amount than the one asked', async () => {
-    const read = vi.fn(async () => ({ credits: 900, amountCents: 100, currency: 'usd' }));
+    const read = vi.fn(async (path: string) => (path.includes('?credits=') ? quoteOf(900, 100, 1200) : quoteOf(100, 100, 1200)));
     const flow = createPurchaseFlow({ organizationId: ORG, read: read as never, open: () => {}, onPaid: () => {} });
     flow.start();
     await settle();
     expect(flow.getState().quote.state).toBe('unavailable');
     await flow.buy();
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { credits: 1000, amountCents: 12000, currency: 'usd' },
+    { ...quoteOf(1000), steps: 9 },
+    { ...quoteOf(1000), amountCents: 11999 },
+    { ...quoteOf(1000), stepCredits: 0 },
+    { ...quoteOf(1000), stepCents: -1200 },
+    { ...quoteOf(1000), steps: 10.5 },
+  ])('refuses a quote that is not whole steps of the step it names: %j', async (answer) => {
+    const read = vi.fn(async () => answer);
+    const flow = createPurchaseFlow({ organizationId: ORG, read: read as never, open: () => {}, onPaid: () => {} });
+    flow.start();
+    await settle();
+    expect(flow.getState().quote.state).toBe('unavailable');
+    expect(flow.getState().step).toBeNull();
   });
 
   it('says plainly when the desktop refuses, and when it cannot be reached', async () => {
@@ -322,7 +410,7 @@ describe('following the purchase', () => {
   it('keeps asking through a hiccup and gives up, in plain words, if it keeps failing', async () => {
     let failing = true;
     const read = vi.fn(async (path: string, method = 'GET') => {
-      if (path.includes('/quote?')) return { credits: 1000, amountCents: 12000, currency: 'usd' };
+      if (path.includes('/quote')) return quoteOf(path.includes('?credits=') ? Number(path.split('=')[1]) : 100);
       if (method === 'POST') return { purchaseId: 'cp_0123456789abcdef', checkoutUrl: STRIPE_URL, credits: 1000, amountCents: 12000 };
       if (failing) throw new TypeError('Failed to fetch');
       return { purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 12000, state: 'paid' };
@@ -362,5 +450,58 @@ describe('small helpers', () => {
     expect(checkoutOriginFor('https://example.com/faux/checkout/x')).toBeNull();
     expect(checkoutOriginFor('http://faux.local.evil.example/faux/checkout/x')).toBeNull();
     expect(checkoutOriginFor('not a url')).toBeNull();
+  });
+});
+
+describe('buying for Personal work (pay as you go, DIO-219)', () => {
+  /** The person's own routes, quoting the no-plan step and saying what one step is on a plan (invented figures). */
+  function personalDesktop(extra: Record<string, unknown> = { onPlan: false, planStep: { credits: 110, cents: 1000 } }) {
+    const calls: string[] = [];
+    const read = vi.fn(async (path: string, method = 'GET') => {
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/quote`) return { ...quoteOf(100, 100, 1300), ...extra };
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/quote?credits=1000`) return { ...quoteOf(1000, 100, 1300), ...extra };
+      if (method === 'POST' && path === PERSONAL_PURCHASES)
+        return { purchaseId: 'cp_0123456789abcdef', checkoutUrl: STRIPE_URL, credits: 1000, amountCents: 13000 };
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/cp_0123456789abcdef`)
+        return { purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 13000, state: 'paid' };
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const flow = createPurchaseFlow({ organizationId: null, read: read as never, open: () => {}, onPaid: () => {} });
+    return { flow, calls };
+  }
+
+  it('asks the person’s own routes, never a business’s, and carries whether the quote is on a plan', async () => {
+    const { flow, calls } = personalDesktop();
+    expect(flow.getState()).toEqual(INITIAL_FLOW);
+    flow.start();
+    await settle();
+    expect(calls).toEqual([`GET ${PERSONAL_PURCHASES}/quote`, `GET ${PERSONAL_PURCHASES}/quote?credits=1000`]);
+    expect(flow.getState()).toMatchObject({ step: { credits: 100, cents: 1300 }, onPlan: false, planStep: { credits: 110, cents: 1000 },
+      quote: { state: 'ready', credits: 1000, amountCents: 13000 } });
+    await flow.buy();
+    await vi.advanceTimersByTimeAsync(POLL_FAST_MS);
+    expect(calls).toContain(`POST ${PERSONAL_PURCHASES}`);
+    expect(calls.some((call) => call.includes('/organizations/'))).toBe(false);
+    flow.dispose();
+  });
+
+  it('reads a quote that says nothing of plans as on a plan, and drops a plan step it can’t use', async () => {
+    const silent = personalDesktop({});
+    silent.flow.start();
+    await settle();
+    expect(silent.flow.getState()).toMatchObject({ onPlan: true, planStep: null });
+    silent.flow.dispose();
+    const odd = personalDesktop({ onPlan: false, planStep: { credits: -1, cents: 1000 } });
+    odd.flow.start();
+    await settle();
+    expect(odd.flow.getState()).toMatchObject({ onPlan: false, planStep: null });
+    odd.flow.dispose();
+  });
+
+  it('shows a whole-dollar price without cents, and keeps cents otherwise', () => {
+    expect(formatPrice(13000)).toBe('$130');
+    expect(formatPrice(10000)).toBe('$100');
+    expect(formatPrice(1250)).toBe('$12.50');
   });
 });
