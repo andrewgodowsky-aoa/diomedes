@@ -26,6 +26,7 @@ import { organizationAccountExportSchema, type ReadOrganizationExport } from '..
 import { individualAccountSchema, resolvedRoutingSnapshotSchema, routingPreferenceSchema,
   type AccountScope, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import { escalationViewSchema } from '../../shared/escalation-controls.js';
+import { checkInSettingsView, checkInView, keepGoingAnswer, type SetCheckInOverrideInput } from '../../shared/job-check-ins.js';
 
 export type Fetcher = (request: Request) => Promise<Response>;
 
@@ -475,6 +476,29 @@ export class ControlPlaneClient {
     return scopedEntitlementSchema.parse(await this.call<unknown>('GET', `${this.scopePath(scope)}/access`, token));
   }
   private scopePath(scope: AccountScope) { return `/account/routing/${scope.kind}/${encodeURIComponent(scope.id)}`; }
+  /** The amounts this account's jobs check in at (any member), as the account service resolved them. */
+  async scopedCheckIns(token: string, scope: AccountScope) {
+    const parsed = checkInView.safeParse(await this.call<unknown>('GET', `${this.scopePath(scope)}/check-ins`, token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /**
+   * The person chose Keep going on a job that stopped at its check-in. The service raises that one job by
+   * one more amount, for the tier it was opened under; the request names the job and the cap it stopped at.
+   */
+  async keepJobGoing(token: string, scope: AccountScope, input: { jobId: string; atCapMicroUsd: number }) {
+    const parsed = keepGoingAnswer.safeParse(await this.call<unknown>('POST', `${this.scopePath(scope)}/check-ins/keep-going`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** An owner or admin: the business's own check-in amounts beside what it would get without them. */
+  async jobCheckInSettings(token: string, organizationId: string) {
+    const parsed = checkInSettingsView.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/job-check-ins`, token));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
+  /** An owner or admin sets the business's own amounts: a number replaces a tier's, null goes back to the default. */
+  async setJobCheckIns(token: string, organizationId: string, input: SetCheckInOverrideInput) {
+    const parsed = checkInSettingsView.safeParse(await this.call<unknown>('POST', `/account/organizations/${encodeURIComponent(organizationId)}/job-check-ins`, token, input));
+    return parsed.success ? parsed.data : this.unreadable();
+  }
   roster(token: string, organizationId: string) {
     return this.call<RosterAnswer>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/roster`, token);
   }

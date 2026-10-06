@@ -28,6 +28,7 @@ import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
 import { UsageCenter, usageCenterTarget } from './console/UsageCenter';
 import { MemberUsageView, memberUsageTarget, useMyCreditUsage } from './console/MemberUsage';
+import { JobCheckIns } from './console/JobCheckIns';
 import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
 import { modifierName } from './keyboard';
@@ -309,11 +310,14 @@ export function SettingsPage({
           <div className="reading">
             {section === 'Account' && <AccountSettings />}
             {section === 'Usage' && usageScreen && (
-              <UsageCenter
-                organizationId={usageScreen.organizationId}
-                membership={usageScreen.membership}
-                report={ignoreReport}
-              />
+              <>
+                <UsageCenter
+                  organizationId={usageScreen.organizationId}
+                  membership={usageScreen.membership}
+                  report={ignoreReport}
+                />
+                <JobCheckIns organizationId={usageScreen.organizationId} />
+              </>
             )}
             {section === 'Usage' && !usageScreen && memberUsage && (
               <div className="usage-center">

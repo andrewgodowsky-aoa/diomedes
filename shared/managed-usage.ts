@@ -822,30 +822,40 @@ export function isJobTier(value: unknown): value is JobTier {
 }
 
 /**
- * The finite credit cap every parent job starts with, by tier. Owner decision
- * of 2026-09-23 (Andrew): Efficient 20, Focused 50, Thorough 100. These replace
- * the single 20-credit figure that was recorded as a proposal only.
+ * The code default for each tier's check-in amount, in credits. Owner decision
+ * of 2026-10-05 (Andrew): Efficient 100, Focused 250, Thorough 500. These
+ * replace the 20, 50 and 100 credit job caps of 2026-09-23, which were stops.
  *
- * A cap is a bound on one job, not a grant: it spends nothing by itself, and a
- * job still needs funds to reserve against. Anything above a tier's cap is
- * either an owner-approved cap request (the control plane's
- * `requestCapIncrease` / `decideCapIncrease`) or, on this computer, an explicit
- * one-job raise the person agrees to for that job alone. Neither is ever a
- * standing change to these figures.
+ * A job is never cut off mid-call or mid-write: every call holds its worst case
+ * before it is sent, so a call that starts always finishes. What a tier's amount
+ * bounds is how far a job runs before it checks in. When the next hold would
+ * cross it, the job finishes the step in progress, saves, and asks to keep going.
+ * Keep going raises that one job by exactly one more amount. It spends nothing
+ * by itself, and the account's balance and each member's monthly limit still apply.
+ *
+ * These are only the last fallback. Staff publish the defaults the service uses
+ * (`/ops/job-check-ins`), and a business's owners and admins may set their own
+ * amounts, which apply to that business alone (`shared/job-check-ins.ts`).
  */
-export const APPROVED_JOB_CAP_CREDITS = Object.freeze({
+export const JOB_CHECK_IN_CREDITS = Object.freeze({
   status: 'approved' as const,
   decidedBy: 'owner' as const,
-  decidedOn: '2026-09-23',
-  credits: Object.freeze({ efficient: 20, focused: 50, thorough: 100 }) as Readonly<
+  decidedOn: '2026-10-05',
+  credits: Object.freeze({ efficient: 100, focused: 250, thorough: 500 }) as Readonly<
     Record<JobTier, number>
   >,
 });
 
-/** A tier's approved cap as exact money. */
-export function approvedJobCap(tier: JobTier): MicroUsd {
-  return creditAmount(APPROVED_JOB_CAP_CREDITS.credits[tier]);
+/** A tier's code-default check-in amount as exact money. */
+export function defaultCheckIn(tier: JobTier): MicroUsd {
+  return creditAmount(JOB_CHECK_IN_CREDITS.credits[tier]);
 }
+
+/**
+ * A tier's code-default check-in amount, which is the job's cap before any staff or business
+ * setting is read. The name predates check-ins; callers that hold the resolved amounts read those.
+ */
+export const approvedJobCap = defaultCheckIn;
 
 /** The price terms an attempt was reserved under. Integer micro-USD per million tokens. */
 export interface RateSnapshot {
@@ -1031,7 +1041,7 @@ export function decideReserve(input: {
     return {
       ok: false,
       code: 'cap_request_required',
-      reason: `This job's cap is ${formatCredits(input.job.capMicroUsd)} credits and ${formatCredits(input.job.usedMicroUsd)} are already used or held. A higher cap needs an explicit request and approval before new spend.`,
+      reason: `This job has used ${formatCredits(input.job.capMicroUsd)} credits and checks in before it goes further. Keep going raises it by one more amount, for this job only.`,
     };
   const monthly = Math.min(max, input.monthlyAvailableMicroUsd);
   return {

@@ -13,6 +13,7 @@
 import { randomBytes } from 'node:crypto';
 import type { OriginSnapshot } from '../../shared/attribution.js';
 import { isOutOfCreditsRefusal } from '../../shared/managed-usage.js';
+import { isCheckInRefusal } from '../../shared/job-caps.js';
 import { routingReceiptSchema } from '../../shared/routing-policy.js';
 import type {
   CapabilityManifest,
@@ -1116,10 +1117,11 @@ export class RunService {
             changesWorld(lastEffect(s)) &&
             error instanceof HarnessError &&
             (error.code === 'tool_timeout' || error.outcomeUnknown);
-          // A managed call refused for want of credits, its hold released, is a known outcome.
-          // The step failed and the caller ends the work there, rather
-          // than the run being parked for a reconciliation there is nothing to reconcile.
-          const refusedForCredits = intent.kind === 'model' && isOutOfCreditsRefusal(error);
+          // A model call refused for want of credits, or because the job reached its check-in (before anything
+          // was sent, or with its hold released), is a known outcome. The step failed and the caller ends the work
+          // there (or stops it to check in), rather than the run being parked for a reconciliation there is
+          // nothing to reconcile.
+          const refusedForCredits = intent.kind === 'model' && (isOutOfCreditsRefusal(error) || isCheckInRefusal(error));
           const state = waiting
             ? 'waiting_event'
             : refusedForCredits

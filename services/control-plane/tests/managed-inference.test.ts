@@ -719,7 +719,7 @@ describe('out of credit', () => {
     const tenantId = (await call('GET', `/ops/customers/${orgs.juniper}`, await signIn('staffSupport'))).body.organization.tenantId as string;
     await cloud.funding.openJob({ tenantId, organizationId: orgs.juniper, rootJobId: 'run-1', runRef: 'run-1', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
     await cloud.funding.reserve({ tenantId, organizationId: orgs.juniper, attemptId: 'earlier', rootJobId: 'run-1', parentAttemptId: null, kind: 'generation',
-      route: 'aws-luna-5-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(20) - 1_000 as never, usageClass: 'included-chat' });
+      route: 'aws-luna-5-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(100) - 1_000 as never, usageClass: 'included-chat' });
     expect(await refusal(await ask({ token, admission }))).toMatchObject({ status: 402, code: 'cap_request_required' });
     expect(spy.calls).toHaveLength(0);
   });

@@ -45,6 +45,7 @@ import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, f
 import { StatePaymentLedger } from './payment-ledger.js';
 import type { PaymentLedger } from '../credit-purchases.js';
 import { MemberLimits, MemberLimitsService } from '../member-limits.js';
+import { JobCheckInService } from '../job-check-ins.js';
 import { ManagedInferenceService, SPEND_SETTINGS, spendControls, type SpendSetting } from '../managed-inference.js';
 import {
   FAUX_SCRIPTED_CREDENTIAL,
@@ -304,6 +305,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
       createLimits: () => new MemberLimitsService(accounts, new MemberLimits(store.funding, { now })),
       createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
+      createCheckIns: () => new JobCheckInService(accounts, store.commercial, funding, now),
       createManaged: () => managed,
       createRelay: () => relay,
       createOrganizationSetup: () => organizationSetups,

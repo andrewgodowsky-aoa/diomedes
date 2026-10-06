@@ -106,7 +106,7 @@ export function taskBoardState(task: Task): BoardLike {
   if (task.state === 'todo') return 'ready';
   if (task.state === 'working') return 'working';
   if (task.state === 'done') return 'done';
-  if (task.reason === 'needs-ok' || task.reason === 'changes-ready') return 'review';
+  if (task.reason === 'needs-ok' || task.reason === 'changes-ready' || task.reason === 'check-in') return 'review';
   return 'blocked';
 }
 

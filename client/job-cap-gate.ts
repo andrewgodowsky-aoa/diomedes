@@ -5,8 +5,10 @@
  * is sent until the person chooses: the tier above (the thread's style changes
  * and the job is estimated again), going over this once (a one-job raise
  * recorded against the exact command id the message is then sent under), or
- * Cancel. After a job stops at its cap: the same two choices, and either one
- * sends the message again as a new job.
+ * Cancel. At a check-in, when a job reached the amount it checks in at and
+ * stopped before its next step: Keep going (the job continues as a new one, with
+ * exactly one more amount) or Stop here (nothing more is spent and what the job
+ * did stays). A tier above is offered only before a send, never at a check-in.
  *
  * Nothing here sizes a cap or a raise. The client names the job and the
  * message; every number comes back from the host.
@@ -80,8 +82,8 @@ export interface OverrunDeps {
 }
 
 /**
- * After a job stopped at its cap. `send` with no command id means send the
- * message again as a new job through the whole send path, estimate included.
+ * At a job's check-in, after it stopped at its amount. `send` with no command id means
+ * send the message again as a new job through the whole send path, estimate included.
  */
 export async function afterStop(deps: OverrunDeps): Promise<GateResult> {
   const status = await deps.status();
@@ -98,7 +100,7 @@ export async function afterStop(deps: OverrunDeps): Promise<GateResult> {
   return { send: true, commandId };
 }
 
-/** The person chose Cancel (or Stop) at a job-cap question: nothing was sent, and the words are theirs. */
+/** The person chose Cancel (or Stop here) at a job-cap question: nothing was sent, and the words are theirs. */
 export class CapDeclined extends Error {
   constructor() {
     super('Nothing was sent.');
@@ -106,7 +108,7 @@ export class CapDeclined extends Error {
   }
 }
 
-/** A send the host refused because its job reached its cap at a step boundary. */
+/** A send the host stopped because its job reached its check-in amount at a step boundary. */
 export const isJobCapStop = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 402 && error.data.code === 'job_cap_reached';
 
