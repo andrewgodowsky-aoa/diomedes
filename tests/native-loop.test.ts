@@ -15,7 +15,7 @@ import { FileRunStore, RunService, Suspended, ToolRegistry, type ModelAdapter } 
 import { routeContractFor } from '../server/harness/route-contract.js';
 import { NativeLoop, type LoopDelegationPort, type LoopToolBinding } from '../server/harness/native-loop.js';
 import { streamChecks } from '../server/harness/conformance.js';
-import { loopOutcome, loopView, parsePlan, type LoopDelegateResult } from '../shared/native-loop.js';
+import { LOOP_LIMITS, loopOutcome, loopView, parsePlan, type LoopDelegateResult } from '../shared/native-loop.js';
 import { openHandoff } from '../shared/handoff.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -147,6 +147,30 @@ const ids = (run: HarnessRun) => run.steps.map((step) => `${step.intent.stepId}:
 const BUDGET: HarnessBudget = { units: 40, modelCalls: 20, toolCalls: 20, wallMs: null };
 
 describe('plan, act, observe, finish', () => {
+  test('a long final answer is the whole claim, and only one past the bound is cut and marked', async () => {
+    const { runs } = await setup();
+    const tools = registry([]);
+    const long = 'Six napkins were short on Friday, and invoice 1182 still bills all 100. '.repeat(160);
+    expect(long.length).toBeGreaterThan(4_000);
+    const over = 'x'.repeat(LOOP_LIMITS.claimChars + 10);
+    for (const [id, text, claim] of [
+      ['loop-long', long, long],
+      ['loop-over', over, `${over.slice(0, LOOP_LIMITS.claimChars - 1)}…`],
+    ] as const) {
+      await start(runs, id, BUDGET, tools);
+      const adapter = scripted([() => ({ type: 'final', text })]);
+      const result = await new NativeLoop(runs, adapter, tools, {
+        maxTurns: 2,
+        instructions: 'Loop instructions.',
+        bindings,
+        route: 'native-fixture',
+        model: null,
+      }).run(id, 'host', 'Compare the order with the delivery.', principal);
+      expect(result).toEqual({ kind: 'finished', claim });
+      expect((await runs.get(id)).result).toMatchObject({ loop: { claim } });
+    }
+  });
+
   test('every phase is its own recorded step, and a finish is a claim the checks decide', async () => {
     const { runs } = await setup();
     const writes: string[] = [];

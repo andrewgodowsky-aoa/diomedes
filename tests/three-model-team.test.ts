@@ -28,7 +28,7 @@ import {
 import type { Store } from '../server/store.js';
 import type { HarnessHost } from '../server/harness/host.js';
 import { LOCAL_MODEL_ACCOUNT as BONSAI_ACCOUNT, type LocalModelStatus } from '../shared/local-model.js';
-import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel, localAnswerStream } from './fixtures/local-model.js';
 import { AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MODEL_API_PROVIDERS, type AwsConnectionView, type AzureConnectionView } from '../shared/model-api.js';
 import type { HarnessRun } from '../shared/harness.js';
 import type { TeamLeadView } from '../shared/team-delegation.js';
@@ -106,7 +106,8 @@ function workerAnswer(target: string, body: Record<string, unknown>): Response {
   const messages = body.messages as { role: string; content: unknown }[];
   const read = messages.some((message) => message.role === 'tool');
   const usage = { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 };
-  return Response.json(read
+  // The local route reads a stream (DIO-247), in llama.cpp's final-chunk order.
+  return localAnswerStream(read
     ? { id: 'local-2', model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'stop', message: { content: WORKER_ANSWER } }] }
     : { id: 'local-1', model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'tool_calls', message: { content: null,
         tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'read_project_file', arguments: '{"path":"delivery.md"}' } }] } }] });

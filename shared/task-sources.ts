@@ -1,4 +1,5 @@
 import type { DocumentInfo } from './types.js';
+import { localContextBudget, type LocalModelProfile } from './local-model.js';
 
 /**
  * The documents a Board-started task carries to the model.
@@ -19,6 +20,11 @@ import type { DocumentInfo } from './types.js';
  * the confirmation says so.
  */
 export const TASK_SOURCE_LIMITS = { files: 8, bytes: 128_000 } as const;
+
+/** Only a host-resolved local profile can widen the source envelope. */
+export function taskSourceLimits(localProfile?: LocalModelProfile): { files: number; bytes: number } {
+  return localProfile ? { files: TASK_SOURCE_LIMITS.files, bytes: localContextBudget(localProfile).sourceBytes } : TASK_SOURCE_LIMITS;
+}
 
 /** The document kinds a Board start sends. A manual hand-off names only these (server/manual-teams.ts). */
 export const TASK_SOURCE_KINDS = ['markdown', 'text', 'plan'] as const;
@@ -49,22 +55,25 @@ export function mayNameDocument(text: string): boolean {
 export function taskDocumentProblem(
   path: string,
   documents: readonly DocumentInfo[],
+  limits: { files: number; bytes: number } = TASK_SOURCE_LIMITS,
 ): string | null {
   const document = documents.find((item) => item.path === path);
   if (!document)
     return 'The selected document is no longer listed in this project. Choose another document.';
   if (!(TASK_SOURCE_KINDS as readonly string[]).includes(document.kind))
     return 'Select a supported text document.';
-  if (document.size > TASK_SOURCE_LIMITS.bytes) return 'Select a document no larger than 128 KB.';
+  if (document.size > limits.bytes) return limits.bytes === TASK_SOURCE_LIMITS.bytes
+    ? 'Select a document no larger than 128 KB.' : 'This document exceeds the selected local profile\'s source allowance.';
   return null;
 }
 
 export function selectTaskSources(
   task: { name: string; description?: string | null; sourceDocument?: string },
   documents: readonly DocumentInfo[],
+  limits: { files: number; bytes: number } = TASK_SOURCE_LIMITS,
 ): string[] {
   if (task.sourceDocument !== undefined) {
-    const problem = taskDocumentProblem(task.sourceDocument, documents);
+    const problem = taskDocumentProblem(task.sourceDocument, documents, limits);
     if (problem) throw new Error(problem);
     return [task.sourceDocument];
   }
@@ -84,8 +93,8 @@ export function selectTaskSources(
   const selected: string[] = [];
   let bytes = 0;
   for (const item of found) {
-    if (selected.length >= TASK_SOURCE_LIMITS.files) break;
-    if (bytes + item.size > TASK_SOURCE_LIMITS.bytes) continue;
+    if (selected.length >= limits.files) break;
+    if (bytes + item.size > limits.bytes) continue;
     bytes += item.size;
     selected.push(item.path);
   }

@@ -67,8 +67,9 @@ let frames: (Record<string, unknown> & { channel: 'text' | 'activity' })[];
 /** Every request the client made, by path, so a refusal can be shown to have sent nothing. */
 let clientCalls: string[];
 
+/** The person's message: the last user item, after the host's reads of the attached files. */
 const userText = (body: { input: Item[] }) => {
-  const user = body.input.find((item) => item.role === 'user');
+  const user = [...body.input].reverse().find((item) => item.role === 'user');
   const content = user?.content;
   if (typeof content === 'string') return content;
   return Array.isArray(content) ? content.map((part) => String((part as Item).text ?? '')).join('') : '';
@@ -112,7 +113,7 @@ function respond(body: { input: Item[]; tools?: Item[] }): Item[] | 'hang' {
           status: 'completed',
         },
       ];
-    return [answer(String(result.output).includes('6 napkins short') ? 'Six napkins were short on Friday.' : 'Not found.')];
+    return [answer(JSON.stringify(result.output).includes('6 napkins short') ? 'Six napkins were short on Friday.' : 'Not found.')];
   }
   return [answer(`answer:${said}`)];
 }

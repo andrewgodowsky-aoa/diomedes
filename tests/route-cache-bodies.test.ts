@@ -13,13 +13,18 @@ import { micro } from '../shared/managed-usage.js';
 import { cacheRequest, type CacheRequest } from '../shared/route-capabilities.js';
 import * as aws from '../server/engines/aws-bedrock.js';
 import { cacheFieldsMatch, CONVERSATION_LIMITS, ModelApiError, respondStream } from '../server/engines/model-api-core.js';
+import { azureRateCard, respondAzure } from '../server/engines/azure-openai.js';
+import { HOST_READ_OPENER } from '../server/harness/native-agent.js';
 import { CHECK_CACHE_OFF } from '../server/engines/route-qualification.js';
 import { SpendExposure } from '../server/spend-exposure.js';
 import base from './fixtures/cache-base-bodies.json';
 import {
+  AZURE_CONNECTION,
+  AZURE_MODELS,
   CALL_SCENARIOS,
   INSTRUCTIONS,
   K3_CONNECTION,
+  LUNA_CONNECTION,
   K3_RECEIPT,
   SCENARIO_NAMES,
   SCENARIO_NOW,
@@ -28,7 +33,7 @@ import {
   scenarioBodies,
   type ScenarioName,
 } from './fixtures/cache-body-scenarios.js';
-import { chatEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { chatEvents, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
 type Item = Record<string, unknown>;
 const KEY = `dio1-${'ab12'.repeat(10)}`;
@@ -353,5 +358,180 @@ describe('a cache request that cannot be sent is refused before anything is held
       qualification: K3_RECEIPT,
     });
     expect(noCache).not.toHaveProperty('marked');
+  });
+});
+
+describe('DIO-247.N4: an explicit prefix marks the host\'s reads of the attached files too, on all three bindings', () => {
+  let dir: string;
+  let exposure: SpendExposure;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-cache-files-'));
+    exposure = new SpendExposure(path.join(dir, 'spend'));
+    await exposure.init();
+    for (const id of [K3_CONNECTION.id, AZURE_CONNECTION.id])
+      await exposure.setCap(id, micro(10_000_000), { approvedBy: 'test owner', note: 'Fixture cap; no live request.' });
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  /** One host read as a conversation turn sends it: the host's call and its result, under the host's id. */
+  const read = (n: number, file: string, text: string): ModelMessage[] => [
+    { role: 'assistant', content: [{ type: 'tool-call', toolCallId: `host-read-${n}`, toolName: 'read_source', input: { path: file } }] },
+    {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: `host-read-${n}`,
+          toolName: 'read_source',
+          output: { type: 'json', value: { found: true, path: file, truncated: false, text } },
+        },
+      ],
+    },
+  ];
+  const HOSTED: ModelMessage[] = [
+    { role: 'user', content: HOST_READ_OPENER },
+    ...read(1, 'Deliveries.md', '# Deliveries\n\n94 of 100 napkins on Friday.\n'),
+    ...read(2, 'Invoices.md', '# Invoices\n\nInvoice 1182 bills 100 napkins.\n'),
+    { role: 'user', content: 'Which deliveries arrived short last week?' },
+  ];
+  const WIRES = ['aws-luna', 'aws-k3', 'azure'] as const;
+  type Wire = (typeof WIRES)[number];
+  const ok = (wire: Wire) =>
+    wire === 'aws-k3'
+      ? sseResponse(chatEvents({ model: K3_CONNECTION.modelId, text: 'Two deliveries.', usage: { prompt_tokens: 300, completion_tokens: 20, total_tokens: 320 } }))
+      : sseResponse(
+          responsesEvents({
+            id: 'resp_files',
+            object: 'response',
+            created_at: 1_790_000_000,
+            status: 'completed',
+            model: wire === 'azure' ? `${AZURE_MODELS.reasoning}-2026-09-15` : aws.AWS_LUNA_MODEL,
+            output: [
+              { type: 'reasoning', id: 'rs_files', summary: [], encrypted_content: 'enc-files' },
+              { type: 'message', id: 'msg_files', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Two deliveries.', annotations: [] }] },
+            ],
+            usage: { input_tokens: 300, output_tokens: 20, total_tokens: 320, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 8 } },
+            incomplete_details: null,
+            error: null,
+          }),
+          { 'x-amzn-requestid': 'req-files', 'apim-request-id': 'apim-files' },
+        );
+  let attempts = 0;
+  /** One call on a wire, with the host's reads leading its messages when `stableMessages` is given. */
+  async function send(wire: Wire, cache: CacheRequest | null, stableMessages?: number, messages: ModelMessage[] = HOSTED) {
+    const bodies: string[] = [];
+    const transport = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return ok(wire);
+    }) as unknown as typeof globalThis.fetch;
+    const common = {
+      secret: 'test-only-key-0123456789abcdef-never-real',
+      exposure,
+      attempt: aws.exposureAttempt(`files-${++attempts}`, 'model:0', messages),
+      instructions: INSTRUCTIONS,
+      messages,
+      tools: [],
+      effort: 'high' as const,
+      limits: CONVERSATION_LIMITS,
+      signal: new AbortController().signal,
+      transport,
+      now: () => SCENARIO_NOW,
+      ...(cache ? { cache, stablePrefix: STABLE_PREFIX } : {}),
+      ...(stableMessages ? { stableMessages } : {}),
+    };
+    const result =
+      wire === 'azure'
+        ? await respondAzure({ ...common, connection: AZURE_CONNECTION, model: AZURE_MODELS.reasoning, card: azureRateCard(AZURE_CONNECTION, AZURE_MODELS.reasoning) })
+        : await aws.respondOnce({
+            ...common,
+            connection: wire === 'aws-k3' ? K3_CONNECTION : LUNA_CONNECTION,
+            card: aws.awsModelRateCard(wire === 'aws-k3' ? K3_CONNECTION.modelId : LUNA_CONNECTION.modelId),
+            ...(wire === 'aws-k3' ? { qualification: K3_RECEIPT } : {}),
+          });
+    expect(bodies, wire).toHaveLength(1);
+    return { result, text: bodies[0] };
+  }
+  /** The tool results in a body, by call id: a tool message on Chat Completions, a function_call_output on Responses. */
+  const results = (wire: Wire, text: string) => {
+    const body = bodyOf(text);
+    return wire === 'aws-k3'
+      ? (body.messages as Item[]).filter((item) => item.role === 'tool').map((item) => ({ id: item.tool_call_id, value: item.content }))
+      : (body.input as Item[]).filter((item) => item.type === 'function_call_output').map((item) => ({ id: item.call_id, value: item.output }));
+  };
+
+  test('a second breakpoint goes on the last read\'s result, and the call reports the files marked', async () => {
+    for (const wire of WIRES) {
+      const { result, text } = await send(wire, EXPLICIT, 5);
+      expect(result.marked, wire).toBe('stable-prefix-and-files');
+      expect(occurrences(text, 'prompt_cache_breakpoint'), wire).toBe(2);
+      const [first, last] = results(wire, text);
+      // The first read is sent as it always is; the last carries the breakpoint on its one part.
+      expect(first, wire).toMatchObject({ id: 'host-read-1' });
+      expect(typeof first.value, wire).toBe('string');
+      expect(last, wire).toEqual({
+        id: 'host-read-2',
+        value: [{ type: wire === 'aws-k3' ? 'text' : 'input_text', text: expect.stringContaining('Invoice 1182'), prompt_cache_breakpoint: { mode: 'explicit' } }],
+      });
+      expect(cacheFieldsMatch(text, EXPLICIT, true), wire).toBe(true);
+      expect(cacheFieldsMatch(text, EXPLICIT), wire).toBe(false);
+    }
+  });
+
+  test('without the host\'s reads, or under another setting, nothing more is marked and nothing else changes', async () => {
+    for (const wire of WIRES) {
+      // A count that does not end on a host read's result marks the instructions alone.
+      const plain = await send(wire, EXPLICIT, 2);
+      expect(plain.result.marked, wire).toBe('stable-prefix');
+      expect(occurrences(plain.text, 'prompt_cache_breakpoint'), wire).toBe(1);
+      const own: ModelMessage[] = [...HOSTED.slice(0, 5).map((message) => structuredClone(message)), HOSTED[5]];
+      for (const message of own)
+        if (message.role !== 'user' && Array.isArray(message.content))
+          for (const part of message.content) if ('toolCallId' in part) part.toolCallId = part.toolCallId.replace('host-read-', 'call_');
+      const provider = await send(wire, EXPLICIT, 5, own);
+      expect(provider.result.marked, wire).toBe('stable-prefix');
+      expect(occurrences(provider.text, 'prompt_cache_breakpoint'), wire).toBe(1);
+      // Provider default and off send the same bytes with the count as without it.
+      for (const cache of [PROVIDER_DEFAULT, OFF]) {
+        const counted = await send(wire, cache, 5);
+        const uncounted = await send(wire, cache);
+        expect(counted.text, `${wire} ${cache.policy}`).toBe(uncounted.text);
+        expect(occurrences(counted.text, 'prompt_cache_breakpoint'), wire).toBe(0);
+      }
+    }
+  });
+
+  test('the guard accepts the files breakpoint only on the last host read\'s result', () => {
+    const fields = { prompt_cache_key: KEY, prompt_cache_options: { mode: 'explicit', ttl: '30m' } };
+    const mark = { prompt_cache_breakpoint: { mode: 'explicit' } };
+    const system = { role: 'system', content: [{ type: 'text', text: 'Rules.', ...mark }] };
+    const tool = (id: string, marked = false) => ({ role: 'tool', tool_call_id: id, content: marked ? [{ type: 'text', text: '{}', ...mark }] : '{}' });
+    const call = (id: string) => ({ role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name: 'read_source', arguments: '{}' } }] });
+    const chat = (...messages: Item[]) => JSON.stringify({ model: 'm', ...fields, messages: [system, ...messages], stream: true });
+    const opener = { role: 'user', content: HOST_READ_OPENER };
+    const person = { role: 'user', content: 'Which deliveries arrived short?' };
+    expect(cacheFieldsMatch(chat(opener, call('host-read-1'), tool('host-read-1'), call('host-read-2'), tool('host-read-2', true), person), EXPLICIT, true)).toBe(true);
+    const developer = { role: 'developer', content: [{ type: 'input_text', text: 'Rules.', ...mark }] };
+    const output = (id: string, marked = false) => ({ type: 'function_call_output', call_id: id, output: marked ? [{ type: 'input_text', text: '{}', ...mark }] : '{}' });
+    const responses = (...items: Item[]) => JSON.stringify({ model: 'm', input: [developer, ...items], ...fields, stream: true });
+    const fn = (id: string) => ({ type: 'function_call', call_id: id, name: 'read_source', arguments: '{}' });
+    expect(cacheFieldsMatch(responses(opener, fn('host-read-1'), output('host-read-1', true), person), EXPLICIT, true)).toBe(true);
+    for (const body of [
+      // Only the instructions marked, when the files were to be.
+      chat(opener, call('host-read-1'), tool('host-read-1'), person),
+      // On a read that another host read follows.
+      chat(opener, call('host-read-1'), tool('host-read-1', true), call('host-read-2'), tool('host-read-2'), person),
+      // On the model's own call, or on the person's message.
+      chat(opener, call('host-read-1'), tool('host-read-1'), person, call('call_1'), tool('call_1', true)),
+      chat(opener, call('host-read-1'), tool('host-read-1'), { role: 'user', content: [{ type: 'text', text: 'Hi.', ...mark }] }),
+      // Three breakpoints, or the files marked without the instructions.
+      chat(opener, call('host-read-1'), tool('host-read-1', true), call('host-read-2'), tool('host-read-2', true), person),
+      JSON.stringify({ model: 'm', ...fields, messages: [{ role: 'system', content: 'Rules.' }, opener, call('host-read-1'), tool('host-read-1', true), person] }),
+      responses(opener, fn('host-read-1'), { ...output('host-read-1'), ...mark }, person),
+    ])
+      expect(cacheFieldsMatch(body, EXPLICIT, true), body).toBe(false);
+    // A call that marks the files is refused by a guard that expects the instructions alone.
+    expect(cacheFieldsMatch(chat(opener, call('host-read-1'), tool('host-read-1', true), person), EXPLICIT)).toBe(false);
   });
 });

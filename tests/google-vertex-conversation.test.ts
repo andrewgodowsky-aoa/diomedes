@@ -63,11 +63,14 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
     headers: { 'content-type': 'text/event-stream', 'x-goog-request-id': `goog-${seen.length}` },
   });
 }) as typeof globalThis.fetch;
-/** The ordinary conversation: read the menu, then answer from it. */
+/**
+ * The ordinary conversation: the host has read the menu before the message, the model checks what
+ * was attached with a call of its own, then answers from the menu.
+ */
 const readThenAnswer = (body: Item): Item[] => {
   const contents = body.contents as Item[];
-  const answered = JSON.stringify(contents).includes('functionResponse');
-  if (!answered) return frames([{ functionCall: { name: 'read_source', args: { path: MENU.path } }, thoughtSignature: 'sig-1' }]);
+  const listed = JSON.stringify(contents).includes('"name":"list_sources","response"');
+  if (!listed) return frames([{ functionCall: { name: 'list_sources', args: {} }, thoughtSignature: 'sig-1' }]);
   return JSON.stringify(contents).includes('Tomato soup')
     ? frames([{ text: 'Tomato soup and a grilled cheese (menu.md).' }])
     : frames([{ text: 'I could not read the menu.' }]);
@@ -224,7 +227,7 @@ describe('setup over HTTP', () => {
 });
 
 describe('a native Nectovia conversation on Gemini 3.8 Flash', () => {
-  test('a read_source round trip: canonical tool, recorded result, provider continuation, attribution and spend', async () => {
+  test('the host\'s read, then a list_sources round trip: canonical tools, recorded results, provider continuation, attribution and spend', async () => {
     const view = await connect();
     await approve();
     const activity: ToolActivity[] = [];
@@ -246,15 +249,30 @@ describe('a native Nectovia conversation on Gemini 3.8 Flash', () => {
       const declared = (request.body.tools as { functionDeclarations: { name: string }[] }[])[0].functionDeclarations.map((tool) => tool.name);
       expect(declared.sort()).toEqual(['list_sources', 'read_source']);
     }
-    // The second call answers the first call's function by name and returns its thought signature.
+    // The first call starts with the host's read of the menu, before the person's message. The host
+    // issued that call, so it has no signature of Gemini's: the SDK sends Google's documented
+    // placeholder for an application's own call.
+    const first = seen[0].body.contents as { role: string; parts: Item[] }[];
+    expect(first.map((content) => [content.role, Object.keys(content.parts[0]).filter((key) => key !== 'thoughtSignature')[0]])).toEqual([
+      ['user', 'text'],
+      ['model', 'functionCall'],
+      ['user', 'functionResponse'],
+      ['user', 'text'],
+    ]);
+    expect(first[1].parts[0]).toMatchObject({
+      functionCall: { name: 'read_source', args: { path: MENU.path } },
+      thoughtSignature: 'skip_thought_signature_validator',
+    });
+    expect(JSON.stringify(first[2])).toContain('Tomato soup');
+    // The second call answers the model's own call by name and returns its thought signature.
     const second = JSON.stringify(seen[1].body.contents);
     expect(second).toContain('sig-1');
-    expect(second).toContain('functionResponse');
-    expect(second).not.toContain('skip_thought_signature_validator');
+    expect(second.split('skip_thought_signature_validator')).toHaveLength(2);
 
     expect(activity.map((frame) => [frame.phase, frame.tool, frame.summary])).toEqual([
-      ['started', 'read_source', 'Reading menu.md'],
       ['finished', 'read_source', 'Read menu.md'],
+      ['started', 'list_sources', expect.any(String)],
+      ['finished', 'list_sources', 'Found 1 attached file'],
     ]);
     expect(previews.join('')).toBe('Tomato soup and a grilled cheese (menu.md).');
 

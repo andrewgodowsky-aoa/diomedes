@@ -28,9 +28,12 @@ import { checkedSourceRules, copy, digest, HarnessError, units } from './policy.
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import { commandGate, type AdapterRouteContract } from '../../shared/adapter-contract.js';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
 
 export interface ModelAdapter {
   id: string;
+  /** Host-bound serialization allowance; only the local adapter declares a larger envelope. */
+  preparedRequestMaxBytes?: number;
   version: string;
   /** The host must authorize external inference before dispatch and result acceptance. */
   destination?: Destination;
@@ -74,7 +77,7 @@ const inspectionSchema = z.strictObject({
     .max(30),
 });
 
-export function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
+export function validatePrepared(before: ModelRequest, after: ModelRequest, maxBytes?: number): ModelRequest {
   const parsed = z.json().safeParse(after);
   if (!parsed.success) throw new HarnessError('invalid_prepared_context', 'Context assembly must return bounded plain JSON.');
   const json = parsed.data;
@@ -82,8 +85,11 @@ export function validatePrepared(before: ModelRequest, after: ModelRequest): Mod
   const following = checkedSourceRules('invalid_prepared_context', after.sourceRestrictions ?? []);
   if (prior.some(rule => !following.some(next => digest(next) === digest(rule))))
     throw new HarnessError('invalid_prepared_context', 'Context assembly cannot remove a source privacy restriction.');
+  const serialized = JSON.stringify(json);
+  if (maxBytes === undefined ? serialized.length > 262144 :
+    !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 24_000_000 || Buffer.byteLength(serialized) > maxBytes)
+    throw new HarnessError('invalid_prepared_context', 'The prepared context exceeds this route\'s request size limit.');
   if (
-    JSON.stringify(json).length > 262144 ||
     after.runId !== before.runId ||
     after.capabilityId !== before.capabilityId ||
     digest(after.transcript) !== digest(before.transcript) ||
@@ -142,6 +148,36 @@ export function isScriptedAdapter(id: string): boolean {
   return id === 'native-fixture' || id === 'fixture';
 }
 
+/**
+ * The fixed opener of the host's reads: the files attached to a message, read by the host before
+ * the history and the message, each as one recorded tool step. They sit straight after the
+ * instructions, so a later message that attaches the same files repeats them byte for byte and a
+ * provider can reuse them as a cached prefix.
+ */
+export const HOST_READ_OPENER = 'Read the files attached to the message that follows.';
+/** A host read's step id is this prefix and its position. */
+export const HOST_READ_STEP = 'host:';
+
+/**
+ * How many leading messages are the host's reads: the opener, then each call with its result,
+ * ending where the message they were read for begins. Zero when the messages do not start that
+ * way. Only this loop writes the opener at the start, so an adapter can tell the host's calls,
+ * which carry no provider call id, from the model's own, which always do.
+ */
+export function hostReadCount(messages: readonly PortableMessage[]): number {
+  const first = messages[0];
+  if (first?.role !== 'user' || first.text !== HOST_READ_OPENER || first.tool !== undefined) return 0;
+  let at = 1;
+  while (
+    messages[at]?.role === 'assistant' &&
+    typeof messages[at].tool === 'string' &&
+    messages[at + 1]?.role === 'tool' &&
+    messages[at + 1].name === messages[at].tool
+  )
+    at += 2;
+  return at > 1 && messages[at]?.role === 'user' && typeof messages[at].text === 'string' ? at : 0;
+}
+
 export class NativeAgent {
   constructor(
     private readonly runtime: RunService,
@@ -175,12 +211,22 @@ export class NativeAgent {
     owner: string,
     prompt: string,
     principal: HarnessPrincipal,
-    options: { maxTurns?: number; maxCorrections?: number; sourceRestrictions?: HardRestrictions[] } = {},
+    options: {
+      maxTurns?: number;
+      maxCorrections?: number;
+      sourceRestrictions?: HardRestrictions[];
+      /**
+       * Read-only local tools the host calls before the prompt, in this order, each a recorded
+       * step. Their calls and results come first, after `HOST_READ_OPENER`, so every message that
+       * names the same reads starts with the same bytes.
+       */
+      hostReads?: readonly { name: string; input: Json }[];
+    } = {},
   ): Promise<string> {
     const maxTurns = options.maxTurns ?? 8;
     if (units(maxTurns, 'Turn limit') === 0)
       throw new HarnessError('invalid_turns', 'A positive turn limit is required.');
-    const messages: PortableMessage[] = [{ role: 'user', text: prompt }];
+    const messages: PortableMessage[] = [];
     // The run's capability, not the registry, decides which tools this loop may offer.
     const allowed = new Set((await this.runtime.get(runId)).capabilityTools);
     const descriptors = this.tools.describe().filter((tool) => allowed.has(tool.name));
@@ -236,6 +282,36 @@ export class NativeAgent {
         inherited = checkedSourceRules('invalid_lineage', inherited, sourceRules(record));
         parent = record.parentRunId;
       }
+      // The host's reads go through the same registry and step record as the model's calls, so a
+      // replay returns what was read. Only a read the run offers, with no effect, permission or
+      // approval, and nothing leaving this computer, may be called without the model asking.
+      if (options.hostReads?.length) {
+        messages.push({ role: 'user', text: HOST_READ_OPENER });
+        for (const [n, read] of options.hostReads.entries()) {
+          const offered = descriptors.find((descriptor) => descriptor.name === read.name);
+          if (
+            !offered ||
+            offered.effect !== 'read' ||
+            offered.permission !== null ||
+            offered.approval ||
+            offered.destination !== 'local'
+          )
+            throw new HarnessError('tool_not_in_context', `The host cannot read with ${read.name} for this message.`);
+          const input = this.tools.validate(read.name, read.input) as Json;
+          const output = await this.tools.dispatch<Json>(this.runtime, {
+            runId,
+            owner,
+            principal,
+            stepId: `${HOST_READ_STEP}${n}`,
+            name: read.name,
+            input,
+            origin: applicationOrigin(),
+          });
+          messages.push({ role: 'assistant', tool: read.name, input });
+          messages.push({ role: 'tool', name: read.name, output });
+        }
+      }
+      messages.push({ role: 'user', text: prompt });
       for (let i = 0; i < maxTurns; i++) {
         const run = await this.runtime.get(runId);
         const boundary = run.steps.findIndex(step => step.intent.stepId === `context:${i}` || step.intent.stepId === `model:${i}`);
@@ -249,6 +325,7 @@ export class NativeAgent {
           ...(restrictions.length ? { sourceRestrictions: restrictions } : {}),
         };
         const prepare = this.adapter.prepare?.bind(this.adapter);
+        const maxBytes = this.adapter.contract.routeId === LOCAL_MODEL_ROUTE ? this.adapter.preparedRequestMaxBytes : undefined;
         const effective = prepare
           ? validatePrepared(
               original,
@@ -266,9 +343,10 @@ export class NativeAgent {
                   origin: applicationOrigin(),
                 },
                 async ({ signal }) =>
-                  validatePrepared(original, await prepare(copy(original), signal)),
+                  validatePrepared(original, await prepare(copy(original), signal), maxBytes),
                 principal,
               ),
+              maxBytes,
             )
           : original;
         if (effective.sourceRestrictions?.length && this.adapter.destination === 'external' && !this.adapter.enforcesSourceRestrictions)

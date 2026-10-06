@@ -12,6 +12,8 @@ import type { AccountRouteIssue } from '../../shared/engines.js';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
 import type { Json } from '../../shared/harness.js';
 import type { ReadScope } from './read-scope.js';
+import type { LocalPromptProgressFrame } from './local-progress.js';
+import { localContextBudget, localKilobytes, LOCAL_MODEL_ACCOUNT, type LocalModelProfile } from '../../shared/local-model.js';
 /**
  * One message of a Diomedes conversation, as the host admitted it. Set by the host's own
  * prepare step and never taken from a client or a model. It rides on the request the way
@@ -87,6 +89,8 @@ export interface TextRequest {
    * shared/adapter-contract.ts. A preview only; the reply keeps one finished record instead.
    */
   onReasoning?: (frame: ReasoningPreview) => void;
+  /** Host-stamped local prompt reading counters, published only by the active attempt. */
+  onPromptProgress?: (frame: LocalPromptProgressFrame) => void;
   /**
    * Adapter-facing raw thinking sink, set only by EngineService when it wraps `onReasoning` on a
    * route that declares `streaming.reasoning: 'reasoning-delta'`. A caller-supplied one is
@@ -219,13 +223,16 @@ export interface PersistentTextAdapter<C> extends TextEngineAdapter {
  * Instructions remain distinct from selected, untrusted document data. The host's rule section,
  * when a message carries one, is its own field ahead of the request, never inside a document.
  */
-export function contextMessage(input: TextRequest): string {
+export function contextMessage(input: TextRequest, localProfile?: LocalModelProfile): string {
   const text = JSON.stringify(
     input.rules
       ? { rules: input.rules.text, request: input.prompt, documents: input.documents }
       : { request: input.prompt, documents: input.documents },
   );
-  if (Buffer.byteLength(text) + Buffer.byteLength(input.instructions) > 160_000)
-    throw new Error('Select less than 160 KB of context.');
+  const local = input.accountRoute === LOCAL_MODEL_ACCOUNT && localProfile;
+  const limit = local ? localContextBudget(local).requestBytes : 160_000;
+  if (Buffer.byteLength(text) + Buffer.byteLength(input.instructions) > limit)
+    throw new Error(local ? `Select less than ${localKilobytes(limit)} of context for this local model profile.`
+      : 'Select less than 160 KB of context.');
   return text;
 }

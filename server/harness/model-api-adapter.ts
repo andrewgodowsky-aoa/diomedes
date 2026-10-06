@@ -10,18 +10,20 @@
  * model's function call and its provider call id) are saved in a
  * content-addressed transcript bound to this run, this profile and the exact
  * portable prefix. The run record carries only the reference. A tool result is
- * returned to the provider under the call id the provider issued. There is no
- * `previous_response_id`: a response id is evidence, never a resumable
- * conversation.
+ * returned to the provider under the call id the provider issued. The host's own
+ * reads of the attached files, which lead a message's first call, are the one
+ * exception: the host issued those calls, so their ids are the host's, fixed by
+ * position (`hostCallId`). There is no `previous_response_id`: a response id is
+ * evidence, never a resumable conversation.
  */
 import type { ModelMessage } from 'ai';
 import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
-import { ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
+import { hostCallId, ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
 import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from './model-transcripts.js';
-import type { ModelAdapter } from './native-agent.js';
+import { hostReadCount, type ModelAdapter } from './native-agent.js';
 import { copy, digest } from './policy.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
 
@@ -95,6 +97,7 @@ export function modelApiContract(route: {
 
 export interface ModelApiAdapterSpec {
   route: string;
+  preparedRequestMaxBytes?: number;
   /** Error-code prefix: `aws`, `azure`, `openrouter`. */
   prefix: string;
   label: string;
@@ -119,6 +122,11 @@ export interface ModelApiAdapterSpec {
       attempt: ExposureAttempt;
       signal: AbortSignal;
       sourceRestrictions?: HardRestrictions[];
+      /**
+       * How many leading `messages` are the host's reads of the attached files (`hostReadCount`):
+       * the same on every message that attaches the same files. Absent when there are none.
+       */
+      stableMessages?: number;
     } & StreamSinks,
   ): Promise<Omit<RespondResult, 'reservation'>>;
   /** The raw preview sinks this turn's calls feed. */
@@ -163,12 +171,29 @@ export function toolResultMessage(callId: string, toolName: string, output: unkn
   };
 }
 
+/** One of the host's reads (`hostReadCount`) in provider format: its call, or its result. */
+function hostReadMessage(message: PortableMessage, index: number): ModelMessage {
+  if (message.role === 'user' && typeof message.text === 'string') return { role: 'user', content: message.text };
+  if (message.role === 'assistant' && typeof message.tool === 'string')
+    return {
+      role: 'assistant',
+      content: [{ type: 'tool-call', toolCallId: hostCallId(index), toolName: message.tool, input: message.input ?? {} }],
+    };
+  return toolResultMessage(hostCallId(index), message.name!, message.output ?? null);
+}
+
 export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter & { profileHash: string } {
   const { prefix, label } = spec;
   const profileHash = digest(spec.profile);
-  /** Plain text turns only; a tool continuation needs its private transcript. */
-  const ordinary = (messages: readonly PortableMessage[]): ModelMessage[] =>
-    messages.map((message) => {
+  /**
+   * Plain text turns, after the host's reads. Any other tool continuation needs its private
+   * transcript: the model's own call carries the provider's call id and reasoning, which only the
+   * transcript holds.
+   */
+  const ordinary = (messages: readonly PortableMessage[]): ModelMessage[] => {
+    const hosted = hostReadCount(messages);
+    return messages.map((message, index) => {
+      if (index < hosted) return hostReadMessage(message, index);
       if (
         (message.role !== 'user' && message.role !== 'assistant') ||
         typeof message.text !== 'string' ||
@@ -181,6 +206,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         );
       return { role: message.role, content: message.text };
     });
+  };
   const boundProfile = (request: ModelRequest) => {
     const restrictions = mergeSourceRestrictions(request.sourceRestrictions ?? []);
     if (restrictions.length && spec.sourceRestrictionPolicy !== 'gateway')
@@ -244,6 +270,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     });
   return {
     id: spec.route,
+    ...(spec.preparedRequestMaxBytes !== undefined ? { preparedRequestMaxBytes: spec.preparedRequestMaxBytes } : {}),
     version: spec.sdk,
     contract: spec.contract,
     destination: spec.destination ?? 'external',
@@ -300,16 +327,20 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
             }
           : (routeDelta ?? (stream ? (text: string) => stream.onDelta(text) : undefined));
       const attempt = attemptFor(request);
+      // The host's reads lead every call of this message, from its transcript or not.
+      const stable = hostReadCount(request.messages);
 
       const result = await spec.respond({
         messages,
         tools: request.tools,
         ...(request.sourceRestrictions?.length ? { sourceRestrictions: request.sourceRestrictions } : {}),
+        ...(stable ? { stableMessages: stable } : {}),
         attempt,
         signal,
         onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
         onReasoningDelta: spec.sinks?.onReasoningDelta,
+        onPromptProgress: spec.sinks?.onPromptProgress,
       });
       let response: ModelResult['response'];
       let portable: PortableMessage;

@@ -58,7 +58,7 @@ import {
 import type { Project } from '../shared/types.js';
 import { escalationOfferReasons, loopStartCommand, nectoviaRolesConsentText } from '../client/console/loop-start-model.js';
 import { nectoviaRolesNote, roleLine } from '../client/console/lead-workers-model.js';
-import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel, localAnswerStream } from './fixtures/local-model.js';
 import { DELIVERY, LOCAL_BASE, LOCAL_GAMING, ORDER, SOURCES, localHost, teamFixture, type TeamFixture } from './fixtures/three-model-team.js';
 
 // A run here ends in about a second alone, but in the full suite on a loaded machine it took more
@@ -127,11 +127,12 @@ const localTransport = (async (input: RequestInfo | URL, init?: RequestInit) => 
   ];
   const next = steps.find(([name]) => offered.has(name) && !used.has(name));
   const id = `local-${localCalls.length}`;
+  // The local route reads a stream (DIO-247), in llama.cpp's final-chunk order.
   const answer = (content: string) =>
-    Response.json({ id, model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'stop', message: { content } }] });
+    localAnswerStream({ id, model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'stop', message: { content } }] });
   if (!offered.size) return answer('1. Hand delivery.md to the worker.\n2. Ask the advisor what to check.\n3. Answer.');
   if (!next) return answer(LEAD_ANSWER);
-  return Response.json({ id, model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'tool_calls', message: { content: null,
+  return localAnswerStream({ id, model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'tool_calls', message: { content: null,
     tool_calls: [{ id: `call-${localCalls.length}`, type: 'function', function: { name: next[0], arguments: JSON.stringify(next[1]) } }] } }] });
 }) as typeof globalThis.fetch;
 

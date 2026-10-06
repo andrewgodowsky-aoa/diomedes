@@ -6,6 +6,7 @@ import { modelMessageSchema, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { Json, PortableMessage, ProviderTranscriptRef } from '../../shared/harness.js';
 import { canonical, copy, digest, HarnessError } from './policy.js';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
 
 /**
  * A model provider's private continuation. The provider is called with `store: false`, so these
@@ -31,6 +32,7 @@ export interface ModelTranscript {
 }
 
 export interface ModelTranscripts {
+  withLocalByteLimit?(bytes: number): ModelTranscripts;
   save(value: ModelTranscript): Promise<ProviderTranscriptRef>;
   read(ref: ProviderTranscriptRef): Promise<ModelTranscript>;
 }
@@ -107,12 +109,23 @@ export class FileModelTranscripts implements ModelTranscripts {
   constructor(
     readonly directory: string,
     readonly providerId: string,
+    private readonly maxBytes = MODEL_TRANSCRIPT_MAX_BYTES,
   ) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 24_000_000 ||
+        (providerId !== LOCAL_MODEL_ROUTE && maxBytes !== MODEL_TRANSCRIPT_MAX_BYTES))
+      throw new HarnessError('model_transcript_invalid', 'The private continuation storage allowance is invalid.');
     if (typeof providerId !== 'string' || !PROVIDER_ID.test(providerId))
       throw new HarnessError(
         'model_transcript_invalid',
         'This private continuation store has an invalid provider id.',
       );
+  }
+
+  withLocalByteLimit(bytes: number): ModelTranscripts {
+    if (this.providerId !== LOCAL_MODEL_ROUTE) return this;
+    if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > 24_000_000)
+      throw new HarnessError('model_transcript_invalid', 'The local continuation storage allowance is invalid.');
+    return new FileModelTranscripts(this.directory, this.providerId, bytes);
   }
 
   async save(value: ModelTranscript): Promise<ProviderTranscriptRef> {
@@ -125,7 +138,7 @@ export class FileModelTranscripts implements ModelTranscripts {
         'The private provider continuation is not plain JSON.',
       );
     }
-    if (size > MODEL_TRANSCRIPT_MAX_BYTES)
+    if (size > this.maxBytes)
       throw new HarnessError(
         'model_transcript_too_large',
         'The private provider continuation exceeds its storage limit.',
@@ -143,7 +156,7 @@ export class FileModelTranscripts implements ModelTranscripts {
       );
     // Hash and write the validated representation: the message schema drops keys it does not know.
     const bytes = Buffer.from(canonical(record), 'utf8');
-    if (bytes.length > MODEL_TRANSCRIPT_MAX_BYTES)
+    if (bytes.length > this.maxBytes)
       throw new HarnessError(
         'model_transcript_too_large',
         'The private provider continuation exceeds its storage limit.',
@@ -197,7 +210,7 @@ export class FileModelTranscripts implements ModelTranscripts {
     let bytes: Buffer;
     try {
       const stat = await file.stat();
-      if (!stat.isFile() || stat.size > MODEL_TRANSCRIPT_MAX_BYTES)
+      if (!stat.isFile() || stat.size > this.maxBytes)
         throw new HarnessError(
           'model_transcript_too_large',
           'The private provider continuation exceeds its storage limit.',
