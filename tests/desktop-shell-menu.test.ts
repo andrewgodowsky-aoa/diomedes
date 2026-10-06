@@ -55,18 +55,20 @@ describe('desktop shell application menu', () => {
 
   it('opens the darwin menu with the application menu', () => {
     const { template } = build('darwin');
+    // Electron would name About, Hide and Quit after its app name, which stays Diomedes for the
+    // data folder; the menu names the product itself.
     expect(template[0]).toEqual({
-      label: 'Diomedes',
+      label: 'Nectovia',
       submenu: [
-        { role: 'about' },
+        { role: 'about', label: 'About Nectovia' },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
-        { role: 'hide' },
+        { role: 'hide', label: 'Hide Nectovia' },
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: 'Quit Nectovia' },
       ],
     });
     // A Quit-only File menu is a Windows convention; Quit lives in the app menu.

@@ -138,7 +138,7 @@ import {
   type VertexConnections,
 } from './google-vertex.js';
 import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
-import { decideJobStep, DEFAULT_JOB_TIER, type JobTier } from '../../shared/job-caps.js';
+import { decideJobStep, DEFAULT_JOB_TIER, isCheckInRefusal, type JobTier } from '../../shared/job-caps.js';
 import type { EscalationRole } from '../../shared/escalation-controls.js';
 import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
@@ -2230,15 +2230,24 @@ export class EngineService {
     if (!this.modelApi) throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
     return this.jobLedger(this.modelApi, { projectId, requestId: rawJobId, threadId });
   }
-  /** Record where a job stopped at its cap, so "Go over this once" can raise the next one from it. */
-  private async noteJobStop(error: unknown) {
-    const job = error instanceof ModelApiError ? error.evidence.job : null;
-    if (!job || !this.jobCaps) return;
+  /**
+   * Record where a job stopped at its check-in, so Keep going can raise the next one from it. The local
+   * ledger stops a job with its own numbers; the account service can stop it first, at the same amount,
+   * and that refusal (nothing sent, hold released) is the same stop, recorded at the cap the job holds.
+   */
+  private async noteJobStop(error: unknown, job?: { projectId?: string; requestId?: string }) {
+    if (error instanceof ModelApiError && isManagedCheckIn(error)) {
+      if (this.jobCaps?.noteManagedStop && job?.projectId && job.requestId)
+        await this.jobCaps.noteManagedStop(job.projectId, job.requestId).catch(() => undefined);
+      return;
+    }
+    const stopped = error instanceof ModelApiError ? error.evidence.job : null;
+    if (!stopped || !this.jobCaps) return;
     await this.jobCaps
-      .noteStop(job.id, {
-        usedMicroUsd: job.usedMicroUsd as MicroUsd,
-        capMicroUsd: job.capMicroUsd as MicroUsd,
-        neededMicroUsd: job.neededMicroUsd as MicroUsd,
+      .noteStop(stopped.id, {
+        usedMicroUsd: stopped.usedMicroUsd as MicroUsd,
+        capMicroUsd: stopped.capMicroUsd as MicroUsd,
+        neededMicroUsd: stopped.neededMicroUsd as MicroUsd,
       })
       .catch(() => undefined);
   }
@@ -2321,8 +2330,13 @@ export class EngineService {
     };
     // The Nectovia route is company-managed inference: its admission is the managed one, and it is
     // admitted on the business's plan and the published policy, never on a connection in Settings.
-    if (route === NECTOVIA_ROUTE)
-      return this.admitNectovia(api, input, agent, await this.admitAgent(input, { ...agent, routeKind: 'managed' }).catch(refused), ask, observe);
+    if (route === NECTOVIA_ROUTE) {
+      // A job that continues one that stopped at its check-in (Keep going) is admitted and metered under that
+      // job, so the account service's count and its raised cap carry over. Any other job is its own.
+      const continued = input.projectId && input.requestId ? this.jobCaps?.meteredAs?.(input.projectId, input.requestId) : null;
+      const metered = continued && agent ? { ...agent, rootJobId: continued } : agent;
+      return this.admitNectovia(api, input, metered, await this.admitAgent(input, { ...metered, routeKind: 'managed' }).catch(refused), ask, observe);
+    }
     const admitted = await this.admitAgent(input, agent).catch(refused);
     const handle = await modelApiRoute(api, route);
     const { short, long } = handle.names;
@@ -2403,6 +2417,9 @@ export class EngineService {
     if (!rootJobId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(rootJobId))
       throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
     const tier = await this.managedTier(input);
+    // The job's record exists now (the tier was pinned above), so the id it is metered under can be kept on it.
+    if (this.jobCaps?.noteMetered && input.projectId && input.requestId)
+      await this.jobCaps.noteMetered(input.projectId, input.requestId, rootJobId).catch(() => undefined);
     const label = WORK_STYLE_LABELS[tier];
     let policy = account.policy(input.projectId ?? null);
     if (!policy || policy.revision !== admitted.policyRevision)
@@ -2580,7 +2597,7 @@ export class EngineService {
         ? { ...result, response: { ...result.response, reasoning } }
         : result;
     } catch (error) {
-      await this.noteJobStop(error);
+      await this.noteJobStop(error, input);
       throw seamError(modelApiError(error));
     }
   }
@@ -2693,7 +2710,7 @@ export class EngineService {
       });
       return { ...outcome.result, runId: outcome.run.id };
     } catch (error) {
-      await this.noteJobStop(error);
+      await this.noteJobStop(error, input);
       throw seamError(modelApiError(error));
     } finally {
       controller.abort();
@@ -2790,7 +2807,7 @@ export class EngineService {
         runId: result.runId,
       };
     } catch (error) {
-      await this.noteJobStop(error);
+      await this.noteJobStop(error, input);
       throw seamError(modelApiError(error));
     } finally {
       controller.abort();
@@ -2921,6 +2938,12 @@ export class EngineService {
 export interface JobCapsPort {
   scope(projectId: string, jobId: string, threadId: string | null, tier?: JobTier): Promise<JobScope & { tier: JobTier }>;
   noteStop(key: string, stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd }): Promise<void>;
+  /** The id an earlier job of this chain was metered under at the account service, when Keep going continues it. */
+  meteredAs?(projectId: string, jobId: string): string | null;
+  /** Record the id the account service meters this job under. */
+  noteMetered?(projectId: string, jobId: string, meteredJobId: string): Promise<void>;
+  /** The account service stopped this job at its check-in before the local ledger did. */
+  noteManagedStop?(projectId: string, jobId: string): Promise<void>;
 }
 
 /**
@@ -3571,6 +3594,9 @@ const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
 const selectedEffortOf = (effort: string | undefined): 'low' | 'medium' | 'high' | undefined =>
   effort === 'low' || effort === 'medium' || effort === 'high' ? effort : undefined;
 
+/** The account service refused a step because the job reached its check-in; its hold was released, so nothing was charged. */
+const isManagedCheckIn = (error: ModelApiError) => error.code === 'nectovia_cap_request_required' && isCheckInRefusal(error);
+
 /** A model-API failure in the service's vocabulary. What is known about the send decides the code. */
 function modelApiError(error: unknown): unknown {
   if (!(error instanceof ModelApiError)) return error;
@@ -3581,6 +3607,9 @@ function modelApiError(error: unknown): unknown {
   // A member's own monthly limit stopped the step: the person asks an owner or admin,
   // who may approve one job or raise their month, the way a job that reached its cap asks.
   if (error.code === `nectovia_${MEMBER_LIMIT_REACHED}`) return new EngineError(MEMBER_LIMIT, error.message, false);
+  // The account service stopped the job at its check-in, before anything was sent: the same stop the
+  // local ledger makes, so the person is asked whether to keep going.
+  if (isManagedCheckIn(error)) return new EngineError('JOB_CAP', error.message, false);
   if (/^nectovia_/.test(error.code) && error.evidence.reservation?.state === 'released')
     return new EngineError('ROUTE_REFUSED', error.message, true);
   // A job that reached its cap stopped at a step boundary: nothing of that step was sent.

@@ -1405,8 +1405,8 @@ export function createLoopProcedure(deps: {
     hold(): void;
     open(): void;
     /**
-     * The host is closing: from now on a settle returns before its work, one parked behind hold()
-     * included, and the next start settles that run again. A settle already past the gate finishes.
+     * The host is closing: runs and settles parked behind hold() return before doing work.
+     * The next host recovers them; a settle already past the gate finishes.
      */
     close(): void;
     admit: typeof admit;
@@ -1440,6 +1440,7 @@ export function createLoopProcedure(deps: {
         : view,
     async run(runId: string, owner: string, principal: HarnessPrincipal) {
       await gate;
+      if (closing) return;
       const run = await runs.get(runId);
       const input = loopInput(run);
       const stop = new AbortController();
@@ -1473,6 +1474,7 @@ export function createLoopProcedure(deps: {
           sources: input.sources,
           stream: deps.stream ?? null,
           enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),
+          checkInCap: () => rootScopes.get(runId)?.scopedLedger?.jobScope?.capMicroUsd ?? null,
         }).run(runId, owner, input.goal, principal);
       } finally {
         beat();

@@ -43,7 +43,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     factory = local
       ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
       : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
-    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql', '011_individual_funding.sql', '012_individual_subscription_periods.sql', '013_purchased_usage_holds.sql', '014_member_credit_limits.sql', '015_credit_purchases.sql', '016_stripe_billing_foundation.sql', '017_personal_pay_as_you_go.sql'].map(async (name, index) => {
+    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql', '011_individual_funding.sql', '012_individual_subscription_periods.sql', '013_purchased_usage_holds.sql', '014_member_credit_limits.sql', '015_credit_purchases.sql', '016_stripe_billing_foundation.sql', '017_personal_pay_as_you_go.sql', '018_credit_price_tables.sql', '019_job_check_in_amounts.sql'].map(async (name, index) => {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
     }));
@@ -96,6 +96,20 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     await expect(repository.recordVerifiedWebhook({ ...event, payloadHash: 'b'.repeat(64) })).rejects.toMatchObject({ status: 409 });
     const other = await accounts.createOrganization('alice', 'Other tenant');
     await expect(query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', 'cus_other', other.id, org.tenantId])).rejects.toMatchObject({ code: '23503' });
+  });
+  it('records many concurrent identical verified events once without a unique violation', async () => {
+    // webhook_inbox has two unique keys. A racing insert used to trip the one
+    // its ON CONFLICT clause did not name and surface SQLSTATE 23505.
+    const org = await accounts.createOrganization('alice', 'Webhook race');
+    await query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', 'cus_race', org.id, org.tenantId]);
+    for (let round = 0; round < 8; round++) {
+      const event = { provider: 'stripe' as const, eventId: `evt_race_${round}`, customerId: 'cus_race', payloadHash: 'd'.repeat(64), eventType: 'fixture.event', payload: { round } };
+      const results = await Promise.all(Array.from({ length: 12 }, () => repository.recordVerifiedWebhook(event)));
+      expect(results.filter((value) => value.inserted)).toHaveLength(1);
+      expect(results.every((value) => value.tenantId === org.tenantId)).toBe(true);
+      expect((await query('SELECT count(*)::int AS count FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2', ['stripe', event.eventId])).rows[0].count).toBe(1);
+      await expect(repository.recordVerifiedWebhook({ ...event, payloadHash: 'e'.repeat(64) })).rejects.toMatchObject({ status: 409 });
+    }
   });
   async function fundedOrganization(label: string) {
     const org = await accounts.createOrganization('alice', label);

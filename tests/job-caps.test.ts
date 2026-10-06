@@ -1,10 +1,9 @@
 /**
- * Parent-job caps by tier (owner decision 2026-09-23): Efficient 20, Focused 50
- * and Thorough 100 credits a job, a pre-send estimate that warns ahead of time,
- * a one-job raise the person agrees to, and a stop at the next step boundary
- * when a running job would pass its cap. Fakes only: no provider, no key, no
- * money. The mid-run stop runs the real NativeAgent, RunService and AWS adapter
- * with the network replaced.
+ * Parent-job check-ins by tier (owner decisions 2026-09-23 and 2026-10-05): Efficient 100, Focused 250
+ * and Thorough 500 credits a job, a pre-send estimate that warns ahead of time and names the amount, a
+ * one-job raise the person agrees to (Keep going: exactly one more amount), and a stop at the next step
+ * boundary when a running job would pass its amount. Fakes only: no provider, no key, no money. The
+ * mid-run stop runs the real NativeAgent, RunService and AWS adapter with the network replaced.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -14,23 +13,25 @@ import { createHash } from 'node:crypto';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import {
-  APPROVED_JOB_CAP_CREDITS,
+  CHECK_IN_KEEP_GOING,
+  CHECK_IN_STOP,
   DEFAULT_JOB_TIER,
+  JOB_CHECK_IN_CREDITS,
   approvedJobCap,
   capWarningCopy,
+  checkInCopy,
   decideJobStep,
   estimateJob,
   jobTierOf,
   nextTierUp,
   oneJobRaise,
-  overrunCopy,
   worstCaseNote,
   type JobEstimate,
   type JobRates,
   type JobShape,
   type JobTier,
 } from '../shared/job-caps.js';
-import { CREDIT_MICRO_USD, creditAmount, micro, type MicroUsd } from '../shared/managed-usage.js';
+import { CREDIT_MICRO_USD, MAX_MONEY_MICRO_USD, creditAmount, micro, type MicroUsd } from '../shared/managed-usage.js';
 import { JobCaps, jobKeyFor } from '../server/job-caps.js';
 import { estimateView, mountJobCapRoutes, type JobPlan } from '../server/job-cap-routes.js';
 import { JobCapReached, SpendExposure, type ExposureAttempt } from '../server/spend-exposure.js';
@@ -76,12 +77,12 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('caps per tier', () => {
-  test('Efficient 20, Focused 50 and Thorough 100 credits are the approved defaults', () => {
-    expect(APPROVED_JOB_CAP_CREDITS.status).toBe('approved');
-    expect(approvedJobCap('efficient')).toBe(20 * CREDIT_MICRO_USD);
-    expect(approvedJobCap('focused')).toBe(50 * CREDIT_MICRO_USD);
-    expect(approvedJobCap('thorough')).toBe(100 * CREDIT_MICRO_USD);
+describe('check-in amounts per tier', () => {
+  test('Efficient 100, Focused 250 and Thorough 500 credits are the approved defaults', () => {
+    expect(JOB_CHECK_IN_CREDITS.status).toBe('approved');
+    expect(approvedJobCap('efficient')).toBe(100 * CREDIT_MICRO_USD);
+    expect(approvedJobCap('focused')).toBe(250 * CREDIT_MICRO_USD);
+    expect(approvedJobCap('thorough')).toBe(500 * CREDIT_MICRO_USD);
   });
 
   test("a job's tier is its thread's style, else the placeholder default", () => {
@@ -98,7 +99,7 @@ describe('the pre-send estimate', () => {
     const estimate = estimateJob({ tier: 'focused', metering: 'metered', rates: RATES, shape: SHAPE });
     expect(estimate.kind).toBe('estimate');
     if (estimate.kind !== 'estimate') return;
-    expect(estimate.capMicroUsd).toBe(credits(50));
+    expect(estimate.capMicroUsd).toBe(credits(250));
     expect(estimate.lowMicroUsd).toBeGreaterThan(0);
     expect(estimate.lowMicroUsd).toBeLessThanOrEqual(estimate.likelyMicroUsd);
     expect(estimate.likelyMicroUsd).toBeLessThanOrEqual(estimate.worstMicroUsd);
@@ -116,10 +117,11 @@ describe('the pre-send estimate', () => {
 
   test('unknown rates on a metered route cannot estimate, and still warn: never zero', () => {
     const estimate = estimateJob({ tier: 'efficient', metering: 'metered', rates: null, shape: SHAPE });
-    expect(estimate).toMatchObject({ kind: 'unknown', warn: true, capMicroUsd: credits(20) });
+    expect(estimate).toMatchObject({ kind: 'unknown', warn: true, capMicroUsd: credits(100) });
     expect('likelyMicroUsd' in estimate).toBe(false);
-    const copy = capWarningCopy(estimate, oneJobRaise({ tier: 'efficient', capMicroUsd: credits(20), neededMicroUsd: null }));
+    const copy = capWarningCopy(estimate, oneJobRaise({ capMicroUsd: credits(100), checkInMicroUsd: credits(100) }));
     expect(copy.body).toMatch(/can't estimate this job/);
+    expect(copy.body).toMatch(/Efficient jobs check in at 100 credits\.$/);
     expect(copy.upgrade).toEqual({ tier: 'focused', label: 'Use Focused' });
   });
 
@@ -149,12 +151,12 @@ describe('over-cap thresholds', () => {
   test('likely over the cap warns; only worst over the cap is a note that does not block', () => {
     // Find a price where likely fits Focused but worst does not.
     let factor = 1;
-    while (at('focused', factor).worstMicroUsd <= credits(50)) factor *= 2;
+    while (at('focused', factor).worstMicroUsd <= credits(250)) factor *= 2;
     const noted = at('focused', factor);
     expect(noted.likelyExceeds).toBe(false);
     expect(noted.worstExceeds).toBe(true);
     expect(noted.warn).toBe(false);
-    expect(worstCaseNote(noted)).toMatch(/stops at the 50-credit cap and asks/);
+    expect(worstCaseNote(noted)).toMatch(/It checks in at 250 credits and asks before going further\.$/);
     while (!at('focused', factor).likelyExceeds) factor *= 2;
     const warned = at('focused', factor);
     expect(warned.warn).toBe(true);
@@ -165,19 +167,22 @@ describe('over-cap thresholds', () => {
     const estimate: JobEstimate = {
       kind: 'estimate',
       tier: 'focused',
-      capMicroUsd: credits(50),
-      lowMicroUsd: credits(10),
-      likelyMicroUsd: credits(60),
-      worstMicroUsd: credits(140),
+      capMicroUsd: credits(250),
+      lowMicroUsd: credits(50),
+      likelyMicroUsd: credits(300),
+      worstMicroUsd: credits(700),
       likelyExceeds: true,
       worstExceeds: true,
       warn: true,
       basis: '',
     };
-    const copy = capWarningCopy(estimate, oneJobRaise({ tier: 'focused', capMicroUsd: credits(50), neededMicroUsd: credits(60) }));
-    expect(copy.body).toBe('This will likely use about 60 credits. Focused jobs are capped at 50.');
+    const copy = capWarningCopy(estimate, oneJobRaise({ capMicroUsd: credits(250), checkInMicroUsd: credits(250) }));
+    // The warning names the amount the job checks in at, and what going over lets it use.
+    expect(copy.title).toBe('This job may reach its check-in');
+    expect(copy.body).toBe('This will likely use about 300 credits. Focused jobs check in at 250 credits.');
+    expect(copy.raise).toBe('Going over lets this job use 500 credits before it checks in, for this job only.');
     expect(copy.upgrade).toEqual({ tier: 'thorough', label: 'Use Thorough' });
-    expect(capWarningCopy({ ...estimate, tier: 'thorough', capMicroUsd: credits(100) }, credits(200)).upgrade).toBeNull();
+    expect(capWarningCopy({ ...estimate, tier: 'thorough', capMicroUsd: credits(500) }, credits(1000)).upgrade).toBeNull();
   });
 
   test('a step that lands exactly on the cap runs; one micro-USD past it stops', () => {
@@ -189,10 +194,13 @@ describe('over-cap thresholds', () => {
     });
   });
 
-  test('a one-job raise is finite: at least a tier more, and whole credits past what is needed', () => {
-    expect(oneJobRaise({ tier: 'focused', capMicroUsd: credits(50), neededMicroUsd: credits(60) })).toBe(credits(100));
-    expect(oneJobRaise({ tier: 'focused', capMicroUsd: credits(50), neededMicroUsd: micro(credits(130) + 1) })).toBe(credits(131));
-    expect(oneJobRaise({ tier: 'efficient', capMicroUsd: credits(20), neededMicroUsd: null })).toBe(credits(40));
+  test('a one-job raise is exactly one more amount on the cap the job reached, and finite', () => {
+    expect(oneJobRaise({ capMicroUsd: credits(250), checkInMicroUsd: credits(250) })).toBe(credits(500));
+    // Keep going again on the same job adds one more amount, never a figure sized from an estimate.
+    expect(oneJobRaise({ capMicroUsd: credits(500), checkInMicroUsd: credits(250) })).toBe(credits(750));
+    expect(oneJobRaise({ capMicroUsd: credits(100), checkInMicroUsd: credits(150) })).toBe(credits(250));
+    // Past the largest amount the ledger can hold, it stops at that amount.
+    expect(oneJobRaise({ capMicroUsd: micro(MAX_MONEY_MICRO_USD - 10), checkInMicroUsd: credits(250) })).toBe(MAX_MONEY_MICRO_USD);
   });
 });
 
@@ -210,12 +218,12 @@ describe('"Use Thorough" re-resolves the tier', () => {
     const { caps, styles } = host();
     await caps.init();
     styles.set('thread-1', 'focused');
-    // Dear enough that one typical step is about 74 credits: over Focused, inside Thorough.
-    const rates: JobRates = DEAR;
+    // Dear enough that the job is likely to use more than Focused's 250 credits.
+    const rates: JobRates = { input: DEAR.input * 6, output: DEAR.output * 6, cacheRead: DEAR.cacheRead * 6, cacheWrite: DEAR.cacheWrite * 6 };
     const plan: JobPlan = { threadId: 'thread-1', metering: 'metered', rates, shape: { ...SHAPE, maxSteps: 4, inputBytes: 180_000 } };
     const before = estimateView(caps.tierFor('p', 'thread-1'), plan);
     expect(before.estimate.tier).toBe('focused');
-    expect(before.estimate.capMicroUsd).toBe(credits(50));
+    expect(before.estimate.capMicroUsd).toBe(credits(250));
     expect(before.warning?.upgrade?.label).toBe('Use Thorough');
 
     // A job already running keeps the tier it was pinned under.
@@ -225,10 +233,10 @@ describe('"Use Thorough" re-resolves the tier', () => {
     styles.set('thread-1', 'thorough');
     const after = estimateView(caps.tierFor('p', 'thread-1'), plan);
     expect(after.estimate.tier).toBe('thorough');
-    expect(after.estimate.capMicroUsd).toBe(credits(100));
+    expect(after.estimate.capMicroUsd).toBe(credits(500));
     expect(after.warning?.upgrade ?? null).toBeNull();
     expect((await caps.scope('p', 'cmd-running', 'thread-1')).tier).toBe('focused');
-    expect((await caps.scope('p', 'cmd-next', 'thread-1')).capMicroUsd).toBe(credits(100));
+    expect((await caps.scope('p', 'cmd-next', 'thread-1')).capMicroUsd).toBe(credits(500));
   });
 });
 
@@ -238,14 +246,14 @@ describe('the one-job raise is scoped to exactly that job', () => {
     await caps.init();
     styles.set('thread-1', 'focused');
     const raised = await caps.raiseBeforeSend({ projectId: 'p', jobId: 'cmd-1', threadId: 'thread-1', neededMicroUsd: credits(60), by: 'local-person' });
-    expect(raised.raise).toMatchObject({ toMicroUsd: credits(100), basis: 'estimate', by: 'local-person' });
-    expect((await caps.scope('p', 'cmd-1', 'thread-1')).capMicroUsd).toBe(credits(100));
-    expect((await caps.scope('p', 'cmd-2', 'thread-1')).capMicroUsd).toBe(credits(50));
+    expect(raised.raise).toMatchObject({ toMicroUsd: credits(500), basis: 'estimate', by: 'local-person' });
+    expect((await caps.scope('p', 'cmd-1', 'thread-1')).capMicroUsd).toBe(credits(500));
+    expect((await caps.scope('p', 'cmd-2', 'thread-1')).capMicroUsd).toBe(credits(250));
     // Agreeing again for the same job does not raise it twice.
     const again = await caps.raiseBeforeSend({ projectId: 'p', jobId: 'cmd-1', threadId: 'thread-1', neededMicroUsd: credits(500), by: 'local-person' });
-    expect(again.raise?.toMicroUsd).toBe(credits(100));
+    expect(again.raise?.toMicroUsd).toBe(credits(500));
     // Another project's job of the same id is another job.
-    expect((await caps.scope('q', 'cmd-1', 'thread-1')).capMicroUsd).toBe(credits(50));
+    expect((await caps.scope('q', 'cmd-1', 'thread-1')).capMicroUsd).toBe(credits(250));
   });
 
   test('the raise survives a restart, because it is recorded, and it is never standing', async () => {
@@ -255,7 +263,7 @@ describe('the one-job raise is scoped to exactly that job', () => {
     await first.caps.raiseBeforeSend({ projectId: 'p', jobId: 'cmd-1', threadId: 't', neededMicroUsd: null, by: 'local-person' });
     const second = host();
     await second.caps.init();
-    expect(second.caps.get('p', 'cmd-1')?.raise?.toMicroUsd).toBe(credits(40));
+    expect(second.caps.get('p', 'cmd-1')?.raise?.toMicroUsd).toBe(credits(200));
     expect(second.caps.get('p', 'cmd-2')).toBeNull();
   });
 
@@ -263,19 +271,19 @@ describe('the one-job raise is scoped to exactly that job', () => {
     const { caps, styles } = host();
     await caps.init();
     styles.set('member-thread', 'efficient');
-    caps.arm({ projectId: 'p', threadId: 'member-thread', neededMicroUsd: credits(30), by: 'local-person' });
+    await caps.arm({ projectId: 'p', threadId: 'member-thread', neededMicroUsd: credits(30), by: 'local-person' });
     // A job on another thread does not take it.
-    expect((await caps.scope('p', 'session-other', 'other-thread')).capMicroUsd).toBe(credits(20));
-    expect((await caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBe(credits(40));
-    expect((await caps.scope('p', 'session-2', 'member-thread')).capMicroUsd).toBe(credits(20));
+    expect((await caps.scope('p', 'session-other', 'other-thread')).capMicroUsd).toBe(credits(100));
+    expect((await caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBe(credits(200));
+    expect((await caps.scope('p', 'session-2', 'member-thread')).capMicroUsd).toBe(credits(100));
   });
 
   test('a disarmed raise covers nothing', async () => {
     const { caps } = host();
     await caps.init();
-    const ticket = caps.arm({ projectId: 'p', threadId: 'member-thread', neededMicroUsd: null, by: 'local-person' });
+    const ticket = await caps.arm({ projectId: 'p', threadId: 'member-thread', neededMicroUsd: null, by: 'local-person' });
     caps.disarm(ticket);
-    expect((await caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBe(credits(20));
+    expect((await caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBe(credits(100));
   });
 
   test('going over after a stop raises exactly one new job, once', async () => {
@@ -283,13 +291,13 @@ describe('the one-job raise is scoped to exactly that job', () => {
     await caps.init();
     styles.set('t', 'focused');
     const stopped = await caps.scope('p', 'cmd-1', 't');
-    await caps.noteStop(stopped.id, { usedMicroUsd: credits(45), capMicroUsd: credits(50), neededMicroUsd: credits(57) });
+    await caps.noteStop(stopped.id, { usedMicroUsd: credits(225), capMicroUsd: credits(250), neededMicroUsd: credits(285) });
     // The stopped job is never resumed under a raise.
     await expect(caps.raiseAfterStop({ projectId: 'p', jobId: 'cmd-1', fromJobId: 'cmd-1', threadId: 't', by: 'local-person' })).rejects.toMatchObject({
       details: { code: 'job_stopped' },
     });
     const resend = await caps.raiseAfterStop({ projectId: 'p', jobId: 'cmd-2', fromJobId: 'cmd-1', threadId: 't', by: 'local-person' });
-    expect(resend.raise).toMatchObject({ basis: 'overrun', fromJobId: 'cmd-1', toMicroUsd: credits(100) });
+    expect(resend.raise).toMatchObject({ basis: 'overrun', fromJobId: 'cmd-1', toMicroUsd: credits(500) });
     // The same agreement repeated for the same resend is the same record.
     expect((await caps.raiseAfterStop({ projectId: 'p', jobId: 'cmd-2', fromJobId: 'cmd-1', threadId: 't', by: 'local-person' })).key).toBe(resend.key);
     // It does not raise a third job, and a job that already started is not raised afterwards.
@@ -298,7 +306,7 @@ describe('the one-job raise is scoped to exactly that job', () => {
     });
     await caps.scope('p', 'cmd-4', 't');
     const other = await caps.scope('p', 'cmd-5', 't');
-    await caps.noteStop(other.id, { usedMicroUsd: credits(49), capMicroUsd: credits(50), neededMicroUsd: credits(52) });
+    await caps.noteStop(other.id, { usedMicroUsd: credits(245), capMicroUsd: credits(250), neededMicroUsd: credits(260) });
     await expect(caps.raiseAfterStop({ projectId: 'p', jobId: 'cmd-4', fromJobId: 'cmd-5', threadId: 't', by: 'local-person' })).rejects.toMatchObject({
       details: { code: 'job_started' },
     });
@@ -492,15 +500,12 @@ describe('a job that runs past its cap mid-way', () => {
     expect(capped.exposure.jobUsed(key)).toBe(first.settledMicroUsd);
 
     // The honest words and the same two choices follow from the recorded stop.
-    const copy = overrunCopy({
-      tier: 'focused',
-      capMicroUsd: credits(50),
-      usedMicroUsd: credits(45),
-      raisedToMicroUsd: oneJobRaise({ tier: 'focused', capMicroUsd: credits(50), neededMicroUsd: credits(57) }),
-    });
-    expect(copy.body).toMatch(/stopped before its next step/);
-    expect(copy.body).toMatch(/Nothing more was spent/);
-    expect(copy.upgrade?.label).toBe('Use Thorough');
+    const copy = checkInCopy({ capMicroUsd: credits(250), checkInMicroUsd: credits(250) });
+    expect(copy.title).toBe('This job has used 250 credits. Keep going?');
+    expect(copy.raise).toBe('It can use 250 more before it checks in again.');
+    expect(copy.actions).toEqual({ goOver: CHECK_IN_KEEP_GOING, cancel: CHECK_IN_STOP });
+    expect(copy.body).toBe('');
+    expect(copy.upgrade).toBeNull();
   });
 });
 
@@ -548,12 +553,12 @@ describe('the job-cap routes', () => {
       const estimate = await s.call('POST', '/api/projects/p/threads/t/job-estimate', draft);
       expect(estimate.status).toBe(200);
       expect(estimate.data.estimate.warn).toBe(true);
-      expect(estimate.data.warning.body).toMatch(/^This will likely use about \d[\d,]* credits\. Efficient jobs are capped at 20\.$/);
+      expect(estimate.data.warning.body).toMatch(/^This will likely use about \d[\d,]* credits\. Efficient jobs check in at 100 credits\.$/);
       const over = await s.call('POST', '/api/projects/p/threads/t/jobs/cmd-1/go-over', draft);
       expect(over.status).toBe(200);
       expect(over.data).toMatchObject({ jobId: 'cmd-1', raised: true });
       expect(over.data.capMicroUsd).toBe(estimate.data.raisedToMicroUsd);
-      expect((await s.caps.scope('p', 'cmd-2', 't')).capMicroUsd).toBe(credits(20));
+      expect((await s.caps.scope('p', 'cmd-2', 't')).capMicroUsd).toBe(credits(100));
     } finally {
       await s.close();
     }
@@ -584,17 +589,19 @@ describe('the job-cap routes', () => {
     }
   });
 
-  test("a stopped job's status carries the overrun words, and the resend is raised once", async () => {
+  test("a stopped job's status carries the check-in words, and the resend is raised once", async () => {
     const s = await serve(expensive);
     try {
       const stopped = await s.caps.scope('p', 'cmd-1', 't');
-      await s.caps.noteStop(stopped.id, { usedMicroUsd: credits(18), capMicroUsd: credits(20), neededMicroUsd: credits(24) });
+      await s.caps.noteStop(stopped.id, { usedMicroUsd: credits(90), capMicroUsd: credits(100), neededMicroUsd: credits(120) });
       const status = await s.call('GET', '/api/projects/p/jobs/cmd-1');
-      expect(status.data.overrun.title).toBe('This job reached its cap');
-      expect(status.data.overrun.upgrade.label).toBe('Use Focused');
+      expect(status.data.overrun.title).toBe('This job has used 100 credits. Keep going?');
+      expect(status.data.overrun.raise).toBe('It can use 100 more before it checks in again.');
+      expect(status.data.overrun.actions).toEqual({ goOver: 'Keep going', cancel: 'Stop here' });
+      expect(status.data.overrun.upgrade).toBeNull();
       const resend = await s.call('POST', '/api/projects/p/threads/t/jobs/cmd-2/go-over', { fromJobId: 'cmd-1' });
       expect(resend.status).toBe(200);
-      expect(resend.data.capMicroUsd).toBe(credits(40));
+      expect(resend.data.capMicroUsd).toBe(credits(200));
       const third = await s.call('POST', '/api/projects/p/threads/t/jobs/cmd-3/go-over', { fromJobId: 'cmd-1' });
       expect(third.data.code).toBe('stop_consumed');
       expect((await s.call('GET', '/api/projects/p/jobs/cmd-1')).data.overrun).toBeNull();
@@ -612,11 +619,11 @@ describe('the job-cap routes', () => {
     });
     try {
       expect((await s.call('POST', '/api/projects/p/team/members/member-1/wake-over-cap', {})).status).toBe(400);
-      expect((await s.caps.scope('p', 'session-0', 'member-thread')).capMicroUsd).toBe(credits(20));
+      expect((await s.caps.scope('p', 'session-0', 'member-thread')).capMicroUsd).toBe(credits(100));
       fail = false;
       expect((await s.call('POST', '/api/projects/p/team/members/member-1/wake-over-cap', {})).status).toBe(200);
-      expect((await s.caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBeGreaterThan(credits(20));
-      expect((await s.caps.scope('p', 'session-2', 'member-thread')).capMicroUsd).toBe(credits(20));
+      expect((await s.caps.scope('p', 'session-1', 'member-thread')).capMicroUsd).toBeGreaterThan(credits(100));
+      expect((await s.caps.scope('p', 'session-2', 'member-thread')).capMicroUsd).toBe(credits(100));
     } finally {
       await s.close();
     }

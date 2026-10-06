@@ -60,6 +60,7 @@ import {
   type UsageState,
 } from '../../../shared/managed-usage.js';
 import { sameUsageCounts } from '../../../shared/usage-contract.js';
+import { ceilingSchema, type ChargeSnapshot } from '../../../shared/credit-prices.js';
 import {
   cycleContains,
   individualCycleId,
@@ -110,6 +111,11 @@ export interface FundedJobRow {
   capGeneration: number;
   state: 'open' | 'closed';
   openedAt: string;
+  /**
+   * The tier the root job was opened under (migration 019), so a Keep going raises it by its own tier's
+   * check-in amount. Absent on a job opened before check-ins.
+   */
+  tier?: JobTier | null;
 }
 
 export interface JobRefRow {
@@ -388,6 +394,25 @@ function requireRate(rate: RateSnapshot): RateSnapshot {
   };
 }
 
+/**
+ * The tier charge an attempt is held under, checked like a rate snapshot: whole ledger units, a
+ * named table version and tier, and a ceiling inside its bounds. Its price fields are exactly a rate
+ * snapshot's, so `usageCost` prices the debit from it.
+ */
+function requireCharge(charge: ChargeSnapshot): ChargeSnapshot {
+  if (!charge || !isJobTier(charge.tier) || !Number.isSafeInteger(charge.tableVersion) || charge.tableVersion < 1 ||
+      !ceilingSchema.safeParse(charge.ceilingMicroUsdPerCredit).success)
+    throw new FundingError(422, 'A reservation needs the exact tier charge it is held under.', 'invalid_charge');
+  let prices: RateSnapshot;
+  try {
+    prices = requireRate({ ...charge, routing: undefined });
+  } catch {
+    throw new FundingError(422, 'A reservation needs the exact tier charge it is held under.', 'invalid_charge');
+  }
+  const { routing: _routing, ...fields } = prices;
+  return { ...fields, tier: charge.tier, tableVersion: charge.tableVersion, ceilingMicroUsdPerCredit: charge.ceilingMicroUsdPerCredit };
+}
+
 /** A UTC calendar month, from its id. */
 export function monthBounds(periodId: string): { startsAt: string; endsAt: string } {
   const match = periodPattern.exec(periodId);
@@ -448,10 +473,12 @@ export class FundingService {
   private readonly now: () => number;
 
   /**
-   * Every root job's default cap comes from its tier: the owner-approved
-   * `APPROVED_JOB_CAP_CREDITS` (Efficient 20, Focused 50, Thorough 100). There
-   * is no host option to change them, so no deployment can widen a default by
-   * configuration; a higher cap is an owner-approved cap request.
+   * Every root job's cap starts at its check-in amount: the one the gateway resolved for the business
+   * and tier (the business's own setting, else the staff default, else the code default in
+   * `JOB_CHECK_IN_CREDITS`). There is no host option to change them, so no deployment can widen one by
+   * configuration. A job is never cut off mid-call: a hold that would cross the cap is refused before
+   * anything is sent, and the person chooses Keep going (`keepGoing`), which adds exactly one more amount.
+   * A cap above the amount any other way is an owner-approved cap request.
    */
   constructor(private readonly repository: FundingRepository, options: FundingOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -929,10 +956,12 @@ export class FundingService {
   /**
    * Open a root job with its tier's finite cap, or attach a child run to its
    * parent's root. A child never brings a tier or a cap of its own: it spends
-   * inside the root's. A root may ask for less than its tier's cap; asking for
-   * more is refused here and goes through `requestCapIncrease`.
+   * inside the root's. A root may ask for less than its check-in amount; asking for
+   * more is refused here and goes through `requestCapIncrease`. `checkInMicroUsd` is
+   * the amount the gateway resolved for this business and tier; without it, the
+   * code default for the tier.
    */
-  async openJob(input: { tenantId: string; organizationId: string; rootJobId: string; runRef: string; parentRunRef: string | null; tier: JobTier | null; capMicroUsd: MicroUsd | null }): Promise<FundedJobRow & { inherited: boolean }> {
+  async openJob(input: { tenantId: string; organizationId: string; rootJobId: string; runRef: string; parentRunRef: string | null; tier: JobTier | null; capMicroUsd: MicroUsd | null; checkInMicroUsd?: MicroUsd | null }): Promise<FundedJobRow & { inherited: boolean }> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
     const runRef = requireId(input.runRef, 'run reference');
@@ -954,7 +983,8 @@ export class FundingService {
       }
       if (!isJobTier(input.tier))
         throw new FundingError(422, 'A root job names its tier: efficient, focused or thorough.', 'invalid_tier');
-      const tierCap = approvedJobCap(input.tier);
+      const tierCap = input.checkInMicroUsd === undefined || input.checkInMicroUsd === null
+        ? approvedJobCap(input.tier) : requireMoney(input.checkInMicroUsd, 'the check-in amount');
       const cap = input.capMicroUsd === null ? tierCap : requireMoney(input.capMicroUsd, 'the job cap');
       const existing = await tx.job(tenantId, rootJobId);
       if (existing) {
@@ -965,7 +995,7 @@ export class FundingService {
       if (existingRef) throw new FundingError(409, 'That run is already attached to a job.', 'job_conflict');
       if (cap > tierCap)
         throw new FundingError(409, 'A cap above the tier’s approved cap needs an explicit request and an owner’s approval.', 'cap_request_required');
-      const row: FundedJobRow = { tenantId, organizationId, rootJobId, runRef, capMicroUsd: cap, capGeneration: 0, state: 'open', openedAt: this.at() };
+      const row: FundedJobRow = { tenantId, organizationId, rootJobId, runRef, capMicroUsd: cap, capGeneration: 0, state: 'open', openedAt: this.at(), tier: input.tier };
       await tx.saveJob(row);
       await tx.saveJobRef({ tenantId, runRef, rootJobId });
       return { ...row, inherited: false };
@@ -991,6 +1021,12 @@ export class FundingService {
     tenantId: string; organizationId: string; attemptId: string; rootJobId: string; parentAttemptId: string | null;
     kind: ChargeKind; route: string; requestDigest: string; rateSnapshot: RateSnapshot; maxMicroUsd: MicroUsd;
     usageClass: UsageClass; companyCeilingMicroUsd?: MicroUsd | null;
+    /**
+     * The tier charge this attempt is held and debited under (Model B). The hold (`maxMicroUsd`) is
+     * in its units, and `rateSnapshot` then prices only the provider's cost. Left out, the attempt
+     * holds and debits at provider cost, as every attempt before tier pricing did.
+     */
+    chargeSnapshot?: ChargeSnapshot;
     /**
      * The verified member this work is for, and their role. Given by the gateway from the membership it
      * has just checked, never from a request. When present, the member's monthly limit is enforced here,
@@ -1021,6 +1057,7 @@ export class FundingService {
     const requestDigest = requireId(input.requestDigest, 'request digest');
     const parentAttemptId = input.parentAttemptId === null ? null : requireId(input.parentAttemptId, 'parent attempt');
     const rate = requireRate(input.rateSnapshot);
+    const charge = input.chargeSnapshot === undefined ? undefined : requireCharge(input.chargeSnapshot);
     if (!isUsageClass(input.usageClass))
       throw new FundingError(422, 'Say what this attempt is for: included-chat, metered-work, worker or automation.', 'invalid_usage_class');
     const usageClass = input.usageClass;
@@ -1045,6 +1082,7 @@ export class FundingService {
         const same = existing.organizationId === organizationId && existing.rootJobId === rootJobId && existing.parentAttemptId === parentAttemptId &&
           existing.kind === input.kind && existing.route === route && existing.requestDigest === requestDigest &&
           existing.maxMicroUsd === input.maxMicroUsd && JSON.stringify(existing.rateSnapshot) === JSON.stringify(rate) &&
+          JSON.stringify(existing.chargeSnapshot ?? null) === JSON.stringify(charge ?? null) &&
           existing.usageClass === usageClass;
         if (!same) throw new FundingError(409, 'That attempt id is already used for a different hold.', 'attempt_conflict');
         return existing;
@@ -1092,7 +1130,8 @@ export class FundingService {
       const attempt: FundedAttempt = {
         id: attemptId, organizationId, periodId: period.periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,
-        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate, usageClass,
+        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate,
+        ...(charge ? { chargeSnapshot: charge } : {}), usageClass,
         monthlyHoldMicroUsd: decision.monthlyHoldMicroUsd, topUpHoldMicroUsd: decision.topUpHoldMicroUsd, dispatchedAt: null,
       };
       await tx.saveAttempt(attempt);
@@ -1281,14 +1320,17 @@ export class FundingService {
         return { outcome: 'held', attempt: parked, reason };
       };
       if (!checked.valid) return hold(`${checked.reason} The hold stays until the provider's accounting is known.`);
-      const cost = usageCost(attempt.rateSnapshot, checked.usage);
+      // Model B: the debit is the tier's charge and the provider's cost is recorded beside it, never
+      // debited. An attempt held before tier pricing has no charge and debits its provider cost, as before.
+      const providerCost = usageCost(attempt.rateSnapshot, checked.usage);
+      const cost = attempt.chargeSnapshot ? usageCost(attempt.chargeSnapshot, checked.usage) : providerCost;
       if (cost > attempt.maxMicroUsd)
         return hold('The provider reported more than was reserved. The hold stays for reconciliation; it is not clamped.');
       const monthly = Math.min(cost, attempt.monthlyHoldMicroUsd);
       const settledAttempt = { ...this.move(attempt, attempt.state === 'uncertain' ? 'reconcile' : 'settle'), resolvedAt: at };
       const settlement: AttemptSettlement = {
         reservationId: attempt.id, organizationId: attempt.organizationId, periodId: attempt.periodId,
-        providerCostMicroUsd: cost, allowanceDebitMicroUsd: cost, rateCardVersion: attempt.rateCardVersion,
+        providerCostMicroUsd: providerCost, allowanceDebitMicroUsd: cost, rateCardVersion: attempt.rateCardVersion,
         eligibility: 'included', settledAt: at, reconciledFrom, tenantId: attempt.tenantId, receiptRef,
         monthlyDebitMicroUsd: micro(monthly), topUpDebitMicroUsd: micro(cost - monthly), usage: checked.usage,
       };
@@ -1331,6 +1373,44 @@ export class FundingService {
         }
       }
       return { released, uncertain };
+    });
+  }
+
+  /**
+   * Keep going (Andrew, 2026-10-05): a job reached its check-in amount and the person chose to continue.
+   * This raises that one job's cap by exactly one more amount, the one for the tier it was opened under.
+   * The caller (the account service) has verified who is asking and resolved `amounts` from the
+   * business's settings; nothing here reads a figure from a request.
+   *
+   * The caller names the cap it saw (`atCapMicroUsd`), and the raise is made only against that cap, under
+   * the organization lock. So a second press, a retry or a second window cannot add a second amount for
+   * one check-in: the job's cap has moved, and the answer says so. A repeat of a raise that already
+   * happened (the cap is exactly one amount past the one named) answers the same as the first time,
+   * with `raised: false`, so a retry after a lost answer is safe. The raise changes nothing about the
+   * money: the balance and the member's monthly limit are still checked at every hold (`reserve`).
+   * It writes the job's cap and generation only, the columns a cap approval already writes.
+   */
+  async keepGoing(input: { tenantId: string; organizationId: string; rootJobId: string; atCapMicroUsd: MicroUsd; amounts: Readonly<Record<JobTier, MicroUsd>> }): Promise<{ job: FundedJobRow; addedMicroUsd: MicroUsd; raised: boolean }> {
+    const tenantId = requireId(input.tenantId, 'tenant');
+    const organizationId = requireId(input.organizationId, 'organization');
+    const rootJobId = requireId(input.rootJobId, 'job');
+    const atCap = requireMoney(input.atCapMicroUsd, 'the cap the person saw');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(tenantId, organizationId);
+      const job = await tx.job(tenantId, rootJobId);
+      if (!job || job.organizationId !== organizationId)
+        throw new FundingError(404, 'That job was not found for this organization.', 'unknown_job');
+      if (job.state !== 'open') throw new FundingError(409, 'That job is closed.', 'job_closed');
+      if (!isJobTier(job.tier))
+        throw new FundingError(409, 'That job was opened before check-ins, so it cannot be kept going.', 'job_tier_unknown');
+      const added = requireMoney(input.amounts[job.tier], 'the check-in amount');
+      const next = sumMoney([atCap, added]);
+      if (job.capMicroUsd === next && job.capGeneration > 0) return { job, addedMicroUsd: added, raised: false };
+      if (job.capMicroUsd !== atCap)
+        throw new FundingError(409, 'This job already checked in again. Read where it stands, then choose.', 'check_in_stale');
+      const raised: FundedJobRow = { ...job, capMicroUsd: next, capGeneration: job.capGeneration + 1 };
+      await tx.saveJob(raised);
+      return { job: raised, addedMicroUsd: added, raised: true };
     });
   }
 

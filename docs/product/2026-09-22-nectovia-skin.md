@@ -98,15 +98,23 @@ These are Andrew's calls. The skin makes no claim about any of them.
    still say Diomedes (contract A3: the desktop shell's names are unchanged, and a test holds it so).
    They are named by `desktop/main.mjs`, whose `setName`, `title` and `showErrorBox` strings this lane
    may not touch. The lane changed only that file's title bar colours and its first-paint colour.
+   **Decided.** Since 2026-09-24 the window title, the dialogs and the Windows taskbar name say
+   Nectovia (contract A3 moved; `tests/name-contract.test.ts`). On 2026-10-06 Andrew asked for the
+   Mac too: the bundle is Nectovia.app and its app menu says Nectovia, while `app.setName('Diomedes')`
+   and the bundle id keep the data identity (`docs/implementation/2026-10-06-mac-app-name-and-icon.md`).
 2. **The taskbar and app icon.** The icon is still drawn from `client/console/Mark.tsx`, the
    Diomedes mark, and the installer icon is unchanged. The Nectovia mark exists in the app
    (`NectoviaMark.tsx`) but is not an icon asset yet.
+   **Decided.** Since 2026-09-24 nectovia.exe and its installer carry the Nectovia mark
+   (`scripts/app-icon.mjs`, `desktop/diomedes.ico`). On 2026-10-06 Andrew asked for the website's N
+   on the Mac app too: the same script draws `desktop/nectovia.icns` on Apple's icon grid.
 3. **The About line.** It now reads "Nectovia by Diomedes Systems." and then "Version <n>.", with
    the installed version read from the update service. The version is left out when it cannot be read.
    Confirm the wording.
 4. **Whether existing installs move to Nectovia.** New installs start on Nectovia. Existing installs
    keep the scheme they saved, and nothing migrates them (contract A5).
-5. **Retiring Mark.tsx.** It stays as the icon source until item 2 is decided.
+5. **Retiring Mark.tsx.** It stays as the icon source until item 2 is decided. Item 2 is decided
+   and no icon is drawn from it; whether to delete the file is still open.
 6. **The ThemePack handoff to the site.** Adding `nectovia` to `BASE_THEME_IDS` changes the frozen
    ThemePack contract. The site pins its copy by hash (`scripts/verify-theme-pack-snapshot.mjs`) and
    rejects Nectovia-based themes until the integrator runs `npm run theme-pack:handoff`.

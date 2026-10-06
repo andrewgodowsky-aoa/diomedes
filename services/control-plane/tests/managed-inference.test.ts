@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOpenAI } from '@ai-sdk/openai';
 import { jsonSchema, stepCountIs, streamText, tool, type ModelMessage } from 'ai';
 import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
-import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
+import { DEMO_ACCOUNTS, FAUX_CREDIT_CHARGE, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
 import { MANAGED_PROVIDERS, bedrockResponsesCaller, scriptedResponsesFetch } from '../src/managed-providers.js';
 import { FundingService } from '../src/funding.js';
 import { MANAGED_USAGE_NOT_INCLUDED, ManagedInferenceService } from '../src/managed-inference.js';
@@ -18,7 +18,11 @@ import { InterleavingFundingRepository } from './support/interleaving-funding.js
 
 const LUNA = MANAGED_PROVIDERS[0];
 const CANARY = 'ABSK-canary-7f3a9c2e5b1d-DO-NOT-LEAK';
-const SCRIPTED_COST = usageCost(LUNA.rate, { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 });
+const SCRIPTED_USAGE = { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 };
+/** What the provider charges for the scripted call: recorded beside the settlement, never debited (Model B). */
+const SCRIPTED_COST = usageCost(LUNA.rate, SCRIPTED_USAGE);
+/** What the scripted call debits: the faux cloud's synthetic Efficient charge, in ledger units. */
+const SCRIPTED_DEBIT = usageCost({ version: 'faux', ...FAUX_CREDIT_CHARGE }, SCRIPTED_USAGE);
 
 let clock = Date.parse('2026-09-25T12:00:00.000Z');
 const now = () => clock;
@@ -328,27 +332,31 @@ describe('an entitled Business call', () => {
 
     await cloud.idle();
     const [attempt] = attempts();
-    expect(attempt).toMatchObject({ id: 'run-1:1', state: 'settled', route: 'aws-luna-5-6', rootJobId: 'run-1', usageClass: 'included-chat', rateSnapshot: LUNA.rate });
+    expect(attempt).toMatchObject({ id: 'run-1:1', state: 'settled', route: 'aws-luna-5-6', rootJobId: 'run-1', usageClass: 'included-chat', rateSnapshot: LUNA.rate,
+      chargeSnapshot: { version: 'credit-prices:1:efficient', tier: 'efficient', tableVersion: 1, ...FAUX_CREDIT_CHARGE } });
     const [settlement] = settlements();
-    // (800 uncached * .22 + 100 cached * .022 + 40 output * 1.32) micro-USD.
+    // Provider cost: (800 uncached * .22 + 100 cached * .022 + 40 output * 1.32) micro-USD.
     expect(SCRIPTED_COST).toBe(231);
-    expect(settlement).toMatchObject({ providerCostMicroUsd: SCRIPTED_COST, allowanceDebitMicroUsd: SCRIPTED_COST, reconciledFrom: 'response',
+    // Debit, under the synthetic charge: (800 * 2 + 100 * 1 + 40 * 10) units, plus the 100-unit request fee.
+    expect(SCRIPTED_DEBIT).toBe(2_200);
+    expect(settlement).toMatchObject({ providerCostMicroUsd: SCRIPTED_COST, allowanceDebitMicroUsd: SCRIPTED_DEBIT, reconciledFrom: 'response',
       receiptRef: expect.stringMatching(/^resp_/), usage: { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 } });
     const after = await available(owner);
-    expect(before.availableMicroUsd - after.availableMicroUsd).toBe(SCRIPTED_COST);
-    expect(after.settledMicroUsd - before.settledMicroUsd).toBe(SCRIPTED_COST);
+    expect(before.availableMicroUsd - after.availableMicroUsd).toBe(SCRIPTED_DEBIT);
+    expect(after.settledMicroUsd - before.settledMicroUsd).toBe(SCRIPTED_DEBIT);
     expect(after.pendingMicroUsd).toBe(0);
 
     const read = await call('GET', '/managed/v1/attempts/run-1:1', token, undefined, { 'x-nectovia-organization': orgs.juniper });
     expect(read.status).toBe(200);
     expect(read.body).toEqual({
-      attemptId: 'run-1:1', state: 'settled', providerCostMicroUsd: SCRIPTED_COST, allowanceDebitMicroUsd: SCRIPTED_COST,
+      // The provider's cost is the company's record under tier pricing; the customer reads the debit.
+      attemptId: 'run-1:1', state: 'settled', providerCostMicroUsd: null, allowanceDebitMicroUsd: SCRIPTED_DEBIT,
       routing: null, heldMicroUsd: 0,
       usage: { inputTokens: 900, cacheReadTokens: 100, cacheWriteTokens: 0, outputTokens: 40, reasoningTokens: 8 },
     });
   });
 
-  it('holds the input bound at the highest input-side rate plus the output cap at the output rate, rounded up, and forwards the cap when none is given', async () => {
+  it('holds the input bound at the highest input-side charge plus the output cap at the output charge, rounded up, plus the request fee, and forwards the cap when none is given', async () => {
     const { token, admission } = await employee();
     const body = chatBody();
     delete (body as Record<string, unknown>).max_output_tokens;
@@ -357,8 +365,8 @@ describe('an entitled Business call', () => {
     expect(response.status).toBe(200);
     expect(spy.calls[0].body.max_output_tokens).toBe(16_000);
     const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, body.input.length);
-    // GPT-5.6 Luna: cache write is the largest input price, 275,000 micro-USD per million.
-    const ceiling = Math.ceil((bound * 275_000 + 16_000 * 1_320_000) / 1_000_000);
+    // The synthetic charge: cache write is the largest input-side charge, 2,500,000 units per million.
+    const ceiling = Math.ceil((bound * 2_500_000 + 16_000 * 10_000_000) / 1_000_000) + 100;
     expect(attempts()[0].maxMicroUsd).toBe(ceiling);
     await readAll(response.body);
   });
@@ -711,7 +719,7 @@ describe('out of credit', () => {
     const tenantId = (await call('GET', `/ops/customers/${orgs.juniper}`, await signIn('staffSupport'))).body.organization.tenantId as string;
     await cloud.funding.openJob({ tenantId, organizationId: orgs.juniper, rootJobId: 'run-1', runRef: 'run-1', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
     await cloud.funding.reserve({ tenantId, organizationId: orgs.juniper, attemptId: 'earlier', rootJobId: 'run-1', parentAttemptId: null, kind: 'generation',
-      route: 'aws-luna-5-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(20) - 1_000 as never, usageClass: 'included-chat' });
+      route: 'aws-luna-5-6', requestDigest: 'b'.repeat(64), rateSnapshot: LUNA.rate, maxMicroUsd: creditAmount(100) - 1_000 as never, usageClass: 'included-chat' });
     expect(await refusal(await ask({ token, admission }))).toMatchObject({ status: 402, code: 'cap_request_required' });
     expect(spy.calls).toHaveLength(0);
   });
@@ -845,13 +853,19 @@ describe('reading an attempt', () => {
 // --- the owner's spend controls ------------------------------------------------------------------
 
 const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
-/** The hold the gateway prices for this request body: its input bound at the highest input-side rate plus the output cap at the output rate. */
+/**
+ * The hold the gateway prices for this request body, under the tier's charge: its input bound at the
+ * highest input-side charge plus the output cap at the output charge, rounded up, plus the request fee.
+ * Held in ledger units, which the company spend ceiling counts as provider cost: a charge under the
+ * credit price table's ceiling can never cost the provider more than it holds.
+ */
 function holdFor(raw: string, items: number, maxOutputTokens: number) {
   const bound = inputTokenBound(new TextEncoder().encode(raw).byteLength, items);
-  const inputRate = Math.max(LUNA.rate.inputMicroUsdPerMillion, LUNA.rate.cacheWriteMicroUsdPerMillion, LUNA.rate.cacheReadMicroUsdPerMillion);
-  return Math.ceil((bound * inputRate + maxOutputTokens * LUNA.rate.outputMicroUsdPerMillion) / 1_000_000);
+  const c = FAUX_CREDIT_CHARGE;
+  const inputRate = Math.max(c.inputMicroUsdPerMillion, c.cacheWriteMicroUsdPerMillion, c.cacheReadMicroUsdPerMillion);
+  return Math.ceil((bound * inputRate + maxOutputTokens * c.outputMicroUsdPerMillion) / 1_000_000) + c.requestFeeMicroUsd;
 }
-/** The default chat call's hold: far above one settled scripted call (112 micro-USD). */
+/** The default chat call's hold: far above one settled scripted call's provider cost (231 micro-USD). */
 const chatHold = () => holdFor(JSON.stringify(chatBody()), chatBody().input.length, 4_096);
 
 describe('the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD)', () => {
@@ -864,7 +878,7 @@ describe('the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD)', () => {
     expect(first.status).toBe(200);
     await readAll(first.body);
     await cloud.idle();
-    // 112 settled plus this call's hold is the ceiling to the micro-USD.
+    // 231 settled provider cost plus this call's hold is the ceiling to the micro-USD.
     const second = await ask({ token, admission, attempt: 'run-1:2' });
     expect(second.status).toBe(200);
     await readAll(second.body);
@@ -897,7 +911,7 @@ describe('the company spend ceiling (MANAGED_SPEND_CEILING_MICRO_USD)', () => {
     await cloud.idle();
     expect(spy.calls).toHaveLength(1);
     expect(attempts()).toHaveLength(1);
-    // Settled at 112, that call leaves room again: the refusal was its open hold.
+    // Settled at its provider cost, that call leaves room again: the refusal was its open hold.
     expect(SCRIPTED_COST + hold).toBeLessThanOrEqual(2 * hold - 1);
     const third = await ask({ token, admission, attempt: 'run-1:3' });
     expect(third.status).toBe(200);

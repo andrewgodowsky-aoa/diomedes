@@ -28,8 +28,9 @@ import { individualIncludesMonthlyCredits } from '../../../shared/individual-pla
 import { individualCycleId, type IndividualBillingCycle } from '../../../shared/individual-period.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
+import { chargeHold, chargeSnapshot, checkCeiling, type ChargeSnapshot, type CreditPriceTable, type PriceFields } from '../../../shared/credit-prices.js';
+import { checkInAmount, resolveCheckIns } from '../../../shared/job-check-ins.js';
 import {
-  approvedJobCap,
   isJobTier,
   isUsageClass,
   micro,
@@ -66,7 +67,7 @@ import { DEFAULT_MANDATORY_RESTRICTIONS, hardRestrictionsSchema, resolveRoutingC
   type AccountScope, type RequestEnvelope, type FailureKind, type RoutingReceipt } from '../../../shared/routing-policy.js';
 import { approvedConnections, callManagedProvider, connectionCredential, providerBody, prepareManagedProvider, nativeRouteId, supportsReasoningSummaries } from './managed-bindings.js';
 import { BindingError, canonicalJson, sseObjects } from './managed-normalization.js';
-import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits, scopeEscalation } from './routing.js';
+import { authorizeScope, effectivePolicy, defaultEnvelope, routesWithCircuits, scopeEscalation, tierCeiling } from './routing.js';
 import { ESCALATION_HEADER, ESCALATION_ROLES, escalationAllows, type EscalationRole } from '../../../shared/escalation-controls.js';
 import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingRepository, type FundingService } from './funding.js';
 import { MEMBER_LIMIT_REACHED } from '../../../shared/credit-allotments.js';
@@ -652,18 +653,6 @@ function releasedRefusal(status: number, detail: string | null, retryAfter: stri
   return new ManagedError(400, 'provider_refused', detail ?? REFUSED);
 }
 
-/**
- * A hold at the dearest input-side rate (fresh input, cache write or cache
- * read) for every input token the bound allows, so no mix of cache use can
- * cost more than the hold, plus the output bound at the output rate, rounded up.
- */
-function holdFor(rate: RateSnapshot, inputBound: number, outputBound: number): MicroUsd {
-  const inputRate = Math.max(rate.inputMicroUsdPerMillion, rate.cacheWriteMicroUsdPerMillion, rate.cacheReadMicroUsdPerMillion);
-  return micro(Number(
-    (BigInt(inputBound) * BigInt(inputRate) + BigInt(outputBound) * BigInt(rate.outputMicroUsdPerMillion) + 999_999n) / 1_000_000n,
-  ));
-}
-
 // --- the gateway (contract sections 2 and 3) -------------------------------------------------
 
 export const MANAGED_CONTRACT = 'nectovia-managed/1';
@@ -714,6 +703,8 @@ interface Dispatch {
 }
 
 const inFlight = () => new ManagedError(409, 'attempt_in_flight', 'That request is already being answered.');
+/** A tier the credit price table does not price. Refused before any hold or send. */
+const unpriced = (tier: JobTier) => new ManagedError(409, 'tier_unpriced', `The ${TIER_LABEL[tier]} tier has no credit price right now.`);
 
 /** A request body as JSON, or the refusal a customer reads. */
 function parseBody(bytes: Uint8Array): unknown {
@@ -786,7 +777,8 @@ export class ManagedInferenceService {
         state: found.attempt.state,
         routing: found.attempt.rateSnapshot.routing ?? null,
         heldMicroUsd: ['pending', 'uncertain'].includes(found.attempt.state) ? found.attempt.maxMicroUsd : 0,
-        providerCostMicroUsd: settled?.providerCostMicroUsd ?? null,
+        // Under tier pricing the provider's cost is the company's own record, never the customer's.
+        providerCostMicroUsd: found.attempt.chargeSnapshot ? null : settled?.providerCostMicroUsd ?? null,
         allowanceDebitMicroUsd: settled?.allowanceDebitMicroUsd ?? null,
         usage: settled
           ? {
@@ -826,6 +818,8 @@ export class ManagedInferenceService {
     // 6. The route, and the owner's spend controls.
     const controls = spendControls(env);
     const { entry, row, credential } = this.resolve(state.policy, state.routes, h, body, env);
+    // The tier's credit charge prices the hold and the debit; the route's own price must stay under its ceiling.
+    const charge = this.tierCharge(state.priceTable, h.tier, entry.id, row.rate);
     headers.set('X-Nectovia-Route', entry.id);
     headers.set('X-Nectovia-Model', entry.model);
     headers.set('X-Nectovia-Rate-Card', row.rate.version);
@@ -841,9 +835,10 @@ export class ManagedInferenceService {
       throw new ManagedError(413, 'context_too_long', 'This conversation is too long for one request. Start a new one, or attach less.');
     // 8 to 10. The job, the hold (the input bound and the output cap) and the dispatch commit.
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
-      kind: 'generation', route: entry.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
-      maxMicroUsd: holdFor(row.rate, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member,
-    });
+      kind: 'generation', route: entry.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate, charge,
+      maxMicroUsd: chargeHold(charge, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member,
+      checkInMicroUsd: checkInAmount(state.checkIns, h.tier),
+    }, () => this.sameTable(charge));
     // 11. The call: the allowlisted body, with the route's model, store off, streaming,
     // and the output cap the hold was priced at.
     const forwarded = JSON.stringify({ ...body, model: entry.model, store: false, stream: true, max_output_tokens: maxOutputTokens });
@@ -881,12 +876,16 @@ export class ManagedInferenceService {
     const changed = () => new ManagedError(409, previous ? 'routing_changed_after_attempt' : 'policy_changed',
       previous ? 'Routing changed after a recorded attempt. Review its costs, then refresh this account before retrying.' : 'Routing, price or account preferences changed. Refresh this account before retrying.');
     if (h.policyRevision !== initial.effective.revision || h.globalRevision !== initial.globalRevision || h.scopeRevision !== initial.scopeRevision || h.preferenceRevision !== preferenceRevision) throw changed();
+    // The tier's credit charge, from the price table read with this routing state. No charge, nothing is sent.
+    const ceiling = tierCeiling(initial.priceTable, h.tier);
+    if (!ceiling) throw unpriced(h.tier);
+    const tableVersion = initial.priceTable?.version ?? 0;
     const policy = initial.effective.routing[h.tier];
     const referencePrice = initial.routes.find(r => r.id === policy.primary)?.binding?.price ?? null;
     const resolve = (state: typeof initial, requestEnvelope = envelope, sourceRestrictions = state.restrictions) => resolveRoutingCandidates({ routes: state.routes,
       connections: approvedConnections(env).filter(c => connectionCredential(c, env)), policy, preference: state.preference!,
       mandatory: state.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions,
-      tier: h.tier, envelope: requestEnvelope, referencePrice, now: this.now() });
+      tier: h.tier, envelope: requestEnvelope, referencePrice, now: this.now(), costCeiling: ceiling });
     // The advertised model is the authenticated snapshot's selection. The real request may
     // exclude it (context or sources); only an explicitly enabled backup may then serve it.
     const advertised = resolve(initial, defaultEnvelope(), []).candidates[0]?.route;
@@ -903,7 +902,8 @@ export class ManagedInferenceService {
         if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled.');
         const admission = await this.admitted(h, { escalated });
         const current = await readCurrent();
-        if (current.globalRevision !== initial.globalRevision || current.scopeRevision !== initial.scopeRevision || current.preference?.revision !== preferenceRevision) throw changed();
+        if (current.globalRevision !== initial.globalRevision || current.scopeRevision !== initial.scopeRevision || current.preference?.revision !== preferenceRevision ||
+            (current.priceTable?.version ?? 0) !== tableVersion) throw changed();
         const candidate = selection.candidates[index];
         const fresh = resolve(current).ranked.find(c => c.route.id === candidate.route.id);
         if (!fresh || fresh.route.revision !== candidate.route.revision) throw changed();
@@ -948,15 +948,17 @@ export class ManagedInferenceService {
             connectionId: connection.id, connectionRevision: connection.revision, protocol: binding.protocol,
             priceObservedAt: price.observedAt, priceValidUntil: price.validUntil } };
         const ref = await this.holdAndDispatch({ ...h, attemptId, parentAttemptId: previous?.attemptId ?? h.parentAttemptId }, admission.tenantId, admission.state.grants,
-          { kind: 'generation', route: route.id, requestDigest: await digest(canonicalJson({ body: forwarded, routing: rate.routing })), rate,
-            maxMicroUsd: micro(Math.max(1, priced.estimateMicroUsd)), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member,
-            boughtOnly: admission.payAsYouGo }, async () => {
+          { kind: 'generation', route: route.id, requestDigest: await digest(canonicalJson({ body: forwarded, routing: rate.routing })), rate, charge: ceiling.charge,
+            maxMicroUsd: chargeHold(ceiling.charge, actualEnvelope.inputTokens, outputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member,
+            checkInMicroUsd: checkInAmount(admission.state.checkIns, h.tier), boughtOnly: admission.payAsYouGo }, async () => {
             // Reservation and native preparation can wait on I/O. Recheck the actual
             // authority immediately before committing this attempt's dispatch.
             if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.');
             await this.admitted(h, { escalated });
             const latest = await readCurrent();
-            if (latest.globalRevision !== initial.globalRevision || latest.scopeRevision !== initial.scopeRevision || latest.preference?.revision !== preferenceRevision) throw changed();
+            // A credit price table published since the first read changes what this call would cost.
+            if (latest.globalRevision !== initial.globalRevision || latest.scopeRevision !== initial.scopeRevision || latest.preference?.revision !== preferenceRevision ||
+                (latest.priceTable?.version ?? 0) !== tableVersion) throw changed();
             const allowed = resolve(latest, actualEnvelope).ranked.find(c => c.route.id === route.id);
             if (!allowed || allowed.route.revision !== route.revision || allowed.connection.revision !== connection.revision ||
                 allowed.estimateMicroUsd !== priced.estimateMicroUsd || connectionCredential(allowed.connection, env) !== credential) throw changed();
@@ -1061,7 +1063,7 @@ export class ManagedInferenceService {
         if (!attempt) throw new Error('A dispatched attempt is missing.');
         attempts.push({ attemptId: attempt.id, state: attempt.state, routing: attempt.rateSnapshot.routing ?? null,
           heldMicroUsd: ['pending', 'uncertain'].includes(attempt.state) ? attempt.maxMicroUsd : 0,
-          providerCostMicroUsd: settlement?.providerCostMicroUsd ?? null, allowanceDebitMicroUsd: settlement?.allowanceDebitMicroUsd ?? null });
+          providerCostMicroUsd: attempt.chargeSnapshot ? null : settlement?.providerCostMicroUsd ?? null, allowanceDebitMicroUsd: settlement?.allowanceDebitMicroUsd ?? null });
       }
       return { attempts, allowanceDebitMicroUsd: attempts.reduce((sum, a) => sum + (a.allowanceDebitMicroUsd ?? 0), 0),
         heldMicroUsd: attempts.reduce((sum, a) => sum + a.heldMicroUsd, 0) };
@@ -1111,6 +1113,7 @@ export class ManagedInferenceService {
       throw unavailable();
     }
     const controls = spendControls(env);
+    const charge = this.tierCharge(state.priceTable, h.tier, row.id, row.rate);
     headers.set('X-Nectovia-Model', row.model);
     headers.set('X-Nectovia-Rate-Card', row.rate.version);
     // 7. The input bound, over the body exactly as it will be sent.
@@ -1121,9 +1124,10 @@ export class ManagedInferenceService {
       throw new ManagedError(413, 'request_too_large', 'This evaluation is too large for one request.');
     // 8 to 10. The job, the hold and the dispatch commit, as for a response.
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
-      kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate,
-      maxMicroUsd: holdFor(row.rate, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd, member,
-    });
+      kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate, charge,
+      maxMicroUsd: chargeHold(charge, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd, member,
+      checkInMicroUsd: checkInAmount(state.checkIns, h.tier),
+    }, () => this.sameTable(charge));
     // 11. The call, once, and its settlement before anything is answered.
     return this.decide(ref, row, credential, forwarded, headers);
   }
@@ -1151,6 +1155,10 @@ export class ManagedInferenceService {
       individual: h.scope.kind === 'individual' ? await individualEntitlement(tx, h.scope.id, member.person.id, at) : null,
       policy: await tx.policy(),
       routes: await tx.routes(),
+      priceTable: (await tx.priceTable()) ?? null,
+      // The amount a job of this account checks in at (migration 019): the business's own setting, else
+      // the staff default, else the code default. A Personal account has no business setting.
+      checkIns: resolveCheckIns(await tx.checkInDefaults(), h.scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, h.organizationId))?.amounts : undefined),
     }));
     this.checkAdmission(state.admission, { person: member.person, tenantId }, h);
     const view = state.individual ?? entitlementFromGrants(state.grants, state.accessRevision, at);
@@ -1182,21 +1190,45 @@ export class ManagedInferenceService {
   }
 
   /**
+   * The charge a call on one route is held and debited under: the tier's, from the active credit
+   * price table. Refused before any hold or send when the tier has no price (`tier_unpriced`), or when
+   * the route's provider price passes the table's ceiling for the tier (`over_cost_ceiling`).
+   */
+  private tierCharge(table: CreditPriceTable | null, tier: JobTier, routeId: string, price: PriceFields): ChargeSnapshot {
+    const charge = chargeSnapshot(table, tier);
+    if (!charge) throw unpriced(tier);
+    if (!checkCeiling({ tier, routeId, price, charge, ceilingMicroUsdPerCredit: charge.ceilingMicroUsdPerCredit }).ok)
+      throw new ManagedError(409, 'over_cost_ceiling', `The ${TIER_LABEL[tier]} tier has no model within its credit price right now.`);
+    return charge;
+  }
+
+  /** Just before dispatch: the credit price table the hold was priced under is still the active one. */
+  private async sameTable(charge: ChargeSnapshot): Promise<void> {
+    const latest = await this.options.commercial.transaction(tx => tx.priceTable());
+    if ((latest?.version ?? 0) !== charge.tableVersion)
+      throw new ManagedError(409, 'policy_changed', 'Nectovia’s credit prices have changed. Read the routing policy again, then retry.');
+  }
+
+  /**
    * Steps 8 to 10 of every managed call: the job, this month's credit, the hold
    * and the dispatch commit. A refusal here sent nothing. On return the attempt
    * is marked dispatched by this caller alone, and only this caller may send it.
    */
   private async holdAndDispatch(h: JobHeaders, tenantId: string, grants: readonly (FeatureGrant | PersonFeatureGrant)[], hold: {
     kind: ChargeKind; route: string; requestDigest: string; rate: RateSnapshot; maxMicroUsd: MicroUsd; ceilingMicroUsd: MicroUsd | null;
+    /** The tier charge the hold is in, and the debit will be priced from. `rate` then prices only the provider's cost. */
+    charge: ChargeSnapshot;
     /** The verified member this call is for, so the funding service can enforce their monthly limit. Null for a personal workspace. */
     member?: { personId: string; role: MemberRole } | null;
+    /** What this job checks in at: its cap when it is opened. Resolved here from the account's settings, never from a request. */
+    checkInMicroUsd: MicroUsd;
     /** Pay as you go: a person's own scope with no plan, funded from bought credits only (admitted() decides it, never a request). */
     boughtOnly?: boolean;
   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
     await this.options.funding.openJob({
       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
-      tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
+      tier: h.tier, capMicroUsd: null, checkInMicroUsd: hold.checkInMicroUsd,
     });
     const individualCycle = await this.ensurePeriod(tenantId, h.scope, grants);
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.
@@ -1204,7 +1236,7 @@ export class ManagedInferenceService {
     try {
       attempt = await this.options.funding.reserve({
         ...ref, rootJobId: h.jobId, parentAttemptId: h.parentAttemptId, kind: hold.kind, route: hold.route,
-        requestDigest: hold.requestDigest, rateSnapshot: hold.rate, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
+        requestDigest: hold.requestDigest, rateSnapshot: hold.rate, chargeSnapshot: hold.charge, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
         companyCeilingMicroUsd: hold.ceilingMicroUsd, ...(hold.member ? { member: hold.member } : {}),
         ...(individualCycle ? { individualCycle } : {}),
         ...(hold.boughtOnly && h.scope.kind === 'individual' ? { boughtOnly: true } : {}),

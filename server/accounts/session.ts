@@ -1222,6 +1222,22 @@ export class AccountSessionService {
   askCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['askCreditLimit']>[2]) {
     return this.call((token) => this.backend.client.askCreditLimit(token, organizationId, input));
   }
+  // --- job check-ins (the account service keeps the amounts and raises a job's cap; this app asks and shows) ---
+
+  /** The amounts this account's jobs check in at. Any member may read them. */
+  checkIns(scope: Parameters<ControlPlaneClient['scopedCheckIns']>[1]) {
+    return this.call((token) => this.backend.client.scopedCheckIns(token, scope));
+  }
+  /** Keep a job going: the account service raises that one job by one more amount. */
+  keepJobGoing(scope: Parameters<ControlPlaneClient['keepJobGoing']>[1], input: Parameters<ControlPlaneClient['keepJobGoing']>[2]) {
+    return this.call((token) => this.backend.client.keepJobGoing(token, scope, input));
+  }
+  jobCheckInSettings(organizationId: string) {
+    return this.call((token) => this.backend.client.jobCheckInSettings(token, organizationId));
+  }
+  setJobCheckIns(organizationId: string, input: Parameters<ControlPlaneClient['setJobCheckIns']>[2]) {
+    return this.call((token) => this.backend.client.setJobCheckIns(token, organizationId, input));
+  }
   creditLimitRequests(organizationId: string) {
     return this.call((token) => this.backend.client.creditLimitRequests(token, organizationId));
   }

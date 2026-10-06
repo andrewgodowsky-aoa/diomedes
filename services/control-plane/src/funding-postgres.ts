@@ -10,8 +10,9 @@
  * real-database cases live in the opt-in postgres.integration.test.ts suite.
  */
 import { isUsageClass, micro, type AttemptSettlement, type FundedAttempt, type MicroUsd, type PeriodTotals,
-  type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass } from '../../../shared/managed-usage.js';
+  type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass, type JobTier } from '../../../shared/managed-usage.js';
 import { isNormalizedUsage, type NormalizedUsage } from '../../../shared/usage-contract.js';
+import type { ChargeSnapshot } from '../../../shared/credit-prices.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, CreditPurchaseRow, FundedJobRow, FundingRepository, FundingTransaction,
   JobRefRow, TopUpHoldRow, TopUpRow } from './funding.js';
 import type { AllotmentSettingsRow, AttemptPersonRow, LimitRequestRow, MemberLimitRow, MemberUsageRow } from './member-limits.js';
@@ -57,7 +58,7 @@ function normalized(value: unknown): NormalizedUsage {
 }
 
 const ATTEMPT_COLUMNS = `tenant_id,reservation_id,organization_id,root_job_id,existing_parent_task_ref,period_id,kind,route,request_digest,
-  rate_snapshot,usage_class,rate_card_version,reserved_micro_usd,monthly_hold_micro_usd,topup_hold_micro_usd,state,created_at,dispatched_at,resolved_at,uncertain_reason`;
+  rate_snapshot,charge_snapshot,usage_class,rate_card_version,reserved_micro_usd,monthly_hold_micro_usd,topup_hold_micro_usd,state,created_at,dispatched_at,resolved_at,uncertain_reason`;
 const SETTLEMENT_COLUMNS = `s.tenant_id,s.reservation_id,s.organization_id,s.period_id,s.provider_receipt_ref,s.provider_cost_micro_usd,s.allowance_debit_micro_usd,
   s.monthly_debit_micro_usd,s.topup_debit_micro_usd,s.usage,s.reconciled_from,s.settled_at,r.rate_card_version`;
 
@@ -68,7 +69,10 @@ function attemptFrom(row: Row): FundedAttempt {
     maxMicroUsd: money(row.reserved_micro_usd), rateCardVersion: text(row.rate_card_version), state: text(row.state) as ReservationState,
     createdAt: iso(row.created_at), resolvedAt: isoOrNull(row.resolved_at), uncertainReason: textOrNull(row.uncertain_reason),
     tenantId: text(row.tenant_id), rootJobId: text(row.root_job_id), parentAttemptId: textOrNull(row.existing_parent_task_ref),
-    requestDigest: text(row.request_digest), rateSnapshot: json<RateSnapshot>(row.rate_snapshot), usageClass: usageClass(row.usage_class),
+    requestDigest: text(row.request_digest), rateSnapshot: json<RateSnapshot>(row.rate_snapshot),
+    // Migration 018. Null on attempts held before tier pricing: they settle at provider cost.
+    ...(row.charge_snapshot === null || row.charge_snapshot === undefined ? {} : { chargeSnapshot: json<ChargeSnapshot>(row.charge_snapshot) }),
+    usageClass: usageClass(row.usage_class),
     monthlyHoldMicroUsd: money(row.monthly_hold_micro_usd), topUpHoldMicroUsd: money(row.topup_hold_micro_usd),
     dispatchedAt: isoOrNull(row.dispatched_at),
   };
@@ -155,6 +159,8 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && {
       tenantId: text(row.tenant_id), organizationId: text(row.organization_id), rootJobId: text(row.root_job_id), runRef: text(row.run_ref),
       capMicroUsd: money(row.cap_micro_usd), capGeneration: Number(row.cap_generation), state: text(row.state) as 'open' | 'closed', openedAt: iso(row.opened_at),
+      // Migration 019. Null on a job opened before check-ins.
+      tier: row.tier === null || row.tier === undefined ? null : text(row.tier) as JobTier,
     };
   }
   async jobRef(tenantId: string, runRef: string): Promise<JobRefRow | undefined> {
@@ -162,8 +168,8 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && { tenantId: text(row.tenant_id), runRef: text(row.run_ref), rootJobId: text(row.root_job_id) };
   }
   async saveJob(row: FundedJobRow) {
-    await this.client.query('INSERT INTO control_plane.funded_jobs(tenant_id,root_job_id,organization_id,run_ref,cap_micro_usd,cap_generation,state,opened_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (tenant_id,root_job_id) DO UPDATE SET cap_micro_usd=EXCLUDED.cap_micro_usd,cap_generation=EXCLUDED.cap_generation,state=EXCLUDED.state',
-      [row.tenantId, row.rootJobId, row.organizationId, row.runRef, row.capMicroUsd, row.capGeneration, row.state, row.openedAt]);
+    await this.client.query('INSERT INTO control_plane.funded_jobs(tenant_id,root_job_id,organization_id,run_ref,cap_micro_usd,cap_generation,state,opened_at,tier) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id,root_job_id) DO UPDATE SET cap_micro_usd=EXCLUDED.cap_micro_usd,cap_generation=EXCLUDED.cap_generation,state=EXCLUDED.state',
+      [row.tenantId, row.rootJobId, row.organizationId, row.runRef, row.capMicroUsd, row.capGeneration, row.state, row.openedAt, row.tier ?? null]);
   }
   async saveJobRef(row: JobRefRow) {
     await this.client.query('INSERT INTO control_plane.funded_job_refs(tenant_id,run_ref,root_job_id) VALUES ($1,$2,$3)', [row.tenantId, row.runRef, row.rootJobId]);
@@ -175,12 +181,13 @@ export class PostgresFundingTransaction implements FundingTransaction {
   }
   async saveAttempt(row: FundedAttempt) {
     await this.client.query(`INSERT INTO control_plane.funding_reservations(tenant_id,reservation_id,account_id,existing_run_ref,existing_parent_task_ref,rate_card_version,reserved_micro_usd,state,created_at,
-        organization_id,root_job_id,period_id,kind,route,request_digest,rate_snapshot,monthly_hold_micro_usd,topup_hold_micro_usd,dispatched_at,resolved_at,uncertain_reason,usage_class)
-      VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$3,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20)
+        organization_id,root_job_id,period_id,kind,route,request_digest,rate_snapshot,monthly_hold_micro_usd,topup_hold_micro_usd,dispatched_at,resolved_at,uncertain_reason,usage_class,charge_snapshot)
+      VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$3,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20,$21::jsonb)
       ON CONFLICT (tenant_id,reservation_id) DO UPDATE SET state=EXCLUDED.state,dispatched_at=EXCLUDED.dispatched_at,resolved_at=EXCLUDED.resolved_at,uncertain_reason=EXCLUDED.uncertain_reason`,
       [row.tenantId, row.id, row.rootJobId, row.parentAttemptId, row.rateCardVersion, row.maxMicroUsd, row.state, row.createdAt,
         row.organizationId, row.periodId, row.kind, row.route, row.requestDigest, JSON.stringify(row.rateSnapshot),
-        row.monthlyHoldMicroUsd, row.topUpHoldMicroUsd, row.dispatchedAt, row.resolvedAt, row.uncertainReason, row.usageClass]);
+        row.monthlyHoldMicroUsd, row.topUpHoldMicroUsd, row.dispatchedAt, row.resolvedAt, row.uncertainReason, row.usageClass,
+        row.chargeSnapshot === undefined ? null : JSON.stringify(row.chargeSnapshot)]);
   }
   async pendingAttempts(tenantId: string, organizationId: string) {
     const result = await this.client.query(`SELECT ${ATTEMPT_COLUMNS} FROM control_plane.funding_reservations WHERE tenant_id=$1 AND organization_id=$2 AND state='pending' ORDER BY created_at,reservation_id FOR UPDATE`, [tenantId, organizationId]);

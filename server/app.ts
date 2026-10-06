@@ -198,8 +198,10 @@ import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engi
 import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
 import { JobCaps, jobKeyFor } from './job-caps.js';
-import { estimateView, jobRatesOf, mountJobCapRoutes, type JobCapRouteDeps, type JobPlan } from './job-cap-routes.js';
+import { LOCAL_AGREEMENT, estimateView, jobRatesOf, mountJobCapRoutes, type JobCapRouteDeps, type JobPlan } from './job-cap-routes.js';
 import { approvedJobCap, jobTierOf, type JobShape, type JobTier } from '../shared/job-caps.js';
+import { checkInAmount, type CheckInView } from '../shared/job-check-ins.js';
+import type { MicroUsd } from '../shared/managed-usage.js';
 import type { EscalationView } from '../shared/escalation-controls.js';
 import { escalationRefusal } from '../shared/escalation-roles.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
@@ -329,6 +331,7 @@ import { baselineRedact } from './secrets.js';
 import { EngineError, MEMBER_LIMIT } from './engines/process.js';
 import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments.js';
 import { mountCreditLimitRoutes } from './credit-limit-routes.js';
+import { mountJobCheckInRoutes } from './job-check-in-routes.js';
 import { mountCreditAskRoutes } from './credit-ask-routes.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
 import {
@@ -1091,7 +1094,7 @@ export async function createApp(options: AppOptions) {
       isActiveMember(workspaces.membershipOf(organizationId, personId)),
     billingStatusFor: (organizationId) => billing.statusOf(organizationId),
     // The allowance path is not bound to a thread, so its jobs run under the Settings default
-    // tier's approved cap. No request field can move it.
+    // tier's code default check-in amount. No request field can move it.
     jobCapFor: () => approvedJobCap(jobTierOf(styleOf(null))),
     policyFor: (organizationId) => {
       const active = configuration.active(organizationId);
@@ -1322,6 +1325,22 @@ export async function createApp(options: AppOptions) {
   // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
   // the Settings default, read here by the host; the engine service holds every model-API call
   // to its job's cap as well as the connection's.
+  // The amount a job checks in at is the account service's to say (the business's own setting, else the
+  // staff default, else the code default), so it is read from there for the account this project's work
+  // is for and kept for a minute. Signed out, or when it cannot say, the code default applies.
+  const checkInViews = new Map<string, { until: number; view: CheckInView }>();
+  const checkInOf = async (projectId: string, tier: JobTier) => {
+    if (!accountSession?.signedIn() || !accountRouting) return null;
+    const scope = accountRouting.scopeFor(projectId);
+    if (!scope || (scope.kind !== 'organization' && scope.kind !== 'individual')) return null;
+    const key = `${scope.kind}:${scope.id}`;
+    let held = checkInViews.get(key);
+    if (!held || held.until <= Date.now()) {
+      held = { until: Date.now() + 60_000, view: await accountSession.checkIns(scope) };
+      checkInViews.set(key, held);
+    }
+    return checkInAmount({ credits: held.view.amounts }, tier);
+  };
   const jobCaps = new JobCaps(store.dataDir, {
     tierOf: (projectId, threadId) => {
       const thread = threadId
@@ -1329,9 +1348,20 @@ export async function createApp(options: AppOptions) {
         : null;
       return jobTierOf(styleOf(thread));
     },
+    checkInOf,
   });
   await jobCaps.init();
   engines.jobCaps = jobCaps;
+  // Keep going on a job the account service meters: it raises that job's cap by one more amount, since it
+  // decides every hold. A job it never saw (work on a person's own connection) has nothing to raise.
+  const keepAtService = async (projectId: string, jobId: string, capMicroUsd: MicroUsd) => {
+    const metered = jobCaps.get(projectId, jobId)?.meteredJobId ?? jobCaps.meteredAs(projectId, jobId);
+    if (!metered || !accountSession?.signedIn() || !accountRouting) return;
+    const scope = accountRouting.scopeFor(projectId);
+    if (!scope || (scope.kind !== 'organization' && scope.kind !== 'individual')) return;
+    if (scope.kind === 'organization') workspaces.assertMine(scope.id);
+    await accountSession.keepJobGoing(scope, { jobId: metered, atCapMicroUsd: capMicroUsd });
+  };
   // The preflight on company-managed inference, for business conversations on `nectovia`.
   const managedJevAdvisor =
     (options.managedJev ?? process.env.DIOMEDES_MANAGED_JEV === '1') && nectoviaAccount && accountSession && agentGate
@@ -1722,6 +1752,14 @@ export async function createApp(options: AppOptions) {
         { surface: 'loop', rootJobId });
       return { model: admitted.model, accountRoute: admitted.accountRoute };
     },
+    // A loop that stopped at its check-in is kept going by its Retry: the stop it ended on is recorded for
+    // its job, the account service raises that job by one more amount, and the new attempt continues it.
+    keepGoing: async (projectId, fromJobId, jobId) => {
+      await jobCaps.noteManagedStop(projectId, fromJobId);
+      const stopped = jobCaps.get(projectId, fromJobId)?.stop;
+      if (stopped) await keepAtService(projectId, fromJobId, stopped.capMicroUsd);
+      await jobCaps.raiseAfterStop({ projectId, jobId, fromJobId, threadId: null, by: LOCAL_AGREEMENT });
+    },
   }, () => packLifecycle.contributions, {
     host:collaborationHost, rootLedger:productionTeam.rootLedger,
   }, subscriptionWorkers, {
@@ -1739,6 +1777,8 @@ export async function createApp(options: AppOptions) {
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces, accountSession, accountSession, accountSession, accountSession);
   // Members' monthly credit limits: the account service keeps and enforces them; this app asks as the signed-in person.
   mountCreditLimitRoutes(app, workspaces, accountSession);
+  // How far this business's jobs run before they check in: the account service keeps the amounts; an owner or admin sets the business's own.
+  mountJobCheckInRoutes(app, workspaces, accountSession, () => checkInViews.clear());
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   // OPS-05: the Business owner's copy of the business's records, written into one of its projects.
   mountOrganizationExportRoute(app, { store, workspaces, configuration, accounts: accountSession, build: running.version });
@@ -6811,6 +6851,7 @@ export async function createApp(options: AppOptions) {
   });
   const jobCapDeps: JobCapRouteDeps = {
     jobCaps,
+    keepGoing: (projectId, jobId, stop) => keepAtService(projectId, jobId, stop.capMicroUsd),
     // The same route, style and model a send resolves, and the same limits the turn runs under.
     messagePlan: async (projectId, threadId, draft) => {
       const state = store.state(projectId);
@@ -6926,11 +6967,13 @@ export async function createApp(options: AppOptions) {
       teamWake: (projectId, slotId) => teamService.wakeMember(projectId, slotId as TeamMember['slotId']),
       messageWarns: async (projectId, threadId, text, mode) => {
         const plan = await jobCapDeps.messagePlan(projectId, threadId, { text, mode, sources: [] });
-        return estimateView(jobCaps.tierFor(projectId, plan.threadId), plan).warning !== null;
+        const tier = jobCaps.tierFor(projectId, plan.threadId);
+        return estimateView(tier, plan, await jobCaps.checkInFor(projectId, tier)).warning !== null;
       },
       wakeWarns: async (projectId, slotId) => {
         const plan = await jobCapDeps.teamWakePlan(projectId, slotId);
-        return estimateView(jobCaps.tierFor(projectId, plan.threadId), plan).warning !== null;
+        const tier = jobCaps.tierFor(projectId, plan.threadId);
+        return estimateView(tier, plan, await jobCaps.checkInFor(projectId, tier)).warning !== null;
       },
       updates: {
         closing: () => isUpdateClosing(),
@@ -6954,8 +6997,9 @@ export async function createApp(options: AppOptions) {
       return;
     }
     if (error instanceof EngineError && error.code === 'JOB_CAP') {
-      // A job stopped before a step that would pass its cap. Nothing of that step was sent; the
-      // person chooses a higher tier or going over once, and the message is sent as a new job.
+      // A job stopped at its check-in, before a step that would pass its amount. Nothing of that step was
+      // sent; the person chooses Keep going or Stop here, and Keep going sends the message as a new job
+      // that continues it.
       res.status(402).json({ error: error.message, code: 'job_cap_reached', ambiguous: false });
       return;
     }

@@ -1,12 +1,12 @@
 # Nectovia pricing and service scope
 
-Version: NC-2026-09-28.1. Commercial inference policy reconciled with current GitHub main and the canonical Drive pricing/service-scope document. First issued September 15, 2026.
+Version: NC-2026-10-05.1. Credit prices, per-tier credit pricing (Model B), pay as you go without a plan and bought-credit expiry added 2026-10-05. Commercial inference policy reconciled with current GitHub main and the canonical Drive pricing/service-scope document. First issued September 15, 2026.
 Status: approved commercial direction, not proof of deployed billing or provider qualification.
 Canonical commercial authority: [Nectovia pricing and service scope](https://docs.google.com/document/d/1OrjI7NCBf4YRt2TGgBvPS52GW8LM3hgXCnN6lp7sxIQ/edit). This public repository omits private company economics.
 
 Nectovia is the product. Diomedes is the company. Customer-facing product text says Nectovia; company, legal and repository identifiers keep Diomedes.
 
-Andrew's current managed-inference decision and the canonical Drive Individual amendment replace the stale funding and Solo terms here. Other existing offer/service anchors are preserved. The September 23 routing decisions continue to supersede source package NC-2026-09-22.1 and PR #35 where they differ. Nothing under "Superseded 2026-09-23" is operative. Historical source and qualification observations below are dated evidence, not current release certification.
+Andrew's current managed-inference decision and the canonical Drive Individual amendment replace the stale funding and Solo terms here. Other existing offer/service anchors are preserved. The September 23 routing decisions continue to supersede source package NC-2026-09-22.1 and PR #35 where they differ. Nothing under "Superseded 2026-09-23" or "Superseded 2026-10-05" is operative. Historical source and qualification observations below are dated evidence, not current release certification.
 
 Every term here is **approved** (an owner decision, with its date), **proposed** (not approved; never build or sell it as an entitlement), **withdrawn** (the owner rejected it) or **superseded** (replaced by a newer approved rule, named beside it). An approved commercial term is not an implemented or qualified one.
 
@@ -19,6 +19,12 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 | Credits measure cumulative eligible usage under the recorded rate card | approved | Owner direction 2026-09-22; public wording reconciled 2026-09-28 |
 | Managed inference preferred; included allowance first; authorized additional usage at Nectovia's current usage rate | approved | Owner direction 2026-09-28 |
 | Organization-authorized monthly extra-usage cap; alerts at 75%, 90% and 100%; no silent overage | approved policy; postpaid enforcement not implemented | Owner direction 2026-09-28 |
+| Extra credits on a paid plan: $100 buys 1,100, in whole steps, at the rate the payer's plan sets when the quote is made | approved | Owner decision 2026-10-05 |
+| Credits without a plan: $130 buys 1,000; while a person holds bought credits, Nectovia Agent serves their own Personal work | approved | Owner decision 2026-10-05 |
+| A credit is priced by tier from a private, versioned price table, retuned from real usage without changing what customers pay for credits (Model B) | approved | Owner decision 2026-10-05 |
+| Bought credits expire 12 months after purchase, oldest first | approved; Terms update and legal review before live payments | Owner decision 2026-10-05 |
+| Job check-ins at a step boundary replace job-cap stops; amounts Efficient 100, Focused 250, Thorough 500, settable by owners and admins | approved | Owner decision 2026-10-05, answering the owner's concern that caps are small and must never cut work mid-task |
+| A business without a plan may buy credits at the no-plan price; they are spent once the business has a plan | approved | Owner decision 2026-10-05 |
 | Customer-owned commercial API/cloud credentials only through Advanced or a specific contract; no pooled subscription-funded Agent work | approved | Owner direction 2026-09-28 |
 | Literal 1,000-request quota and universal tiny per-request ceiling | withdrawn | Owner direction 2026-09-22 |
 | Customers see only the tiers Efficient / Focused / Thorough; the owner maps each tier to a route in AI setup | approved | Owner decision 2026-09-23 |
@@ -28,7 +34,7 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 | Focused: Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: a Vertex API key; local ADC is the alternative) | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Thorough: GPT-6 Sol on AWS Bedrock | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Sol-primary Focused, optional Muse Standard, Opus 5.5-led Thorough | superseded | Replaced by owner decision 2026-09-23 |
-| Parent-job credit caps: Efficient 20, Focused 50, Thorough 100 | approved | Owner decision 2026-09-23 |
+| Parent-job credit caps: Efficient 20, Focused 50, Thorough 100 | superseded | Replaced by job check-ins, owner decision 2026-10-05 |
 | Pre-send warning when likely use exceeds the cap: move up a tier, or go over for that one job | approved | Owner decision 2026-09-23 |
 | Single suggested 20-credit default job cap | superseded | Replaced by owner decision 2026-09-23 |
 | Jev pathway is OpenRouter | approved (route not live-qualified) | Owner decision 2026-09-23 |
@@ -44,7 +50,7 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 | Meta Contributor consent route | proposed | NC-2026-09-22.1; still open 2026-09-23 |
 | Plan-document parity question | open (proposed) | Owner list 2026-09-23 |
 | Live-provider qualification of every route | open: no route has had a live call | Owner list 2026-09-23 |
-| Context, concurrency and seat limits; rollover/expiry terms; included-chat safeguards | proposed | Unresolved terms retained; managed extra-usage policy is settled below |
+| Context, concurrency and seat limits; included-chat safeguards | proposed | Unresolved terms retained; managed extra-usage policy is settled below. Rollover and expiry were settled 2026-10-05: included credits end with their period, bought credits last 12 months |
 | Supabase migration | not authorized | NC-2026-09-22.1 |
 
 ## Commercial principle
@@ -106,6 +112,8 @@ Nectovia-managed inference is the default and preferred funding path for paid Ne
 
 Extra usage is opt-in. An active organization owner or an explicitly authorized billing administrator must accept the applicable rate, currency, billing period and a finite monthly charge cap before it can run. Default authorization is off. Record the actor, organization, rate revision, cap, effective period and revocation. A task approval, plan purchase, higher job cap or exhausted allowance is not overage consent. No automatic top-up, silent renewal of a one-time authorization, retroactive rate change or implicit payer switch.
 
+**Buying credits (approved 2026-10-05).** An owner or admin of a business with a plan, an Individual subscriber, or a person with no plan may buy credits; business members can't. On any paid plan $100 buys 1,100 credits, and without a plan $130 buys 1,000, each in whole steps. The rate comes from the payer's active plan when the quote is made and is locked into the purchase. Bought credits are spent after the period's included credits, oldest purchase first, and each purchase expires 12 months after it was paid. A purchase is a one-time payment; there is no automatic top-up. A person with no plan may spend bought credits on Nectovia Agent work in their own Personal scope; that never opens a Business workspace, Routines, phone access or business rules. A business without a plan may buy credits at the no-plan price; they are spent once the business has a plan. Customer copy may compare the two prices (a plan gets about 40% more credits per dollar). It never states a markup or a provider cost.
+
 Warn at 75%, 90% and 100% of the included allowance and, when enabled, the authorized extra-usage cap. Count settled usage plus pending and uncertain reservations. Before each call, enforce the job limit, available funds and applicable organization charge cap atomically. At the cap, stop new managed calls; an alert is not permission to exceed it. Preserve reservations across retries, workers, restarts and period changes.
 
 Private company economics, provider costs, promotional balances, markup formulas and credit-to-provider-cost derivations are not public plan copy, customer API fields or invoice explanations. The private commercial rate card records standard pricing and any approved negotiated contract exception. Customers still receive an understandable usage statement, the applicable customer rate, their authorized limit and an accurate invoice. Existing charges keep their recorded customer rate.
@@ -126,9 +134,9 @@ Entitlement, payer, processing policy, provider cost, customer debit and invoice
 
 Credits measure cumulative eligible AI usage, not a task or model-call count. A job can consume fractional credits or many credits. Include authorized planner, worker, reviewer, advisor, billed reasoning, cache and eligible correction usage under the applicable rate card. Do not publish the internal provider-cost conversion as plan copy.
 
-Accounting follows the usage contract `nectovia-usage/1` below. Production accounting uses integer micro-USD and a versioned rate card. Cloud promotional credits lower company cash expenditure, not the customer's published grant or the gross provider cost record. Do not discount the funded-usage portion under the existing 30% founding discount; only its eligible non-usage component is discounted.
+Accounting follows the usage contract `nectovia-usage/1` below. Production accounting uses integer ledger units (100,000 to a credit) and a versioned rate card. From 2026-10-05 (Model B) a call's debit is its tokens priced at its tier's credit price, from a private, versioned price table; the provider's own cost is recorded beside each call and never debited. A route serves a tier only while its provider cost per credit stays under a private ceiling, checked when routes or prices are published and again before each call. Retuning the table changes what a credit buys, never what a customer pays for credits. Cloud promotional credits lower company cash expenditure, not the customer's published grant or the gross provider cost record. Do not discount the funded-usage portion under the existing 30% founding discount; only its eligible non-usage component is discounted.
 
-**Approved 2026-09-23: each parent job has a finite credit cap set by its tier.**
+**Approved 2026-09-23, superseded by check-ins 2026-10-05: each parent job has a finite credit cap set by its tier.**
 
 | Tier | Parent-job cap |
 |---|---:|
@@ -137,6 +145,8 @@ Accounting follows the usage contract `nectovia-usage/1` below. Production accou
 | Thorough | 100 credits |
 
 The cap is an approval/safety limit, not a flat fee or monthly request quota. Before sending, when likely use exceeds it, offer a higher tier or an explicitly approved finite cap for that one job. The change does not alter the next job's cap, authorize organization overage or increase remaining funds. Nothing overruns a cap without that pre-send choice.
+
+**Approved 2026-10-05: check in, never cut off.** The owner's concern was that the caps above are small and that stopping a model mid-task harms the work. The decision keeps every stop at a step boundary, where a call that starts always finishes and is paid for, and turns the cap into a check-in. At its amount the job finishes the step in progress, saves, and asks whether to keep going; keeping going allows the same amount again. The default amounts are Efficient 100, Focused 250 and Thorough 500 credits, settable by owners and admins for their business. Unattended work pauses into Needs you. The account's balance is its ceiling, with no overdraw and no automatic top-up, and member monthly limits stay. Until check-ins ship, the 2026-09-23 caps above are what the code enforces.
 
 Reserve conservatively before each paid child operation against both the job budget and organization funds. Delegation, retries, forks, resumed messages and billing reset cannot reset the cap or refund uncertain spend.
 
@@ -224,6 +234,14 @@ The account-control-plane subset already uses WorkOS and a Neon-specific Postgre
 The earlier routing observation at `c10b7b2fa3ba12e9bba9373ac3ff82db8447b820` is historical and does not establish today's provider qualification. This reconciliation inspected main `66334d512ef51c808d460b6e177690d87ecfaaa0`: funded reservation/settlement and purchased top-ups exist; postpaid organization overage does not. Preserve launch safeguards and require separate acceptance for billing activation, Individual eligibility, live routes and any proposed Contributor or included-chat benefit. Source verification is recorded in `../implementation/2026-09-28-managed-inference-policy.md`; it is not deployment evidence.
 
 Implementation handoff: `../implementation/2026-09-22-nectovia-routing-handoff.md`. The September 22 amended unified execution package carries detailed role prompts and source evidence; where it differs from the 2026-09-23 decisions recorded here, this document wins. Preserve active claims and original completion records.
+
+## Superseded 2026-10-05
+
+Kept as history. None of these rules is operative.
+
+- **What a credit is worth.** Superseded: one credit stood for a fixed amount of provider cost, and the ledger debited the provider's cost. Replaced by: per-tier credit prices from a private, versioned table (Model B); the provider's cost is recorded beside each call, never debited.
+- **Bought credits carry over.** Superseded: credits a business buys carry over to the next month with no end date (website rule, 2026-10-02). Replaced by: bought credits expire 12 months after purchase, oldest first.
+- **Free accounts and the Agent.** Superseded: free accounts cannot invoke Nectovia Agent. Replaced by: a person with no plan may use it for their own Personal work while they hold bought credits (Core Pillars 2026-10-05.1).
 
 ## Superseded 2026-09-23
 

@@ -180,10 +180,10 @@ describe('attempt identity: repeats, recovery and retries', () => {
 
   it('a retry is a distinct attempt that spends from the same parent budget', async () => {
     const h = await funded();
-    // Focused job: 50 credits. The lost first try still counts at its ceiling.
-    await h.sent('try_1', { maxMicroUsd: c(30) });
+    // Focused job: 250 credits. The lost first try still counts at its ceiling.
+    await h.sent('try_1', { maxMicroUsd: c(150) });
     await h.service.markUncertain({ ...h.ref('try_1'), reason: 'connection dropped' });
-    const retry = await h.reserve('try_2', { parentAttemptId: 'try_1', maxMicroUsd: c(20) });
+    const retry = await h.reserve('try_2', { parentAttemptId: 'try_1', maxMicroUsd: c(100) });
     expect(retry.id).not.toBe('try_1');
     expect(retry.rootJobId).toBe('job_1');
     const over = await refusal(h.reserve('try_3', { parentAttemptId: 'try_1', maxMicroUsd: c(0.01) }));

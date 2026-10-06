@@ -181,7 +181,11 @@ export async function ensureNectoviaGuard(
 }
 
 /**
- * The local rate card for a model the gateway serves, from the provider registry's own numbers.
+ * The local rate card for a model the gateway serves. From an authenticated account snapshot it is
+ * the tier's credit charge (Model B): the account service sends the charge, in ledger units, in the
+ * snapshot's `price` and `guardPrices` fields and never a provider's price, so this card, the local
+ * guard and the job estimate (`jobRatesOf`) all count credits. The legacy card below is a published
+ * list price kept for accounts on the legacy routing record.
  * One band: the gateway refuses input past 272,000 tokens rather than guess a long-context price,
  * so no call on this route can settle in a long band.
  */
@@ -310,6 +314,14 @@ export function gatewayRefusal(
     case 'tier_unrouted':
       return {
         code: 'nectovia_tier_unrouted',
+        message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+      };
+    case 'tier_unpriced':
+    case 'over_cost_ceiling':
+      // Tier pricing (Model B): the tier has no credit price yet, or no route it may run within its
+      // price. Either way the tier cannot answer now, which is what the person needs to know.
+      return {
+        code: `nectovia_${error.code}`,
         message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
       };
     case 'context_too_long':
