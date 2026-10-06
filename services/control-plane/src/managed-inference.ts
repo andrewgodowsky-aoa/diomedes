@@ -1156,7 +1156,7 @@ export class ManagedInferenceService {
       policy: await tx.policy(),
       routes: await tx.routes(),
       priceTable: (await tx.priceTable()) ?? null,
-      // The amount a job of this account checks in at (migration 020): the business's own setting, else
+      // The amount a job of this account checks in at (migration 019): the business's own setting, else
       // the staff default, else the code default. A Personal account has no business setting.
       checkIns: resolveCheckIns(await tx.checkInDefaults(), h.scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, h.organizationId))?.amounts : undefined),
     }));

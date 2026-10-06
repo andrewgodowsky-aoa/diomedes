@@ -811,7 +811,7 @@ written in this repository: the faux cloud and the tests use synthetic values
 After deploy, no managed call is served until staff publish the first table.
 Migration 018 applies after 016 and 017: the runner refuses a gap.
 
-## Job check-ins (DIO-221, migration 020, 2026-10-05)
+## Job check-ins (DIO-221, migration 019, 2026-10-05)
 
 A job is never cut off mid-call or mid-write. A tier's amount (Efficient 100,
 Focused 250, Thorough 500 credits, `JOB_CHECK_IN_CREDITS` in
@@ -846,9 +846,9 @@ asks whether to keep going. This replaces the 20, 50 and 100 credit caps.
   for the desktop is `GET /account/routing/(organization|individual)/:id/check-ins`.
 - The ledger writes only `funded_jobs` cap and generation for a Keep going, so
   the gateway's grants are unchanged.
-- Migration 020 has no runner number to add: numbers are assigned at merge. The
-  gateway reads the new tables and `funded_jobs.tier`, so apply the migration
-  before deploying the Worker that reads them.
+- Migration 019 took its number at merge, in merge order (2026-10-06), and applies
+  after 018. The gateway reads the new tables and `funded_jobs.tier`, so apply the
+  migration before deploying the Worker that reads them.
 
 ## Runtime evidence and release
 

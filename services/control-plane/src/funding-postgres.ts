@@ -159,7 +159,7 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && {
       tenantId: text(row.tenant_id), organizationId: text(row.organization_id), rootJobId: text(row.root_job_id), runRef: text(row.run_ref),
       capMicroUsd: money(row.cap_micro_usd), capGeneration: Number(row.cap_generation), state: text(row.state) as 'open' | 'closed', openedAt: iso(row.opened_at),
-      // Migration 020. Null on a job opened before check-ins.
+      // Migration 019. Null on a job opened before check-ins.
       tier: row.tier === null || row.tier === undefined ? null : text(row.tier) as JobTier,
     };
   }

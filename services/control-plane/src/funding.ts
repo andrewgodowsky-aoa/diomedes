@@ -112,7 +112,7 @@ export interface FundedJobRow {
   state: 'open' | 'closed';
   openedAt: string;
   /**
-   * The tier the root job was opened under (migration 020), so a Keep going raises it by its own tier's
+   * The tier the root job was opened under (migration 019), so a Keep going raises it by its own tier's
    * check-in amount. Absent on a job opened before check-ins.
    */
   tier?: JobTier | null;

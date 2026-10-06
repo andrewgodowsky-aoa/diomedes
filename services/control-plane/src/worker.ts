@@ -115,7 +115,7 @@ export interface HandlerOptions {
   createLimits?: (config: Configuration, accounts: AccountService) => Pick<MemberLimitsService, 'limits' | 'setLimit' | 'setSettings' | 'mine' | 'report' | 'ask' | 'requests' | 'decide'>;
   createRouting?: (config: Configuration, accounts: AccountService) => RoutingService;
   /**
-   * Test and faux-cloud seam for job check-ins (migration 020): what a job runs before it asks, an
+   * Test and faux-cloud seam for job check-ins (migration 019): what a job runs before it asks, an
    * owner's own amounts, and Keep going. The Worker entry reads the settings on the Worker login and
    * raises a job's cap on the funding login.
    */
@@ -561,7 +561,7 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         // The credit price table (Model B, migration 018): read with its history, and publish a version.
         if (pathname === '/ops/credit-prices' && method === 'GET') return json(await ops.creditPrices(token));
         if (pathname === '/ops/credit-prices/publish' && method === 'POST') return json(await ops.publishCreditPrices(token, await body(request, publishCreditPricesInput)), 201);
-        // Job check-in defaults (migration 020): how many credits a job of each tier runs before it asks.
+        // Job check-in defaults (migration 019): how many credits a job of each tier runs before it asks.
         if (pathname === '/ops/job-check-ins' && method === 'GET') return json(await ops.jobCheckIns(token));
         if (pathname === '/ops/job-check-ins/publish' && method === 'POST') return json(await ops.publishJobCheckIns(token, await body(request, publishCheckInDefaultsInput)), 201);
         if (pathname === '/ops/staff' && method === 'GET') return json(await ops.staffList(token));

@@ -16,8 +16,8 @@
 -- own tier's amount and never by one a request names. Jobs opened before this migration have none,
 -- and a Keep going on one is refused.
 --
--- Apply after 016 to 019: the migration runner takes each version from the file name's number and
--- refuses a gap. Numbers are assigned at merge, in merge order.
+-- Numbered 019 at merge (2026-10-06), in merge order: apply after 016 to 018. The migration runner
+-- takes each version from the file name's number and refuses a gap.
 
 CREATE TABLE control_plane.job_check_in_defaults (
   version bigint PRIMARY KEY CHECK (version >= 1),

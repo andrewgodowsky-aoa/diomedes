@@ -345,7 +345,7 @@ export interface CommercialTransaction extends RoutingTransaction {
   /** Append one version. Versions are immutable: a second write of a version is refused. */
   savePriceTable(row: CreditPriceTable): Promise<void>;
   /**
-   * The staff defaults for job check-in amounts (migration 020): the active version, or one version by
+   * The staff defaults for job check-in amounts (migration 019): the active version, or one version by
    * number. Published under `lockPolicy`, like the price table.
    */
   checkInDefaults(version?: number): Promise<CheckInDefaults | undefined>;
@@ -1483,7 +1483,7 @@ export class CommercialService {
     });
   }
 
-  // --- job check-in defaults (migration 020) ------------------------------------------------------
+  // --- job check-in defaults (migration 019) ------------------------------------------------------
 
   /**
    * The staff defaults for how many credits a job of each tier runs before it checks in, and their

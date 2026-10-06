@@ -68,9 +68,9 @@ export interface CommercialState {
   policies: TierPolicy[];
   /** Credit price table versions (migration 018), in publication order. */
   priceTables: CreditPriceTable[];
-  /** Job check-in default versions (migration 020), in publication order. */
+  /** Job check-in default versions (migration 019), in publication order. */
   checkInDefaults: CheckInDefaults[];
-  /** Each business's own check-in amounts (migration 020). */
+  /** Each business's own check-in amounts (migration 019). */
   checkInOverrides: CheckInOverride[];
   operators: Operator[];
   audit: AuditEvent[];

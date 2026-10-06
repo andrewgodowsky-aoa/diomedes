@@ -89,7 +89,7 @@ GRANT SELECT, INSERT ON control_plane.personal_agent_admissions TO cp_runtime;
 -- login's grants are unchanged: its table-level INSERT on funding_reservations covers the new
 -- charge_snapshot column, which is not in its UPDATE list.
 GRANT SELECT, INSERT ON control_plane.credit_price_tables TO cp_runtime;
--- 020 job check-in amounts (2026-10-05): the gateway reads the staff defaults and a business's own
+-- 019 job check-in amounts (2026-10-05): the gateway reads the staff defaults and a business's own
 -- amounts when it opens a job (the Worker login reads commercial state), staff publish a version
 -- through /ops/job-check-ins (append-only, like credit_price_tables: INSERT without UPDATE), and an
 -- owner or admin saves the business's own amounts (an upsert, so UPDATE). Keep going raises a job's cap on

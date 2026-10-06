@@ -106,7 +106,7 @@ describe('a job at its check-in amount', () => {
     await f.open('job_1', 'efficient', creditAmount(10));
     expect(await f.keep('nope', creditAmount(10)).catch((e) => e.code)).toBe('unknown_job');
     expect(await f.service.keepGoing({ tenantId: T, organizationId: 'org_2', rootJobId: 'job_1', atCapMicroUsd: creditAmount(10), amounts: AMOUNTS }).catch((e) => e.code)).toBe('unknown_job');
-    // A job with no recorded tier (opened before migration 020) is never raised by a tier it does not have.
+    // A job with no recorded tier (opened before migration 019) is never raised by a tier it does not have.
     const repository = new FundingMemoryRepository();
     const old = new FundingService(repository, { now: () => Date.parse('2026-09-10T12:00:00.000Z') });
     await repository.transaction(async (tx) => tx.saveJob({ tenantId: T, organizationId: O, rootJobId: 'old', runRef: 'run_old', capMicroUsd: creditAmount(10), capGeneration: 0, state: 'open', openedAt: '2026-09-01T00:00:00.000Z' }));
