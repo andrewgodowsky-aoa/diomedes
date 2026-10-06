@@ -546,6 +546,8 @@ export interface AskRowProps {
   agent?: ReactNode;
   /** Server-rendered fixture; production reads each engine's catalogue when it is needed. */
   initialCatalogs?: Record<string, EngineCatalog>;
+  /** The engines listed after Nectovia. The project row's engines unless given. */
+  engines?: readonly Route[];
 }
 
 /**
@@ -572,6 +574,7 @@ export function AskRow({
   onChoose,
   agent = null,
   initialCatalogs = {},
+  engines = ROW_ENGINES,
 }: AskRowProps) {
   const [connections, setConnections] = useState<Partial<Record<string, EngineConnection>>>({});
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>(initialCatalogs);
@@ -645,7 +648,7 @@ export function AskRow({
 
   /** Checks every engine that is on again, then the roster, as the thread picker did. */
   const recheck = () => {
-    const ids = ROW_ENGINES.filter(
+    const ids = engines.filter(
       (id) => offeredEngine(id, { integrations, settings, connections }) || settings.services?.[id] === true,
     );
     void Promise.all(ids.map(readCatalog)).then(readRoster);
@@ -661,7 +664,7 @@ export function AskRow({
     return [];
   }
 
-  const entries = engineEntries({ integrations, settings, connections, free, route, local });
+  const entries = engineEntries({ integrations, settings, connections, free, route, local, engines });
   const waiting = locked ? 'Waiting for the current run to finish' : undefined;
   const engineText = engineLabel(route, { integrations, local, free });
   const savedLocal = local ? localSlug(settings.services?.[`${local.route}Model`]) : undefined;

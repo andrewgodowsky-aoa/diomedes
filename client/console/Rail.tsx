@@ -25,6 +25,20 @@ export interface RailItem {
   progress?: SegmentInput | null;
 }
 
+/**
+ * One group of the Nectovia home's rail (round 2 reskin, N1): Needs your input, Working or
+ * Finished, with its count and the jobs under it. A row opens where the job is followed.
+ */
+export interface RailSection {
+  id: string;
+  heading: string;
+  count: number;
+  rows: { id: string; name: string; sub: string; tone?: 'attn' | 'live' | 'fail' }[];
+}
+
+/** Finished starts folded, as the boards draw it; the groups that ask for something start open. */
+const FOLDED_AT_FIRST = ['finished'];
+
 interface RailProps {
   /** Rendered above the thread head: the workspace a thread belongs to. */
   top?: ReactNode;
@@ -45,6 +59,15 @@ interface RailProps {
   /** What the spine lists. The Projects page lists projects on the same spine. */
   title?: string;
   navLabel?: string;
+  /** The New button's words. "New" unless the page says what it makes. */
+  newLabel?: string;
+  /**
+   * Groups of jobs in place of the spine (the Nectovia home). Each group with its count and a
+   * fold; a group the caller leaves out is simply not drawn.
+   */
+  sections?: RailSection[];
+  /** Opens one row of `sections`. */
+  onOpenRow?(id: string): void;
 }
 
 /**
@@ -72,7 +95,18 @@ export function Rail({
   groups,
   title = 'Threads',
   navLabel,
+  newLabel = 'New',
+  sections,
+  onOpenRow,
 }: RailProps) {
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(FOLDED_AT_FIRST));
+  const fold = (id: string) =>
+    setFolded((now) => {
+      const next = new Set(now);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   // The selected row's place on the spine. Its `li` is positioned, so the
   // button's own offsetTop is always 0 and the point used to sit on the first
@@ -96,9 +130,51 @@ export function Rail({
       <div className="rail-head">
         <h2>{title}</h2>
         <button type="button" onClick={onNew}>
-          New
+          {newLabel}
         </button>
       </div>
+      {sections ? (
+        <div className="rail-groups">
+          {sections.map((section) => {
+            const open = !folded.has(section.id);
+            return (
+              <section key={section.id} className="rail-group" aria-label={section.heading}>
+                <button
+                  type="button"
+                  className="grp"
+                  aria-expanded={open}
+                  onClick={() => fold(section.id)}
+                >
+                  <svg className="chev" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className="hd">{section.heading}</span>
+                  <span className="ct mono">{section.count}</span>
+                </button>
+                {open && (
+                  <ul className="spine rail-jobs">
+                    {section.rows.map((row) => (
+                      <li key={row.id}>
+                        <button type="button" className="console-thread" onClick={() => onOpenRow?.(row.id)}>
+                          <span className="tick" />
+                          <span className="row">
+                            <span className="nm" title={row.name}>
+                              {row.name}
+                            </span>
+                          </span>
+                          <small className={row.tone} title={row.sub}>
+                            {row.sub}
+                          </small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
       <ul
         className="spine console-threads"
         style={
@@ -156,6 +232,7 @@ export function Rail({
           </li>
         ))}
       </ul>
+      )}
       <div className="foot">
         {shown.map((item) =>
           item.unavailableReason ? (

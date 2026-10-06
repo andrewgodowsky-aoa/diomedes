@@ -30,6 +30,8 @@ const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' }
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let project: Project;
+/** A second project, so the home draws its scope control. Never talked in. */
+let second: Project;
 let pageErrors: string[] = [];
 /** Calls that went to a provider directly rather than through Nectovia's gateway. */
 let direct = 0;
@@ -138,6 +140,9 @@ test.beforeAll(async () => {
     },
   });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  // A second project: the home's scope control is drawn only for a business with more than one
+  // (round 2 reskin, slice 2, decision 4). It is never talked in.
+  second = await api<Project>('/projects', 'POST', { name: 'Second shop' });
   // Linked, not chosen as where the business writes: Automations still has nowhere to open.
   await linkToBusiness(api, project.id);
   // The project's own work runs on the scripted sample worker, so starting Work needs no
@@ -166,7 +171,7 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
   await open(page);
   await expect(composer(page)).toBeVisible();
   expect(await home()).toBeNull();
-  expect((await listed()).map((item) => item.name)).toEqual(['Linen service']);
+  expect((await listed()).map((item) => item.name).sort()).toEqual(['Linen service', 'Second shop']);
 
   // Automations opens the business's output project on its screen (D4). The signed-in owner
   // works in Juniper Street Bakery, which has not chosen the project it writes into, so it says
@@ -206,7 +211,7 @@ test('a greeting is answered and starts nothing', async ({ page }) => {
   // and no task or work exists anywhere.
   const bound = await home();
   expect(bound).toEqual(linked);
-  expect((await listed()).map((item) => item.id)).toEqual([project.id]);
+  expect((await listed()).map((item) => item.id).sort()).toEqual([project.id, second.id].sort());
   const before = await state();
   expect([before.tasks.length, before.sessions.length]).toEqual([0, 0]);
 
@@ -227,7 +232,7 @@ test('across all projects there is nowhere to start work, so nothing starts', as
 
 test('in a project, work is offered and starts only when Start is pressed', async ({ page }) => {
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Linen service' });
   await say(page, 'ACT tidy the plan');
   const card = page.locator('.dio-card');
   await expect(card).toContainText('Nectovia can start this in Linen service');
@@ -255,7 +260,7 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
 
 test('Answer only holds the same request to an answer', async ({ page }) => {
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Linen service' });
   // The project's Diomedes conversation is found again, not made twice.
   await expect(answers(page).last()).toContainText('I can start that.');
   await page.getByRole('combobox', { name: 'Mode' }).selectOption({ label: 'Answer only' });
@@ -349,7 +354,7 @@ async function reviewProject(page: Page, name: string) {
   saved.project.ai = { engine: 'sample', model: null };
   await store.persist(saved);
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
   await say(page, `Warm ${name}`);
   await expect(answers(page).last()).toHaveText(`You said: Warm ${name}`);
   await page.getByRole('combobox', { name: 'Mode' }).selectOption('automatic');
@@ -399,14 +404,14 @@ test('CD05-R-07: a selection result cannot paint a different scope', async ({ pa
   try {
     await page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true }).click();
     await recorded;
-    await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'All projects' });
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'All projects' });
     await say(page, 'Home after R07');
     await expect(answers(page).last()).toHaveText('You said: Home after R07');
     const arrived = page.waitForResponse((r) => r.url().endsWith('/select'));
     release();
     await arrived;
     await painted(page);
-    await expect(page.getByRole('combobox', { name: 'In' })).not.toHaveValue(p.id);
+    await expect(page.getByRole('combobox', { name: 'Project' })).not.toHaveValue(p.id);
     // Candidate shows "Started in R07 project" under the home greeting.
     await expect(page.locator('.dio-card')).toHaveCount(0);
   } finally {
@@ -422,7 +427,7 @@ test('CD05-R-08: a proposal remains selectable after reload', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const outcomeRead = page.waitForResponse((r) =>
     r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()));
-  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
   const result = await (await outcomeRead).json();
   expect(result.outcome.status).toBe('proposed');
   expect(result.answerText).toBeNull();
@@ -466,7 +471,7 @@ test('CD05-R-10: concurrent first sends adopt one project thread', async ({ page
     await Promise.all([open(page), open(other)]);
     await Promise.all([page, other].map(async (window) => {
       const loaded = window.waitForResponse((r) => r.url().endsWith(`/projects/${p.id}/state`));
-      await window.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await window.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
       await loaded;
       await painted(window);
     }));
@@ -635,7 +640,7 @@ test('CD05-R-07 closure: a selection result cannot paint a later message', async
 
 test('CD05-R-07 closure: a read from an earlier visit cannot paint this one', async ({ page }) => {
   const p = await reviewProject(page, 'R07c project');
-  const scope = page.getByRole('combobox', { name: 'In' });
+  const scope = page.getByRole('combobox', { name: 'Project' });
   await scope.selectOption({ label: 'All projects' });
   const read = gate();
   await page.route(
@@ -672,7 +677,7 @@ test('CD05-R-07 closure: a send the person walked away from is offered back, and
   page,
 }) => {
   const p = await reviewProject(page, 'R07d project');
-  const scope = page.getByRole('combobox', { name: 'In' });
+  const scope = page.getByRole('combobox', { name: 'Project' });
   const sent = gate();
   await page.route(
     '**/api/projects/*/threads/*/messages',
@@ -714,7 +719,7 @@ test('CD05-R-08 closure: started work keeps its card after a reload', async ({ p
   await expect(card).toContainText('Started in R08b project');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
   await expect(card).toContainText('Started in R08b project');
   await expect(card.getByRole('button', { name: 'Open the work', exact: true })).toBeVisible();
   expect((await api<ProjectState>(`/projects/${p.id}/state`)).tasks).toHaveLength(1);
@@ -734,7 +739,7 @@ test('CD05-R-08 closure: a newer message retires the card, and a reload does not
   const outcomeRead = page.waitForResponse(
     (r) => r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()),
   );
-  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
   await outcomeRead;
   await expect(answers(page).last()).toHaveText('You said: Thanks R08c');
   await painted(page);
@@ -759,7 +764,7 @@ test("CD05-R-08 closure: an outcome is never shown under another command's answe
     outcome.delivered();
   });
   try {
-    await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+    await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
     await outcome.recorded;
     // While that read is in flight, another window asks for the same thing in the same words,
     // and is answered in the same words.
@@ -784,6 +789,8 @@ test("CD05-R-08 closure: an outcome is never shown under another command's answe
     await painted(page);
     // The transcript read after the outcome has both requests, and the first one's proposal is
     // not offered under the second one's answer.
+    // The home shows the newest exchange; Earlier opens the rest of the conversation.
+    await page.getByRole('button', { name: 'Earlier', exact: true }).click();
     await expect(page.locator('.turn.you .body', { hasText: 'ACT R08d proposal' })).toHaveCount(2);
     await expect(page.locator('.dio-card')).toHaveCount(0);
   } finally {
@@ -846,7 +853,7 @@ test("CD05-R-10 closure: a first send's lost reply is recovered from the other w
     await Promise.all(
       [page, other].map(async (window) => {
         const loaded = window.waitForResponse((r) => r.url().endsWith(`/projects/${p.id}/state`));
-        await window.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+        await window.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
         await loaded;
         await painted(window);
       }),
@@ -881,7 +888,7 @@ test("CD05-R-10 closure: a first send's lost reply is recovered from the other w
     await other.unroute('**/api/projects/*/threads/*/messages');
     await other.reload();
     await expect(other.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
-    await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+    await other.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
     await expect(answers(other).last()).toHaveText('You said: First R10b');
     await expect(strip(other)).toHaveCount(0);
 
@@ -922,7 +929,7 @@ test('CD05-R-07 closure: an answer that lands after the person left does not pai
   page,
 }) => {
   const p = await reviewProject(page, 'R07e project');
-  const scope = page.getByRole('combobox', { name: 'In' });
+  const scope = page.getByRole('combobox', { name: 'Project' });
   // The message goes through. The transcript read that follows it is held.
   const read = gate();
   await page.route(
@@ -975,7 +982,7 @@ for (const action of ['Discard', 'Send again'] as const) {
     const other = await context.newPage();
     try {
       await open(other);
-      await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await other.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
       await expect(strip(other)).toContainText(oldText);
       await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
       await expect(strip(other)).toHaveCount(0);
@@ -1040,7 +1047,7 @@ for (const action of ['Discard', 'Send again'] as const) {
     const other = await context.newPage();
     try {
       await open(other);
-      await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await other.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
       await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
       // The answer was already in the transcript this window opened on, and the strip is hidden
       // for as long as a delivery runs. The delivery ending is what says the message is settled,
@@ -1075,7 +1082,7 @@ for (const action of ['Discard', 'Send again'] as const) {
       await other.unroute(pattern);
       await other.reload();
       await expect(other.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
-      await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await other.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
       await expect(strip(other)).toContainText(newText);
       await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
       await expect(other.locator('.dio-pending')).toHaveCount(0);
@@ -1134,7 +1141,7 @@ test('CD05-R-12: a queued Discard cannot reload a scope the person left', async 
       return snapshot.pending?.some((entry) => entry.name === name) ?? false;
     }, lock)).toBe(true);
 
-    await page.getByRole('combobox', { name: 'In' }).selectOption(b.id);
+    await page.getByRole('combobox', { name: 'Project' }).selectOption(b.id);
     await expect(answers(page).last()).toHaveText('You said: Warm R12 B');
     await painted(page);
     const obsoleteReads: string[] = [];
@@ -1158,7 +1165,7 @@ test('CD05-R-12: a queued Discard cannot reload a scope the person left', async 
 
     // Candidate starts load(A) here even though the person is now in B.
     expect(obsoleteReads).toEqual([]);
-    await expect(page.getByRole('combobox', { name: 'In' })).toHaveValue(b.id);
+    await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue(b.id);
     await expect(answers(page).last()).toHaveText('You said: Warm R12 B');
   } finally {
     await other.evaluate(() => {
@@ -1255,7 +1262,7 @@ test('CD05-R-12 closure: an old Discard settling does not stop a delivery somewh
   };
   try {
     const queued = await queuedDiscard(page, other, 'R12c A');
-    const scope = page.getByRole('combobox', { name: 'In' });
+    const scope = page.getByRole('combobox', { name: 'Project' });
     await scope.selectOption(b.id);
     await expect(answers(page).last()).toHaveText('You said: Warm R12c B');
     // A message in B whose reply is held open, so its delivery is running when Discard settles.
@@ -1290,7 +1297,7 @@ test('CD05-R-12 closure: leaving and coming back is a new visit, and the old Dis
   const other = await context.newPage();
   try {
     const queued = await queuedDiscard(page, other, 'R12d A');
-    const scope = page.getByRole('combobox', { name: 'In' });
+    const scope = page.getByRole('combobox', { name: 'Project' });
     await scope.selectOption(b.id);
     await expect(answers(page).last()).toHaveText('You said: Warm R12d B');
     await scope.selectOption(queued.a.id);
@@ -1361,7 +1368,7 @@ test('CD05-R-12 closure: a Discard that fails says so where it was pressed, and 
   // Pressed, then the person leaves, then it fails: nothing about it is said in B.
   await failNext();
   await strip(page).getByRole('button', { name: 'Discard', exact: true }).click();
-  const scope = page.getByRole('combobox', { name: 'In' });
+  const scope = page.getByRole('combobox', { name: 'Project' });
   await scope.selectOption(b.id);
   await expect(answers(page).last()).toHaveText('You said: Warm R12e B');
   await fail();

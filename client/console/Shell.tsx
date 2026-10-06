@@ -2274,6 +2274,7 @@ export function Shell({
               free={freePlan !== null}
               askLocked={selectedLive}
               onChoose={chooseAsk}
+              pinChart={conversation}
               agentControl={
                 conversation ? null : (
                   <AgentPicker

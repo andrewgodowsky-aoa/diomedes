@@ -277,10 +277,12 @@ test('a project scope keeps its own sharing: no Home control and no line there',
 }) => {
   await homeWith('aws-bedrock', []);
   const project = await api<Project>('/projects', 'POST', { name: `Linen service ${++sent}` });
+  // The home's scope control is drawn only for a business with more than one project.
+  await api<Project>('/projects', 'POST', { name: `Second shop ${sent}` });
   await open(page);
   await expect(sentence(page)).toHaveText(AWS_LINE);
   await expect(stripControl(page)).toBeVisible();
-  const scope = page.getByRole('combobox', { name: 'In' });
+  const scope = page.getByRole('combobox', { name: 'Project' });
   await scope.selectOption({ label: project.name });
   await expect(scope).toHaveValue(project.id);
   await expect(line(page)).toHaveCount(0);

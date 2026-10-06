@@ -418,3 +418,59 @@
   color: inherit;
   font: inherit;
 }
+
+/* The ask box sits in the conversation (round 2 reskin, N1): under the date, the greeting and the
+ * pinned chart, over the newest exchange. Earlier opens the rest of the conversation above it. */
+.console.diomedes .dio-ask {
+  margin: 20px 0 24px;
+}
+.console.diomedes .dio-earlier {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console.diomedes .dio-earlier:hover {
+  color: var(--t1);
+}
+
+/* Nectovia suggests (round 2 reskin, N1): tasks a Nectovia run proposed, waiting for an OK, in
+   the column beside the conversation. Absent when nothing was proposed. */
+.console.diomedes .nv-suggests {
+  margin: 0 0 20px;
+}
+.console.diomedes .nv-suggests h2 {
+  margin: 0 0 8px;
+}
+.console.diomedes .nv-suggests ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.console.diomedes .nv-suggest {
+  padding: 12px 14px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  background: var(--raised);
+}
+.console.diomedes .nv-suggest b {
+  display: block;
+  color: var(--t1);
+  font-weight: 600;
+}
+.console.diomedes .nv-suggest p {
+  margin: 4px 0 0;
+  color: var(--t2);
+}
+.console.diomedes .nv-suggest-do {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.console.diomedes .nv-suggest-error {
+  margin: 8px 0 0;
+  color: var(--fail);
+}

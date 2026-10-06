@@ -16,6 +16,7 @@ import { formatOrigin, originForSession } from '../attribution-display';
 import { updateBar } from '../update-progress';
 import { useUpdateStatus } from '../use-update-status';
 import { SegmentBar } from './SegmentBar';
+import { pinnedMarks, type PinnedChart } from './pinned-chart';
 import './inline-visual.css';
 
 /*
@@ -260,8 +261,8 @@ function Frame({
 
 /** A turn's chart is drawn 640 wide and scaled to its column. */
 const DRAW_W = 640;
-const H = 240;
-const M = { top: 12, right: 12, bottom: 28, left: 60 };
+const PLAIN_H = 240;
+const PLAIN_M = { top: 12, right: 12, bottom: 28, left: 60 };
 
 /**
  * The width a chart in a turn is laid out at, so its 11 px labels stay 11 px in a narrow column
@@ -296,15 +297,29 @@ function drawingWidth(width: number | undefined): number {
   return Math.round(Math.min(1600, Math.max(280, width)));
 }
 
+/**
+ * The pinned chart's drawing (round 2 reskin, N1 and N2): no value ticks or gridlines, a shorter
+ * plot, and room above the bars for the two numbers it carries. Everything else is the reply's own
+ * chart, so a pinned chart and the one in the transcript always agree.
+ */
+const PINNED_H = 180;
+const PINNED_M = { top: 24, right: 12, bottom: 28, left: 12 };
+
 function CartesianChart({
   spec,
   width,
+  pinned = null,
 }: {
   spec: Extract<ChartSpec, { kind: 'bar' | 'line' | 'area' }>;
   width?: number;
+  /** Draws the pinned variant; `running` sweeps its baseline while a step runs. */
+  pinned?: { running: boolean; caption: string } | null;
 }) {
   const [figureRef, measured] = useFigureWidth(width === undefined);
   const W = drawingWidth(width ?? measured);
+  const M = pinned ? PINNED_M : PLAIN_M;
+  const H = pinned ? PINNED_H : PLAIN_H;
+  const marks = pinned ? pinnedMarks(spec) : [];
   const all = spec.series.flatMap((s) => s.values);
   const { min, max, ticks } = niceDomain(all);
   const plotW = W - M.left - M.right;
@@ -337,8 +352,7 @@ function CartesianChart({
   const zero = y(Math.max(min, Math.min(0, max)));
   const tick = (v: number) => formatValue(v, spec.format, spec.currency, true);
 
-  return (
-    <Frame kind={spec.kind} title={spec.title} figureRef={figureRef}>
+  const svg = (
       <svg
         className="iv-svg"
         role="img"
@@ -347,7 +361,7 @@ function CartesianChart({
         preserveAspectRatio="xMidYMid meet"
       >
         <g className="iv-grid" aria-hidden="true">
-          {ticks.map((t) => (
+          {!pinned && ticks.map((t) => (
             <g key={t}>
               <line x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} />
               <text x={M.left - 8} y={y(t)} dy="0.32em" textAnchor="end">
@@ -390,10 +404,22 @@ function CartesianChart({
                       y={top}
                       width={r1(Math.max(1, w - (spec.series.length > 1 ? 1 : 0)))}
                       height={r1(Math.max(0.5, bottom - top))}
-                      rx={r1(Math.min(2, w / 4))}
+                      rx={r1(Math.min(pinned ? 3 : 2, w / 4))}
                     />
                   );
                 })}
+                {marks.map((i) => (
+                  <text
+                    key={`mark-${i}`}
+                    className={`iv-value${marks.length > 1 && i === marks[marks.length - 1] ? ' top' : ''}`}
+                    x={r1(M.left + band * (i + 0.5))}
+                    y={r1(y(Math.max(s.values[i], 0)) - 6)}
+                    textAnchor="middle"
+                    aria-hidden="true"
+                  >
+                    {formatValue(s.values[i], spec.format, spec.currency, true)}
+                  </text>
+                ))}
               </g>
             );
           }
@@ -415,7 +441,30 @@ function CartesianChart({
           );
         })}
       </svg>
+  );
+
+  return (
+    <Frame kind={spec.kind} title={spec.title} figureRef={figureRef}>
+      {pinned ? (
+        <div className="iv-plot">
+          {svg}
+          {/* The baseline the sweep runs on while a step runs: the plot's zero line, placed by
+              the drawing's own proportions so it sits on the line at every width. */}
+          <span
+            className={`iv-baseline${pinned.running ? ' sweep' : ''}`}
+            aria-hidden="true"
+            style={{
+              top: `${r1((zero / height) * 100)}%`,
+              left: `${r1((M.left / W) * 100)}%`,
+              right: `${r1((M.right / W) * 100)}%`,
+            }}
+          />
+        </div>
+      ) : (
+        svg
+      )}
       {spec.series.length > 1 && <Legend names={spec.series.map((s) => s.name)} />}
+      {pinned?.caption && <p className="iv-pin-when">{pinned.caption}</p>}
       <DataTable spec={spec} />
     </Frame>
   );
@@ -746,4 +795,29 @@ export function InlineVisual({
     default:
       return <VisualNote reason="this kind of visual is not supported" />;
   }
+}
+
+/**
+ * The chart pinned at the top of a thread and on the home (round 2 reskin, slice 2, decision 1
+ * option A): the newest bar, line or area chart a reply carried, drawn in its pinned variant. While
+ * a step runs its baseline sweeps. Display only, like every visual.
+ */
+export function PinnedChartView({
+  chart,
+  running,
+  caption,
+}: {
+  chart: PinnedChart;
+  running: boolean;
+  /** When, and where from, in plain words. */
+  caption: string;
+}) {
+  return (
+    <section className="iv-pinned" aria-label="Pinned chart">
+      {/* A chart that cannot be drawn here is still in its reply, which says so; the top stays quiet. */}
+      <VisualBoundary key={chart.turnId} fallback={<></>}>
+        <CartesianChart spec={chart.spec} pinned={{ running, caption }} />
+      </VisualBoundary>
+    </section>
+  );
 }

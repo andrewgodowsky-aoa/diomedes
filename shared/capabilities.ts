@@ -530,6 +530,24 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     uncertaintyAfterDispatch:
       'The local worker may continue computing briefly after cancellation. The app rejects late output, but does not claim OS containment or terminate a worker it did not start.',
   },
+  nectovia: {
+    ...modelApiRoute(AWS_BEDROCK, {
+      routeId: 'nectovia',
+      // The name reaches customers (PermissionPanel.tsx): the product, never a vendor or model.
+      name: 'Nectovia',
+      transport:
+        'One streamed POST per call to the account service gateway at {accountService}/managed/v1/responses on guardedStreamFetch in server/engines/model-api-core.ts, redirects refused, the signed-in session token attached only there (nectoviaBinding in server/engines/nectovia.ts). The gateway pays the provider and meters the call; no provider-hosted tools are offered.',
+      process:
+        'The route is one HTTPS request from the Diomedes process per model step (respondNectovia in server/engines/nectovia.ts). No engine, CLI or helper process is started.',
+      uncertainty:
+        'The gateway may finish processing and charge an attempt after Stop or a lost response. Such an attempt keeps its local hold as uncertain in the spend ledger until the gateway reconciles it; the gateway funding ledger, not this computer, is the authority on credits.',
+    }),
+    receivesSecrets: fact(
+      'no',
+      'diomedes-enforced',
+      'No provider credential exists on this computer for this route. The SDK holds a placeholder, and the guarded transport attaches the session token only after its checks (server/engines/nectovia.ts, server/engines/model-api-core.ts).',
+    ),
+  },
   'azure-openai': modelApiRoute(AWS_BEDROCK, {
     routeId: 'azure-openai',
     name: 'Azure OpenAI, the company’s own Azure resource',

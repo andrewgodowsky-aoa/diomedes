@@ -764,7 +764,7 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
 }
 :is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-accent {
   font-family: var(--dm-font-accent);
-  font-style: italic;
+  font-style: normal;
   font-weight: 400;
   letter-spacing: -0.01em;
   color: var(--t2);

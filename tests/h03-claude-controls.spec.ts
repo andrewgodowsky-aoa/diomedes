@@ -251,9 +251,12 @@ test('a message queued while Claude Code answers is sent next, and both answers 
   const queued = page.getByRole('list', { name: 'Queued messages' });
   await expect(queued).toContainText('Also check the linen order');
   await expect(queued).toContainText('Queued: sent when the current answer finishes');
-  await expect(answers(page).filter({ hasText: 'Answer to Plan the week [slow]' })).toHaveCount(1);
   await expect(answers(page).last()).toHaveText('Answer to Also check the linen order');
   await expect(queued).toHaveCount(0);
+  // The home shows the newest exchange; Earlier opens the rest of the conversation.
+  await page.getByRole('button', { name: 'Earlier', exact: true }).click();
+  await expect(answers(page).filter({ hasText: 'Answer to Plan the week [slow]' })).toHaveCount(1);
+  await expect(answers(page).last()).toHaveText('Answer to Also check the linen order');
   // One Claude Code process served all of it.
   expect(launches).toHaveLength(1);
 });

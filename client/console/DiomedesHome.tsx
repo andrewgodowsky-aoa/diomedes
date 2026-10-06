@@ -48,9 +48,11 @@ import { conversationSources, readThreadRoute } from './thread-send';
 import { LocalImageAttachments, LocalModelControls, PrepareLocalModels } from './LocalModelControls';
 import type {
   Conversation,
+  IntegrationStatus,
   Project,
   ProjectState,
   Route,
+  Settings,
   Turn,
   WaitingItem,
 } from '../../shared/types';
@@ -75,6 +77,13 @@ import { saveArtifact } from './artifact-save';
 import { HomeArt } from './HomeArt';
 import { HomeBrief } from './HomeBrief';
 import { WorkerRows } from './WorkerRows';
+import { PinnedChartView } from './InlineVisual';
+import { newestChart, pinnedWhen } from './pinned-chart';
+import { toolRunning } from './engine-activity';
+import { railGroups, railProject, suggestions as proposalsOf, type RailTarget, type Suggestion } from './home-rail';
+import { Suggestions } from './Suggestions';
+import { AskRow, type AskChange } from './AskRow';
+import { CONVERSATION_ENGINES } from './ask-row';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -121,6 +130,10 @@ export interface DiomedesHomeProps {
    * showing and exists, and null otherwise, so the strip never shows a control that opens nothing.
    */
   onSharingControl?(open: (() => void) | null): void;
+  /** The integrations the host reports, for the ask row's engines. */
+  integrations?: IntegrationStatus[];
+  /** Settings, for the ask row's engines and tier. Without them the row is not drawn. */
+  settings?: Settings | null;
 }
 
 const words = (error: unknown) =>
@@ -140,6 +153,24 @@ const refusedForHistory = (error: unknown) =>
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
   'Stop was not confirmed. Sending the message again checks what happened.';
+
+/** Where "Not now" on a suggestion is kept: this computer only, since a task has no dismissed state. */
+const HIDDEN_SUGGESTIONS = 'diomedes.suggestions.hidden';
+function readHidden(): Set<string> {
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem(HIDDEN_SUGGESTIONS) ?? '[]');
+    return new Set(Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+function writeHidden(ids: ReadonlySet<string>) {
+  try {
+    localStorage.setItem(HIDDEN_SUGGESTIONS, JSON.stringify([...ids].slice(-200)));
+  } catch {
+    // Storage is unavailable; the card stays hidden for this visit.
+  }
+}
 
 /** The message a conversation may still be owed an answer for. Unreadable storage reads as none. */
 function retained(found: Binding): PendingMessage | null {
@@ -226,6 +257,16 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // an answer about a thread no longer on screen is never used.
   const [hostRoute, setHostRoute] = useState<{ key: string; route: string } | null>(null);
   const planAgent = useAccount()?.state.plan?.agent ?? null;
+  // The records the rail reads: the scoped project's, or the one project's under All projects.
+  // Read on their own request (`?view=rail`), so the conversation's own reads stay exactly
+  // what they were, and read again after each delivery and whenever the project's status moves.
+  const railId = railProject(projects, scopeId);
+  const railStatus = JSON.stringify(projects.find((p) => p.id === railId)?.status ?? null);
+  const [railState, setRailState] = useState<ProjectState | null>(null);
+  const [railReads, setRailReads] = useState(0);
+  const [hidden, setHidden] = useState<Set<string>>(readHidden);
+  const [accepting, setAccepting] = useState<string | null>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
   // On the free version a thread on Nectovia by default runs on the person's own AI tool, and the
   // stored thread still says Nectovia (server/app.ts `routed`). Once a thread exists the host's
   // answer names that tool. Before the first send there's no thread to ask about, so the free
@@ -281,6 +322,23 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     liveBinding.current = null;
     setLive(null);
   }, []);
+  useEffect(() => {
+    if (!railId) {
+      setRailState(null);
+      return;
+    }
+    if (pending) return;
+    let current = true;
+    void api<ProjectState>(`/projects/${encodeURIComponent(railId)}/state?view=rail`).then(
+      (state) => {
+        if (current) setRailState(state);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [railId, railStatus, railReads, pending]);
   // The caption names the model the account service publishes; a failed read names the route alone.
   useEffect(() => {
     let current = true;
@@ -812,6 +870,37 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     );
   };
 
+  /**
+   * One choice from the ask row, written to the conversation in one update. The tier, an engine
+   * of the person's own and its model are choices; the Mode is not touched. A refused write says
+   * why and changes nothing on screen.
+   */
+  const chooseAsk = (change: AskChange) => {
+    const found = binding;
+    if (!found || pending) return;
+    const visit = turn.current;
+    const body: { engine?: Route; requested?: Conversation['requested']; workStyle?: WorkStyle | null } = {};
+    if (change.engine !== undefined) body.engine = change.engine;
+    if (change.workStyle !== undefined) body.workStyle = change.workStyle;
+    if (change.requested !== undefined) body.requested = change.requested;
+    void api<Conversation>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
+      'PUT',
+      body,
+    ).then(
+      (conversation) => {
+        if (turn.current !== visit) return;
+        setModelThread(conversation);
+        setRoute(conversation.engine ?? null);
+        setWorkStyle(conversation.workStyle ?? null);
+        setPinnedModel(conversation.requested?.model ?? null);
+      },
+      (error) => {
+        if (turn.current === visit) setNotice(words(error));
+      },
+    );
+  };
+
   const card = outcomeCard(last?.outcome ?? null, projects);
   const act = async () => {
     const shown = last;
@@ -892,6 +981,57 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     if (refusalShown && sharesHistoryWith(policy, nextRef.current)) setNotice(null);
   };
 
+  // The rail's groups for the scope, and where each row opens: a job's thread or its card.
+  const groups = railGroups({ projects, scopeId, state: railState, now: Date.now() });
+  const targets = new Map<string, RailTarget>();
+  for (const group of groups) for (const row of group.rows) targets.set(row.id, row.target);
+  const openRow = (id: string) => {
+    const target = targets.get(id);
+    if (!target) return;
+    if ((target.taskId || target.needId) && props.onOpenWaiting) {
+      props.onOpenWaiting(target.projectId, {
+        id,
+        kind: 'review',
+        label: '',
+        detail: '',
+        ...(target.taskId ? { taskId: target.taskId } : {}),
+        ...(target.needId ? { needId: target.needId } : {}),
+        at: '',
+      });
+      return;
+    }
+    onOpenWork(target.projectId);
+  };
+
+  // "Nectovia suggests": only real proposals, from the records the rail read.
+  const proposals = proposalsOf(railState, hidden);
+  const accept = async (item: Suggestion) => {
+    setAccepting(item.taskId);
+    setAcceptError(null);
+    try {
+      await api(
+        `/projects/${encodeURIComponent(item.projectId)}/tasks/${encodeURIComponent(item.taskId)}/accept`,
+        'POST',
+        { expectedRevision: item.revision },
+      );
+    } catch (error) {
+      setAcceptError(words(error));
+    } finally {
+      setAccepting(null);
+      setRailReads((n) => n + 1);
+    }
+  };
+  const notNow = (item: Suggestion) => {
+    const next = new Set(hidden);
+    next.add(item.taskId);
+    setHidden(next);
+    writeHidden(next);
+  };
+
+  // The standing conversation's newest bar, line or area chart, pinned over the ask box. Its
+  // baseline sweeps while a step of the answer on its way is running.
+  const pinned = newestChart(turns);
+
   return (
     <>
       <Diomedes
@@ -966,6 +1106,45 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
         workers={scopeId !== null ? <WorkerRows projectId={scopeId} compact /> : undefined}
+        askRow={
+          // The conversation's row: its engines are the conversation routes. While the thread is on
+          // the local model, the home's own local model controls hold that choice instead.
+          binding && modelThread && props.settings && effective !== localRoute ? (
+            <AskRow
+              thread={modelThread}
+              mode={modeFor(restriction)}
+              route={route ?? CONVERSATION_DEFAULT_ROUTE}
+              integrations={(props.integrations ?? []).filter((item) => item.kind !== 'local')}
+              settings={props.settings}
+              styleView={null}
+              free={planAgent === 'free'}
+              names={planAgent !== 'free'}
+              locked={pending}
+              onChoose={chooseAsk}
+              engines={CONVERSATION_ENGINES}
+            />
+          ) : null
+        }
+        sections={groups}
+        onOpenRow={openRow}
+        chart={
+          pinned ? (
+            <PinnedChartView
+              chart={pinned}
+              running={pending && toolRunning(live?.activity?.lines)}
+              caption={pinnedWhen(pinned.at, new Date())}
+            />
+          ) : null
+        }
+        suggestions={
+          <Suggestions
+            items={proposals}
+            busyId={accepting}
+            error={acceptError}
+            onAccept={(item) => void accept(item)}
+            onNotNow={notNow}
+          />
+        }
         session={
           binding ? (
             <>

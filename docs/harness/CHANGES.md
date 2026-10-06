@@ -1,5 +1,64 @@
 # Harness host integration changes, 2026-09-09
 
+## The Nectovia home and thread, round 2 reskin slice 2, 2026-10-06
+
+Slice 2 of the round 2 reskin (DIO-200) builds boards N1 and N2, with N3 as the alternative view,
+on option A of each of the five slice 2 decisions
+(`F:/Diomedes/deliverables/nectovia-reskin-slice-2-decisions-20261004/README.md`). On 2026-10-06
+Andrew directed that the reskin be pushed fully through, and that is the owner override for the hot
+files. `client/console/Shell.tsx` gains one prop (`pinChart` on the thread) and the shared contracts
+gain one capability row (`shared/capabilities.ts`); `shared/types.ts` does not change. Open PR #234
+touches `shared/types.ts` (one value on `Task.reason`), which this slice leaves alone.
+
+- The pinned chart (decision 1). A thread in the Nectovia view, and the home, pin the newest bar,
+  line or area chart a reply carried (`client/console/pinned-chart.ts`, `PinnedChartView` in
+  `InlineVisual.tsx`). A pie, a stat card or a table is skipped, and two charts in one reply pin the
+  last. The pinned drawing has no value ticks, rounded bars, and the first and tallest number; its
+  caption says when the chart was written. While a step runs (a tool call in the reply on its way,
+  or in the thread's run) a sweep runs along its baseline, and reduced motion stills it. The visual
+  format is unchanged, and older charts stay where they were written. In the thread the chart takes
+  its own row of `.work` (`.work.pinned`), so the transcript scrolls below it. The Work view keeps
+  its threads as they were.
+- Nectovia suggests (decision 2). The home shows tasks a Nectovia run proposed that wait in the
+  Inbox (`workflow.inbox` with an `origin`, not deleted), newest first, two at most, and no section
+  when there are none (`Suggestions.tsx`). Accept calls the existing accept route, which moves the
+  task to the Board, where it starts only when the person starts it. Not now hides the card on this
+  computer (`diomedes.suggestions.hidden`), since a task has no dismissed state. Suggestions show
+  where the rail reads one project's records, so not under All projects with more than one project,
+  whose status records carry no Inbox.
+- Jobs in the rail (decision 3). The home's rail lists jobs, not projects: Needs your input,
+  Working and Finished, each with its count and a fold, Finished folded at first, and an empty
+  group not drawn (`client/console/home-rail.ts`, `Rail` `sections`). A row opens the job's
+  thread, its decision or its card. The ask box talks to the scope's standing conversation as
+  before, and sits under the date, the greeting and the pinned chart, over the conversation's
+  newest exchange; Earlier opens the rest. A note Nectovia wrote between the last answer and the
+  newest message stays with the newest exchange. Finished counts the week on this rail only
+  (`WEEK_WINDOW_MS`); the Board and the overview keep 24 hours. The rail reads its project's records
+  on its own request (`/state?view=rail`), after each delivery and whenever that project's status
+  moves. The project console's rail still lists threads.
+- The scope control (decision 4). One line at the top of the rail, All projects and each project,
+  drawn only when the business has more than one project. It replaces the composer's In box. Under
+  All projects with more than one project, Needs your input names each project's newest waiting
+  items with the project, Working is one row per project with its count, and Finished is not drawn,
+  because no record holds those across projects. A business with one project stays on All projects,
+  so nobody's home conversation moves, and its rail names that project's jobs.
+- Workers on Nectovia (decision 5). `ROUTE_CAPABILITIES` has a `nectovia` row, a model API route
+  through the account service gateway, named Nectovia. Before it every worker was grayed with
+  "nectovia is not a known execution route"; now the Agent menu grays only the workers whose leading
+  mode is Build or Fix, with "Build isn't on Nectovia yet." and "Fix isn't on Nectovia yet.",
+  because a thread send there refuses those modes (`client/console/agent-gaps.ts`). Full access
+  stays unavailable on it. Nothing claims helpers on Nectovia: its steps show as steps.
+- The ask row on the Nectovia conversation. Once the conversation exists, the home's composer
+  carries slice 1's row in place of the Style box. Its engines are the conversation routes
+  (`CONVERSATION_ENGINES`), not the project engines. The local model keeps the home's own controls,
+  so the row leaves it out and is not drawn while the conversation is on it.
+- The accent phrase in the home's greeting is upright.
+
+Unit tests: `tests/nectovia-agents.test.ts`, `tests/pinned-chart.test.ts`, `tests/home-rail.test.ts`,
+`tests/home-reskin-page.test.ts` and the conversation engine list in `tests/ask-row.test.ts`. The
+home browser specs moved to the scope control (named Project), add a second project where they use
+it, press Earlier where they read older turns, and choose a tier through the row.
+
 ## A lead that is not Nectovia can hand work to Nectovia at a tier, 2026-10-05
 
 A loop led by a route that is not Nectovia can now take Nectovia as its worker and its advisor

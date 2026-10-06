@@ -957,6 +957,8 @@ export function App() {
                   }}
                   scheme={paintedScheme}
                   services={settings?.services}
+                  settings={settings}
+                  integrations={integrations}
                   onSharingControl={(open) => setHomeSharing(() => open)}
                 />
               ) : (

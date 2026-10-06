@@ -3,6 +3,7 @@ import type { Conversation, Mode, Route } from '../../shared/types';
 import { AUTO_AGENT, AUTO_BY_MODE } from '../../shared/agents';
 import { api } from '../api';
 import { routeDisplayName } from '../../shared/engines';
+import { nectoviaAgentGap } from './agent-gaps';
 
 /** What `GET /projects/:id/agent-profiles` returns for one profile (H09). */
 interface ProfileOption {
@@ -132,7 +133,9 @@ export function AgentPicker({
     setOpen(false);
   }
   const entry = (item: AgentOption) => {
-    const blocked = !item.compatibility.ok;
+    // On Nectovia a worker for Build or Fix is grayed: a thread send there refuses those modes.
+    const gap = nectoviaAgentGap(item, route);
+    const blocked = !item.compatibility.ok || gap !== null;
     return (
       <button
         key={item.id}
@@ -146,9 +149,10 @@ export function AgentPicker({
         <span>{item.name}</span>
         <span className="id">{item.origin === 'built-in' ? item.id : item.origin}</span>
         <small>
-          {blocked
-            ? (item.compatibility.unmet[0]?.detail ?? 'This engine cannot support this worker.')
-            : item.summary}
+          {gap ??
+            (blocked
+              ? (item.compatibility.unmet[0]?.detail ?? 'This engine cannot support this worker.')
+              : item.summary)}
         </small>
       </button>
     );

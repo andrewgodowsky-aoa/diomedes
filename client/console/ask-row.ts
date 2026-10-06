@@ -8,8 +8,9 @@ import type {
   Turn,
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
-import { isExternalEngine, isRoute, routeDisplayName } from '../../shared/engines';
+import { CONVERSATION_ROUTES, isExternalEngine, isRoute, routeDisplayName } from '../../shared/engines';
 import { NECTOVIA_ROUTE } from '../../shared/model-api';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model';
 import { isFoundEngine } from '../../shared/conversation-engines';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import {
@@ -35,6 +36,14 @@ import { jobTierOf } from '../../shared/job-caps';
 
 /** The engines a thread can move to from the row, in the order a person reads them. */
 export const ROW_ENGINES = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
+/**
+ * The engines the Nectovia conversation's row lists after Nectovia (round 2 reskin, slice 2): the
+ * conversation routes, not the project engines. Nectovia leads the menu on its own and the local
+ * model has its own place, so neither is in this list.
+ */
+export const CONVERSATION_ENGINES: readonly Route[] = CONVERSATION_ROUTES.filter(
+  (id) => id !== NECTOVIA_ROUTE && id !== LOCAL_MODEL_ROUTE,
+);
 
 export const LOCAL_MODEL = 'Local model';
 export const NECTOVIA_LOCKED = 'Buy credits or upgrade your plan to use Nectovia';
@@ -180,6 +189,8 @@ export interface EngineInput {
   /** The thread's recorded route. */
   route: Route;
   local: LocalModel | null;
+  /** The engines listed after Nectovia, in order. The project row's `ROW_ENGINES` unless given. */
+  engines?: readonly Route[];
 }
 
 /** Found, every check passed, and turned on in Settings. Sample work needs no switch. */
@@ -225,7 +236,7 @@ export function engineEntries(input: EngineInput): EngineEntry[] {
       locked: free,
     },
   ];
-  for (const id of ROW_ENGINES) {
+  for (const id of input.engines ?? ROW_ENGINES) {
     if (offeredEngine(id, input))
       entries.push({ id, name: engineName(id, integrations), sub: 'Your own account', online: false, disabled: false, locked: false });
     else if (isExternalEngine(id) && settings.services?.[id] === true)
