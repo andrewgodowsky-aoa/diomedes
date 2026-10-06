@@ -101,6 +101,14 @@ export function presentRun(run: HarnessRun): RunPresentation {
     case 'cancelled': {
       // A work loop that ended because the business ran out of credits keeps the sentence the stop
       // recorded: it says who can buy more.
+      // A work loop that stopped at its check-in waits in Needs you with the sentence the stop recorded;
+      // Keep going there starts a new attempt with one more amount.
+      const checkIn = (run.steps.find((s) => s.intent.stepId === 'stop:check-in' && s.state === 'succeeded')?.output as
+        | { detail?: unknown }
+        | null
+        | undefined)?.detail;
+      if (typeof checkIn === 'string' && checkIn)
+        return { ...base, taskState: 'waiting', reason: 'check-in', sessionState: 'stopped', sentence: checkIn };
       const detail = (run.steps.find((s) => s.intent.stepId === 'stop:credits' && s.state === 'succeeded')?.output as
         | { detail?: unknown }
         | null

@@ -241,16 +241,21 @@ describe('a business conversation on nectovia', () => {
       decision: 'admitted', routeKind: 'managed', surface: 'conversation', rootJobId: sent.headers['x-nectovia-job'],
     });
 
-    // The same charge on this computer's guard, against the same attempt and job.
+    // On this computer's guard, the same attempt and job. Under tier pricing (Model B) the service
+    // debits the tier's charge, and this computer prices a legacy account's evaluation at the published
+    // provider price, so the two ledgers disagree and the local hold is kept as uncertain, with the
+    // reason, rather than settled at a figure they disagree on. The account service's ledger is the authority.
     const holds = await localHolds(organizationId);
     expect(holds).toHaveLength(1);
+    expect(settled!.allowanceDebitMicroUsd).toBeGreaterThan(settled!.providerCostMicroUsd);
     expect(holds[0]).toMatchObject({
       id: attempt,
       route: 'nectovia',
       modelId: 'typesafe/jev-1.13',
       rateCardVersion: PRICE_VERSION,
-      state: 'settled',
-      settledMicroUsd: settled!.allowanceDebitMicroUsd,
+      state: 'uncertain',
+      settledMicroUsd: null,
+      uncertainReason: expect.stringContaining(`The service charged ${settled!.allowanceDebitMicroUsd} micro-USD`),
       jobId: expect.stringMatching(/^job-[0-9a-f]{40}$/),
       attempt: { runId: sent.headers['x-nectovia-job'], stepId: 'preflight', attempt: 1 },
     });

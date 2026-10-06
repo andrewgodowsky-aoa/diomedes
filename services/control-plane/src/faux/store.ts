@@ -53,6 +53,8 @@ import {
 import type { OrganizationExportRepository, OrganizationExportTransaction } from '../organization-export/service.js';
 import { StateTransaction } from '../state-transaction.js';
 import { emptyFundingState, StateFundingTransaction, type FundingState } from './funding-state.js';
+import { creditPriceTableSchema, type CreditPriceTable } from '../../../../shared/credit-prices.js';
+import { checkInDefaultsSchema, checkInOverrideSchema, type CheckInDefaults, type CheckInOverride } from '../../../../shared/job-check-ins.js';
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
 
 export interface CommercialState {
@@ -64,6 +66,12 @@ export interface CommercialState {
   accessRevisions: Record<string, { tenantId: string; revision: number }>;
   routes: RouteEntry[];
   policies: TierPolicy[];
+  /** Credit price table versions (migration 018), in publication order. */
+  priceTables: CreditPriceTable[];
+  /** Job check-in default versions (migration 019), in publication order. */
+  checkInDefaults: CheckInDefaults[];
+  /** Each business's own check-in amounts (migration 019). */
+  checkInOverrides: CheckInOverride[];
   operators: Operator[];
   audit: AuditEvent[];
   admissions: AdmissionRecord[];
@@ -105,6 +113,11 @@ const commercialSchema = z.strictObject({
   accessRevisions: z.record(z.string(), z.strictObject({ tenantId: z.string(), revision: z.number().int().min(0) })),
   routes: z.array(routeEntrySchema).max(500),
   policies: z.array(tierPolicySchema).max(10_000),
+  // Stores written before tier pricing have no table yet.
+  priceTables: z.array(creditPriceTableSchema).max(10_000).default([]),
+  // Stores written before job check-ins have none yet.
+  checkInDefaults: z.array(checkInDefaultsSchema).max(10_000).default([]),
+  checkInOverrides: z.array(checkInOverrideSchema).max(100_000).default([]),
   operators: z.array(operatorSchema).max(1_000),
   audit: z.array(auditEventSchema).max(LOG_LIMIT),
   admissions: z.array(admissionRecordSchema).max(LOG_LIMIT),
@@ -127,7 +140,7 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     identity: emptyFauxIdentity(),
     commercial: {
       individuals: [], routingPreferences: [], jobRestrictions: {}, circuits: {},
-      grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [],
+      grants: [], accessRevisions: {}, routes: [], policies: [], priceTables: [], checkInDefaults: [], checkInOverrides: [], operators: [], audit: [], admissions: [],
       personGrants: [], personAccessRevisions: {}, personalAdmissions: [],
     },
     funding: emptyFundingState(),
@@ -216,6 +229,33 @@ class FauxCommercialTransaction implements CommercialTransaction {
   async savePolicy(row: TierPolicy) {
     if (this.c.policies.some(old => old.revision === row.revision && routingScopeKey(old.scope ?? { kind: 'global' }) === routingScopeKey(row.scope ?? { kind: 'global' }))) throw new Error('Published tier policies are append-only.');
     this.c.policies.push(row);
+  }
+  async priceTable(version?: number) {
+    if (version !== undefined) return this.c.priceTables.find(row => row.version === version);
+    return [...this.c.priceTables].sort((a, b) => b.version - a.version)[0];
+  }
+  async priceTables(limit: number) { return [...this.c.priceTables].sort((a, b) => b.version - a.version).slice(0, limit); }
+  async savePriceTable(row: CreditPriceTable) {
+    // The same rule the Postgres trigger and primary key enforce: a version is written once.
+    if (this.c.priceTables.some(old => old.version === row.version)) throw new Error('Published credit price tables are append-only.');
+    this.c.priceTables.push(row);
+  }
+  async checkInDefaults(version?: number) {
+    if (version !== undefined) return this.c.checkInDefaults.find(row => row.version === version);
+    return [...this.c.checkInDefaults].sort((a, b) => b.version - a.version)[0];
+  }
+  async checkInDefaultsHistory(limit: number) { return [...this.c.checkInDefaults].sort((a, b) => b.version - a.version).slice(0, limit); }
+  async saveCheckInDefaults(row: CheckInDefaults) {
+    // The same rule the Postgres trigger and primary key enforce: a version is written once.
+    if (this.c.checkInDefaults.some(old => old.version === row.version)) throw new Error('Published job check-in defaults are append-only.');
+    this.c.checkInDefaults.push(row);
+  }
+  async checkInOverride(tenantId: string, organizationId: string) {
+    return this.c.checkInOverrides.find(row => row.tenantId === tenantId && row.organizationId === organizationId);
+  }
+  async saveCheckInOverride(row: CheckInOverride) {
+    this.c.checkInOverrides = this.c.checkInOverrides.filter(old => !(old.tenantId === row.tenantId && old.organizationId === row.organizationId));
+    this.c.checkInOverrides.push(row);
   }
   async individual(id: string) { return this.c.individuals.find(r => r.id === id); }
   async individualFor(personId: string) { return this.c.individuals.find(r => r.personId === personId); }

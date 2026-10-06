@@ -1,8 +1,10 @@
 /** Ephemeral, person-and-scope-bound routing cache. The control plane remains authoritative. */
 import { z } from 'zod';
 import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
-import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON } from '../../shared/access.js';
-import { AGENT_PERSONAL_INDIVIDUAL_REASON, MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
+import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON, AGENT_PERSONAL_REASON, BUSINESS_PLAN_NEEDED_BUYER, BUSINESS_PLAN_NEEDED_MEMBER,
+  OUT_OF_CREDITS_PERSONAL } from '../../shared/access.js';
+import { decidePayAsYouGo } from '../../shared/pay-as-you-go.js';
+import { MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
 import { routingScopeKey, type AccountScope, type IndividualAccount, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import type { AccessFeature } from '../../shared/access.js';
 import type { EscalationView } from '../../shared/escalation-controls.js';
@@ -141,7 +143,21 @@ export class AccountRoutingSession {
   mayHaveAgent(scope: AccountScope) {
     if (scope.kind === 'organization') return this.session.entitlement(scope.id)?.state === 'unknown' || this.session.includes(scope.id, 'nectovia-agent');
     if (!this.current() || scope.id !== this.individual?.id) return false;
-    return !this.individualAccess || this.individualAccess.until <= this.now() || this.includes(scope, 'nectovia-agent');
+    return !this.individualAccess || this.individualAccess.until <= this.now() || this.includes(scope, 'nectovia-agent') || this.paysAsYouGo(scope);
+  }
+  /**
+   * Pay as you go (DIO-219): Personal work no plan of the person's holds the Agent for, while the account service says their own
+   * bought credits are above zero. It grants no feature: `includes` stays false for every one, so nothing a plan keeps opens.
+   */
+  paysAsYouGo(scope: AccountScope) {
+    const access = this.individualAccess;
+    if (scope.kind !== 'individual' || !this.current() || scope.id !== this.individual?.id || !access || access.until <= this.now()) return false;
+    return !this.includes(scope, AGENT_FEATURE) && access.value.boughtCredits === 'available';
+  }
+  /** Why a business workspace with no plan has no Agent, in the words for this person's role there (Model B section 7). */
+  businessPlanReason(organizationId: string): string {
+    const role = this.session.roleIn(organizationId);
+    return role === 'owner' || role === 'admin' ? BUSINESS_PLAN_NEEDED_BUYER : BUSINESS_PLAN_NEEDED_MEMBER;
   }
   includes(scope: AccountScope, feature: AccessFeature) {
     if (scope.kind === 'organization') return this.session.includes(scope.id, feature);
@@ -154,8 +170,13 @@ export class AccountRoutingSession {
   personalRefusal(projectId: string | null): string | null {
     const scope = this.scopeFor(projectId), access = this.individualAccess;
     if (scope?.kind !== 'individual' || !access || access.until <= this.now()) return null;
-    if (access.value.state === 'none')
-      return this.session.agentPlan() === 'free' ? AGENT_FREE_VERSION_REASON : AGENT_PERSONAL_INDIVIDUAL_REASON;
+    // No plan of the person's own holds the Agent: their bought credits run it here (pay as you go, DIO-219).
+    if (this.paysAsYouGo(scope)) return null;
+    // Everything they bought is spent: the out-of-credits sentence (Model B section 7).
+    if (access.value.state === 'none' && access.value.boughtCredits === 'spent') return OUT_OF_CREDITS_PERSONAL;
+    // Never bought any: the free version keeps its own sentence (the host adds what the person can do), and anyone else reads both
+    // ways in (Model B section 7).
+    if (access.value.state === 'none') return this.session.agentPlan() === 'free' ? AGENT_FREE_VERSION_REASON : AGENT_PERSONAL_REASON;
     if (access.value.state === 'expired' || access.value.state === 'revoked') return access.value.reason;
     return null;
   }
@@ -176,8 +197,13 @@ export class AccountRoutingSession {
     // Known plan limits are refused before a service admission is recorded. Unknown
     // access still goes to the service, which may return a definitive revocation.
     if (scope.kind === 'individual') {
-      if (this.individualAccess?.value.state === 'none')
-        throw admissionRefusal('agent_not_included', this.personalRefusal(work.projectId) ?? AGENT_PERSONAL_INDIVIDUAL_REASON);
+      // No plan of the person's own holds the Agent: only their bought credits can run it, and only for what a plan doesn't keep.
+      if (this.paysAsYouGo(scope)) {
+        const payg = decidePayAsYouGo({ surface: work.surface, routeKind: work.routeKind ?? 'byo' }, true);
+        if (!payg.admitted) throw admissionRefusal(payg.code, payg.reason);
+      } else if (this.individualAccess?.value.state === 'none')
+        throw admissionRefusal(this.individualAccess.value.boughtCredits === 'spent' ? 'insufficient_allowance' : 'agent_not_included',
+          this.personalRefusal(work.projectId) ?? AGENT_PERSONAL_REASON);
       if (work.routeKind === 'managed' && this.includes(scope, AGENT_FEATURE) && !this.includes(scope, 'managed-inference'))
         throw admissionRefusal('managed_inference_not_included', MANAGED_USAGE_NOT_INCLUDED_PERSONAL);
     } else if (work.routeKind === 'managed' && this.session.includes(scope.id, AGENT_FEATURE) &&
@@ -206,7 +232,10 @@ export class AccountRoutingSession {
     const answer = parsed.data;
     if (!answer.decision.admitted) {
       if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
-      throw admissionRefusal(answer.decision.code, answer.decision.reason);
+      // A business with no plan says so in the words for this person's role there (Model B section 7).
+      const reason = scope.kind === 'organization' && answer.decision.code === 'agent_not_included' && this.session.entitlement(scope.id)?.state === 'none'
+        ? this.businessPlanReason(scope.id) : answer.decision.reason;
+      throw admissionRefusal(answer.decision.code, reason);
     }
     if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,

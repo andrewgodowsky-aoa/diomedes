@@ -60,7 +60,7 @@ describe('versioned migration protocol', () => {
 });
 
 describe('versioned migration source files', () => {
-  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql','014_member_credit_limits.sql','015_credit_purchases.sql'];
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql', '005_customer_access.sql', '006_staff_keys.sql', '007_relay_devices.sql', '008_organization_setup.sql', '009_individual_plans.sql', '010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql','014_member_credit_limits.sql','015_credit_purchases.sql','016_stripe_billing_foundation.sql','017_personal_pay_as_you_go.sql','018_credit_price_tables.sql','019_job_check_in_amounts.sql'];
   const load = () => Promise.all(names.map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
@@ -178,7 +178,8 @@ describe('versioned migration source files', () => {
       sha256: '540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886' });
     expect(files[9]).toMatchObject({ version: 10, name: '010-scoped-routing.sql' });
     const db = database(files.slice(0, 9));
-    expect(await migrate(db.factory, files)).toEqual([10, 11, 12, 13, 14, 15]);
+    // Every file after 009, in order: the list grows with each migration merged after it.
+    expect(await migrate(db.factory, files)).toEqual(files.slice(9).map((file) => file.version));
     expect(db.calls).not.toContain(files[8].sql);
     expect(await migrate(db.factory, files)).toEqual([]);
   });
@@ -191,7 +192,7 @@ describe('versioned migration source files', () => {
     expect(periods).toMatchObject({ version: 12, name: '012_individual_subscription_periods.sql' });
     // An 011 database upgrades to 012 without replaying anything earlier.
     const db = database(files.slice(0, 11));
-    expect(await migrate(db.factory, files)).toEqual([12, 13, 14, 15]);
+    expect(await migrate(db.factory, files)).toEqual(files.slice(11).map((file) => file.version));
     expect(db.calls).not.toContain(files[10].sql);
     expect(periods.sql.replace(/--.*$/gm, '')).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|UPDATE\s+control_plane)/i);
     expect(periods.sql).not.toMatch(/^\s*GRANT\b/im);

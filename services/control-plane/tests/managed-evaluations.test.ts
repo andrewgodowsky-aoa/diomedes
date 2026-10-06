@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFauxCloud, LIVE_EVALUATIONS_WITHOUT_CEILING, type FauxCloud } from '../src/faux/cloud.js';
 import { startFauxCloud, type RunningFauxCloud } from '../src/faux/server.js';
-import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
+import { DEMO_ACCOUNTS, FAUX_CREDIT_CHARGE, FAUX_DEMO_PASSWORD, seedDemo, type DemoAccount } from '../src/faux/seed.js';
 import {
   DECISIONS_DATA_POLICY,
   EVALUATION_PROVIDER,
@@ -142,22 +142,27 @@ function expectNothingSentOrHeld() {
   expect(spy.calls).toHaveLength(0);
   expect(attempts()).toHaveLength(0);
 }
-/** The hold the gateway prices for a body exactly as it was sent. */
+/** The faux cloud's synthetic Efficient charge (Model B): what an evaluation is held and debited at. */
+const CHARGE = { version: 'faux', ...FAUX_CREDIT_CHARGE };
+/** The hold the gateway prices for a body exactly as it was sent, under the tier's charge. */
 function holdFor(rawBody: string, questions: number) {
   const bound = inputTokenBound(new TextEncoder().encode(rawBody).byteLength, questions);
   const output = questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION;
-  return Math.ceil((bound * RATE.inputMicroUsdPerMillion + output * RATE.outputMicroUsdPerMillion) / 1_000_000);
+  const inputRate = Math.max(CHARGE.inputMicroUsdPerMillion, CHARGE.cacheWriteMicroUsdPerMillion, CHARGE.cacheReadMicroUsdPerMillion);
+  return Math.ceil((bound * inputRate + output * CHARGE.outputMicroUsdPerMillion) / 1_000_000) + CHARGE.requestFeeMicroUsd;
 }
 /** What the scripted provider reports for a body it was sent: its bytes over four, one output token a question. */
 function scriptedCost(rawBody: string, questions: number) {
   const inputTokens = Math.ceil(new TextEncoder().encode(rawBody).byteLength / 4);
-  return { inputTokens, cost: usageCost(RATE, { inputTokens, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: questions, reasoningTokens: 0 }) };
+  const usage = { inputTokens, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: questions, reasoningTokens: 0 };
+  // The provider's cost is recorded; the tier's charge is debited.
+  return { inputTokens, cost: usageCost(RATE, usage), debit: usageCost(CHARGE, usage) };
 }
 
 // --- an answered evaluation -----------------------------------------------------------------
 
 describe('an answered evaluation', () => {
-  it('answers a Business member, sent once to the registry’s endpoint, and settles the hold at the route’s price', async () => {
+  it('answers a Business member, sent once to the registry’s endpoint, and settles the hold at the tier’s charge with the route’s price beside it', async () => {
     const { token, admission } = await employee();
     const before = await available();
     const response = await evaluate({ token, admission });
@@ -181,7 +186,7 @@ describe('an answered evaluation', () => {
       provider: { data_collection: 'deny' },
     });
 
-    const { inputTokens, cost } = scriptedCost(sent.rawBody, 3);
+    const { inputTokens, cost, debit } = scriptedCost(sent.rawBody, 3);
     expect(cost).toBeGreaterThan(0);
     expect(body).toEqual({
       answers: {
@@ -201,7 +206,7 @@ describe('an answered evaluation', () => {
       'x-nectovia-model': 'typesafe/jev-1.13',
       'x-nectovia-rate-card': RATE.version,
       'x-nectovia-charge': 'settled',
-      'x-nectovia-charge-micro-usd': String(cost),
+      'x-nectovia-charge-micro-usd': String(debit),
       'x-nectovia-input-tokens': String(inputTokens),
       'x-nectovia-output-tokens': '3',
     });
@@ -212,12 +217,12 @@ describe('an answered evaluation', () => {
       id: 'run-1:jev:1', kind: 'advisor', route: 'openrouter-jev-1.13', state: 'settled', rateSnapshot: RATE,
       maxMicroUsd: holdFor(sent.rawBody, 3), usageClass: 'included-chat', rootJobId: 'run-1',
     });
-    expect(attempts()[0].maxMicroUsd).toBeGreaterThanOrEqual(cost);
+    expect(attempts()[0].maxMicroUsd).toBeGreaterThanOrEqual(debit);
     expect(settlements()).toHaveLength(1);
-    expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: cost, allowanceDebitMicroUsd: cost, receiptRef: body.response.id });
+    expect(settlements()[0]).toMatchObject({ providerCostMicroUsd: cost, allowanceDebitMicroUsd: debit, receiptRef: body.response.id });
     const after = await available();
     expect(after.pendingMicroUsd).toBe(before.pendingMicroUsd);
-    expect(after.availableMicroUsd).toBe(before.availableMicroUsd - cost);
+    expect(after.availableMicroUsd).toBe(before.availableMicroUsd - debit);
   });
 
   it('prices from the published Jev terms: $0.000000042 a prompt token and nothing a completion token', () => {

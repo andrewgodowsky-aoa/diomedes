@@ -38,10 +38,8 @@ import type { StaffRole } from '../shared/access.js';
 import { SIGN_IN_REQUIRED } from '../shared/accounts.js';
 import {
   CREDIT_PURCHASE_MAX_CREDITS,
-  CREDIT_PURCHASE_MIN_CREDITS,
-  CREDIT_PURCHASE_STEP,
   isAllowedCheckoutUrl,
-  isPurchasableCredits,
+  isAskableCredits,
   type CreditPurchaseStarted,
   type CreditPurchaseStatus,
   type CreditQuote,
@@ -56,6 +54,7 @@ import {
   type ChargeKind,
   type UsageState,
 } from '../shared/managed-usage.js';
+import type { PurchasedBalanceAnswer } from './accounts/client.js';
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
@@ -83,6 +82,9 @@ const organizationId = (req: Request) => String(req.params.organizationId ?? '')
 
 export const NOT_CONNECTED_REASON =
   'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
+
+/** Personal work's bought credits, when this app isn't signed in to read them. */
+const NOT_CONNECTED_PERSONAL = 'Sign in to see the credits you bought.';
 
 const invalid = (message: string, code: string) => new ApiError(400, message, { code });
 
@@ -134,14 +136,24 @@ export interface OrganizationUsageReader {
  * anything, takes a payment or opens the payment page itself.
  */
 export interface CreditPurchasing {
-  quoteCredits(organizationId: string, credits: number): Promise<CreditQuote>;
+  /** A quote of an amount, or of one step when no amount is asked: how a screen learns the step its business buys in. */
+  quoteCredits(organizationId: string, credits: number | null): Promise<CreditQuote>;
   startCreditPurchase(organizationId: string, credits: number): Promise<CreditPurchaseStarted>;
   readCreditPurchase(organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus>;
   /** The origin of the test service's own checkout page when the account service is the test one, else null. */
   localCheckoutOrigin(): string | null;
+  /**
+   * Pay as you go (DIO-219): the same, for the signed-in person's own Personal work. The account service resolves the person and
+   * their own billing scope; nothing here names either. Left out, Personal has no buy box here.
+   */
+  quotePersonalCredits?(credits: number | null): Promise<CreditQuote>;
+  startPersonalCreditPurchase?(credits: number): Promise<CreditPurchaseStarted>;
+  readPersonalCreditPurchase?(purchaseId: string): Promise<CreditPurchaseStatus>;
+  personalPurchasedBalance?(): Promise<PurchasedBalanceAnswer>;
 }
 
-const CREDITS_REASON = `Credits are bought in steps of ${CREDIT_PURCHASE_STEP}, from ${CREDIT_PURCHASE_MIN_CREDITS} up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
+// Whether the amount is a whole number of the business's steps is the account service's to say: the step depends on the business's plan.
+const CREDITS_REASON = `Enter a whole number of credits, up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
 const PURCHASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export function mountManagedUsageRoutes(
@@ -315,9 +327,9 @@ export function mountManagedUsageRoutes(
     if (!credits) throw new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
     return { id, credits };
   };
-  /** A whole multiple of 100 in the bounds, or a 422 in plain words. */
+  /** A whole number of credits inside the cap, or a 422 in plain words. The account service checks it is a whole number of steps. */
   const askedCredits = (value: unknown) => {
-    if (!isPurchasableCredits(value)) throw new ApiError(422, CREDITS_REASON, { code: 'invalid_credits' });
+    if (!isAskableCredits(value)) throw new ApiError(422, CREDITS_REASON, { code: 'invalid_credits' });
     return value;
   };
 
@@ -325,8 +337,9 @@ export function mountManagedUsageRoutes(
     '/api/workspace/organizations/:organizationId/allowance/credit-purchases/quote',
     route(async (req) => {
       const { id, credits: buying } = buyer(req);
-      // A query value is text: a plain run of digits, or it is not an amount at all.
+      // No amount is one step. A query value is text: a plain run of digits, or it is not an amount at all.
       const text = req.query.credits;
+      if (text === undefined) return buying.quoteCredits(id, null);
       return buying.quoteCredits(id, askedCredits(typeof text === 'string' && /^[1-9][0-9]{0,9}$/.test(text) ? Number(text) : undefined));
     }, false),
   );
@@ -356,6 +369,68 @@ export function mountManagedUsageRoutes(
       if (!PURCHASE_ID.test(purchaseId))
         throw new ApiError(404, 'That purchase was not found for this business.', { code: 'unknown_purchase' });
       return buying.readCreditPurchase(id, purchaseId);
+    }, false),
+  );
+
+  /**
+   * Pay as you go (DIO-219): buying credits for the signed-in person's own Personal work. Anyone signed in may; the account
+   * service resolves the person and their own billing scope, so nothing here names a person, a scope or a business, and what
+   * they buy can only ever land in their own scope. As above, nothing here prices an amount or opens a page.
+   */
+  const personalBuyer = () => {
+    if (!credits?.quotePersonalCredits || !credits.startPersonalCreditPurchase || !credits.readPersonalCreditPurchase)
+      throw new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    return credits as Required<CreditPurchasing>;
+  };
+
+  app.get(
+    '/api/workspace/personal/allowance/credit-purchases/quote',
+    route(async (req) => {
+      const buying = personalBuyer();
+      const text = req.query.credits;
+      if (text === undefined) return buying.quotePersonalCredits(null);
+      return buying.quotePersonalCredits(askedCredits(typeof text === 'string' && /^[1-9][0-9]{0,9}$/.test(text) ? Number(text) : undefined));
+    }, false),
+  );
+
+  app.post(
+    '/api/workspace/personal/allowance/credit-purchases',
+    route(async (req, res) => {
+      const buying = personalBuyer();
+      const value = req.body as unknown;
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => key !== 'credits'))
+        throw invalid('Send only the credits to buy.', 'invalid_request');
+      const started = await buying.startPersonalCreditPurchase(askedCredits((value as { credits?: unknown }).credits));
+      if (!isAllowedCheckoutUrl(started.checkoutUrl, buying.localCheckoutOrigin()))
+        throw new ApiError(502, 'The payment page the account service sent isn’t one this app will open.', { code: 'checkout_url_refused' });
+      res.status(201);
+      return started;
+    }, false),
+  );
+
+  app.get(
+    '/api/workspace/personal/allowance/credit-purchases/:purchaseId',
+    route(async (req) => {
+      const buying = personalBuyer();
+      const purchaseId = String(req.params.purchaseId ?? '');
+      if (!PURCHASE_ID.test(purchaseId)) throw new ApiError(404, 'That purchase was not found.', { code: 'unknown_purchase' });
+      return buying.readPersonalCreditPurchase(purchaseId);
+    }, false),
+  );
+
+  /** The person's own bought credits, read from the account service. Unread is never zero: it says so instead. */
+  app.get(
+    '/api/workspace/personal/allowance/purchased',
+    route(async () => {
+      if (!credits?.personalPurchasedBalance)
+        return { state: 'not-connected', organizationId: 'personal', reason: NOT_CONNECTED_PERSONAL } satisfies PurchasedUsageState;
+      try {
+        return { state: 'ready', organizationId: 'personal', balance: await credits.personalPurchasedBalance() } satisfies PurchasedUsageState;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401)
+          return { state: 'not-connected', organizationId: 'personal', reason: NOT_CONNECTED_PERSONAL } satisfies PurchasedUsageState;
+        return { state: 'unavailable', organizationId: 'personal', reason: 'The account service couldn’t say what you’ve bought, so nothing is shown.' } satisfies PurchasedUsageState;
+      }
     }, false),
   );
 

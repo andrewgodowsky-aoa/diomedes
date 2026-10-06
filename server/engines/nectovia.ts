@@ -24,6 +24,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
 import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
+import { OUT_OF_CREDITS_PERSONAL, PAY_AS_YOU_GO_PLAN_ONLY_REASON } from '../../shared/access.js';
 import { ESCALATION_HEADER, escalationAllows, type EscalationRole } from '../../shared/escalation-controls.js';
 import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import type { TierResolution } from '../../shared/tier-map.js';
@@ -161,7 +162,11 @@ export async function ensureNectoviaGuard(
 }
 
 /**
- * The local rate card for a model the gateway serves, from the provider registry's own numbers.
+ * The local rate card for a model the gateway serves. From an authenticated account snapshot it is
+ * the tier's credit charge (Model B): the account service sends the charge, in ledger units, in the
+ * snapshot's `price` and `guardPrices` fields and never a provider's price, so this card, the local
+ * guard and the job estimate (`jobRatesOf`) all count credits. The legacy card below is a published
+ * list price kept for accounts on the legacy routing record.
  * One band: the gateway refuses input past 272,000 tokens rather than guess a long-context price,
  * so no call on this route can settle in a long band.
  */
@@ -229,8 +234,9 @@ export const OUT_OF_CREDITS_BUYER =
   'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.';
 export const OUT_OF_CREDITS_OTHER =
   'Your business is out of credits, so this stopped here. An owner or admin can buy more credits to keep going.';
-export const outOfCreditsMessage = (role?: MemberRole | null): string =>
-  role === 'owner' || role === 'admin' ? OUT_OF_CREDITS_BUYER : OUT_OF_CREDITS_OTHER;
+export const outOfCreditsMessage = (role?: MemberRole | null, scopeKind?: AccountScope['kind'] | null): string =>
+  // Personal work runs on the person's own bought credits (pay as you go, DIO-219): they are the one who buys more.
+  scopeKind === 'individual' ? OUT_OF_CREDITS_PERSONAL : role === 'owner' || role === 'admin' ? OUT_OF_CREDITS_BUYER : OUT_OF_CREDITS_OTHER;
 
 /**
  * The gateway's refusals (contract sections 2 and 3), each in the words a customer reads. Every
@@ -243,6 +249,7 @@ export function gatewayRefusal(
   error: { code: string | null; message: string } | null,
   tier: JobTier,
   role?: MemberRole | null,
+  scopeKind?: AccountScope['kind'] | null,
 ): { code: string; message: string } | null {
   const said = error?.message?.trim() || null;
   switch (error?.code) {
@@ -263,7 +270,10 @@ export function gatewayRefusal(
     case 'no_period':
       // The service's own words are not shown: they cannot know the person's role or that earlier
       // steps of this work were charged. The codes stay, so anything that keys on them still does.
-      return { code: `nectovia_${error.code}`, message: outOfCreditsMessage(role) };
+      return { code: `nectovia_${error.code}`, message: outOfCreditsMessage(role, scopeKind) };
+    case 'plan_required':
+      // Something only a plan includes, refused to a person paying as they go. Nothing was sent.
+      return { code: 'nectovia_plan_required', message: said ?? PAY_AS_YOU_GO_PLAN_ONLY_REASON };
     case 'cap_request_required':
       return {
         code: 'nectovia_cap_request_required',
@@ -285,6 +295,14 @@ export function gatewayRefusal(
     case 'tier_unrouted':
       return {
         code: 'nectovia_tier_unrouted',
+        message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+      };
+    case 'tier_unpriced':
+    case 'over_cost_ceiling':
+      // Tier pricing (Model B): the tier has no credit price yet, or no route it may run within its
+      // price. Either way the tier cannot answer now, which is what the person needs to know.
+      return {
+        code: `nectovia_${error.code}`,
         message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
       };
     case 'context_too_long':
@@ -436,7 +454,7 @@ export function nectoviaBinding(input: {
     },
     usage: responsesUsage,
     releasableStatuses: GATEWAY_RELEASABLE,
-    refused: (status, error) => gatewayRefusal(status, error, managed.tier, managed.role),
+    refused: (status, error) => gatewayRefusal(status, error, managed.tier, managed.role, managed.scope?.kind),
   };
 }
 

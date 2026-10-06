@@ -1,13 +1,17 @@
 /**
- * Parent-job caps on this computer: which tier each job runs under, and every
- * one-job cap raise a person agreed to.
+ * Parent-job check-ins on this computer: which tier each job runs under, the
+ * amount it checks in at, and every one-job raise a person agreed to.
  *
  *   <data>/job-caps.json   one record per job that spent, or was raised
  *
  * A job is one thing a person asked for: a conversation message, a Work turn or
- * a team wake, named by the request id the host already gives it. Its cap is
- * its tier's approved cap (`APPROVED_JOB_CAP_CREDITS`) plus any raise recorded
- * against that exact job. What the job has spent is not kept here: the spend
+ * a team wake, named by the request id the host already gives it. Its cap is its
+ * check-in amount, pinned when the job is first scoped (the business's own setting,
+ * else the staff default, else `JOB_CHECK_IN_CREDITS`), or the raise recorded
+ * against that exact job, whichever is higher. A step whose reservation would
+ * cross the cap is refused before anything is sent, so a job is never cut off
+ * mid-call: it finishes the step in progress and checks in. What the job has
+ * spent is not kept here: the spend
  * ledger (`server/spend-exposure.ts`) tags every hold with the job's key and
  * counts it, so there is one record of money, not two.
  *
@@ -20,8 +24,8 @@
  * 2. **A raise is one job's.** It is recorded against one job key, with who
  *    agreed and why, and nothing else reads it. There is no standing raise, no
  *    per-thread raise and no per-person raise.
- * 3. **A raise is finite.** `oneJobRaise` decides the number from the host's
- *    own estimate or the recorded stop, never from a figure the client sent.
+ * 3. **A raise is finite.** `oneJobRaise` decides the number: exactly one more
+ *    check-in amount on top of the cap the job reached, never a figure the client sent.
  * 4. **An armed raise is single-use.** A team wake's run id is minted by the
  *    host after the person agreed, so the wake arms its raise on the member's
  *    thread for the next job scoped there, and that job consumes it. The wake
@@ -32,7 +36,7 @@
  */
 import path from 'node:path';
 import {
-  approvedJobCap,
+  defaultCheckIn,
   isJobTier,
   micro,
   type JobTier,
@@ -53,9 +57,12 @@ const OWNER_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/;
 export interface JobRaise {
   /** The cap this job may now spend up to. Finite. */
   toMicroUsd: MicroUsd;
-  /** `estimate`: agreed before sending. `overrun`: agreed after an earlier job stopped at its cap. */
+  /**
+   * `estimate`: agreed before sending. `overrun`: agreed at a check-in, after an earlier job stopped at
+   * its amount (the stored word predates check-ins).
+   */
   basis: 'estimate' | 'overrun';
-  /** What the host found the job needs, or null when it could not estimate. */
+  /** What the host found the job needs (the refused step's total), or null when there was none. */
   neededMicroUsd: MicroUsd | null;
   recordedAt: string;
   /** Who agreed. On this computer, the person signed in to it. */
@@ -79,6 +86,14 @@ export interface JobRecord {
   /** The spend ledger's tag for this job. */
   key: string;
   tier: JobTier;
+  /** The check-in amount this job was pinned with. Absent on a record written before check-ins. */
+  baseMicroUsd?: MicroUsd;
+  /**
+   * The id the account service meters this job under, when it is metered there. A job that continues
+   * one that stopped at its check-in carries the earlier job's id, so the service's count and its raised
+   * cap carry over (`meteredAs`). Absent for a job the account service never saw.
+   */
+  meteredJobId?: string;
   pinnedAt: string;
   raise: JobRaise | null;
   stop: JobStop | null;
@@ -161,21 +176,29 @@ function readRecord(value: unknown): JobRecord {
     jobId: row.jobId,
     key: row.key as string,
     tier: row.tier,
+    ...(row.baseMicroUsd === undefined || row.baseMicroUsd === null ? {} : { baseMicroUsd: money(row.baseMicroUsd) }),
+    ...(typeof row.meteredJobId === 'string' && JOB_ID.test(row.meteredJobId) ? { meteredJobId: row.meteredJobId } : {}),
     pinnedAt: row.pinnedAt,
     raise,
     stop,
   };
 }
 
-/** A job's cap: its tier's approved cap, or the one raise recorded for it, whichever is higher. */
-export function capOf(record: Pick<JobRecord, 'tier' | 'raise'>): MicroUsd {
-  const approved = approvedJobCap(record.tier);
-  return record.raise && record.raise.toMicroUsd > approved ? record.raise.toMicroUsd : approved;
+/** A job's cap: the check-in amount it was pinned with, or the one raise recorded for it, whichever is higher. */
+export function capOf(record: Pick<JobRecord, 'tier' | 'raise'> & { baseMicroUsd?: MicroUsd }): MicroUsd {
+  const base = record.baseMicroUsd ?? defaultCheckIn(record.tier);
+  return record.raise && record.raise.toMicroUsd > base ? record.raise.toMicroUsd : base;
 }
 
 export interface JobCapsOptions {
   /** The tier a job on this thread runs under: its WorkStyle, else the Settings default. */
   tierOf(projectId: string, threadId: string | null): JobTier;
+  /**
+   * The check-in amount a new job of this tier in this project's account runs to: the business's own
+   * setting, else the staff default, else the code default, as the account service resolved it. Absent,
+   * or when it cannot say, the code default.
+   */
+  checkInOf?(projectId: string, tier: JobTier): MicroUsd | null | Promise<MicroUsd | null>;
   clock?: () => Date;
 }
 
@@ -240,6 +263,66 @@ export class JobCaps {
     return this.options.tierOf(projectId, threadId);
   }
 
+  /** The check-in amount a job of this tier runs to in this project's account. */
+  async checkInFor(projectId: string, tier: JobTier): Promise<MicroUsd> {
+    try {
+      return (await this.options.checkInOf?.(projectId, tier)) ?? defaultCheckIn(tier);
+    } catch {
+      // The account service not answering never stops a job from being scoped: the code default applies.
+      return defaultCheckIn(tier);
+    }
+  }
+
+  /**
+   * The job the account service meters this one under, when an earlier job already named one. A job that
+   * continues one that stopped at its check-in (Keep going) is metered under that job, so the service's cap
+   * and its count carry over. Follows the chain of continued jobs to the first that was metered, so a second
+   * Keep going names the first job. Null when nothing was metered before: the job is its own.
+   */
+  meteredAs(projectId: string, jobId: string): string | null {
+    let current = jobId;
+    let named: string | null = null;
+    for (let hops = 0; hops < 64; hops++) {
+      const record = this.jobs.get(jobKeyFor(projectId, current));
+      if (!record) break;
+      if (record.meteredJobId) named = record.meteredJobId;
+      const from = record.raise?.basis === 'overrun' ? record.raise.fromJobId : null;
+      if (!from) break;
+      // The earlier job's name is the one the service knows first; keep walking to find it.
+      current = from;
+    }
+    return named;
+  }
+
+  /**
+   * Record the id the account service meters this job under. The first one recorded stays: a job is
+   * metered under one id for its whole life, however many times it is admitted.
+   */
+  noteMetered(projectId: string, jobId: string, meteredJobId: string): Promise<void> {
+    const id = jobIdOf(jobId);
+    const to = jobIdOf(meteredJobId);
+    return this.exclusive(async () => {
+      const record = this.jobs.get(jobKeyFor(projectId, id));
+      if (!record || record.meteredJobId) return;
+      await this.commit({ ...record, meteredJobId: to });
+    });
+  }
+
+  /**
+   * The account service stopped this job at its check-in before the local ledger did, which is the same
+   * stop: nothing of the step was sent. Record it at the cap this job holds, so Keep going can answer it.
+   * A stop already open stays as it is.
+   */
+  noteManagedStop(projectId: string, jobId: string): Promise<void> {
+    const id = jobIdOf(jobId);
+    return this.exclusive(async () => {
+      const record = this.jobs.get(jobKeyFor(projectId, id));
+      if (!record || (record.stop && record.stop.consumedBy === null)) return;
+      const cap = capOf(record);
+      await this.commit({ ...record, stop: { usedMicroUsd: cap, capMicroUsd: cap, neededMicroUsd: micro(0), at: this.now(), consumedBy: null } });
+    });
+  }
+
   private liveArmed(projectId: string, threadId: string): ArmedRaise | undefined {
     const now = this.clock().getTime();
     this.armed = this.armed.filter((item) => now - item.armedAt < ARMED_RAISE_MS);
@@ -265,11 +348,13 @@ export class JobCaps {
         const armed = threadId ? this.liveArmed(projectId, threadId) : undefined;
         if (armed) this.armed = this.armed.filter((item) => item !== armed);
         const at = this.now();
+        const pinned = tier ?? this.options.tierOf(projectId, threadId);
         record = await this.commit({
           projectId,
           jobId: id,
           key,
-          tier: tier ?? this.options.tierOf(projectId, threadId),
+          tier: pinned,
+          baseMicroUsd: await this.checkInFor(projectId, pinned),
           pinnedAt: at,
           raise: armed ? { ...armed.raise, recordedAt: at } : null,
           stop: null,
@@ -280,10 +365,11 @@ export class JobCaps {
   }
 
   /**
-   * Record the one raise a person agreed to before sending, for this job only.
-   * The amount comes from `oneJobRaise` over the host's own estimate. Asking
-   * again for the same job returns the raise already recorded; a job that
-   * already holds a raise is never raised twice by the same agreement.
+   * Record the one raise a person agreed to before sending, for this job only:
+   * one more check-in amount (`oneJobRaise`), so the job runs twice as far before
+   * it first asks. Asking again for the same job returns the raise already
+   * recorded; a job that already holds a raise is never raised twice by the same
+   * agreement.
    */
   async raiseBeforeSend(input: {
     projectId: string;
@@ -300,15 +386,18 @@ export class JobCaps {
       if (existing?.raise) return structuredClone(existing);
       const tier = existing?.tier ?? this.options.tierOf(input.projectId, input.threadId);
       const at = this.now();
-      const cap = existing ? capOf(existing) : approvedJobCap(tier);
+      const amount = await this.checkInFor(input.projectId, tier);
+      const base = existing?.baseMicroUsd ?? amount;
+      const cap = existing ? capOf(existing) : base;
       return this.commit({
         projectId: input.projectId,
         jobId: id,
         key,
         tier,
+        baseMicroUsd: base,
         pinnedAt: existing?.pinnedAt ?? at,
         raise: {
-          toMicroUsd: oneJobRaise({ tier, capMicroUsd: cap, neededMicroUsd: input.neededMicroUsd }),
+          toMicroUsd: oneJobRaise({ capMicroUsd: cap, checkInMicroUsd: amount }),
           basis: 'estimate',
           neededMicroUsd: input.neededMicroUsd,
           recordedAt: at,
@@ -321,9 +410,11 @@ export class JobCaps {
   }
 
   /**
-   * Record, for a new job, the raise a person agreed to after an earlier job
-   * stopped at its cap. The earlier job's recorded stop decides the amount, and
-   * a stop raises exactly one later job: a second attempt in its name is refused.
+   * Record, for a new job, the raise a person agreed to at a check-in (Keep going),
+   * after an earlier job stopped at its amount. The earlier job's recorded stop
+   * decides what it is raised from: the cap it reached plus exactly one more
+   * check-in amount. A stop raises exactly one later job: a second attempt in
+   * its name is refused. The new job continues the earlier one (`meteredAs`).
    */
   async raiseAfterStop(input: {
     projectId: string;
@@ -350,14 +441,16 @@ export class JobCaps {
         throw refuse(409, 'That job has already started, so its cap is not raised now.', 'job_started');
       const at = this.now();
       const tier = stopped.tier;
+      const amount = await this.checkInFor(input.projectId, tier);
       const record = await this.commit({
         projectId: input.projectId,
         jobId: id,
         key,
         tier,
+        baseMicroUsd: stopped.baseMicroUsd ?? amount,
         pinnedAt: at,
         raise: {
-          toMicroUsd: oneJobRaise({ tier, capMicroUsd: stopped.stop.capMicroUsd, neededMicroUsd: stopped.stop.neededMicroUsd }),
+          toMicroUsd: oneJobRaise({ capMicroUsd: stopped.stop.capMicroUsd, checkInMicroUsd: amount }),
           basis: 'overrun',
           neededMicroUsd: stopped.stop.neededMicroUsd,
           recordedAt: at,
@@ -368,6 +461,35 @@ export class JobCaps {
       });
       await this.commit({ ...stopped, stop: { ...stopped.stop, consumedBy: id } });
       return record;
+    });
+  }
+
+  /**
+   * Keep going on a job that stopped at its check-in and is resumed as itself, which is how work
+   * nobody was watching continues (it pauses into Needs you rather than being sent again). The same
+   * job's cap rises by exactly one more check-in amount, recorded, and its open stop is closed.
+   * Answering a stop that was already answered returns the record unchanged: a second press adds nothing.
+   */
+  async raiseInPlace(input: { projectId: string; jobId: string; by: string }): Promise<JobRecord> {
+    const id = jobIdOf(input.jobId);
+    if (!OWNER_ID.test(input.by)) throw refuse(400, 'Say who agreed to keep going.', 'invalid_request');
+    return this.exclusive(async () => {
+      const record = this.jobs.get(jobKeyFor(input.projectId, id));
+      if (!record?.stop) throw refuse(409, 'That job did not stop to check in, so there is nothing to keep going.', 'no_stop');
+      if (record.stop.consumedBy !== null) return structuredClone(record);
+      const amount = await this.checkInFor(input.projectId, record.tier);
+      return this.commit({
+        ...record,
+        raise: {
+          toMicroUsd: oneJobRaise({ capMicroUsd: record.stop.capMicroUsd, checkInMicroUsd: amount }),
+          basis: 'overrun',
+          neededMicroUsd: record.stop.neededMicroUsd,
+          recordedAt: this.now(),
+          by: input.by,
+          fromJobId: null,
+        },
+        stop: { ...record.stop, consumedBy: id },
+      });
     });
   }
 
@@ -384,14 +506,15 @@ export class JobCaps {
    * Arm a raise for the next job scoped on a thread, for a request whose job id
    * the host has not minted yet (a team wake). Returns the ticket that disarms it.
    */
-  arm(input: {
+  async arm(input: {
     projectId: string;
     threadId: string;
     neededMicroUsd: MicroUsd | null;
     by: string;
-  }): string {
+  }): Promise<string> {
     if (!OWNER_ID.test(input.by)) throw refuse(400, 'Say who agreed to go over.', 'invalid_request');
     const tier = this.options.tierOf(input.projectId, input.threadId);
+    const amount = await this.checkInFor(input.projectId, tier);
     const ticket = `armed-${digest({ ...input, at: this.clock().getTime(), n: Math.random() }).slice(0, 24)}`;
     this.liveArmed(input.projectId, input.threadId);
     this.armed = this.armed.filter(
@@ -403,7 +526,7 @@ export class JobCaps {
       threadId: input.threadId,
       armedAt: this.clock().getTime(),
       raise: {
-        toMicroUsd: oneJobRaise({ tier, capMicroUsd: approvedJobCap(tier), neededMicroUsd: input.neededMicroUsd }),
+        toMicroUsd: oneJobRaise({ capMicroUsd: amount, checkInMicroUsd: amount }),
         basis: 'estimate',
         neededMicroUsd: input.neededMicroUsd,
         by: input.by,

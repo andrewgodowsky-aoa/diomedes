@@ -351,7 +351,7 @@ describe('asking for more, and the answer', () => {
     // A request is not an approval.
     expect((await refusal(f.reserve('bob', 'a2', 15, 'job_2'))).code).toBe('member_limit_reached');
     const approved = await f.decide('alice', 'req_1', true);
-    expect(approved).toMatchObject({ state: 'approved', decidedBy: f.people.alice.id, extraMicroUsd: c(20), allowPurchased: false, periodId: null });
+    expect(approved).toMatchObject({ state: 'approved', decidedBy: f.people.alice.id, extraMicroUsd: c(100), allowPurchased: false, periodId: null });
     await expect(f.reserve('bob', 'a2', 15, 'job_2')).resolves.toMatchObject({ state: 'pending' });
     // Another job gets nothing from it, and neither does another person on the same job id.
     expect((await refusal(f.reserve('bob', 'a3', 5, 'job_3'))).code).toBe('member_limit_reached');
@@ -562,7 +562,7 @@ describe('the account API', () => {
     expect((await (await f.call('/credit-limit-requests', 'bob')).json()).requests).toHaveLength(1);
     const decided = await f.call('/credit-limit-requests/req_1/decision', 'alice', { method: 'POST', body: { approve: true } });
     expect(decided.status).toBe(200);
-    expect(await decided.json()).toMatchObject({ state: 'approved', extraMicroUsd: c(20), decidedBy: f.people.alice.id });
+    expect(await decided.json()).toMatchObject({ state: 'approved', extraMicroUsd: c(100), decidedBy: f.people.alice.id });
     await expect(f.reserve('bob', 'a2', 15, 'job_2')).resolves.toMatchObject({ state: 'pending' });
     expect((await f.call('/credit-limit-requests/req_nope/decision', 'alice', { method: 'POST', body: { approve: true } })).status).toBe(404);
   });

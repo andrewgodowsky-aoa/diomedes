@@ -26,8 +26,9 @@ import { LocalModelFolder } from './LocalModelFolder';
 import { AgentProfiles } from './console/AgentProfiles';
 import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
-import { UsageCenter, usageCenterTarget } from './console/UsageCenter';
+import { PersonalUsage, UsageCenter, usageCenterTarget } from './console/UsageCenter';
 import { MemberUsageView, memberUsageTarget, useMyCreditUsage } from './console/MemberUsage';
+import { JobCheckIns } from './console/JobCheckIns';
 import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
 import { modifierName } from './keyboard';
@@ -259,10 +260,12 @@ export function SettingsPage({
   const mine = useMyCreditUsage(memberScreen?.organizationId ?? null);
   const memberUsage = memberScreen && mine && mine.usage.state === 'ready' ? mine : null;
   const memberPending = Boolean(memberScreen && mine?.usage.state === 'loading');
+  // In Personal, the person's own bought credits and a way to buy more (pay as you go, DIO-219).
+  const personalScreen = workspace?.active.kind === 'personal';
   useEffect(() => {
-    if (workspace && !usageScreen && !memberUsage && !memberPending)
+    if (workspace && !usageScreen && !memberUsage && !memberPending && !personalScreen)
       setSection((current) => (current === 'Usage' ? 'Account' : current));
-  }, [workspace, usageScreen, memberUsage, memberPending]);
+  }, [workspace, usageScreen, memberUsage, memberPending, personalScreen]);
   // Handing tasks to the person's own coding tools (S3) has a section only in a build that
   // offers it. Until the read answers, and when it can't, there's no entry.
   const [codingTools, setCodingTools] = useCodingToolsView();
@@ -273,7 +276,7 @@ export function SettingsPage({
   }, [codingTools, codingToolsHere]);
   const sections = [
     'Account',
-    ...(usageScreen || memberUsage ? ['Usage'] : []),
+    ...(usageScreen || memberUsage || personalScreen ? ['Usage'] : []),
     'Interface detail',
     helpersSection,
     ...(codingToolsHere ? [CODING_TOOLS_SECTION] : []),
@@ -309,12 +312,16 @@ export function SettingsPage({
           <div className="reading">
             {section === 'Account' && <AccountSettings />}
             {section === 'Usage' && usageScreen && (
-              <UsageCenter
-                organizationId={usageScreen.organizationId}
-                membership={usageScreen.membership}
-                report={ignoreReport}
-              />
+              <>
+                <UsageCenter
+                  organizationId={usageScreen.organizationId}
+                  membership={usageScreen.membership}
+                  report={ignoreReport}
+                />
+                <JobCheckIns organizationId={usageScreen.organizationId} />
+              </>
             )}
+            {section === 'Usage' && personalScreen && <PersonalUsage report={ignoreReport} />}
             {section === 'Usage' && !usageScreen && memberUsage && (
               <div className="usage-center">
                 <MemberUsageView usage={memberUsage.usage} readAt={memberUsage.readAt} now={memberUsage.now} />

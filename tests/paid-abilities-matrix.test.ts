@@ -47,7 +47,7 @@ import type { TierPolicy } from '../services/control-plane/src/commercial';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 import { MANAGED_USAGE_NOT_INCLUDED as GATEWAY_USAGE_NOT_INCLUDED } from '../services/control-plane/src/managed-inference';
-import { AGENT_NOT_INCLUDED_REASON } from '../shared/access';
+import { BUSINESS_PLAN_NEEDED_BUYER } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
 import type { WorkspaceView } from '../shared/workspaces';
 import type { Conversation, Project } from '../shared/types';
@@ -361,14 +361,15 @@ describe('the paid-abilities matrix', () => {
     expect(harbor.workspaces.map((row) => [row.organization.id, row.access?.agent.included])).toEqual([[orgs.harbor, false]]);
     const work = await workOnAws('Harbor order', await connectAws());
 
-    await refusedAs(await entry.home('h-home'), AGENT_NOT_INCLUDED_REASON);
-    await refusedAs(await entry.conversation(work, 'h-conversation'), AGENT_NOT_INCLUDED_REASON);
-    await refusedAs(await entry.loopStart(work, 'h-loop'), AGENT_NOT_INCLUDED_REASON);
-    await refusedAs(await entry.preflight(work), AGENT_NOT_INCLUDED_REASON);
-    const refusal = { code: 'AGENT_NOT_INCLUDED', message: AGENT_NOT_INCLUDED_REASON };
+    // Its owner reads the sentence for an owner or admin of a business with no plan (Model B section 7).
+    await refusedAs(await entry.home('h-home'), BUSINESS_PLAN_NEEDED_BUYER);
+    await refusedAs(await entry.conversation(work, 'h-conversation'), BUSINESS_PLAN_NEEDED_BUYER);
+    await refusedAs(await entry.loopStart(work, 'h-loop'), BUSINESS_PLAN_NEEDED_BUYER);
+    await refusedAs(await entry.preflight(work), BUSINESS_PLAN_NEEDED_BUYER);
+    const refusal = { code: 'AGENT_NOT_INCLUDED', message: BUSINESS_PLAN_NEEDED_BUYER };
     await expect(entry.loopDrive(work, 'loop-harbor-1')).rejects.toMatchObject(refusal);
     await expect(entry.loopSeam(work)).rejects.toMatchObject(refusal);
-    await expect(entry.teamTurn(work, 'team-harbor-1')).rejects.toMatchObject({ message: AGENT_NOT_INCLUDED_REASON });
+    await expect(entry.teamTurn(work, 'team-harbor-1')).rejects.toMatchObject({ message: BUSINESS_PLAN_NEEDED_BUYER });
     // Build answers at once and runs the Work call after; the call is refused, and nothing is sent.
     const build = await entry.build(work);
     expect(build.status, await build.clone().text()).toBe(200);
@@ -382,7 +383,7 @@ describe('the paid-abilities matrix', () => {
       },
       { timeout: 10_000, interval: 50 },
     );
-    expect(JSON.stringify(settled)).toContain(AGENT_NOT_INCLUDED_REASON);
+    expect(JSON.stringify(settled)).toContain(BUSINESS_PLAN_NEEDED_BUYER);
 
     nothingSent();
     expect(port.calls).toHaveLength(0);

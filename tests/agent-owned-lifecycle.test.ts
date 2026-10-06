@@ -220,7 +220,7 @@ describe('production loop and H14 boundaries through a captured SDK transport', 
   });
 
   test('H14 calls share the root cap and refuse the next serialized send before it would exceed it', async () => {
-    await connect(100); // Synthetic cost: 4,000 reported output tokens cost $0.40 per completed call.
+    await connect(500); // Synthetic cost: 4,000 reported output tokens cost $2 per completed call.
     mode = 'cap'; branch = 'worker';
     const started = await start('root-cap-real-h14', 'worker');
     const child = await actualChild(started.runId);
@@ -231,8 +231,8 @@ describe('production loop and H14 boundaries through a captured SDK transport', 
     expect(jobs.size, 'a child may not mint an independently replenished job cap').toBe(1);
     const rootJob = [...jobs][0]!;
     expect(rootJob).not.toBeNull();
-    expect(service.modelApi!.exposure.jobUsed(rootJob!)).toBeLessThanOrEqual(2_000_000);
-    expect(seen.length, 'four real serialized provider calls leave less than another $0.40+ hold in Efficient’s $2 cap').toBeLessThanOrEqual(4);
+    expect(service.modelApi!.exposure.jobUsed(rootJob!)).toBeLessThanOrEqual(10_000_000);
+    expect(seen.length, 'four real serialized provider calls leave less than another hold in Efficient’s check-in amount').toBeLessThanOrEqual(4);
     expect(state().tasks.find(task => task.id === taskId)!.state).not.toBe('done');
     const stoppedChild = await host().get(projectId, child.id);
     expect(stoppedChild.failure).toMatchObject({ code: 'openrouter_job_cap_reached', message: expect.stringContaining('cap') });

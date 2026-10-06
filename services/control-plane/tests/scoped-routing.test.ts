@@ -5,13 +5,14 @@ import path from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import { createFauxCloud, type FauxCloud } from '../src/faux/cloud.js';
-import { seedDemo, DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, type DemoAccount } from '../src/faux/seed.js';
+import { seedDemo, DEMO_ACCOUNTS, FAUX_CREDIT_CHARGE, FAUX_DEMO_PASSWORD, type DemoAccount } from '../src/faux/seed.js';
 import {
   LEGACY_ROUTING_CONSENT, PROFILE_FLOORS, ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, UNPINNED_REGION,
   type AccountScope, type ModelBinding, type ProviderConnection, type RoutingPreference,
 } from '../../../shared/routing-policy.js';
 import { micro } from '../../../shared/managed-usage.js';
 import { RoutingService } from '../src/routing.js';
+import { FundingService } from '../src/funding.js';
 
 const at = '2026-09-28T00:00:00.000Z', until = '2026-10-28T00:00:00.000Z';
 let clock: number, cloud: FauxCloud, owner: string, routing: string, billing: string, orgA: string, orgB: string;
@@ -298,6 +299,18 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect(snapshot.body.tiers.efficient).toMatchObject({ entryId: 'aws-chat', reasoningSummaries: false });
   });
 
+  it('keeps a tier’s charge identical across snapshots of one price table, so saved context survives a refresh', async () => {
+    // The desktop's rate card version digests these fields and saved context is bound to it (nectoviaRateCard).
+    expect((await publish()).status).toBe(201);
+    const first = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    clock += 30_000;
+    const second = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    expect(second.body.validUntil).not.toBe(first.body.validUntil);
+    expect(first.body.tiers.efficient).not.toBeNull();
+    expect(second.body.tiers.efficient.price).toEqual(first.body.tiers.efficient.price);
+    expect(second.body.tiers.efficient.guardPrices).toEqual(first.body.tiers.efficient.guardPrices);
+  });
+
   it('removes optional summary on an unsupported fallback while retaining reasoning effort', async () => {
     await addAwsRoute('aws-supported', 'us.openai.gpt-5.6-luna');
     await addAwsRoute('aws-unsupported', 'us.openai.gpt-6-luna');
@@ -476,16 +489,17 @@ describe('Operations publication through authenticated funded dispatch', () => {
   });
 
   it('preserves the original lower job cap when an uncertain primary would leave too little for a backup', async () => {
-    for (const id of ['primary', 'backup']) await editRoute(id, b => { b.price.requestFeeMicroUsd = 60_000; });
     await publish('primary', true);
     const organization = cloud.store.snapshot().accounts.organizations.find(o => o.record.id === orgA)!;
+    // Room for one hold and not two. Holds are in the tier's charge (Model B): under the faux charge the 512-token
+    // output bound is 5,120 units, and the input bound (the body's bytes plus 1,040) about 3,300 more with the fee.
     await cloud.funding.openJob({ tenantId: organization.record.tenantId, organizationId: orgA, rootJobId: 'bounded', runRef: 'bounded',
-      parentRunRef: null, tier: 'efficient', capMicroUsd: micro(100_000) });
+      parentRunRef: null, tier: 'efficient', capMicroUsd: micro(12_000) });
     answer = () => new Response(null, { status: 503 });
     const response = await cloud.handle(await request(undefined, { job: 'bounded' }));
     expect(response.status).toBe(402); expect(sends.map(s => s.body.model)).toEqual(['primary']);
     const state = cloud.store.snapshot().funding;
-    expect(state.jobs.find(j => j.rootJobId === 'bounded')!.capMicroUsd).toBe(100_000);
+    expect(state.jobs.find(j => j.rootJobId === 'bounded')!.capMicroUsd).toBe(12_000);
     expect(state.attempts).toHaveLength(1); expect(state.attempts[0].state).toBe('uncertain');
   });
   it('rechecks a route withdrawn while its reservation was being written, and releases the unsent hold', async () => {
@@ -673,5 +687,87 @@ describe('profile floors under NC-SETUP-2026-10-02.1', () => {
       routing: { efficient: single, focused: single, thorough: single }, note: 'Synthetic override' });
     expect(result.status, JSON.stringify(result.body)).toBe(201);
     expect(result.body.preview.affected[0].tiers.efficient.eligible).toEqual(['backup', 'primary']);
+  });
+});
+
+describe('versioned routing under the credit price table (Model B)', () => {
+  /** Raise a stored route's provider output price past the faux table's ceiling, as a price change raced past a publish would. */
+  const overCeiling = (id: string) => cloud.store.run(async draft => {
+    const route = draft.commercial.routes.find(r => r.id === id)!;
+    route.binding!.price.outputMicroUsdPerMillion = FAUX_CREDIT_CHARGE.outputMicroUsdPerMillion + 1;
+  });
+
+  it('sends the desktop the tier charge in its price fields, never a provider price', async () => {
+    await publish('primary', true);
+    const snapshot = (await call('GET', `/account/routing/organization/${orgA}/policy`, owner)).body;
+    const tier = snapshot.tiers.efficient;
+    expect(tier.price).toMatchObject({ version: 'credit-prices:1:efficient', inputMicroUsdPerMillion: FAUX_CREDIT_CHARGE.inputMicroUsdPerMillion,
+      outputMicroUsdPerMillion: FAUX_CREDIT_CHARGE.outputMicroUsdPerMillion, requestFeeMicroUsd: FAUX_CREDIT_CHARGE.requestFeeMicroUsd });
+    expect(tier.guardPrices).toEqual([tier.price]);
+    expect(JSON.stringify(snapshot)).not.toContain('fixture-price-1');
+  });
+
+  it('refuses a tier the table does not price, sending and holding nothing', async () => {
+    await publish('primary', true);
+    await cloud.store.run(async draft => { draft.commercial.priceTables = []; });
+    const snapshot = (await call('GET', `/account/routing/organization/${orgA}/policy`, owner)).body;
+    expect(snapshot.tiers.efficient).toBeNull();
+    expect(snapshot.exclusions.efficient[0].reasons[0].code).toBe('tier_unpriced');
+  });
+
+  it('excludes a route over the ceiling as over_cost_ceiling, and the next eligible route serves under the tier charge', async () => {
+    await publish('primary', true);
+    await overCeiling('primary');
+    const snapshot = (await call('GET', `/account/routing/organization/${orgA}/policy`, owner)).body;
+    expect(snapshot.tiers.efficient.entryId).toBe('backup');
+    expect(snapshot.exclusions.efficient).toEqual([{ routeId: 'primary', reasons: [expect.objectContaining({ code: 'over_cost_ceiling' })] }]);
+    const result = await completed(await request());
+    expect(sends.map(s => s.body.model)).toEqual(['backup']);
+    expect(result.response.headers.get('x-nectovia-fallback-reason')).toBe('over_cost_ceiling');
+    const [attempt] = cloud.store.snapshot().funding.attempts;
+    expect(attempt.chargeSnapshot).toMatchObject({ version: 'credit-prices:1:efficient', ...FAUX_CREDIT_CHARGE });
+    expect(attempt.rateSnapshot.version).toBe('fixture-price-1');
+    const [settlement] = cloud.store.snapshot().funding.settlements;
+    // Debited at the charge (100 prompt and 12 completion tokens, plus the request fee); the provider's cost recorded beside it.
+    expect(settlement.allowanceDebitMicroUsd).toBe(Math.ceil((100 * FAUX_CREDIT_CHARGE.inputMicroUsdPerMillion + 12 * FAUX_CREDIT_CHARGE.outputMicroUsdPerMillion) / 1_000_000)
+      + FAUX_CREDIT_CHARGE.requestFeeMicroUsd);
+    expect(settlement.providerCostMicroUsd).toBe(Math.ceil((100 * 100_000 + 12 * 200_000) / 1_000_000) + 1);
+    // The customer's receipt carries the debit, never the provider's cost.
+    expect(result.body).toContain('"providerCostMicroUsd":null');
+  });
+
+  it('refuses to save a price that takes a bound route over the ceiling, naming it', async () => {
+    await publish('primary', true);
+    const row = cloud.store.snapshot().commercial.routes.find(r => r.id === 'primary')!;
+    const b = structuredClone(row.binding!); b.price.outputMicroUsdPerMillion = FAUX_CREDIT_CHARGE.outputMicroUsdPerMillion + 1;
+    const { v: _v, revision, updatedAt: _at, updatedBy: _by, ...fields } = row;
+    const result = await call('POST', '/ops/routes', routing, { ...fields, binding: b, baseRevision: revision });
+    expect(result.status).toBe(422);
+    expect(result.body).toMatchObject({ code: 'over_cost_ceiling', error: expect.stringContaining('Route primary') });
+    // An unbound route may carry any price: nothing serves it.
+    await editRoute('other', b => { b.price.outputMicroUsdPerMillion = FAUX_CREDIT_CHARGE.outputMicroUsdPerMillion + 1; });
+  });
+
+  it('refuses to publish routing that binds a route over the ceiling', async () => {
+    await overCeiling('other');
+    const result = await call('POST', '/ops/routing/scopes/publish', routing, { scope: { kind: 'global' }, baseRevision: 1, baseGlobalRevision: 1,
+      routing: configuration('other'), note: 'Synthetic publication' });
+    expect(result.status).toBe(422);
+  });
+
+  it('gives policy_changed, sending nothing, when a table is published between the first read and dispatch', async () => {
+    await publish('primary', true);
+    const req = await request();
+    const reserve = FundingService.prototype.reserve;
+    vi.spyOn(FundingService.prototype, 'reserve').mockImplementation(async function (this: FundingService, input) {
+      const held = await reserve.call(this, input);
+      await cloud.store.run(async draft => { draft.commercial.priceTables.push({ ...draft.commercial.priceTables[0], version: 2 }); });
+      return held;
+    });
+    const response = await cloud.handle(req);
+    expect(response.status).toBe(409);
+    expect((await response.json() as any).error.code).toBe('policy_changed');
+    expect(sends).toHaveLength(0);
+    expect(cloud.store.snapshot().funding.attempts.map(a => a.state)).toEqual(['released']);
   });
 });

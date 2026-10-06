@@ -440,6 +440,8 @@ describe("the gateway's refusals, in the conversation's words", () => {
     [402, 'insufficient_allowance', 'nectovia_insufficient_allowance', MEMBER_WORDS],
     [402, 'cap_request_required', 'nectovia_cap_request_required', 'This job needs a cap request before it can spend more.'],
     [409, 'tier_unrouted', 'nectovia_tier_unrouted', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
+    [409, 'tier_unpriced', 'nectovia_tier_unpriced', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
+    [409, 'over_cost_ceiling', 'nectovia_over_cost_ceiling', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
     [413, 'context_too_long', 'nectovia_too_long', 'This message and its sources are longer than Nectovia accepts. Nothing was charged. Choose fewer or shorter sources.'],
     [429, 'provider_busy', 'nectovia_provider_busy', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
     [503, 'route_unavailable', 'nectovia_route_unavailable', NECTOVIA_UNAVAILABLE],

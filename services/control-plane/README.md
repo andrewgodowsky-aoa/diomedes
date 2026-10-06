@@ -89,6 +89,9 @@ unset, anything unreadable refusing every managed call with 503
   call that would pass it is refused before any hold with 503
   `route_unavailable`, "Nothing was charged." Here it counts this store's
   ledger only, never the Worker's database, so the two do not share a total.
+  Under tier pricing a hold is in credit ledger units, not provider cost; the
+  sum stays an upper bound because a published ceiling is never more than
+  100,000 micro-USD a credit, so no call can cost the provider more than it holds.
 - `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
   never raises it. A larger request is clamped silently, and the response
   names the clamp in `X-Nectovia-Max-Output`.
@@ -341,8 +344,9 @@ protocol is reserve, mark dispatched, provider call with no transaction open,
 then settle, mark uncertain or cancel. Unsent holds release; sent holds settle
 only from a complete provider usage report or stay uncertain; nothing is
 retried by the service. Children and retries spend inside the root cap; a
-higher cap needs a request and an owner decision. There is no built-in default
-cap: the 20-credit figure is a proposal and must be configured once approved.
+higher cap needs a request and an owner decision, or one Keep going (see
+"Job check-ins" below). A root job's cap starts at the amount its tier checks
+in at: 100, 250 or 500 credits unless the business or staff set another.
 
 The Worker exposes `GET /account/organizations/:id/usage`, which verifies
 membership and then reads the projection, `GET /account/usage`, the signed-in
@@ -475,38 +479,77 @@ These run as the funding login (FUNDING_DATABASE_URL) and answer 503 without
 it. `scripts/funding-permissions.sql` carries the grants for the four new
 tables; `cp_runtime` is unchanged. Migration 014 is additive and applies after
 011, 012 and 013.
-## Buying credits (migration 015, 2026-10-01, DIO-161 slice 1)
+## Buying credits (migrations 015 and 016, 2026-10-01, DIO-161 slice 1; billing foundation 2026-10-05)
 
 Owner rule: only a Business owner or a Manager (roles `owner` and `admin`) buys
-credits for a business. Credits are bought in whole steps of 100, at least 100
-and at most 100,000 in one purchase, and paid through Stripe Checkout. Test mode
-first. The price is a Worker setting, never a default in code, and nothing but a
+credits for a business. Credits are bought in whole steps at the business's rate
+(see CREDIT_RATE_PLAN and CREDIT_RATE_FREE below), at least one step and at most
+100,000 credits in one purchase, and paid through Stripe Checkout. Test mode
+first. The rates are Worker settings, never a default in code, and nothing but a
 quoted total for an asked amount ever reaches a client.
 
-Settings (Worker settings, read on every call):
+### Rates
 
-- `CREDIT_PRICE_CENTS_PER_100`: whole cents the business pays for 100 credits,
-  from 50 to 1,000,000. Unset, blank or unusable: every quote and purchase
-  answers 503 "Buying credits isn't available right now. Try again later." and
-  the Worker logs `credit-purchases-price-unavailable` with the rule it broke
-  (never the value). Set it as a Worker secret (`npx wrangler secret put
-  CREDIT_PRICE_CENTS_PER_100 --name diomedes`): it reads the same as a var,
-  survives a deploy, and keeps the figure out of the repository, where it would
-  sit beside the cost of a credit.
+A rate is written `cents:credits`: the whole cents one step costs and the whole
+credits it buys, each a positive integer (cents from 50 to 1,000,000, credits from
+1 to 10,000). A purchase is a whole number of steps, and all the arithmetic is in
+integers: `credits = steps * rate credits` and `amountCents = steps * rate cents`,
+with no division and no rounding. A purchase no single charge can cover is 422.
+
+- `CREDIT_RATE_PLAN`: the rate for a business that holds an active plan grant
+  (a grant with the `managed-inference` or the `nectovia-agent` feature, valid now).
+- `CREDIT_RATE_FREE`: the rate for every other business. An organization with no
+  plan buys at this rate.
+
+The server picks the rate at quote and purchase time from the business's own
+grants (the Worker login reads `feature_grants`), never from a request, and
+locks it into the purchase row (`rate_cents`, `rate_credits`, with the check
+that the row's credits and amount are whole steps of that rate). The webhook
+credits the row and never works the rate out again, so a plan that lapses
+between the quote and the payment changes nothing: the buyer gets what the row
+says. A setting that is unset or unusable answers 503 "Buying credits isn't
+available right now. Try again later." for the businesses that need it, and the
+Worker logs `credit-purchases-rate-unavailable` with the setting and the rule it
+broke (never the value); it does not fall back to the other rate. Set both as
+Worker secrets (`npx wrangler secret put CREDIT_RATE_PLAN --name diomedes`, the
+same for `CREDIT_RATE_FREE`): they read the same as vars, survive a deploy, and
+keep the figures out of the repository. The single per-100 price these two
+replace is gone from the code, the tests, the faux cloud and this file.
+
+### Settings
+
+Worker settings, read on every call:
+
 - `STRIPE_SECRET_KEY`: a Worker secret (`npx wrangler secret put
-  STRIPE_SECRET_KEY --name diomedes`), the `sk_test_...` key for test mode.
-  Unset: purchases answer 503; quotes still work.
+  STRIPE_SECRET_KEY --name diomedes`). Unset: purchases answer 503; quotes still
+  work.
+- `STRIPE_LIVE`: the test and live guard. Only the exact value `1` means live;
+  anything else, or unset, is test. In test mode the secret key must start
+  `sk_test_` or `rk_test_` and the Worker refuses any other key (purchases
+  answer 503 and the log says `live-key-needs-stripe-live`, never the key). In live
+  mode it must start `sk_live_` or `rk_live_`. A key that does not belong to the
+  mode is never sent anywhere.
 - `STRIPE_WEBHOOK_SECRET`: a Worker secret, the `whsec_...` signing secret of
   the endpoint below. Unset: the webhook answers 503 and records nothing, so
   Stripe sends the event again once it is set.
+- `STRIPE_WEBHOOK_SECRET_PREVIOUS` (optional): the endpoint's signing secret
+  before a rotation. A signature that is valid under either secret is accepted,
+  within the same 300 second tolerance, so a rotation needs no gap. Remove it
+  once Stripe has stopped signing with the old secret.
 - `FUNDING_DATABASE_URL` (existing): the purchase rows and the top-ups they
   record are funding writes, so they run as `cp_funding`. Run the updated
   `scripts/funding-permissions.sql` as the owner after migrating 015. The
   business's Stripe customer and the verified events are not funding writes:
   they run as the Worker login (`DATABASE_URL`, `cp_runtime`), which needs the
   updated `scripts/runtime-permissions.sql` (SELECT and INSERT on
-  `billing_customers` and `webhook_inbox`, nothing more; making the customer
-  adds no privilege).
+  `billing_customers` and `webhook_inbox`, and UPDATE on `webhook_inbox`'s
+  `state` and `processed_at` columns only, so an event can be marked; making the
+  customer adds no privilege).
+
+Every Stripe API request carries a pinned `Stripe-Version` header
+(`STRIPE_API_VERSION` in `src/credit-purchases.ts`, currently
+`2026-08-26.dahlia`), so a change of Stripe's default version never changes what
+the Worker receives. The faux Stripe refuses a request without it.
 
 Register this endpoint in Stripe (test mode first): `https://accounts.diomedes.net/billing/stripe/webhook`.
 Subscribe it to these events:
@@ -517,14 +560,52 @@ Subscribe it to these events:
 - `checkout.session.expired`
 
 The first two pay a purchase, the third closes one whose delayed payment failed,
-and the last closes one nobody paid. Any other event is acknowledged and ignored.
+and the last closes one nobody paid. Any other event is acknowledged: it is stored
+in the inbox marked `ignored` and nothing is applied.
+
+### The event router and the inbox
+
+One router (`src/stripe-events.ts`) maps an event type to its handler. The four
+`checkout.session.*` types above are handled exactly as before; every other type
+goes to one fallback, which stores the event in `webhook_inbox` as `ignored` and
+returns. Later slices add their types to the router's map and never a branch to the
+receiver. An ignored event keeps only its id, type, mode, the id of the object it
+is about and, when that object names a customer of ours, the customer and the
+business that customer belongs to (from our own `billing_customers` row, never from
+the event); it carries no buyer name, email or address. An event that names no
+customer of ours is stored with no business (migration 016 lets an inbox row carry
+none, all three of customer, organization and tenant together or none of them).
+Delivery is idempotent by event id: a second delivery of the same event stores
+nothing, and the same id with other contents is logged
+(`stripe-event-ledger-refused`) and changes nothing.
+
+The inbox state of an event is `pending` (stored, not yet applied), `processed`
+(applied; `processed_at` is set), `quarantined` (refused for good, such as a
+mismatched amount or a closed purchase; no time is set) or `ignored`. A paid event
+is stored `pending`, then marked `processed` or `quarantined` once the purchase
+has answered; a failure a retry could change leaves it `pending` and the receiver
+answers 503. The mark is a single UPDATE of `state` and `processed_at` by the
+Worker login, `WHERE state = 'pending'`, so only a pending event moves, once; a
+mark that cannot be written is logged (`stripe-event-mark-failed`) and changes
+nothing about the payment.
+
+Mode: an event is acted on only in the mode the Worker is in. `livemode: true` is
+refused unless `STRIPE_LIVE=1`, `livemode: false` is refused in live mode, and an
+event that does not carry a boolean `livemode` is refused. A refusal answers 400,
+logs `stripe-event-wrong-mode`, and stores nothing. Each stored row also carries
+its `environment` (`test` or `live`), and a purchase only ever pays from an event
+of its own environment.
 
 Routes, for an owner or an admin of the business, behind the same bearer, origin
 and query rules as the other account routes:
 
 - `GET /account/organizations/:id/credit-purchases/quote?credits=N` answers
-  `{ credits, amountCents, currency: 'usd' }`. Credits that are not a whole step
-  of 100 inside the bounds are 422.
+  `{ credits, amountCents, currency: 'usd', steps, stepCredits, stepCents, onPlan, planStep }` at the
+  business's rate; `onPlan` says whether that is the plan rate, and `planStep` (`{ credits, cents }`,
+  or null on a plan or when `CREDIT_RATE_PLAN` is unusable) is one step at the plan rate, a public
+  price, so the buy box can say what the same money buys on a plan; `stepCredits` and `stepCents` are its step, and a request with
+  no `credits` is one step, which is how a screen learns the step before it asks
+  for more. Credits that are not a whole number of steps inside the bounds are 422.
 - `POST /account/organizations/:id/credit-purchases` `{ credits }` (strict body)
   makes a pending purchase and a Checkout Session, and answers 201
   `{ purchaseId, checkoutUrl, credits, amountCents }`. The amount is the Worker's
@@ -554,7 +635,8 @@ verified raw body. Then the funding login, in one transaction, marks the purchas
 paid and records the top-up (the credits bought, keyed by the purchase id, with
 the event id as its source). Replays, a second event for a paid purchase, a
 mismatched amount and an unknown session change nothing and answer 200, because
-the receiver checks all of that, read-only, before it stores anything.
+the receiver checks all of that, read-only, before it stores anything. A signature
+valid under `STRIPE_WEBHOOK_SECRET` or `STRIPE_WEBHOOK_SECRET_PREVIOUS` verifies.
 `GET /billing/return` is the plain page Stripe sends the buyer back to; it
 says to go back to Nectovia and echoes nothing from the request.
 
@@ -591,17 +673,182 @@ privilege on `webhook_inbox` or `billing_customers`, so it cannot make bought
 credits on its own, and `cp_runtime` has no privilege on `credit_purchases` and
 only reads `credit_topups`. The two steps are separate transactions, the event first. If
 the second fails, Stripe sends the event again: the event is stored once, and the
-top-up once. A stored payment event stays `pending` in the inbox, the state a
-future inbox processor would take, so nothing marks it processed. The runner
-refuses 015 until 011, 012, 013 and 014 are in its list before it.
+top-up once. The runner refuses 015 until 011, 012, 013 and 014 are in its list
+before it.
 
-The faux cloud buys without Stripe: `CREDIT_PRICE_CENTS_PER_100` from the
-environment (or the faux test price when it is unset), a faux `POST /v1/customers`
+### Migration 016 and the reserved actor
+
+Migration 016 (`016_stripe_billing_foundation.sql`) took its number at merge, in
+merge order (2026-10-06). The draft pull request #196 had reserved 016 and takes the
+next free number when it lands. The runner needs the versions in its list to equal
+their position plus one, and refuses the whole list, before it opens a transaction,
+when they do not, so each new migration is listed directly after the last one. 016
+is applied to `accounts_staging` with main's runner before the code that needs it
+merges. The migration adds
+`environment` (`test` or `live`, existing rows backfilled to `test`) to
+`billing_customers`, `webhook_inbox` and `credit_purchases`, and makes the
+customer's uniqueness per environment; it adds `ignored` to the inbox states and
+lets an inbox row carry no business; it adds `rate_cents` and `rate_credits` to
+`credit_purchases` (existing rows backfilled at 100 credits per step) with the
+whole-steps check; and it creates the reserved `billing-system` person row.
+
+`billing-system` (`src/billing-system.ts`) is the reserved actor for `issuedBy` on
+grants and for the audit rows of work the billing system does itself, with the role
+`billing`. It is not a person: it cannot be added as staff, and it never holds a
+session.
+
+### Pay as you go: a person as the payer (migration 017, 2026-10-05, DIO-219)
+
+A person with no plan buys credits for their own Personal work, and while their
+own bought balance is above zero the Nectovia Agent works for them there, funded
+only from it. Bought credits grant no feature.
+
+- `GET /account/credit-purchases/quote?credits=N`, `POST /account/credit-purchases`
+  `{ credits }` and `GET /account/credit-purchases/:purchaseId` are the business
+  routes' twins for the signed-in person, with the same answers, bounds and strict
+  body. Nothing in a request names a person, a scope or a business: the Worker
+  resolves the person from the bearer and their own Individual billing scope (010,
+  made the first time with `CommercialPersonScopes`), so what they buy can only land
+  there. `GET /account/purchased-usage` answers that scope's bought balance.
+- The rate is `CREDIT_RATE_PLAN` while the person holds an active Individual grant
+  of their own (`GrantPlanLookup.hasActivePersonPlan`), otherwise
+  `CREDIT_RATE_FREE`. A business's plan never prices a person. It is locked into
+  the purchase row exactly as for a business, and the same Checkout, customer and
+  webhook path pays it: the row names the person's scope and tenant.
+- `GET /account/routing/individual/:id/access` adds `boughtCredits`: `available`,
+  `spent` or `none`, never the figure (`FundingService.boughtState`, a SELECT the
+  Worker login may run). It changes no other field and adds no feature.
+- Admission (`RoutingService.admit`) admits a person whose plan does not hold the
+  Agent while `boughtCredits` is `available`, with `planId` null, for work they
+  start on the company route only. The team (`team`), automations (`automation`)
+  and any `byo`, `local` or `external-engine` route are refused `plan_required`.
+  With everything spent or held it refuses `insufficient_allowance` with the
+  Personal out-of-credits sentence.
+- The gateway checks again on every call and every attempt
+  (`ManagedInferenceService.admitted`): `plan_required` (403) for the automation
+  usage class, an escalated role (`X-Nectovia-Escalation`) or a plan-only surface;
+  `insufficient_allowance` (402) once the balance is zero, so the step in progress
+  finishes and the next one stops before anything is held or sent. The reservation
+  then runs with `boughtOnly`: with no billing period it draws on bought credits
+  only and binds to the scope's one bought-credits row instead of failing
+  `no_period`. A business scope never takes this path.
+- A business without a plan keeps slice 1's path: it buys at `CREDIT_RATE_FREE`
+  and its quote says `onPlan: false`; its Agent stays refused.
+
+Migration 017 (`017_personal_pay_as_you_go.sql`) points `credit_purchases` at
+`billing_scopes` (015 still pointed it at `organizations`) and requires a
+purchase for an Individual scope to be its own person's; adds a generated
+`billing_customers.person_id` with a unique index per provider, environment and
+person, proved against the scope by a composite reference; and allows the
+bought-credits `credit_periods` row (`plan_id` and `period_id` `bought-credits`,
+granted 0, no source, Individual scopes only). No grant changes. It took its number
+at merge, in merge order (2026-10-06), and applies after 016.
+
+The faux cloud buys without Stripe: `CREDIT_RATE_PLAN` and `CREDIT_RATE_FREE` from
+the environment (or the faux test rates, `1000:110` and `1300:100`, when they are
+unset; the seeded Juniper Street Bakery holds a plan and Harbor Hardware does not),
+a faux `POST /v1/customers`
 (one customer per idempotency key, as Stripe makes them) beside the faux Checkout
 Session call, a local checkout page at
 `/faux/checkout/:sessionId`, and `FauxCloud.completeCheckout(sessionId)`, which
 posts the same signed event to the Worker's own webhook. The page's button does
 the same.
+
+## Credit prices by tier (Model B, migration 018, 2026-10-05)
+
+A credit is priced by tier, never by route (`shared/credit-prices.ts`). Staff
+publish a versioned credit price table: for each of Efficient, Focused and
+Thorough, a charge in ledger units per million tokens for fresh input, output,
+cache reads and cache writes, with an optional reasoning price (output's
+otherwise), an optional per-request price and optional long-context bands; and
+one ceiling, in micro-USD of provider cost per credit charged, at most 100,000.
+The ledger keeps its scale (100,000 units are one credit) and its `MicroUsd`
+names; the units stop meaning provider cost. No price, ceiling or target is
+written in this repository: the faux cloud and the tests use synthetic values
+(`src/faux/seed.ts`, `FAUX_CREDIT_PRICES`).
+
+- Staff (`policy.publish`, so Routing and Admin): `GET /ops/credit-prices`
+  answers `{ table, history }`, the active version (or null) and up to 50
+  versions, newest first. `POST /ops/credit-prices/publish` with
+  `{ baseVersion, ceilingMicroUsdPerCredit, tiers: { efficient, focused, thorough }, note }`
+  publishes version `baseVersion + 1` and answers it with 201; a tier is a
+  charge or null. A stale `baseVersion` is 409. A table that leaves any bound
+  route over its ceiling is refused with 422 `over_cost_ceiling`, naming the
+  route, the tier and the token class. Each publish writes one
+  `credit-prices.published` audit row. Versions are append-only, in the
+  database and the faux store.
+- A route is bound when a current routing record would send a tier's call to
+  it: the global legacy tier map (priced by its provider registry row), the
+  global and every account scope's own versioned routing (backups only while
+  fallback is on), and the typed-evaluation route for every tier. Saving a route
+  and publishing or rolling back routing are refused with 422 `over_cost_ceiling`
+  when they put a bound route over the active table's ceiling that was not over
+  it before.
+- The ceiling check compares, in whole numbers, `provider × 100,000 ≤ ceiling ×
+  charge` for every token class, the request fee and every band region from
+  both band lists.
+- The gateway reads the active table with the routing state. A tier with no
+  charge is refused with 409 `tier_unpriced` before any hold or send. On
+  versioned routing a route over the ceiling is excluded as `over_cost_ceiling`,
+  like any other ineligible route, and the next eligible one serves; on the
+  legacy route and for typed evaluations, where there is one route, the call is
+  refused with 409 `over_cost_ceiling`. The hold is the tier's charge for the
+  input and output bounds, plus its request fee. The attempt stores the
+  provider's rate snapshot and the tier's charge snapshot. A table published
+  between the first read and dispatch is 409 `policy_changed`, and the hold is
+  released unsent.
+- Settlement debits `usageCost(charge, usage)`, month first then bought credits,
+  and records `usageCost(rate, usage)` as the settlement's provider cost, never
+  debited. An attempt reserved before tier pricing has no charge and settles
+  exactly as before. Customers read the debit; an attempt held under a charge
+  answers `providerCostMicroUsd: null` on `/managed/v1/attempts/:id` and in
+  routing receipts.
+- The routing snapshot the desktop reads carries the tier's charge, in ledger
+  units, in its existing `price` and `guardPrices` fields, never a provider
+  price, so the desktop's local guard and job estimate count credits and a
+  desktop already installed reads it unchanged.
+
+After deploy, no managed call is served until staff publish the first table.
+Migration 018 applies after 016 and 017: the runner refuses a gap.
+
+## Job check-ins (DIO-221, migration 019, 2026-10-05)
+
+A job is never cut off mid-call or mid-write. A tier's amount (Efficient 100,
+Focused 250, Thorough 500 credits, `JOB_CHECK_IN_CREDITS` in
+`shared/managed-usage.ts`) is how far one job runs before it checks in. The
+cap stays a stop before dispatch: when the next reservation would cross the
+job's current check-in amount the gateway refuses it, with the hold released,
+as `cap_request_required`. The app finishes the step in progress, saves, and
+asks whether to keep going. This replaces the 20, 50 and 100 credit caps.
+
+- The amount a job checks in at is the business's own amount for the tier, else
+  the staff default, else the code default (`resolveCheckIns`,
+  `shared/job-check-ins.ts`). The job opens with that amount and its tier
+  (`funded_jobs.tier`, `capMicroUsd`); a later change moves only jobs opened
+  after it.
+- Staff (`policy.publish`): `GET /ops/job-check-ins` answers `{ defaults,
+  history }`; `POST /ops/job-check-ins/publish` with `{ baseVersion, amounts,
+  note }` publishes version `baseVersion + 1` (201, 409 when stale). Each
+  publish writes one `job-check-ins.published` audit row. Versions are
+  append-only.
+- A business's owners and admins, on the Worker login:
+  `GET` and `POST /account/organizations/:id/job-check-ins` read and set the
+  business's own amounts (a tier set to null uses the default). Each whole
+  number of credits is 1 to 100,000.
+- Keep going: `POST /account/routing/(organization|individual)/:id/check-ins/keep-going`
+  with `{ jobId, atCapMicroUsd }`. It raises that one job's cap by exactly one
+  amount of its own tier, from the cap the person saw, only while the job still
+  has that cap (compare and set), and answers the new cap. A repeat of a raise
+  already made answers the same cap and adds nothing. A request names no amount;
+  a job opened before this migration has no tier and is refused. The raise is
+  finite and recorded, and the pool, the member's monthly limit and the
+  organization funds still apply to every hold after it. Reading the amounts
+  for the desktop is `GET /account/routing/(organization|individual)/:id/check-ins`.
+- The ledger writes only `funded_jobs` cap and generation for a Keep going, so
+  the gateway's grants are unchanged.
+- Migration 019 took its number at merge, in merge order (2026-10-06), and applies
+  after 018. The gateway reads the new tables and `funded_jobs.tier`, so apply the
+  migration before deploying the Worker that reads them.
 
 ## Runtime evidence and release
 

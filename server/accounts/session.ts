@@ -1171,7 +1171,7 @@ export class AccountSessionService {
   // --- buying credits (the account service prices, takes the payment and records it) ---
 
   /** What an amount of credits costs, as the person signed in. */
-  quoteCredits(organizationId: string, credits: number) {
+  quoteCredits(organizationId: string, credits: number | null) {
     return this.call((token) => this.backend.client.quoteCredits(token, organizationId, credits));
   }
   /** Start a purchase as the person signed in: where to pay, and what for. */
@@ -1180,6 +1180,19 @@ export class AccountSessionService {
   }
   readCreditPurchase(organizationId: string, purchaseId: string) {
     return this.call((token) => this.backend.client.readCreditPurchase(token, organizationId, purchaseId));
+  }
+  /** The same, for the person's own Personal work (pay as you go, DIO-219). The service names no one but the signed-in person. */
+  quotePersonalCredits(credits: number | null) {
+    return this.call((token) => this.backend.client.quotePersonalCredits(token, credits));
+  }
+  startPersonalCreditPurchase(credits: number) {
+    return this.call((token) => this.backend.client.startPersonalCreditPurchase(token, credits));
+  }
+  readPersonalCreditPurchase(purchaseId: string) {
+    return this.call((token) => this.backend.client.readPersonalCreditPurchase(token, purchaseId));
+  }
+  personalPurchasedBalance() {
+    return this.call((token) => this.backend.client.personalPurchasedBalance(token));
   }
   /**
    * The origin of the test service's own checkout page, when the account service is the local test one, so
@@ -1208,6 +1221,22 @@ export class AccountSessionService {
   }
   askCreditLimit(organizationId: string, input: Parameters<ControlPlaneClient['askCreditLimit']>[2]) {
     return this.call((token) => this.backend.client.askCreditLimit(token, organizationId, input));
+  }
+  // --- job check-ins (the account service keeps the amounts and raises a job's cap; this app asks and shows) ---
+
+  /** The amounts this account's jobs check in at. Any member may read them. */
+  checkIns(scope: Parameters<ControlPlaneClient['scopedCheckIns']>[1]) {
+    return this.call((token) => this.backend.client.scopedCheckIns(token, scope));
+  }
+  /** Keep a job going: the account service raises that one job by one more amount. */
+  keepJobGoing(scope: Parameters<ControlPlaneClient['keepJobGoing']>[1], input: Parameters<ControlPlaneClient['keepJobGoing']>[2]) {
+    return this.call((token) => this.backend.client.keepJobGoing(token, scope, input));
+  }
+  jobCheckInSettings(organizationId: string) {
+    return this.call((token) => this.backend.client.jobCheckInSettings(token, organizationId));
+  }
+  setJobCheckIns(organizationId: string, input: Parameters<ControlPlaneClient['setJobCheckIns']>[2]) {
+    return this.call((token) => this.backend.client.setJobCheckIns(token, organizationId, input));
   }
   creditLimitRequests(organizationId: string) {
     return this.call((token) => this.backend.client.creditLimitRequests(token, organizationId));

@@ -10,7 +10,7 @@ import { describe, expect, test } from 'vitest';
 import {
   CREDIT_MICRO_USD,
   MONTHLY_CREDIT_GRANTS,
-  APPROVED_JOB_CAP_CREDITS,
+  JOB_CHECK_IN_CREDITS,
   approvedJobCap,
   creditAmount,
   creditsFor,
@@ -111,13 +111,13 @@ describe('the published grant table keeps approval and proposal apart', () => {
     }
   });
 
-  test('job caps are the owner-approved 20, 50 and 100 credits by tier', () => {
-    expect(APPROVED_JOB_CAP_CREDITS.status).toBe('approved');
-    expect(APPROVED_JOB_CAP_CREDITS.decidedOn).toBe('2026-09-23');
-    expect(APPROVED_JOB_CAP_CREDITS.credits).toEqual({ efficient: 20, focused: 50, thorough: 100 });
-    expect(approvedJobCap('efficient')).toBe(c(20));
-    expect(approvedJobCap('focused')).toBe(c(50));
-    expect(approvedJobCap('thorough')).toBe(c(100));
+  test('job check-ins are the owner-approved 100, 250 and 500 credits by tier', () => {
+    expect(JOB_CHECK_IN_CREDITS.status).toBe('approved');
+    expect(JOB_CHECK_IN_CREDITS.decidedOn).toBe('2026-10-05');
+    expect(JOB_CHECK_IN_CREDITS.credits).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(approvedJobCap('efficient')).toBe(c(100));
+    expect(approvedJobCap('focused')).toBe(c(250));
+    expect(approvedJobCap('thorough')).toBe(c(500));
   });
 });
 

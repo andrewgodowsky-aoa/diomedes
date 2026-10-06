@@ -31,6 +31,7 @@ import {
 } from '../client/console/nectovia-usage-model';
 import {
   BuyCreditsView,
+  PersonalUsageView,
   UsageCenter,
   UsageCenterBar,
   UsageCenterView,
@@ -46,6 +47,7 @@ import {
   type MyUsageRead,
 } from '../client/console/MemberUsage';
 import type { MyCreditUsage } from '../shared/credit-allotments';
+import { BOUGHT_CREDITS_LAST, BUSINESS_CREDITS_NEED_PLAN } from '../shared/access';
 
 const c = (credits: number) => creditAmount(credits);
 const observedAt = '2026-10-15T12:00:00.000Z';
@@ -222,7 +224,7 @@ describe('the agent usage bar', () => {
 
 const owner = { id: 'm_1', organizationId: 'org_a', personId: 'p_1', role: 'owner', state: 'active' } as unknown as Membership;
 const asRole = (role: Membership['role'], state: Membership['state'] = 'active') => ({ ...owner, role, state }) as Membership;
-const idle: FlowState = { input: '1000', quote: { state: 'ready', credits: 1000, amountCents: 12000 }, purchase: { phase: 'idle' } };
+const idle: FlowState = { input: '1000', quote: { state: 'ready', credits: 1000, amountCents: 12000 }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 }, onPlan: true, planStep: null };
 const STRIPE_URL = 'https://checkout.stripe.com/c/pay/cs_test_a1B2c3';
 const buyView = (state: FlowState) =>
   renderToStaticMarkup(createElement(BuyCreditsView, { state, onInput: () => {}, onBuy: () => {}, onReset: () => {} }));
@@ -317,10 +319,22 @@ describe('the buy form', () => {
     expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
+  it('takes its step and bounds from the quote: a plan step of 110 is a field in steps of 110 up to 99,990, and before any quote it takes any whole number', () => {
+    const plan = buyView({ ...idle, input: '990', quote: { state: 'ready', credits: 990, amountCents: 9000 }, step: { credits: 110, cents: 1000 } });
+    expect(plan).toMatch(/<input[^>]*min="110"/);
+    expect(plan).toMatch(/<input[^>]*step="110"/);
+    expect(plan).toMatch(/<input[^>]*max="99990"/);
+    const unknown = buyView({ ...idle, quote: { state: 'loading' }, step: null });
+    expect(unknown).toMatch(/<input[^>]*min="1"/);
+    expect(unknown).toMatch(/<input[^>]*step="1"/);
+    expect(unknown).toMatch(/<input[^>]*max="100000"/);
+  });
+
   it('shows whatever total the quote gave, because the client never works one out', () => {
     const page = text(buyView({ ...idle, quote: { state: 'ready', credits: 1000, amountCents: 999 } }));
     expect(page).toContain('1,000 credits for $9.99 at the current usage rate');
-    expect(page).not.toContain('$120');
+    // The headline above it is the published price, ten of the quoted steps; the total for the amount is never worked out.
+    expect(page).not.toContain('for $120');
   });
 
   it('holds Buy until there is a total, and says why in plain words', () => {
@@ -329,7 +343,7 @@ describe('the buy form', () => {
     expect(text(loading)).toContain('Working out the total.');
     expect(text(loading)).not.toContain('$');
 
-    const invalid = buyView({ input: '150', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' } });
+    const invalid = buyView({ input: '150', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 }, onPlan: true, planStep: null });
     expect(invalid).toMatch(/<button[^>]*disabled/);
     expect(text(invalid)).toContain('Enter 100 credits or more, in steps of 100, up to 100,000.');
 
@@ -344,6 +358,7 @@ describe('the buy form', () => {
       input: '1000',
       quote: { state: 'ready', credits: 1000, amountCents: 12000 },
       purchase: { phase: 'waiting', purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 12000, checkoutUrl: STRIPE_URL },
+      step: { credits: 100, cents: 1200 }, onPlan: true, planStep: null,
     });
     const page = text(html);
     expect(page).toContain('Waiting for your payment for 1,000 credits.');
@@ -380,8 +395,85 @@ describe('the buy form', () => {
   });
 });
 
+/** The published prices (Model B section 1): on a plan $100 buys 1,100 credits, in steps of 110; without one $130 buys 1,000, in steps of 100. */
+const onPlan: FlowState = { input: '990', quote: { state: 'ready', credits: 990, amountCents: 9000 }, purchase: { phase: 'idle' },
+  step: { credits: 110, cents: 1000 }, onPlan: true, planStep: null };
+const noPlan: FlowState = { input: '1000', quote: { state: 'ready', credits: 1000, amountCents: 13000 }, purchase: { phase: 'idle' },
+  step: { credits: 100, cents: 1300 }, onPlan: false, planStep: { credits: 110, cents: 1000 } };
+const buyFor = (state: FlowState, payer: 'business' | 'person') =>
+  renderToStaticMarkup(createElement(BuyCreditsView, { state, onInput: () => {}, onBuy: () => {}, onReset: () => {}, payer }));
+const personal = (purchased: PurchasedUsageState | null, buy: FlowState = noPlan) =>
+  renderToStaticMarkup(createElement(PersonalUsageView, { purchased, buy, onInput: () => {}, onBuy: () => {}, onReset: () => {} }));
+const personalBought: PurchasedUsageState = { ...bought, organizationId: 'personal' };
+
+describe('the buy box lines (Model B section 7)', () => {
+  it('on a plan: the plan price and how long credits last, and nothing about a plan', () => {
+    const page = text(buyFor(onPlan, 'business'));
+    expect(page).toContain('$100 buys 1,100 credits.');
+    expect(page).toContain(BOUGHT_CREDITS_LAST);
+    expect(page).not.toContain('On a plan');
+    expect(page).not.toContain(BUSINESS_CREDITS_NEED_PLAN);
+  });
+
+  it('a business without a plan: the no-plan price, the plan price under it, and that the credits wait for a plan', () => {
+    const page = text(buyFor(noPlan, 'business'));
+    expect(page).toContain('$130 buys 1,000 credits. On a plan, $100 buys 1,100 credits.');
+    expect(page).toContain('This business can use these credits once it has a plan.');
+    expect(page).toContain('Credits you buy last 12 months.');
+    // Buying stays open: the form and its Buy button are there.
+    expect(buyFor(noPlan, 'business')).toMatch(/<button[^>]*>Buy<\/button>/);
+  });
+
+  it('a person without a plan: the same prices, and no business sentence', () => {
+    const page = text(buyFor(noPlan, 'person'));
+    expect(page).toContain('$130 buys 1,000 credits.');
+    expect(page).toContain('On a plan, $100 buys 1,100 credits.');
+    expect(page).toContain(BOUGHT_CREDITS_LAST);
+    expect(page).not.toContain('business');
+  });
+
+  it('shows prices only beside a quote that answered: never while loading, waiting or after a failure', () => {
+    for (const state of [{ ...noPlan, quote: { state: 'loading' } }, { ...noPlan, purchase: { phase: 'failed' } }] as FlowState[])
+      expect(text(buyFor(state, 'person'))).not.toContain('$');
+    // How long credits last is said whatever the state.
+    expect(text(buyFor({ ...noPlan, quote: { state: 'loading' } }, 'person'))).toContain(BOUGHT_CREDITS_LAST);
+  });
+});
+
+describe('Usage in Personal (pay as you go)', () => {
+  it('shows the credits the person bought and a way to buy more, with no monthly usage line', () => {
+    const html = personal(personalBought);
+    const page = text(html);
+    expect(page).toContain('Credits you bought');
+    expect(page).toContain('Buy credits');
+    expect(page).toContain('$130 buys 1,000 credits.');
+    expect(page).not.toContain('included monthly usage');
+    expect(page).not.toContain('business');
+  });
+
+  it('shows one plain line and nothing to buy while the balance can’t be read', () => {
+    const signedOut = text(personal({ state: 'not-connected', organizationId: 'personal', reason: 'Sign in to see the credits you bought.' }));
+    expect(signedOut).toContain('Sign in to see the credits you bought.');
+    expect(signedOut).not.toContain('Buy credits');
+    expect(text(personal(null))).toBe('Checking your credits.');
+  });
+
+  it('the Settings rail offers Usage in Personal, and the screen buys for the person, never a business', () => {
+    const settings = read('client/Settings.tsx');
+    expect(settings).toMatch(/const personalScreen = workspace\?\.active\.kind === 'personal'/);
+    expect(settings).toMatch(/section === 'Usage' && personalScreen && <PersonalUsage/);
+    const screen = read('client/console/UsageCenter.tsx');
+    expect(screen).toMatch(/useCreditPurchase\(null, paid\)/);
+    expect(screen).toMatch(/payer="person"/);
+  });
+});
+
 describe('what customers read here', () => {
   const states: [string, string][] = [
+    ['buy on a plan', buyFor(onPlan, 'business')],
+    ['buy no plan, business', buyFor(noPlan, 'business')],
+    ['buy no plan, person', buyFor(noPlan, 'person')],
+    ['personal usage', personal(personalBought)],
     ['bar ok', bar(ready(100))],
     ['bar warning', bar(ready(800))],
     ['bar danger', bar(ready(950))],
@@ -391,7 +483,7 @@ describe('what customers read here', () => {
     ['whole screen', whole(ready(800), bought)],
     ['buy idle', buyView(idle)],
     ['buy loading', buyView({ ...idle, quote: { state: 'loading' } })],
-    ['buy invalid', buyView({ input: '1', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' } })],
+    ['buy invalid', buyView({ input: '1', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 }, onPlan: true, planStep: null })],
     ['buy starting', buyView({ ...idle, purchase: { phase: 'starting' } })],
     ['buy waiting', buyView({ ...idle, purchase: { phase: 'waiting', purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 12000, checkoutUrl: STRIPE_URL } })],
     ['buy paid', buyView({ ...idle, purchase: { phase: 'paid', credits: 1000, amountCents: 12000 } })],
@@ -412,7 +504,7 @@ describe('what customers read here', () => {
 
   it('dollars appear only in the price of a purchase, before it and after it', () => {
     for (const [name, html] of states) {
-      const priced = ['buy idle', 'buy paid', 'whole screen'].includes(name);
+      const priced = ['buy idle', 'buy paid', 'whole screen', 'buy on a plan', 'buy no plan, business', 'buy no plan, person', 'personal usage'].includes(name);
       expect(/\$/.test(html), name).toBe(priced);
     }
   });
@@ -641,7 +733,7 @@ describe('the Settings rail for a member', () => {
     expect(settings).toMatch(/memberUsageTarget\(/);
     expect(settings).toMatch(/useMyCreditUsage\(/);
     expect(settings).toMatch(/\.state === 'ready'/);
-    expect(settings).toMatch(/usageScreen \|\| memberUsage \? \['Usage'\]/);
+    expect(settings).toMatch(/usageScreen \|\| memberUsage \|\| personalScreen \? \['Usage'\]/);
     expect(settings).toMatch(/section === 'Usage' && !usageScreen && memberUsage/);
   });
 
