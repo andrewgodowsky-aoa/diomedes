@@ -291,6 +291,14 @@ export function gatewayRefusal(
         code: 'nectovia_tier_unrouted',
         message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
       };
+    case 'tier_unpriced':
+    case 'over_cost_ceiling':
+      // Tier pricing (Model B): the tier has no credit price yet, or no route it may run within its
+      // price. Either way the tier cannot answer now, which is what the person needs to know.
+      return {
+        code: `nectovia_${error.code}`,
+        message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+      };
     case 'context_too_long':
     case 'request_too_large':
       return {

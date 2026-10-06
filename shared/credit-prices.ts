@@ -98,7 +98,8 @@ export const creditPriceTableSchema = z.strictObject({
   publishedAt: z.iso.datetime(),
   publishedBy: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
 });
-export type CreditPriceTable = z.infer<typeof creditPriceTableSchema>;
+/** A published table. Its tiers are typed as `TierCharge`, so a charge built in code goes in as it is. */
+export type CreditPriceTable = Omit<z.infer<typeof creditPriceTableSchema>, 'tiers'> & { tiers: Record<JobTier, TierCharge | null> };
 
 /** What staff send to publish a version. `baseVersion` is the version they read (0 for none). */
 export const publishCreditPricesInput = z.strictObject({
@@ -107,7 +108,7 @@ export const publishCreditPricesInput = z.strictObject({
   tiers: tiersSchema,
   note: z.string().trim().min(1).max(1000),
 });
-export type PublishCreditPricesInput = z.infer<typeof publishCreditPricesInput>;
+export type PublishCreditPricesInput = Omit<z.infer<typeof publishCreditPricesInput>, 'tiers'> & { tiers: Record<JobTier, TierCharge | null> };
 
 /** The charge one tier is held and debited under, or null when the table or the tier has no price. */
 export function chargeSnapshot(table: CreditPriceTable | null | undefined, tier: JobTier): ChargeSnapshot | null {

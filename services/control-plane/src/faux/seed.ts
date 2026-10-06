@@ -100,11 +100,31 @@ export interface SeedResult {
   organizations: { juniper: string; harbor: string } | null;
 }
 
+/**
+ * A store this seeder filled before tier pricing (Model B) has routes and no credit price table, so
+ * every managed call from it would be refused as tier_unpriced. Give it the faux table once, as the
+ * routing operator the seed made. Written straight to the store: the faux routes sit inside its
+ * ceiling, which the fresh seed's publish proves.
+ */
+async function backfillCreditPrices(cloud: FauxCloud) {
+  const snapshot = cloud.store.snapshot();
+  if (snapshot.commercial.priceTables.length > 0) return;
+  const routing = snapshot.commercial.operators.find((row) => row.role === 'routing' && row.state === 'active');
+  if (!routing) return;
+  const { baseVersion: _base, ...table } = FAUX_CREDIT_PRICES;
+  await cloud.store.commercial.transaction(async (tx) => {
+    if (await tx.priceTable()) return;
+    await tx.savePriceTable({ v: 1, version: 1, ...table, publishedAt: new Date().toISOString(), publishedBy: routing.personId });
+  });
+}
+
 /** Seed an empty store. A store that already has any account is left alone. */
 export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
   const snapshot = cloud.store.snapshot();
-  if (snapshot.seeded !== null || snapshot.identity.users.length > 0 || snapshot.accounts.persons.length > 0)
+  if (snapshot.seeded !== null || snapshot.identity.users.length > 0 || snapshot.accounts.persons.length > 0) {
+    if (snapshot.seeded !== null) await backfillCreditPrices(cloud);
     return { seeded: false, password: FAUX_DEMO_PASSWORD, accounts: DEMO_ACCOUNTS, organizations: null };
+  }
   const tokens = {} as Record<DemoAccount, string>;
   for (const [key, account] of Object.entries(DEMO_ACCOUNTS) as [DemoAccount, (typeof DEMO_ACCOUNTS)[DemoAccount]][]) {
     tokens[key] = await cloud.seedSignIn({ name: account.name, email: account.email, password: FAUX_DEMO_PASSWORD });

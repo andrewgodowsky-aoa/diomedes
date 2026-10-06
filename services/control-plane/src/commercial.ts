@@ -1458,7 +1458,9 @@ export class CommercialService {
       await tx.savePriceTable(row);
       await this.audited(tx, actor, {
         action: 'credit-prices.published', organizationId: null, targetKind: 'credit-prices', targetId: String(row.version), reason: row.note,
-        detail: { basedOn: current?.version ?? 0, ceilingMicroUsdPerCredit: row.ceilingMicroUsdPerCredit, tiers: row.tiers },
+        // The table itself stays out of the audit log, which Support reads: the history endpoint serves
+        // it to the roles that may publish it.
+        detail: { basedOn: current?.version ?? 0, version: row.version },
       });
       return row;
     });

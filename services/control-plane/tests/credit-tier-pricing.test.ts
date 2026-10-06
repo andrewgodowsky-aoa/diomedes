@@ -2,6 +2,9 @@
  * Credit prices by tier (Model B): settlement from the charge, the gateway's checks against the
  * published table, and staff publishing. Every price and ceiling here is synthetic.
  */
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { creditAmount, usageCost, type RateSnapshot } from '../../../shared/managed-usage.js';
 import { chargeHold, chargeSnapshot, type ChargeSnapshot, type CreditPriceTable } from '../../../shared/credit-prices.js';
@@ -243,6 +246,8 @@ describe('staff publishing the credit price table', () => {
     expect(read.body.history.map((t: CreditPriceTable) => t.version)).toEqual([2, 1]);
     const audit = cloud.store.snapshot().commercial.audit.filter(a => a.action === 'credit-prices.published');
     expect(audit.map(a => [a.targetKind, a.targetId])).toEqual([['credit-prices', '1'], ['credit-prices', '2']]);
+    // The table stays out of the audit log, which Support can read.
+    expect(audit.map(a => a.detail)).toEqual([{ basedOn: 0, version: 1 }, { basedOn: 1, version: 2 }]);
   });
 
   it('never rewrites a version', async () => {
@@ -262,5 +267,32 @@ describe('staff publishing the credit price table', () => {
     expect(tables()).toHaveLength(1);
     // A lower ceiling fails the same way.
     expect((await call('POST', '/ops/credit-prices/publish', routing, body({ ceilingMicroUsdPerCredit: 1 }))).status).toBe(422);
+  });
+});
+
+describe('a faux store seeded before tier pricing', () => {
+  it('gets the faux credit price table once, so its managed calls are priced', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tier-pricing-'));
+    try {
+      const file = path.join(dir, 'faux-cloud.json');
+      const first = await createFauxCloud({ file, passwordIterations: 1_000 });
+      expect((await seedDemo(first)).seeded).toBe(true);
+
+      // As a store written before migration 018's faux counterpart: no price table at all.
+      const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+      delete saved.commercial.priceTables;
+      await fs.writeFile(file, JSON.stringify(saved));
+      const reopened = await createFauxCloud({ file, passwordIterations: 1_000 });
+      expect(reopened.store.snapshot().commercial.priceTables).toEqual([]);
+      expect((await seedDemo(reopened)).seeded).toBe(false);
+      const [table] = reopened.store.snapshot().commercial.priceTables;
+      expect(table).toMatchObject({ version: 1, ceilingMicroUsdPerCredit: FAUX_CREDIT_PRICES.ceilingMicroUsdPerCredit, tiers: FAUX_CREDIT_PRICES.tiers });
+      // Seeding again leaves it alone.
+      await seedDemo(reopened);
+      expect(reopened.store.snapshot().commercial.priceTables).toHaveLength(1);
+
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
