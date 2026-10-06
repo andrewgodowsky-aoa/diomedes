@@ -40,11 +40,12 @@ describe('the tier form', () => {
       thoroughModel: 'us.openai.gpt-6-sol-once-qualified',
       efficientRoute: 'openrouter',
       efficientModel: 'vendor/model-a',
+      focusedRoute: 'aws-bedrock',
       focusedModel: 'us.moonshotai.kimi-k3-next',
     });
     for (const [key, value] of Object.entries(next)) if (key !== 'azureOld') expect(tierSettingRefusal(key, value)).toBeNull();
-    // A tier's default route is never written: Focused keeps AWS Bedrock by default.
-    expect(next.focusedRoute).toBeUndefined();
+    // A custom model keeps its provider even when that provider is today's default.
+    expect(next.focusedRoute).toBe('aws-bedrock');
     expect(tierMapFrom(next).focused).toEqual({ route: 'aws-bedrock', model: 'us.moonshotai.kimi-k3-next' });
     // Returning a tier to its default removes what was saved for it.
     expect(withTierDraft(next, tierDraftFrom({}))).toEqual({ azureOld: true });
@@ -63,6 +64,40 @@ describe('the tier form', () => {
       'OpenRouter',
       'Google Vertex AI',
     ]);
+  });
+
+  it('keeps legacy model-only choices on their original providers when reopened and saved', () => {
+    const services = { keep: true, efficientModel: 'us.openai.gpt-6-luna',
+      focusedModel: 'gemini-3.8-pro', thoroughModel: 'us.openai.gpt-5.6-luna' };
+    const draft = tierDraftFrom(services);
+    expect(draft).toEqual({
+      efficient: { route: 'aws-bedrock', model: 'us.openai.gpt-6-luna' },
+      focused: { route: 'google-vertex', model: 'gemini-3.8-pro' },
+      thorough: { route: 'aws-bedrock', model: 'us.openai.gpt-5.6-luna' },
+    });
+    expect(withTierDraft(services, draft)).toEqual({ ...services,
+      efficientRoute: 'aws-bedrock', focusedRoute: 'google-vertex', thoroughRoute: 'aws-bedrock' });
+  });
+
+  it('stores the provider alongside a custom model even on the current default provider', () => {
+    const draft = tierDraftFrom({});
+    draft.efficient.model = 'sol-next';
+    draft.focused.model = 'us.moonshotai.kimi-k3-next';
+    draft.thorough.model = 'sol-thorough';
+    const saved = withTierDraft({ keep: true }, draft);
+    expect(saved).toEqual({ keep: true,
+      efficientRoute: 'azure-openai', efficientModel: 'sol-next',
+      focusedRoute: 'aws-bedrock', focusedModel: 'us.moonshotai.kimi-k3-next',
+      thoroughRoute: 'azure-openai', thoroughModel: 'sol-thorough' });
+    expect(tierDraftFrom(saved)).toEqual(draft);
+  });
+
+  it('keeps an explicitly unassigned model when saving a tier on its default provider', () => {
+    const draft = tierDraftFrom({ efficientRoute: 'azure-openai' });
+    expect(draft.efficient).toEqual({ route: 'azure-openai', model: '' });
+    const saved = withTierDraft({}, draft);
+    expect(saved).toEqual({ efficientRoute: 'azure-openai' });
+    expect(tierDraftFrom(saved)).toEqual(draft);
   });
 
   it('sets and clears the owner-testing pin', () => {

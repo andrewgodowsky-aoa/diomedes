@@ -2581,7 +2581,7 @@ export class EngineService {
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
@@ -2665,7 +2665,7 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+              effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
               limits: route === LOCAL_MODEL_ROUTE ? localLimits(api.bonsai?.runtime.profile(admission.model), WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
@@ -2786,7 +2786,7 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions)),
@@ -2854,7 +2854,9 @@ export class EngineService {
       throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
     const rootJobId = ledger.jobScope?.id ?? rootRunId;
     const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
-    if (effort !== undefined && !(route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
+    const supportedEfforts = route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh']
+      : route === AZURE_OPENAI_ROUTE ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
+    if (effort !== undefined && !supportedEfforts.includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
     const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };

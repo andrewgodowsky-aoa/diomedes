@@ -114,6 +114,41 @@ const openRouterBody = () => {
 };
 
 describe('Azure OpenAI setup, from the card to the host and back', () => {
+  test('legacy bodies keep the classic host and low-to-high reasoning after reopening', async () => {
+    const { host: _host, ...legacy } = azureBody();
+    await ok('/ai/model-api/azure-openai', 'PUT', legacy);
+    await close();
+    await open();
+    const restored = await ok<AzureConnectionView>('/ai/model-api/azure-openai');
+    expect(restored.connection).toMatchObject({ host: 'openai', endpoint: 'https://contoso-ai.openai.azure.com/openai/v1' });
+    expect(restored.connection?.deployments.every((entry) => entry.xhigh === undefined)).toBe(true);
+    const choices = await ok<{ models: { slug: string; efforts: { id: string }[] }[] }>('/engines/azure-openai/models');
+    expect(choices.models.find((entry) => entry.slug === 'gpt-5.6-luna')?.efforts.map((entry) => entry.id)).toEqual(['low', 'medium', 'high']);
+  });
+
+  test('Foundry host and reasoning capabilities persist, with xhigh removed from non-reasoning models', async () => {
+    const body = azureBody();
+    await ok('/ai/model-api/azure-openai', 'PUT', { ...body, host: 'foundry',
+      deployments: (body.deployments as Record<string, unknown>[]).map((entry) => ({ ...entry, xhigh: true })) });
+    await close();
+    await open();
+    const restored = await ok<AzureConnectionView>('/ai/model-api/azure-openai');
+    expect(restored.connection).toMatchObject({ host: 'foundry', endpoint: 'https://contoso-ai.services.ai.azure.com/openai/v1' });
+    expect(restored.connection?.deployments[0]).toMatchObject({ reasoning: true, xhigh: true });
+    expect(restored.connection?.deployments[1]).toMatchObject({ reasoning: false });
+    expect(restored.connection?.deployments[1].xhigh).toBeUndefined();
+    const choices = await ok<{ models: { slug: string; efforts: { id: string }[] }[] }>('/engines/azure-openai/models');
+    expect(choices.models.find((entry) => entry.slug === 'gpt-5.6-luna')?.efforts.map((entry) => entry.id)).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(choices.models.find((entry) => entry.slug === 'gpt-4.1-mini')?.efforts).toEqual([]);
+  });
+
+  test('a caller cannot supply an arbitrary host or endpoint', async () => {
+    for (const extra of [{ host: 'attacker.invalid' }, { baseUrl: 'https://attacker.invalid/openai/v1' }]) {
+      expect((await call('/ai/model-api/azure-openai', 'PUT', { ...azureBody(), ...extra })).status).toBe(400);
+      expect((await ok<AzureConnectionView>('/ai/model-api/azure-openai')).connection).toBeNull();
+    }
+  });
+
   test('connect, check, approve a limit and disconnect: the key is never returned or stored in plain', async () => {
     const before = await ok<AzureConnectionView>('/ai/model-api/azure-openai');
     expect(before).toMatchObject({ configured: false, protectedStorage: true, connection: null });

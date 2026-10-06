@@ -76,6 +76,11 @@ export const DEFAULT_TIER_MAP: TierMap = {
   thorough: { route: 'azure-openai', model: TIER_AZURE_SOL_MODEL },
 };
 
+/** Before 2026-10-06 the form omitted these providers when saving a custom model. */
+const LEGACY_TIER_ROUTES: Record<WorkStyle, string> = {
+  efficient: 'aws-bedrock', focused: 'google-vertex', thorough: 'aws-bedrock',
+};
+
 /** Names for tier routes this build may not know yet, so a refusal still names them. */
 const PENDING_ROUTE_NAMES: Record<string, string> = { [TIER_VERTEX_ROUTE]: 'Google Vertex AI' };
 /** A tier route as a person reads it, including one this build does not have yet. */
@@ -141,9 +146,12 @@ export function tierMapFrom(services: Record<string, unknown> | undefined): Tier
     const route = services?.[tierRouteKey(style)];
     const model = services?.[tierModelKey(style)];
     if (isModelApiProvider(route)) {
-      const changed = route !== map[style].route;
-      map[style] = { route, model: typeof model === 'string' && model ? model : changed ? null : map[style].model };
-    } else if (typeof model === 'string' && model) map[style] = { ...map[style], model };
+      // An explicit provider without a model stays unassigned even if defaults move onto it.
+      map[style] = { route, model: typeof model === 'string' && model ? model : null };
+    } else if (typeof model === 'string' && model) {
+      // New custom selections always save both fields. A model alone belongs to the old provider.
+      map[style] = { route: LEGACY_TIER_ROUTES[style], model };
+    }
   }
   return map;
 }

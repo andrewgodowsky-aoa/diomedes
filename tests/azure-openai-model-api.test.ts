@@ -391,10 +391,11 @@ describe('refusals before anything is sent', () => {
     expect(azureConnectionSchema.parse(older).baseUrl).toBe('https://contoso-ai.openai.azure.com/openai/v1');
   });
 
-  test('the guarded fetch refuses any other destination, query or body before the key is attached', async () => {
+  test.each(['openai', 'foundry'] as const)('the %s guard refuses other destinations, queries and bodies before attaching the key', async (host) => {
     const net = transport([]);
     let dispatched = 0;
-    const binding = azureBinding(CONNECTION, CONNECTION.deployments[0], 'low', false);
+    const baseUrl = azureEndpoint('contoso-ai', host);
+    const binding = azureBinding({ ...CONNECTION, host, baseUrl }, CONNECTION.deployments[0], 'low', false);
     const guarded = guardedStreamFetch({
       prefix: 'azure',
       label: 'Azure',
@@ -413,12 +414,16 @@ describe('refusals before anything is sent', () => {
     const refusals: Array<[string, unknown, string]> = [
       // The legacy deployment path with an api-version query is a different URL.
       [`https://contoso-ai.openai.azure.com/openai/deployments/luna-prod-eastus2/responses?api-version=2025-04-01-preview`, good, 'azure_destination_refused'],
-      [`${BASE}/responses?api-version=v1`, good, 'azure_destination_refused'],
+      [`${baseUrl}/responses?api-version=v1`, good, 'azure_destination_refused'],
       ['https://other.openai.azure.com/openai/v1/responses', good, 'azure_destination_refused'],
+      ['https://other.services.ai.azure.com/openai/v1/responses', good, 'azure_destination_refused'],
+      [`${azureEndpoint('contoso-ai', host === 'foundry' ? 'openai' : 'foundry')}/responses`, good, 'azure_destination_refused'],
+      [`${baseUrl.replace('https:', 'http:')}/responses`, good, 'azure_destination_refused'],
+      [`${baseUrl}/responses#fragment`, good, 'azure_destination_refused'],
       ['https://api.openai.com/v1/responses', good, 'azure_destination_refused'],
-      [`${BASE}/responses`, { ...good, model: 'mini-chat' }, 'azure_request_refused'],
-      [`${BASE}/responses`, { ...good, store: true }, 'azure_request_refused'],
-      [`${BASE}/responses`, { ...good, previous_response_id: 'resp_0' }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, model: 'mini-chat' }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, store: true }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, previous_response_id: 'resp_0' }, 'azure_request_refused'],
     ];
     for (const [url, body, code] of refusals) {
       const error = await failure(guarded(url, { method: 'POST', body: JSON.stringify(body) }));
@@ -427,6 +432,19 @@ describe('refusals before anything is sent', () => {
     }
     expect(dispatched).toBe(0);
     expect(net.sent).toHaveLength(0);
+  });
+
+  test.each(['openai', 'foundry'] as const)('%s redirects are refused without forwarding the credential', async (host) => {
+    const connection: AzureConnection = { ...CONNECTION, host, baseUrl: azureEndpoint('contoso-ai', host) };
+    let sends = 0;
+    const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      sends += 1;
+      expect(String(input)).toBe(`${connection.baseUrl}/responses`);
+      expect(init?.redirect).toBe('error');
+      return new Response(null, { status: 302, headers: { location: 'https://attacker.invalid/responses' } });
+    }) as typeof globalThis.fetch;
+    expect((await failure(call(network, { connection }))).code).toBe('azure_redirect_refused');
+    expect(sends).toBe(1);
   });
 });
 

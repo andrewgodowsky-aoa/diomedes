@@ -96,6 +96,7 @@ describe('what the host accepts as a tier setting', () => {
   test('a saved route replaces the default model unless one is saved with it', () => {
     const map = tierMapFrom({
       focusedRoute: 'azure-openai',
+      efficientRoute: 'azure-openai',
       efficientModel: 'gpt-6-luna-next',
       thoroughRoute: 'openrouter',
       thoroughModel: 'vendor/model-a',
@@ -105,6 +106,30 @@ describe('what the host accepts as a tier setting', () => {
     expect(map.thorough).toEqual({ route: 'openrouter', model: 'vendor/model-a' });
     // A saved route that is not a company-account route is ignored, never trusted.
     expect(tierMapFrom({ focusedRoute: 'codex' }).focused).toEqual(DEFAULT_TIER_MAP.focused);
+  });
+
+  test('legacy model-only overrides keep the provider whose default they used', () => {
+    expect(tierMapFrom({
+      efficientModel: 'us.openai.gpt-6-luna',
+      focusedModel: 'gemini-3.8-pro',
+      thoroughModel: AWS_LUNA_MODEL,
+    })).toEqual({
+      efficient: { route: 'aws-bedrock', model: 'us.openai.gpt-6-luna' },
+      focused: { route: 'google-vertex', model: 'gemini-3.8-pro' },
+      thorough: { route: 'aws-bedrock', model: AWS_LUNA_MODEL },
+    });
+    expect(tierMapFrom({ efficientRoute: 'azure-openai', efficientModel: 'custom-sol' }).efficient)
+      .toEqual({ route: 'azure-openai', model: 'custom-sol' });
+  });
+
+  test('a saved provider with no model stays unassigned when it becomes a new default', () => {
+    const map = tierMapFrom({ efficientRoute: 'azure-openai',
+      focusedRoute: 'aws-bedrock', thoroughRoute: 'azure-openai' });
+    expect(map).toEqual({
+      efficient: { route: 'azure-openai', model: null },
+      focused: { route: 'aws-bedrock', model: null },
+      thorough: { route: 'azure-openai', model: null },
+    });
   });
 
   test('the owner pin is read only when it names a real route', () => {
