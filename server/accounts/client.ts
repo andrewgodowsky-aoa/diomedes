@@ -33,6 +33,8 @@ const scopedEntitlementSchema = z.object({ plan: z.string(), planLabel: z.string
   state: z.enum(['none', 'active', 'expired', 'revoked', 'unknown']), features: z.array(z.string()).max(100),
   agent: z.boolean(), managedInference: z.boolean(), validFrom: z.iso.datetime().nullable(), validUntil: z.iso.datetime().nullable(),
   revision: z.number().int().nonnegative(), source: z.enum(['none', 'account-service']), reason: z.string(),
+  // A person's own scope only (pay as you go, DIO-219): whether their bought credits are above zero. Never a figure.
+  boughtCredits: z.enum(['available', 'spent', 'none']).optional(),
 });
 
 /**
@@ -86,6 +88,10 @@ const centsSchema = z.number().int().positive().max(99_999_999);
 const creditQuoteSchema = z.strictObject({
   credits: creditsSchema, amountCents: centsSchema, currency: z.literal('usd'),
   steps: z.number().int().min(1), stepCredits: z.number().int().min(1).max(10_000), stepCents: centsSchema,
+  // Whether the payer is on a plan, and the plan's step for one that isn't (DIO-219). A service from before them reads as on a
+  // plan with no comparison, so nothing is claimed that it didn't say.
+  onPlan: z.boolean().default(true),
+  planStep: z.strictObject({ credits: z.number().int().min(1).max(10_000), cents: centsSchema }).nullable().default(null),
 }).refine((quote) => quote.credits === quote.steps * quote.stepCredits && quote.amountCents === quote.steps * quote.stepCents,
   'The quote is not whole steps of its own step.');
 const creditPurchaseStartedSchema = z.strictObject({
@@ -417,6 +423,26 @@ export class ControlPlaneClient {
   async readCreditPurchase(token: string, organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus> {
     const parsed = creditPurchaseStatusSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases/${encodeURIComponent(purchaseId)}`, token));
     return parsed.success && parsed.data.purchaseId === purchaseId ? parsed.data : this.unreadable();
+  }
+  // --- buying credits for the person's own Personal work (pay as you go, DIO-219; the service resolves the person) ---
+
+  async quotePersonalCredits(token: string, credits: number | null): Promise<CreditQuote> {
+    const query = credits === null ? '' : `?credits=${credits}`;
+    const parsed = creditQuoteSchema.safeParse(await this.call<unknown>('GET', `/account/credit-purchases/quote${query}`, token));
+    return parsed.success && (credits === null || parsed.data.credits === credits) ? parsed.data : this.unreadable();
+  }
+  async startPersonalCreditPurchase(token: string, credits: number): Promise<CreditPurchaseStarted> {
+    const parsed = creditPurchaseStartedSchema.safeParse(await this.call<unknown>('POST', '/account/credit-purchases', token, { credits }));
+    return parsed.success && parsed.data.credits === credits ? parsed.data : this.unreadable();
+  }
+  async readPersonalCreditPurchase(token: string, purchaseId: string): Promise<CreditPurchaseStatus> {
+    const parsed = creditPurchaseStatusSchema.safeParse(await this.call<unknown>('GET', `/account/credit-purchases/${encodeURIComponent(purchaseId)}`, token));
+    return parsed.success && parsed.data.purchaseId === purchaseId ? parsed.data : this.unreadable();
+  }
+  /** What the person bought for their own Personal work, and what of it is held or spent. */
+  async personalPurchasedBalance(token: string): Promise<PurchasedBalanceAnswer> {
+    const parsed = purchasedBalanceSchema.safeParse(await this.call<unknown>('GET', '/account/purchased-usage', token));
+    return parsed.success ? parsed.data : this.unreadable();
   }
   createOrganization(token: string, name: string) {
     return this.call<Organization>('POST', '/account/organizations', token, { name });
