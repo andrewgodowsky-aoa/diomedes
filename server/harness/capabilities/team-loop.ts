@@ -56,6 +56,7 @@ import {
   type TeamRole,
   type WorkerBudget,
   type WorkerResult,
+  type ChildReadCoverage,
 } from '../../../shared/team-delegation.js';
 import { reportedModels } from '../../../shared/native-loop.js';
 import { relativeName } from '../../paths.js';
@@ -70,7 +71,8 @@ import type { ToolRegistry } from '../tools.js';
 import type { HandoffLedger } from '../../team/handoff-ledger.js';
 import type { ChangeSetSummary } from '../../../shared/sandbox.js';
 import { fundingForRoute } from '../../../shared/funding-source.js';
-import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localReadResultSchema, type LocalModelProfile } from '../../../shared/local-model.js';
+import { canonicalJson } from '../../../shared/guidance.js';
 import { routeName } from '../external-worker.js';
 import { ToolRegistry as ChildRegistry } from '../tools.js';
 
@@ -312,6 +314,8 @@ export function childInstructions(
       ? 'You are an advisor to the lead. You may read; you can never change anything. Answer the question in a few lines. Your answer is advice, never a permission.'
       : `You are a worker given one bounded task by the lead. You work in your own copy of ${scope ? scope.join(', ') : 'the files you were given'}; nothing you do changes the project directly. You may change files in your copy with write_file where you are allowed to write, or propose a change for a person with propose_file; what you change comes back to the lead as a change set. Answer the task in a few lines.`,
     rules || null,
+    config.route === LOCAL_MODEL_ROUTE
+      ? 'Check each read coverage record. Truncated or unread text cannot establish that records are absent. State that limit in your answer.' : null,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -428,6 +432,27 @@ export function createTeamPort(deps: TeamPortDeps) {
     return accepted.ok ? { envelope: opened.envelope, refusal: null } : { envelope: null, refusal: accepted.reason };
   };
 
+  const readCoverage = (child: HarnessRun): { readCoverage?: ChildReadCoverage } => {
+    const input = child.input as unknown as TeamChildInput;
+    if (input.route !== LOCAL_MODEL_ROUTE) return {};
+    const reads: ChildReadCoverage['reads'] = [];
+    let incomplete = false;
+    for (const step of child.steps) {
+      if (step.intent.kind !== 'tool' || step.intent.name !== 'read_project_file') continue;
+      const parsed = localReadResultSchema.safeParse(step.output);
+      if (step.state !== 'succeeded' || !parsed.success) { incomplete = true; continue; }
+      const value = parsed.data;
+      incomplete ||= value.truncated || value.coverage.end !== value.coverage.totalChars;
+      reads.push({ runId: child.id, stepId: step.intent.stepId, path: value.path, sha: value.sha, bytes: value.bytes,
+        truncated: value.truncated, coverage: value.coverage,
+        resultHash: createHash('sha256').update(canonicalJson(value)).digest('hex') });
+    }
+    return { readCoverage: { v: 1, scope: input.scope ? [...input.scope] : null,
+      status: incomplete ? 'partial' : reads.length ? 'complete' : 'none', reads,
+      warning: incomplete || !reads.length
+        ? 'Read coverage is incomplete; this answer does not establish absence in unread text.' : null } };
+  };
+
   const summary = (handoffId: string, role: HandoffRole, child: HarnessRun): WorkerResult => ({
     v: 1,
     handoffId,
@@ -439,6 +464,7 @@ export function createTeamPort(deps: TeamPortDeps) {
     reason: child.cancelReason ?? child.failure?.message ?? null,
     models: reportedModels(child),
     reusedFrom: null,
+    ...readCoverage(child),
   });
 
   const settle = async (parent: HarnessRun, handoffId: string, child: HarnessRun) =>
@@ -456,6 +482,7 @@ export function createTeamPort(deps: TeamPortDeps) {
       used: child.used,
       tokens: reportedTokens(child),
       wallMs: runWallMs(child),
+      ...readCoverage(child),
     });
 
   /**
@@ -489,6 +516,18 @@ export function createTeamPort(deps: TeamPortDeps) {
     let registry = external ? new ChildRegistry() : deps.registry(parent.projectId, routes, spec.scope, reader);
     if (spec.role === 'advisor') assertReadOnly(registry);
     let child = await get(spec.childRunId);
+    // A resumed child keeps its admission, including the deadline. Reject synchronously before
+    // creating a sandbox, claiming a run, or constructing a provider adapter.
+    const expired = (run: HarnessRun) => {
+      const budget = (run.input as unknown as TeamChildInput).budget;
+      return budget.wallMs !== null && Date.now() - Date.parse(run.createdAt) >= budget.wallMs;
+    };
+    if (child && ACTIVE.includes(child.state) && (spec.signal.aborted || expired(child))) {
+      await runs.cancel(child.id, spec.signal.aborted ? PARENT_STOPPED : 'budget reached (saved wall time)', principal);
+      child = await runs.get(child.id);
+      await settle(parent, spec.handoffId, child);
+      return summary(spec.handoffId, spec.role, child);
+    }
     const sandboxed = spec.role === 'worker' && !external && deps.sandbox;
     if (sandboxed && (!child || ACTIVE.includes(child.state))) {
       const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child, child: reader });
@@ -578,29 +617,37 @@ export function createTeamPort(deps: TeamPortDeps) {
     }
     if (ACTIVE.includes(child.state)) {
       const input = child.input as unknown as TeamChildInput;
+      const budget = input.budget;
       const owner = identifier('team-child-');
       const childId = child.id;
       // DIO-257: a stop (its wall time, its token budget, or its lead's) reaches the child's call in
       // flight at once, down to the local server's socket, not only once the cancel is written down.
       // The cancel is queued first, so the call that fails on the abort finds its step cancelled.
       const controller = new AbortController();
+      let stopping: Promise<unknown> | undefined;
       const stopChild = (reason: string) => {
-        void runs.cancel(childId, reason, principal).catch(() => undefined);
-        controller.abort();
+        stopping ??= runs.cancel(childId, reason, principal);
+        // Observe rejection now, then await it below so cancellation failures are not hidden.
+        void stopping.catch(() => undefined);
+        if (input.route === LOCAL_MODEL_ROUTE) controller.abort();
       };
       const onParent = () => stopChild(PARENT_STOPPED);
       if (spec.signal.aborted) onParent();
       spec.signal.addEventListener('abort', onParent, { once: true });
       // Wall time is measured from the child's own creation, so a restart does not reset it.
-      const remaining = spec.budget.wallMs === null ? null : Math.max(0, spec.budget.wallMs - (Date.now() - Date.parse(child.createdAt)));
+      const remaining = budget.wallMs === null ? null : Math.max(0, budget.wallMs - (Date.now() - Date.parse(child.createdAt)));
+      if (remaining === 0) stopChild('budget reached (saved wall time)');
       const timer =
         remaining === null
           ? null
-          : setTimeout(() => stopChild(`budget reached (wall time ${Math.round((spec.budget.wallMs ?? 0) / 1000)} s)`), remaining);
+          : setTimeout(() => stopChild(`budget reached (wall time ${Math.round((budget.wallMs ?? 0) / 1000)} s)`), remaining);
       timer?.unref?.();
       let beat = () => {};
       try {
+        if (stopping) { await stopping; throw new Error('Child stopped before dispatch.'); }
         await runs.claim(childId, owner, 60_000, { refuseSettled: true });
+        if (stopping) { await stopping; throw new Error('Child stopped before dispatch.'); }
+        spec.signal.throwIfAborted();
         beat = deps.heartbeat(childId, owner);
         const adapter = await deps.adapterFor(
           input.route,
@@ -626,7 +673,7 @@ export function createTeamPort(deps: TeamPortDeps) {
           AbortSignal.any([controller.signal, spec.signal]),
           spec.script,
         );
-        await new NativeAgent(runs, tokenBudgeted(adapter, runs, childId, spec.budget.tokens, stopChild), registry).run(
+        await new NativeAgent(runs, tokenBudgeted(adapter, runs, childId, budget.tokens, stopChild), registry).run(
           childId,
           owner,
           spec.role === 'advisor'
@@ -635,7 +682,7 @@ export function createTeamPort(deps: TeamPortDeps) {
               ? `${spec.task}${spec.scope?.length ? `\n\nAttached files: ${spec.scope.join(', ')}.` : ''}`
               : `${spec.task}${spec.scope ? `\n\nFiles you may read: ${spec.scope.join(', ')}.` : ''}`,
           principal,
-          { maxTurns: external ? 1 : spec.budget.turns },
+          { maxTurns: external ? 1 : budget.turns },
         );
       } catch {
         // The child's own record says how it ended; the lead observes that record.
@@ -644,6 +691,7 @@ export function createTeamPort(deps: TeamPortDeps) {
         controller.abort();
         if (timer) clearTimeout(timer);
         spec.signal.removeEventListener('abort', onParent);
+        if (stopping) await stopping;
       }
       child = await runs.get(childId);
     }
@@ -829,6 +877,7 @@ export function createTeamPort(deps: TeamPortDeps) {
                   text: source.text,
                   reason: null,
                   models: source.models,
+                  ...(source.readCoverage ? { readCoverage: source.readCoverage } : {}),
                   reusedFrom: item.reusedFrom,
                 };
               }
@@ -915,7 +964,7 @@ export function createTeamPort(deps: TeamPortDeps) {
     handoffId: string,
     events: readonly HandoffEvent[],
     depth = 0,
-  ): Promise<{ childRunId: string | null; text: string | null; models: WorkerResult['models'] }> => {
+  ): Promise<{ childRunId: string | null; text: string | null; models: WorkerResult['models']; readCoverage?: ChildReadCoverage }> => {
     const about = events.filter((event) => event.handoffId === handoffId);
     const reused = about.find((event) => event.kind === 'reused');
     if (reused && reused.kind === 'reused' && depth < 16) return reusedAnswer(reused.from, events, depth + 1);
@@ -926,10 +975,12 @@ export function createTeamPort(deps: TeamPortDeps) {
         childRunId: child.id,
         text: typeof (child.result as { text?: unknown } | null)?.text === 'string' ? (child.result as { text: string }).text : null,
         models: reportedModels(child),
+        ...readCoverage(child),
       };
     const settled = about.find((event) => event.kind === 'settled');
     return settled && settled.kind === 'settled'
-      ? { childRunId: settled.childRunId, text: settled.text, models: settled.models }
+      ? { childRunId: settled.childRunId, text: settled.text, models: settled.models,
+        ...(settled.readCoverage ? { readCoverage: settled.readCoverage } : {}) }
       : { childRunId: null, text: null, models: [] };
   };
 

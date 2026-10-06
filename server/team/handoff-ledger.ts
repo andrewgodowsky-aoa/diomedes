@@ -14,7 +14,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { HandoffEvent } from '../../shared/team-delegation.js';
+import { childReadCoverageSchema, type HandoffEvent } from '../../shared/team-delegation.js';
 
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
@@ -96,6 +96,7 @@ export const handoffEventSchema = z.discriminatedUnion('kind', [
     used: z.strictObject({ units: z.number(), modelCalls: z.number(), toolCalls: z.number() }),
     tokens: z.number().nullable(),
     wallMs: z.number().nullable(),
+    readCoverage: childReadCoverageSchema.optional(),
   }),
 ]);
 

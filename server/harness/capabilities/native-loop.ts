@@ -75,7 +75,7 @@ import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWork
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
 import type { EscalationRole } from '../../../shared/escalation-controls.js';
 import type { RoleTier } from '../../../shared/escalation-roles.js';
-import { LOCAL_MODEL_ROUTE, localContextBudget, localReadCutNote, type LocalModelProfile } from '../../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localContextBudget, localReadCoverageSchema, localReadSlice, type LocalModelProfile } from '../../../shared/local-model.js';
 import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
@@ -183,6 +183,7 @@ const READ_OUTPUT = z.union([
     truncated: z.boolean(),
     /** A reader on the local model is told when a read was cut, with both sizes (DIO-255). */
     note: z.string().optional(),
+    coverage: localReadCoverageSchema.optional(),
   }),
 ]) as unknown as z.ZodType<Json>;
 
@@ -236,7 +237,7 @@ export async function readFor(
     text: cut ? text.slice(0, maxReadChars) : text,
     truncated: cut,
     // DIO-255: a reader on the local model is told a cut read was cut. Any other reader's is as before.
-    ...(cut && localProfile ? { note: localReadCutNote(maxReadChars, text.length) } : {}),
+    ...(localProfile ? localReadSlice(text, maxReadChars) : {}),
   };
 }
 
@@ -654,6 +655,7 @@ export interface LoopRouteRequest {
   readonly accountRoute: string | null;
   readonly instructions: string;
   readonly purpose: 'loop' | 'delegate' | 'worker' | 'advisor';
+  readonly readFold?: import('../../../shared/harness.js').LocalReadFoldPolicy;
   readonly rootRunId?: string;
   readonly rootJobId?: string;
   readonly threadId?: string | null;
@@ -1496,6 +1498,16 @@ export function createLoopProcedure(deps: {
             accountRoute: input.accountRoute,
             instructions,
             purpose: 'loop',
+            scope: input.team?.scope ?? null,
+            ...(input.route === LOCAL_MODEL_ROUTE ? { readFold: {
+              scope: input.team?.scope ?? null,
+              verifySnapshot: async (snapshot: { path: string; sha: string; bytes: number }) => {
+                // Reuse the same path/scope/sharing guard. This check grants no new read authority.
+                const current = await readFor(store, run.projectId, input.route, snapshot.path, input.team?.scope ?? null);
+                return !!current && typeof current === 'object' && !Array.isArray(current) && current.found === true &&
+                  current.sha === snapshot.sha && current.bytes === snapshot.bytes;
+              },
+            } } : {}),
           },
           stop.signal,
           () => loopFixtureAdapter(input.sources, Boolean(input.team), input.goal),

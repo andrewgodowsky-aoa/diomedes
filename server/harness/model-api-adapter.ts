@@ -380,7 +380,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
           cacheReadTokens: result.usage.cacheReadTokens,
           cacheWriteTokens: result.usage.cacheWriteTokens,
         },
-        ...(result.room ? { room: result.room } : {}),
+        ...(result.room ? { room: { ...result.room, originalTranscript: transcript } } : {}),
       };
     },
   };

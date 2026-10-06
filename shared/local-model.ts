@@ -286,6 +286,28 @@ export const localSourceRefusal = (verb: 'Select no more than' | 'Choose less th
 export const localReadCutNote = (shown: number, total: number) =>
   `This read stopped at ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} characters. The rest of the file wasn’t read.`;
 
+/** Read ranges count UTF-16 code units; byte counts describe the returned UTF-8 text. */
+export const localReadCoverageSchema = z.strictObject({
+  v: z.literal(1), unit: z.literal('utf16'), totalChars: z.number().int().nonnegative(),
+  start: z.literal(0), end: z.number().int().nonnegative(), returnedBytes: z.number().int().nonnegative(),
+}).refine(value => value.end <= value.totalChars);
+export type LocalReadCoverage = z.infer<typeof localReadCoverageSchema>;
+
+export const localReadResultSchema = z.strictObject({
+  path: z.string(), found: z.literal(true), sha: z.string(), bytes: z.number().int().nonnegative(),
+  text: z.string(), truncated: z.boolean(), coverage: localReadCoverageSchema, note: z.string().optional(),
+});
+
+/** Shared by project and sandbox readers. Never cut between a surrogate pair. */
+export function localReadSlice(source: string, maxChars: number) {
+  let end = Math.min(source.length, maxChars);
+  if (end < source.length && end > 0 && /[\uD800-\uDBFF]/.test(source[end - 1]) && /[\uDC00-\uDFFF]/.test(source[end])) end--;
+  const text = source.slice(0, end), truncated = end < source.length;
+  const coverage: LocalReadCoverage = { v: 1, unit: 'utf16', totalChars: source.length, start: 0, end,
+    returnedBytes: new TextEncoder().encode(text).byteLength };
+  return { text, truncated, coverage, ...(truncated ? { note: localReadCutNote(end, source.length) } : {}) };
+}
+
 /** Rates affect time only; they do not qualify other tasks or widen their input room. */
 export function localCallCeiling(profile: Pick<LocalModelProfile, 'measuredRates' | 'callTimeoutMs'>,
   promptTokens: number, outputTokens: number): number {

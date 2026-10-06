@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import type { ModelMessage } from 'ai';
 import { findLocalProfile, localContextBudget, localCallCeiling, localDeadlines, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
-  type LocalModelProfile } from '../../shared/local-model.js';
+  localReadResultSchema, type LocalModelProfile } from '../../shared/local-model.js';
 import { MODEL_IMAGE_COUNT, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/model-images.js';
-import type { ModelRoom, ToolDescriptor } from '../../shared/harness.js';
+import type { LocalReadFoldPolicy, ModelRoom, ToolDescriptor } from '../../shared/harness.js';
+import { childReadCoverageSchema } from '../../shared/team-delegation.js';
+import { canonicalJson } from '../../shared/guidance.js';
 import type { ModelRateCard } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from '../harness/model-api-adapter.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
@@ -137,50 +140,92 @@ const countable = (messages: readonly ChatMessage[]): ChatMessage[] => messages.
 export const localFoldedRead = (path: string, chars: number) =>
   `The ${chars.toLocaleString('en-US')} characters read from ${path} were left out here to make room. Read it again with read_project_file if you need its exact lines.`;
 
-/** The file a tool message's result holds, when it is a read that returned the file's text. */
-function readIn(content: unknown): { path: string; bytes: number; text: string } | null {
+const jsonValue = (content: unknown): unknown => {
   if (typeof content !== 'string') return null;
-  let value: unknown;
-  try { value = JSON.parse(content); } catch { return null; }
-  if (!value || typeof value !== 'object') return null;
-  const read = value as Record<string, unknown>;
-  return read.found === true && typeof read.path === 'string' && typeof read.text === 'string' && typeof read.bytes === 'number'
-    ? { path: read.path, bytes: read.bytes, text: read.text } : null;
+  try { return JSON.parse(content); } catch { return null; }
+};
+const projectionHash = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+const callSchema = z.object({ id: z.string(), function: z.object({ name: z.string(), arguments: z.string() }) });
+const callsIn = (message: ChatMessage) => z.array(callSchema).safeParse(message.tool_calls ?? []).data ?? [];
+
+/** One completed, fully read snapshot, used by a visible draft and checked by a completed advisor. */
+function eligibleRead(messages: readonly ChatMessage[], policy?: LocalReadFoldPolicy) {
+  if (!policy) return null;
+  const advice = messages.at(-1), draft = messages.at(-2);
+  if (!advice || advice.role !== 'tool' || !draft || draft.role !== 'assistant' ||
+      typeof draft.content !== 'string' || !draft.content.trim()) return null;
+  const calls = callsIn(draft);
+  if (calls.length !== 1 || calls[0].id !== advice.tool_call_id || calls[0].function.name !== 'consult_advisor') return null;
+  const parsed = z.object({ outcome: z.literal('completed'), advice: z.string().trim().min(1),
+    readCoverage: childReadCoverageSchema }).safeParse(jsonValue(advice.content));
+  if (!parsed.success || parsed.data.readCoverage.status !== 'complete' || parsed.data.readCoverage.warning) return null;
+  const coverage = parsed.data.readCoverage;
+  const scopeKey = (scope: readonly string[] | null) => scope === null ? 'null' : canonicalJson([...scope].sort());
+  if (scopeKey(coverage.scope) !== scopeKey(policy.scope)) return null;
+  // Only the read immediately before this draft/advice exchange is eligible. An intervening
+  // tool, source change, or newer partial read must not make an older snapshot eligible.
+  const i = messages.length - 3;
+  if (i > 1) {
+    const message = messages[i], previous = messages[i - 1];
+    if (message.role !== 'tool' || previous.role !== 'assistant') return null;
+    const readCalls = callsIn(previous);
+    if (readCalls.length !== 1 || readCalls[0].id !== message.tool_call_id || readCalls[0].function.name !== 'read_project_file') return null;
+    const value = localReadResultSchema.safeParse(jsonValue(message.content));
+    if (!value.success) return null;
+    const read = value.data;
+    if (read.truncated || read.coverage.end !== read.coverage.totalChars || read.coverage.end !== read.text.length ||
+        read.coverage.returnedBytes !== Buffer.byteLength(read.text) || read.bytes !== Buffer.byteLength(read.text) ||
+        read.sha !== createHash('sha256').update(read.text).digest('hex') ||
+        (policy.scope !== null && !policy.scope.includes(read.path))) return null;
+    const args = z.object({ path: z.literal(read.path) }).safeParse(jsonValue(readCalls[0].function.arguments));
+    if (!args.success) return null;
+    const resultHash = projectionHash(read);
+    const matched = coverage.reads.find(item => item.path === read.path && item.sha === read.sha &&
+      item.bytes === read.bytes && !item.truncated && item.resultHash === resultHash &&
+      canonicalJson(item.coverage) === canonicalJson(read.coverage));
+    if (matched) return { message: i, read, matched, resultHash };
+  }
+  return null;
 }
 
-/**
- * DIO-254, the owner's order (2026-10-06): an Agent loop's call that won't fit its window first
- * leaves out the reasoning of earlier assistant turns, newest first, then folds a read's text into
- * a stub that names the file and its size, newest first. Each stops as soon as the call fits, by
- * the same count as the refusal. Answer text and every other tool result are kept, and nothing
- * before the first change moves, so the cached prefix holds. Null when the call still won't fit.
- * Positions are in the call's own messages, after its system prompt.
- */
-async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMessage[]) => Promise<number>, room: number,
-  counted: number): Promise<{ messages: ChatMessage[]; record: ModelRoom } | null> {
+/** At most three exact counts: original, completed reasoning removed, one eligible read folded. */
+async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMessage[]) => Promise<number>,
+  budget: ReturnType<typeof localContextBudget>, counted: number, readFold?: LocalReadFoldPolicy
+): Promise<{ messages: ChatMessage[]; record: ModelRoom } | null> {
   const next = messages.map(message => ({ ...message }));
-  const record: ModelRoom = { counted, room, sent: counted, reasoning: [], folded: [] };
+  const { nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow, totalWindow, outputReserve,
+    protocolAndNextToolReserve, safetyMargin, inputRoom: room } = budget;
+  const record: ModelRoom = { v: 1, policy: 'local-post-advice-v1', stage: 'reasoning', counts: [counted],
+    budget: { nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow, totalWindow, outputReserve,
+      protocolAndNextToolReserve, safetyMargin }, originalHash: projectionHash(messages), projectedHash: '',
+    counted, room, sent: counted, reasoning: [], folded: [] };
   let needed = counted;
-  for (let i = next.length - 1; i > 0 && needed > room; i--) {
+  for (let i = next.length - 1; i > 0; i--) {
     const { reasoning_content: reasoning, ...rest } = next[i];
     if (next[i].role !== 'assistant' || !reasoning) continue;
+    const calls = callsIn(next[i]);
+    const results: string[] = [];
+    for (let j = i + 1; j < next.length && next[j].role === 'tool'; j++) results.push(next[j].tool_call_id ?? '');
+    if (!calls.length || calls.some(call => !results.includes(call.id))) continue;
     next[i] = rest;
     record.reasoning.push({ message: i - 1, chars: reasoning.length });
-    needed = await count(next);
   }
-  const names = new Map(next.flatMap(message => (message.tool_calls ?? []) as { id?: unknown; function?: { name?: unknown } }[])
-    .map(call => [call.id, call.function?.name]));
-  for (let i = next.length - 1; i > 0 && needed > room; i--) {
-    const message = next[i];
-    const read = message.role === 'tool' && names.get(message.tool_call_id) === 'read_project_file' ? readIn(message.content) : null;
-    if (!read) continue;
-    next[i] = { ...message, content: JSON.stringify({ path: read.path, found: true, bytes: read.bytes,
-      note: localFoldedRead(read.path, read.text.length) }) };
-    record.folded.push({ message: i - 1, path: read.path, chars: read.text.length, bytes: read.bytes });
+  if (record.reasoning.length) { needed = await count(next); record.counts.push(needed); }
+  const eligible = needed > room ? eligibleRead(messages, readFold) : null;
+  if (eligible) {
+    const { message: i, read, matched, resultHash } = eligible;
+    const { text: omitted, ...metadata } = read;
+    next[i] = { ...next[i], content: JSON.stringify({ ...metadata, textOmitted: true, resultHash,
+      originalMessage: i - 1, note: localFoldedRead(read.path, omitted.length) }) };
+    record.folded.push({ message: i - 1, path: read.path, sha: read.sha, chars: omitted.length, bytes: read.bytes,
+      resultHash, advisorRunId: matched.runId, advisorStepId: matched.stepId, snapshotCheckedAt: null });
     needed = await count(next);
+    record.counts.push(needed);
+    record.stage = 'read';
   }
   if (needed > room) return null;
   record.sent = needed;
+  record.projectedHash = projectionHash(next);
   return { messages: next, record };
 }
 
@@ -190,6 +235,7 @@ export async function respondLocal(input: {
   limits?: RespondLimits; transport?: typeof fetch;
   /** An Agent loop's call (DIO-254): one that won't fit its window makes room before it is refused. */
   makeRoom?: boolean;
+  readFold?: LocalReadFoldPolicy;
 } & StreamSinks): Promise<LocalModelReply> {
   const chosen = profileOf(input.runtime, input.model);
   const effort = input.effort ?? chosen.defaultEffort!;
@@ -234,7 +280,7 @@ export async function respondLocal(input: {
       let room: ModelRoom | undefined;
       // DIO-254: only a call that won't fit changes; one that fits is sent exactly as it was.
       if (needed > budget.inputRoom && input.makeRoom) {
-        const made = await makeRoom(messages, chat => count(countable(chat)), budget.inputRoom, needed);
+        const made = await makeRoom(messages, chat => count(countable(chat)), budget, needed, input.readFold);
         if (made) {
           body = { ...body, messages: made.messages };
           room = made.record;
@@ -243,6 +289,14 @@ export async function respondLocal(input: {
       }
       if (needed > budget.inputRoom)
         throw refused(`This message and its answer need more than ${window.toLocaleString('en-US')} tokens. Start a new thread or reduce its sources.`);
+      for (const folded of room?.folded ?? []) {
+        // Historical agreement does not establish freshness. Check after the final count so
+        // a file changed while advice or tokenization was in flight cannot authorize omission.
+        if (!await input.readFold?.verifySnapshot(folded))
+          throw refused('The source changed or could not be checked after advice. This call cannot safely omit its read.');
+        folded.snapshotCheckedAt = new Date().toISOString();
+      }
+      signal.throwIfAborted();
       dispatched = true;
       const ceiling = localCallCeiling({ measuredRates: profile.measuredRates,
         callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, needed - imageCount * 1024, max_tokens);
@@ -291,6 +345,7 @@ export function createLocalAdapter(input: {
   limits?: RespondLimits; transport?: typeof fetch; sinks?: StreamSinks;
   /** An Agent loop's calls (DIO-254): one that won't fit its window makes room before it is refused. */
   makeRoom?: boolean;
+  readFold?: LocalReadFoldPolicy;
 }) {
   const descriptor = input.runtime.descriptor();
   if (!descriptor) throw refused(LOCAL_MODEL_NOT_INSTALLED);

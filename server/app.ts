@@ -1488,6 +1488,7 @@ export async function createApp(options: AppOptions) {
           model: request.model,
           accountRoute: request.accountRoute,
           instructions: request.instructions,
+          purpose: request.purpose, readFold: request.readFold,
           rootRunId:request.rootRunId, rootJobId:request.rootJobId, threadId:request.threadId,
           scopedLedger:request.scopedLedger, effort:request.effort, callLimits:request.callLimits,
           // A Nectovia role under another lead: its tier and role, admitted again on every step.

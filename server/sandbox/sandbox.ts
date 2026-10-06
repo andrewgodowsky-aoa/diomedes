@@ -29,7 +29,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Json } from '../../shared/harness.js';
-import { localReadCutNote } from '../../shared/local-model.js';
+import { localReadCoverageSchema, localReadSlice } from '../../shared/local-model.js';
 import {
   SANDBOX_LIMITS,
   inScope,
@@ -435,7 +435,7 @@ export class SandboxStore {
         z.strictObject({ path: z.string(), refused: z.string() }),
         z.strictObject({ path: z.string(), found: z.literal(false) }),
         z.strictObject({ path: z.string(), found: z.literal(true), sha: z.string(), bytes: z.number().int(), text: z.string(), truncated: z.boolean(),
-          note: z.string().optional() }),
+          note: z.string().optional(), coverage: localReadCoverageSchema.optional() }),
       ]) as unknown as z.ZodType<Json>,
       execute: async ({ input }): Promise<Json> => {
         let found;
@@ -462,7 +462,7 @@ export class SandboxStore {
           bytes: bytes.byteLength,
           text: cut ? text.slice(0, max) : text,
           truncated: cut,
-          ...(cut && options.read?.note ? { note: localReadCutNote(max, text.length) } : {}),
+          ...(options.read?.note ? localReadSlice(text, max) : {}),
         };
       },
     });

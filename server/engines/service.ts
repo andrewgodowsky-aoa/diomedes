@@ -2841,6 +2841,7 @@ export class EngineService {
   async loopAdapter(
     route: ModelApiRoute,
     request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string;
+      purpose?: 'loop' | 'delegate' | 'worker' | 'advisor'; readFold?: import('../../shared/harness.js').LocalReadFoldPolicy;
       rootRunId?: string; rootJobId?: string; threadId?: string | null; scopedLedger?: SpendExposure;
       effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation;
       /** A Nectovia role under another lead: its tier and its role, read again on every step. */
@@ -2869,7 +2870,8 @@ export class EngineService {
     // DIO-254: a loop's call on the local model that won't fit its window makes room before it is refused.
     const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}),
-      ...(route === LOCAL_MODEL_ROUTE ? { makeRoom: true } : {}) };
+      ...(route === LOCAL_MODEL_ROUTE ? { makeRoom: true,
+        ...(request.purpose === 'loop' && request.readFold ? { readFold: request.readFold } : {}) } : {}) };
     const admission = await this.admitModelApi(
       route,
       { ...request, requestId: request.runId, threadId },
@@ -3046,6 +3048,7 @@ interface RouteCallOptions {
   onCacheMarked?: (marked: CacheMark) => void;
   /** An Agent loop's call on the local model (DIO-254): it makes room before it is refused. Other routes ignore it. */
   makeRoom?: boolean;
+  readFold?: import('../../shared/harness.js').LocalReadFoldPolicy;
 }
 type ConnectedRoute = {
   connected: true;

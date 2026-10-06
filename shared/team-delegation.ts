@@ -24,11 +24,12 @@
  * Pure: no clock, no disk, no request. Client and server share it.
  */
 import type { HarnessBudget, HarnessRun, HarnessRunState, HarnessUsage } from './harness.js';
+import { z } from 'zod';
 import { reportedModels, type LoopModel } from './native-loop.js';
 import type { VerificationState } from './verification.js';
 import type { FundingKind, UsageObservation } from './funding-source.js';
 import { NECTOVIA_ROUTE } from './model-api.js';
-import { localCallCeiling, localContextBudget, localDeadlines, type LocalModelProfile } from './local-model.js';
+import { localCallCeiling, localContextBudget, localDeadlines, localReadCoverageSchema, type LocalModelProfile } from './local-model.js';
 import type { EscalationRecord, RoleTier } from './escalation-roles.js';
 
 export const TEAM_CONTRACT_VERSION = 1 as const;
@@ -329,6 +330,15 @@ export interface HandoffReused extends EventBase {
 }
 
 /** What a child run ended as, recorded when the lead observed it. */
+export const childReadCoverageSchema = z.strictObject({
+  v: z.literal(1), status: z.enum(['none', 'partial', 'complete']), scope: z.array(z.string()).nullable(),
+  warning: z.string().nullable(),
+  reads: z.array(z.strictObject({ runId: z.string(), stepId: z.string(), path: z.string(), sha: z.string(),
+    bytes: z.number().int().nonnegative(), truncated: z.boolean(), coverage: localReadCoverageSchema, resultHash: z.string() })),
+});
+/** Host observations only. Complete describes the listed reads, never the whole project. */
+export type ChildReadCoverage = z.infer<typeof childReadCoverageSchema>;
+
 export interface HandoffSettled extends EventBase {
   readonly kind: 'settled';
   readonly childRunId: string;
@@ -339,6 +349,7 @@ export interface HandoffSettled extends EventBase {
   readonly used: HarnessUsage;
   readonly tokens: number | null;
   readonly wallMs: number | null;
+  readonly readCoverage?: ChildReadCoverage;
 }
 
 export type HandoffEvent = HandoffOpened | HandoffRefused | HandoffReused | HandoffSettled;
@@ -356,6 +367,7 @@ export interface WorkerResult {
   readonly reason: string | null;
   readonly models: readonly LoopModel[];
   readonly reusedFrom: string | null;
+  readonly readCoverage?: ChildReadCoverage;
   /** A worker's sandbox change set, and what became of it (shared/sandbox.ts). */
   readonly changeSet?: import('./sandbox.js').ChangeSetSummary | null;
 }
