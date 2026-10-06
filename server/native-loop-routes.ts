@@ -277,6 +277,12 @@ export interface NectoviaManagedLoopDeps {
     role: EscalationRole,
     rootJobId: string,
   ) => Promise<{ model: string; accountRoute: string }>;
+  /**
+   * Keep going on a loop that stopped at its check-in: the earlier job's amount is raised by one more, for
+   * the job the new attempt runs under, which continues it. Called before the attempt starts, with the raw
+   * request id of the job that stopped and of the new one. A refusal stops the attempt from starting.
+   */
+  keepGoing?: (projectId: string, fromJobId: string, jobId: string) => Promise<void>;
 }
 
 /** The ids a role is admitted under: the lead's run and its root job. */
@@ -1281,6 +1287,9 @@ export function mountNativeLoopRoutes(
       if (ctx.task.automaticWork) return { refused: { code: 'unsupported', reason: 'This work is bound to the original request and its spend records. Send a new original request to start another root.' } };
       if (input.collaboration) return { refused: { code: 'unsupported', reason: 'This root owns bounded response and spend records; select a new authorized task instead of retrying it.' } };
       const attempt = (input.retryOf?.attempt ?? 1) + 1;
+      // The loop stopped at its check-in, so this Retry is Keep going: the job continues with one more amount.
+      if (managed?.keepGoing && run.steps.some((step) => step.intent.stepId === 'stop:check-in' && step.state === 'succeeded'))
+        await managed.keepGoing(ctx.projectId, input.rootJobRequestId ?? run.id, loopRunId(ctx.projectId, ctx.workCommandId));
       // DIO-216: default Nectovia roles the person confirmed are asked for again, read fresh at the
       // account's settings now. A lead that took none takes none on its Retry, and nothing asks.
       const defaults = input.team?.origin === 'escalation-default';

@@ -1,15 +1,18 @@
 /**
- * Parent-job caps by tier, the pre-send estimate, and the words both are said
+ * Parent-job check-ins by tier, the pre-send estimate, and the words both are said
  * in. Pure: no ledger, no network, no clock. The host computes the inputs from
  * its own records and the client only ever renders what the host returned.
  *
- * Owner decision of 2026-09-23 (Andrew): each parent job gets a finite credit
- * cap set by its tier (`APPROVED_JOB_CAP_CREDITS`). Before any spend, a job that
- * will likely use more than its cap shows a warning ahead of time, recommending
- * the next tier up where one exists or letting the person agree to go over for
- * this one job. Agreeing is an explicit one-job cap raise, never a standing
- * change. A job that runs past its cap mid-way stops at the next step boundary
- * and offers the same two choices; it never silently keeps spending.
+ * Owner decision of 2026-10-05 (Andrew): a job is never cut off mid-call or
+ * mid-write. Each parent job has a check-in amount set by its tier
+ * (`JOB_CHECK_IN_CREDITS`: 100, 250 and 500 credits, replaceable per business and
+ * by staff, see `shared/job-check-ins.ts`). The amount is the job's cap: a step
+ * whose reservation would cross it is refused before anything is sent, so the job
+ * finishes the step in progress, saves, and asks "Keep going?". Keep going raises
+ * this one job by exactly one more amount, recorded and finite, never a standing
+ * change. Stop ends it with its work kept. Before any spend, a job that will likely
+ * use more than its first amount shows a warning ahead of time, recommending the next
+ * tier up where one exists or letting the person agree to go over for this one job.
  *
  * Three things the estimate refuses to do:
  *
@@ -22,7 +25,7 @@
  *    round, and they say "about".
  */
 import {
-  APPROVED_JOB_CAP_CREDITS,
+  JOB_CHECK_IN_CREDITS,
   CREDIT_MICRO_USD,
   JOB_TIERS,
   MAX_MONEY_MICRO_USD,
@@ -40,11 +43,11 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const tiersMatchStyles: Same<JobTier, WorkStyle> = true;
 void tiersMatchStyles;
 
-export { APPROVED_JOB_CAP_CREDITS, JOB_TIERS, approvedJobCap, type JobTier };
+export { JOB_CHECK_IN_CREDITS, JOB_TIERS, approvedJobCap, type JobTier };
 
 /**
- * The tier a job with no WorkStyle is held to. The smallest approved cap, so a
- * job nobody chose a tier for never spends more than any tier allows. Which tier
+ * The tier a job with no WorkStyle is held to. The smallest check-in amount, so a
+ * job nobody chose a tier for never runs further than any tier allows before it asks. Which tier
  * an unstyled job should run under is an open owner question; this is the
  * conservative placeholder, not a product default.
  */
@@ -123,7 +126,7 @@ export type JobEstimate =
       readonly worstMicroUsd: MicroUsd;
       /** Warns and asks before sending. */
       readonly likelyExceeds: boolean;
-      /** Said, but does not block: the job stops at its cap and asks. */
+      /** Said, but does not block: the job checks in at its amount and asks. */
       readonly worstExceeds: boolean;
       readonly warn: boolean;
       readonly basis: string;
@@ -146,7 +149,7 @@ export type JobEstimate =
 
 export interface JobEstimateInput {
   tier: JobTier;
-  /** The job's current cap. Defaults to its tier's approved cap. */
+  /** The job's current cap, which is its check-in amount. Defaults to the tier's code default. */
   capMicroUsd?: MicroUsd;
   /**
    * `metered`: every call is priced per token and held against a cap.
@@ -319,22 +322,14 @@ export function decideJobStep(input: {
   };
 }
 
-const roundUpToCredit = (amount: MicroUsd): MicroUsd =>
-  micro(Math.min(MAX_MONEY_MICRO_USD, Math.ceil(amount / CREDIT_MICRO_USD) * CREDIT_MICRO_USD));
-
 /**
- * The finite cap one "Go over this once" raises a job to: at least another
- * tier's worth of room, and at least whole credits past what the job is known
- * to need. It is recorded against one job and applies to nothing else.
+ * The cap one "Keep going" raises a job to: exactly one more check-in amount on top of the cap the
+ * job reached. It is finite, it is recorded against one job, and it applies to nothing else. The
+ * amount is the resolved one for the job's tier and business, read by the host from the account
+ * service; it is never sized from an estimate and never a figure a client sent.
  */
-export function oneJobRaise(input: {
-  tier: JobTier;
-  capMicroUsd: MicroUsd;
-  neededMicroUsd: MicroUsd | null;
-}): MicroUsd {
-  const floor = micro(Math.min(MAX_MONEY_MICRO_USD, input.capMicroUsd + approvedJobCap(input.tier)));
-  if (input.neededMicroUsd === null) return floor;
-  return micro(Math.max(floor, roundUpToCredit(input.neededMicroUsd)));
+export function oneJobRaise(input: { capMicroUsd: MicroUsd; checkInMicroUsd: MicroUsd }): MicroUsd {
+  return micro(Math.min(MAX_MONEY_MICRO_USD, input.capMicroUsd + input.checkInMicroUsd));
 }
 
 // --- words ----------------------------------------------------------------------
@@ -356,8 +351,13 @@ export interface CapWarningCopy {
   body: string;
   /** Present only where a higher tier exists. */
   upgrade: { tier: JobTier; label: string } | null;
-  /** What "Go over this once" raises this job's cap to. */
+  /** The line under the buttons: what going on lets this job use. */
   raise: string;
+  /**
+   * The words on the two choices. Absent for the pre-send warning, which reads "Cancel" and
+   * "Go over this once"; a check-in reads "Stop here" and "Keep going".
+   */
+  actions?: { goOver: string; cancel: string };
 }
 
 function upgradeFor(tier: JobTier): CapWarningCopy['upgrade'] {
@@ -365,41 +365,69 @@ function upgradeFor(tier: JobTier): CapWarningCopy['upgrade'] {
   return next ? { tier: next, label: `Use ${jobTierLabel(next)}` } : null;
 }
 
-/** The pre-send warning, from an estimate that warns. */
+/** The pre-send warning, from an estimate that warns. It names the amount the job checks in at. */
 export function capWarningCopy(estimate: JobEstimate, raisedToMicroUsd: MicroUsd): CapWarningCopy {
   const label = jobTierLabel(estimate.tier);
   const cap = capCredits(estimate.capMicroUsd);
   const body =
     estimate.kind === 'estimate'
-      ? `This will likely use about ${aboutCredits(estimate.likelyMicroUsd)}. ${label} jobs are capped at ${cap}.`
-      : `Nectovia can't estimate this job. ${estimate.reason} ${label} jobs are capped at ${cap} credits.`;
+      ? `This will likely use about ${aboutCredits(estimate.likelyMicroUsd)}. ${label} jobs check in at ${cap} credits.`
+      : `Nectovia can't estimate this job. ${estimate.reason} ${label} jobs check in at ${cap} credits.`;
   return {
-    title: 'This job may go over its cap',
+    title: 'This job may reach its check-in',
     body,
     upgrade: upgradeFor(estimate.tier),
-    raise: `Going over raises this job's cap to ${capCredits(raisedToMicroUsd)} credits, for this job only.`,
+    raise: `Going over lets this job use ${capCredits(raisedToMicroUsd)} credits before it checks in, for this job only.`,
   };
 }
 
-/** The line a send shows when only the worst case passes the cap. It does not block. */
+/** The line a send shows when only the worst case passes the check-in amount. It does not block. */
 export function worstCaseNote(estimate: JobEstimate): string | null {
   if (estimate.kind !== 'estimate' || estimate.likelyExceeds || !estimate.worstExceeds) return null;
-  return `It could use up to ${aboutCredits(estimate.worstMicroUsd)} at most. It stops at the ${capCredits(estimate.capMicroUsd)}-credit cap and asks before going further.`;
+  return `It could use up to ${aboutCredits(estimate.worstMicroUsd)} at most. It checks in at ${capCredits(estimate.capMicroUsd)} credits and asks before going further.`;
 }
 
-/** The mid-run stop, when a job reached its cap at a step boundary. */
-export function overrunCopy(input: {
-  tier: JobTier;
-  capMicroUsd: MicroUsd;
-  usedMicroUsd: MicroUsd;
-  raisedToMicroUsd: MicroUsd;
-}): CapWarningCopy {
-  const label = jobTierLabel(input.tier);
+// The check-in's words (DECISION 7, owner-approved 2026-10-05). Said exactly, so they are constants.
+export const CHECK_IN_KEEP_GOING = 'Keep going';
+export const CHECK_IN_STOP = 'Stop here';
+
+/** The question a job asks at its check-in: the amount it has reached is the cap it was held to. */
+export const checkInQuestion = (capMicroUsd: MicroUsd): string =>
+  `This job has used ${capCredits(capMicroUsd)} credits. Keep going?`;
+
+/** The line under the buttons: what one more check-in lets the job use. */
+export const checkInMore = (checkInMicroUsd: MicroUsd): string =>
+  `It can use ${capCredits(checkInMicroUsd)} more before it checks in again.`;
+
+/** What Needs you says when work nobody was watching stopped to check in. */
+export const unattendedCheckInLine = (capMicroUsd: MicroUsd): string =>
+  `A routine stopped to check in after ${capCredits(capMicroUsd)} credits.`;
+
+/** The same line when the amount the job reached is not known to the one saying it. */
+export const UNATTENDED_CHECK_IN_UNKNOWN = 'A routine stopped to check in.';
+
+/**
+ * Whether a failed model call is a job's check-in: the next step would pass the amount the job checks in
+ * at, and nothing of it was charged. Two places say it. The local ledger stops a job at its own cap
+ * (`*_job_cap_reached`), before the call is sent. The account service can stop it first, at the same
+ * amount (`nectovia_cap_request_required`): that call did reach the gateway, so what makes it a known
+ * outcome is that its hold was released. A refusal whose hold may have been used is not a check-in.
+ */
+export function isCheckInRefusal(error: unknown): boolean {
+  const e = error as { code?: unknown; dispatched?: unknown; evidence?: { reservation?: { state?: unknown } | null } } | null;
+  if (!e || typeof e.code !== 'string') return false;
+  if (e.code.endsWith('_job_cap_reached')) return e.dispatched !== true;
+  return e.code === 'nectovia_cap_request_required' && e.evidence?.reservation?.state === 'released';
+}
+
+/** The check-in a job asks when it reached its amount at a step boundary. */
+export function checkInCopy(input: { capMicroUsd: MicroUsd; checkInMicroUsd: MicroUsd }): CapWarningCopy {
   return {
-    title: 'This job reached its cap',
-    body: `This job stopped before its next step, having used about ${aboutCredits(input.usedMicroUsd)} of the ${capCredits(input.capMicroUsd)} a ${label} job is capped at. Nothing more was spent. Choosing either option sends the message again as a new job.`,
-    upgrade: upgradeFor(input.tier),
-    raise: `Going over raises the new job's cap to ${capCredits(input.raisedToMicroUsd)} credits, for that job only.`,
+    title: checkInQuestion(input.capMicroUsd),
+    body: '',
+    upgrade: null,
+    raise: checkInMore(input.checkInMicroUsd),
+    actions: { goOver: CHECK_IN_KEEP_GOING, cancel: CHECK_IN_STOP },
   };
 }
 
@@ -421,8 +449,10 @@ export interface JobStatusView {
   jobId: string;
   tier: JobTier;
   capMicroUsd: MicroUsd;
+  /** The amount one Keep going adds for this job's tier and business. */
+  checkInMicroUsd: MicroUsd;
   raised: boolean;
   stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd; consumed: boolean } | null;
-  /** The mid-run dialog's words, when the job stopped at its cap and the stop is still open. */
+  /** The check-in's words, when the job stopped at its amount and the stop is still open. */
   overrun: CapWarningCopy | null;
 }
