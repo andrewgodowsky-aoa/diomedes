@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { Client as NeonClient } from '@neondatabase/serverless';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -13,7 +13,7 @@ import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, routingScopeKey, type Acc
 
 const ownerUrl = process.env.CP_ROUTING_TEST_DATABASE_URL;
 let ownerFactory: ClientFactory, runtimeFactory: ClientFactory, accounts: AccountService, routing: RoutingService;
-let migrations: Migration[], existingOrganization: string, runtimeRole: string;
+let migrations: Migration[], all: Migration[], existingOrganization: string, runtimeRole: string;
 let ownerPersonId: string, originalGrant: string, originalAdmission: string;
 const query = async (factory: ClientFactory, sql: string, values?: unknown[]) => {
   const client = factory(); await client.connect();
@@ -73,6 +73,14 @@ describe.skipIf(!ownerUrl)('scoped routing on an isolated real PostgreSQL databa
     originalGrant = grantText;
     originalAdmission = admissionText;
     expect(await migrate(ownerFactory, migrations)).toEqual([10]);
+    // The runtime permissions below name tables from every later migration, so the rest are applied before the grants.
+    // What this suite checks is the 009 to 010 upgrade above and the routing that runs on the result.
+    const later = (await readdir(new URL('../migrations/', import.meta.url))).filter((name) => /^\d{3}[-_][a-z0-9_-]+\.sql$/.test(name)).sort().slice(10);
+    all = [...migrations, ...await Promise.all(later.map(async (name) => {
+      const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+      return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
+    }))];
+    expect(await migrate(ownerFactory, all)).toEqual(all.slice(10).map((migration) => migration.version));
     runtimeRole = `cp_routing_runtime_${randomBytes(6).toString('hex')}`;
     const runtimePassword = randomBytes(32).toString('hex');
     await query(ownerFactory, `CREATE ROLE ${runtimeRole} LOGIN PASSWORD '${runtimePassword}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
@@ -107,7 +115,7 @@ describe.skipIf(!ownerUrl)('scoped routing on an isolated real PostgreSQL databa
     const policy = await new PostgresCommercialRepository(runtimeFactory).transaction(tx => tx.policy());
     expect(policy?.routing).toBeUndefined();
     expect((await query(ownerFactory, 'SELECT count(*)::int AS count FROM control_plane.credit_periods')).rows[0].count).toBe(0);
-    expect(await migrate(ownerFactory, migrations)).toEqual([]);
+    expect(await migrate(ownerFactory, all)).toEqual([]);
   });
 
   it('preserves 009 grant bytes, revisions and append-only Personal history while new admissions bind the billing scope', async () => {
