@@ -16,6 +16,7 @@ import {
   AZURE_OPENAI_ROUTE,
   azureBinding,
   azureConnectionSchema,
+  azureEfforts,
   azureEndpoint,
   azureRateCard,
   respondAzure,
@@ -40,6 +41,7 @@ const CONNECTION: AzureConnection = {
   v: 1,
   id: 'azure-openai-1',
   resourceName: 'contoso-ai',
+  host: 'openai',
   baseUrl: BASE,
   apiVersion: 'v1',
   deployments: [
@@ -191,6 +193,33 @@ async function failure(promise: Promise<unknown>): Promise<ModelApiError> {
 }
 
 describe('the request the real SDK sends to Azure', () => {
+  test('xhigh reaches only a deployment declared to take it; any other is asked for high', async () => {
+    const declared: AzureConnection = {
+      ...CONNECTION,
+      deployments: [{ ...CONNECTION.deployments[0], xhigh: true }, CONNECTION.deployments[1]],
+    };
+    const net = transport([() => stream(envelope([message('Deep.')])), () => stream(envelope([message('Capped.')]))]);
+    await call(net.fetch, { connection: declared, effort: 'xhigh' });
+    await call(net.fetch, { effort: 'xhigh', messages: [{ role: 'user', content: 'And the dinner menu?' }] });
+    expect(net.sent.map((sent) => sent.body.reasoning)).toEqual([
+      expect.objectContaining({ effort: 'xhigh' }),
+      expect.objectContaining({ effort: 'high' }),
+    ]);
+    expect(azureEfforts(declared.deployments[0])).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(azureEfforts(CONNECTION.deployments[0])).toEqual(['low', 'medium', 'high']);
+    expect(azureEfforts({ reasoning: false, xhigh: true })).toEqual([]);
+  });
+
+  test('an Azure AI Foundry resource is called on its own services.ai.azure.com v1 endpoint', async () => {
+    const foundry: AzureConnection = { ...CONNECTION, host: 'foundry', baseUrl: azureEndpoint('contoso-ai', 'foundry') };
+    const net = transport([() => stream(envelope([message('Soup.')]))]);
+    const result = await call(net.fetch, { connection: foundry });
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Soup.' });
+    expect(net.sent.map((sent) => sent.url)).toEqual(['https://contoso-ai.services.ai.azure.com/openai/v1/responses']);
+    expect(net.sent[0].headers.get('api-key')).toBe(SECRET);
+    expect(net.sent[0].body.model).toBe('luna-prod-eastus2');
+  });
+
   test('a streamed final answer: the resource’s v1 endpoint, the deployment as model, api-key only, no retry', async () => {
     const net = transport([() => stream(envelope([reasoning(), message('Soup and a sandwich.')]))]);
     const deltas: string[] = [];
@@ -353,12 +382,20 @@ describe('refusals before anything is sent', () => {
     ])
       expect(azureConnectionSchema.safeParse({ ...CONNECTION, baseUrl }).success).toBe(false);
     expect(azureConnectionSchema.safeParse({ ...CONNECTION, resourceName: 'Contoso_AI' }).success).toBe(false);
+    // The host is part of the record: a Foundry URL on a classic record, or the reverse, is refused.
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, baseUrl: azureEndpoint('contoso-ai', 'foundry') }).success).toBe(false);
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, host: 'foundry' }).success).toBe(false);
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, host: 'foundry', baseUrl: azureEndpoint('contoso-ai', 'foundry') }).success).toBe(true);
+    // A record saved before Foundry support reads as classic Azure OpenAI.
+    const { host: _host, ...older } = CONNECTION;
+    expect(azureConnectionSchema.parse(older).baseUrl).toBe('https://contoso-ai.openai.azure.com/openai/v1');
   });
 
-  test('the guarded fetch refuses any other destination, query or body before the key is attached', async () => {
+  test.each(['openai', 'foundry'] as const)('the %s guard refuses other destinations, queries and bodies before attaching the key', async (host) => {
     const net = transport([]);
     let dispatched = 0;
-    const binding = azureBinding(CONNECTION, CONNECTION.deployments[0], 'low', false);
+    const baseUrl = azureEndpoint('contoso-ai', host);
+    const binding = azureBinding({ ...CONNECTION, host, baseUrl }, CONNECTION.deployments[0], 'low', false);
     const guarded = guardedStreamFetch({
       prefix: 'azure',
       label: 'Azure',
@@ -377,12 +414,16 @@ describe('refusals before anything is sent', () => {
     const refusals: Array<[string, unknown, string]> = [
       // The legacy deployment path with an api-version query is a different URL.
       [`https://contoso-ai.openai.azure.com/openai/deployments/luna-prod-eastus2/responses?api-version=2025-04-01-preview`, good, 'azure_destination_refused'],
-      [`${BASE}/responses?api-version=v1`, good, 'azure_destination_refused'],
+      [`${baseUrl}/responses?api-version=v1`, good, 'azure_destination_refused'],
       ['https://other.openai.azure.com/openai/v1/responses', good, 'azure_destination_refused'],
+      ['https://other.services.ai.azure.com/openai/v1/responses', good, 'azure_destination_refused'],
+      [`${azureEndpoint('contoso-ai', host === 'foundry' ? 'openai' : 'foundry')}/responses`, good, 'azure_destination_refused'],
+      [`${baseUrl.replace('https:', 'http:')}/responses`, good, 'azure_destination_refused'],
+      [`${baseUrl}/responses#fragment`, good, 'azure_destination_refused'],
       ['https://api.openai.com/v1/responses', good, 'azure_destination_refused'],
-      [`${BASE}/responses`, { ...good, model: 'mini-chat' }, 'azure_request_refused'],
-      [`${BASE}/responses`, { ...good, store: true }, 'azure_request_refused'],
-      [`${BASE}/responses`, { ...good, previous_response_id: 'resp_0' }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, model: 'mini-chat' }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, store: true }, 'azure_request_refused'],
+      [`${baseUrl}/responses`, { ...good, previous_response_id: 'resp_0' }, 'azure_request_refused'],
     ];
     for (const [url, body, code] of refusals) {
       const error = await failure(guarded(url, { method: 'POST', body: JSON.stringify(body) }));
@@ -391,6 +432,19 @@ describe('refusals before anything is sent', () => {
     }
     expect(dispatched).toBe(0);
     expect(net.sent).toHaveLength(0);
+  });
+
+  test.each(['openai', 'foundry'] as const)('%s redirects are refused without forwarding the credential', async (host) => {
+    const connection: AzureConnection = { ...CONNECTION, host, baseUrl: azureEndpoint('contoso-ai', host) };
+    let sends = 0;
+    const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      sends += 1;
+      expect(String(input)).toBe(`${connection.baseUrl}/responses`);
+      expect(init?.redirect).toBe('error');
+      return new Response(null, { status: 302, headers: { location: 'https://attacker.invalid/responses' } });
+    }) as typeof globalThis.fetch;
+    expect((await failure(call(network, { connection }))).code).toBe('azure_redirect_refused');
+    expect(sends).toBe(1);
   });
 });
 

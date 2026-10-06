@@ -51,6 +51,7 @@ import {
   azureAccountRoute,
   azureConnectionSchema,
   azureEndpoint,
+  azureHostSchema,
   azureRateCard,
   type AzureConnection,
 } from './azure-openai.js';
@@ -111,13 +112,16 @@ const credentialBody = {
   consent: z.literal(true),
 };
 const azureBody = z.strictObject({
-  resourceName: z.string().regex(AZURE_RESOURCE, 'Enter the Azure OpenAI resource name (lowercase letters, digits and hyphens).'),
+  resourceName: z.string().regex(AZURE_RESOURCE, 'Enter the Azure resource name (lowercase letters, digits and hyphens).'),
+  /** Which of the resource's two v1 hosts to call. A body that names none is a classic Azure OpenAI resource. */
+  host: azureHostSchema.default('openai'),
   deployments: z
     .array(
       z.strictObject({
         model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-6-luna.'),
         deployment: z.string().regex(AZURE_DEPLOYMENT, 'Enter the deployment name exactly as Azure shows it.'),
         reasoning: z.boolean(),
+        xhigh: z.boolean().optional(),
         rates: ratesBody,
       }),
     )
@@ -413,12 +417,14 @@ export function mountProviderRoutes(
         ? {
             id: connection.id,
             resource: connection.resourceName,
+            host: connection.host ?? 'openai',
             endpoint: connection.baseUrl,
             apiVersion: connection.apiVersion,
             deployments: connection.deployments.map((entry) => ({
               model: entry.model,
               deployment: entry.deployment,
               reasoning: entry.reasoning,
+              ...(entry.xhigh ? { xhigh: true } : {}),
               rates: ratesView(entry.rates),
             })),
             credential: { ...connection.credential, expired: expiredAt(connection.credential.expiresAt) },
@@ -435,12 +441,15 @@ export function mountProviderRoutes(
         v: 1,
         id: AZURE_CONNECTION_ID,
         resourceName: body.resourceName,
-        baseUrl: azureEndpoint(body.resourceName),
+        host: body.host,
+        baseUrl: azureEndpoint(body.resourceName, body.host),
         apiVersion: AZURE_API_VERSION,
         deployments: body.deployments.map((entry) => ({
           model: entry.model,
           deployment: entry.deployment,
           reasoning: entry.reasoning,
+          // Only a reasoning deployment can take a reasoning level, so only one keeps the flag.
+          ...(entry.reasoning && entry.xhigh ? { xhigh: true } : {}),
           rates: declared(entry.rates, at),
         })),
         credential: { kind: 'azure-api-key', fingerprint, savedAt: at, expiresAt: body.expiresAt },

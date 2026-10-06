@@ -104,6 +104,7 @@ import {
   respondAzure,
   type AzureConnection,
   type AzureConnections,
+  type AzureEffort,
 } from './azure-openai.js';
 import {
   cacheNamespace,
@@ -2580,7 +2581,7 @@ export class EngineService {
             secret,
             exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
-            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             sinks,
@@ -2664,7 +2665,7 @@ export class EngineService {
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
               tools: [],
-              effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+              effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
               limits: route === LOCAL_MODEL_ROUTE ? localLimits(api.bonsai?.runtime.profile(admission.model), WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
@@ -2785,7 +2786,7 @@ export class EngineService {
             secret,
             exposure: await this.jobLedger(api, input),
             instructions,
-            effort: route === LOCAL_MODEL_ROUTE ? input.effort : selectedEffortOf(input.effort),
+            effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
             images: input.documents.flatMap(document => document.image ? [document.image] : []),
             transport: api.transport,
             ...(await cacheCall(handle, admission.model, input.projectId ?? null, instructions)),
@@ -2853,7 +2854,9 @@ export class EngineService {
       throw new HarnessError('collaboration_refused', 'This role was supplied a different root spend ledger.');
     const rootJobId = ledger.jobScope?.id ?? rootRunId;
     const effort = request.effort === undefined ? 'medium' : request.effort === null ? undefined : request.effort;
-    if (effort !== undefined && !(route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh'] : ['low', 'medium', 'high']).includes(effort))
+    const supportedEfforts = route === LOCAL_MODEL_ROUTE ? ['low', 'medium', 'xhigh']
+      : route === AZURE_OPENAI_ROUTE ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
+    if (effort !== undefined && !supportedEfforts.includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
     const callOptions = { instructions: request.instructions, effort,
       transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
@@ -3289,7 +3292,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: effortOf(options.effort),
+            effort: azureEffortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
             cache: options.cache,
@@ -3298,7 +3301,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             ...options.sinks,
           }),
         respond: ({ sinks, onCacheMarked: _marked, ...options }) =>
-          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
+          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: azureEffortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
         cache: (model, projectId) =>
           routeCachePlan(
             api,
@@ -3589,6 +3592,9 @@ function fencedSinks(
 
 const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
   effort === 'medium' || effort === 'high' ? effort : 'low';
+
+/** Azure also takes xhigh; the binding sends it only to a deployment declared to accept it. */
+const azureEffortOf = (effort: string | undefined): AzureEffort => (effort === 'xhigh' ? 'xhigh' : effortOf(effort));
 
 /** OpenRouter requests reasoning only when the caller selected a supported effort. */
 const selectedEffortOf = (effort: string | undefined): 'low' | 'medium' | 'high' | undefined =>

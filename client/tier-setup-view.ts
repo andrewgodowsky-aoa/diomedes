@@ -37,9 +37,9 @@ export function tierRouteChoices(current: string): { id: string; name: string }[
 }
 
 /**
- * The services map with the owner's tier choices written in. A tier left on
- * the owner's default is stored as nothing, so the default can move with a
- * later release and a route this build does not know is never written.
+ * The services map with the owner's tier choices written in. An unchanged default is stored as
+ * nothing so it can move with a later release. Any custom selection stores its provider as well,
+ * so a later default cannot move the chosen model onto a different provider.
  */
 export function withTierDraft(
   services: Record<string, boolean | string> | undefined,
@@ -52,9 +52,10 @@ export function withTierDraft(
     const fallback = DEFAULT_TIER_MAP[style];
     delete next[tierRouteKey(style)];
     delete next[tierModelKey(style)];
-    if (route !== fallback.route) next[tierRouteKey(style)] = route;
-    const defaultModel = route === fallback.route ? (fallback.model ?? '') : '';
-    if (model && model !== defaultModel) next[tierModelKey(style)] = model;
+    if (route !== fallback.route || model !== (fallback.model ?? '')) {
+      next[tierRouteKey(style)] = route;
+      if (model) next[tierModelKey(style)] = model;
+    }
   }
   return next;
 }

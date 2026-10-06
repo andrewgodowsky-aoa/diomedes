@@ -223,10 +223,13 @@ export interface AzureConnectionView {
   connection: {
     id: string;
     resource: string;
+    /** `foundry` for an Azure AI Foundry resource, `openai` for a classic Azure OpenAI one. */
+    host: 'foundry' | 'openai';
     endpoint: string;
     apiVersion: string;
     /** Each logical model and the deployment that serves it. */
-    deployments: { model: string; deployment: string; reasoning: boolean; rates: DeclaredRatesView }[];
+    /** `xhigh` is present, and true, only on a reasoning deployment the owner declared takes that level. */
+    deployments: { model: string; deployment: string; reasoning: boolean; xhigh?: boolean; rates: DeclaredRatesView }[];
     credential: CredentialView;
     revision: number;
     accountRoute: string;

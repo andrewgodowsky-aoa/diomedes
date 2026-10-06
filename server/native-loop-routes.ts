@@ -132,7 +132,7 @@ const startSchema = z.strictObject({
   route: routeName,
   model: z.string().min(1).max(200).nullable().optional(),
   accountRoute: z.string().min(1).max(400).nullable().optional(),
-  effort: z.enum(['low', 'medium', 'high']).nullable().optional(),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh']).nullable().optional(),
   consent: z.boolean().optional(),
   /**
    * S3: the coding tools the person confirmed a task may go to, under the consent text they read.
@@ -187,6 +187,8 @@ const startSchema = z.strictObject({
     })
     .nullable()
     .optional(),
+}).refine((request) => request.effort !== 'xhigh' || request.route === 'azure-openai', {
+  path: ['effort'], message: 'Only the Azure owner route accepts an extra-high loop effort.',
 });
 export type LoopStartRequest = z.infer<typeof startSchema>;
 

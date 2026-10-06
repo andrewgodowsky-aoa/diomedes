@@ -204,8 +204,8 @@ const send = (binding: Binding, commandId: string, text: string) =>
   });
 const sendRaw = (binding: Binding, commandId: string, text: string) =>
   request(messages(binding), 'POST', { commandId, text, mode: 'auto', sources: [], consent: true });
-const connect = () =>
-  api<AwsConnectionView>('/ai/model-api/aws-bedrock', 'PUT', {
+const connect = async () => {
+  const view = await api<AwsConnectionView>('/ai/model-api/aws-bedrock', 'PUT', {
     accountId: '123456789012',
     region: 'us-east-1',
     model: AWS_LUNA_MODEL,
@@ -213,6 +213,14 @@ const connect = () =>
     expiresAt: null,
     consent: true,
   });
+  // The tier defaults moved off AWS Luna; these AWS cases map the earlier defaults back:
+  // Efficient on AWS Luna, Focused on Gemini Flash, Thorough on AWS with no model chosen.
+  const settings = await api<{ services?: Record<string, unknown> }>('/settings');
+  await api('/settings', 'PUT', {
+    services: { ...settings.services, efficientRoute: 'aws-bedrock', efficientModel: AWS_LUNA_MODEL, focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash', thoroughRoute: 'aws-bedrock' },
+  });
+  return view;
+};
 const approveSpend = (capUsd = 1) =>
   api<AwsConnectionView>('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd, consent: true });
 

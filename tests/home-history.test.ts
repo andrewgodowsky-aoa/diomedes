@@ -164,13 +164,13 @@ describe('the route the next message takes', () => {
   });
 
   test("is the tier's route when the thread has a tier", () => {
-    expect(nextRoute({ engine: 'aws-bedrock', workStyle: 'focused' })).toBe('google-vertex');
+    expect(nextRoute({ engine: 'google-vertex', workStyle: 'focused' })).toBe('aws-bedrock');
   });
 
   test('follows the Settings default tier when the thread has none', () => {
     expect(
-      nextRoute({ engine: 'aws-bedrock', workStyle: null, services: { workStyle: 'focused' } }),
-    ).toBe('google-vertex');
+      nextRoute({ engine: 'google-vertex', workStyle: null, services: { workStyle: 'focused' } }),
+    ).toBe('aws-bedrock');
   });
 
   test("follows the owner's tier map and the owner-testing pin", () => {

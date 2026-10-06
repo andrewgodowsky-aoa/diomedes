@@ -1,6 +1,7 @@
 /**
- * The direct Azure OpenAI route: the company's own Azure OpenAI resource,
- * reached through its v1 Responses endpoint with the resource's API key.
+ * The direct Azure OpenAI route: the company's own Azure AI Foundry or Azure
+ * OpenAI resource, reached through its v1 Responses endpoint with the
+ * resource's API key.
  *
  * Azure identity is a resource and a deployment, never a generic model slug.
  * The connection names one resource (the endpoint is built from its validated
@@ -45,7 +46,7 @@ export const AZURE_OPENAI_ROUTE = 'azure-openai' as const;
 export const AZURE_OPENAI_SDK = 'ai@7.0.107+@ai-sdk/azure@4.0.75+@ai-sdk/openai@4.0.71';
 export const AZURE_OPENAI_PROTOCOL = 'openai-responses';
 /**
- * The v1 API: `https://<resource>.openai.azure.com/openai/v1/responses`, with no
+ * The v1 API: `https://<resource>.<host>/openai/v1/responses`, with no
  * `api-version` query. The legacy deployment-path form is a different URL and is
  * refused by the guarded transport.
  */
@@ -59,7 +60,17 @@ export const AZURE_DEPLOYMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/;
 /** The logical model a person picks, e.g. `gpt-5.6-luna`. Never sent to Azure. */
 export const AZURE_LOGICAL_MODEL = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
-export const azureEndpoint = (resourceName: string) => `https://${resourceName}.openai.azure.com/openai/v1`;
+/**
+ * The two hosts a resource answers the v1 API on. An Azure AI Foundry resource serves its
+ * deployments at `services.ai.azure.com`; a classic Azure OpenAI resource at `openai.azure.com`.
+ * The owner says which; the host is never taken from a caller as a URL.
+ */
+export const AZURE_HOSTS = { foundry: 'services.ai.azure.com', openai: 'openai.azure.com' } as const;
+export type AzureHost = keyof typeof AZURE_HOSTS;
+export const azureHostSchema = z.enum(['foundry', 'openai']);
+
+export const azureEndpoint = (resourceName: string, host: AzureHost = 'openai') =>
+  `https://${resourceName}.${AZURE_HOSTS[host]}/openai/v1`;
 
 // --- the connection record ------------------------------------------------------
 
@@ -71,15 +82,27 @@ export const azureDeploymentSchema = z.strictObject({
   deployment: z.string().regex(AZURE_DEPLOYMENT),
   /** Whether the deployed model is a reasoning model: decides the system role and reasoning options. */
   reasoning: z.boolean(),
+  /**
+   * Whether this reasoning deployment accepts the extra-high level. The owner declares it, as with
+   * `reasoning`; absent, the deployment is offered low to high and xhigh is never sent.
+   */
+  xhigh: z.boolean().optional(),
   rates: declaredRatesSchema,
 });
 export type AzureDeployment = z.infer<typeof azureDeploymentSchema>;
+/** The reasoning levels the Azure route sends. `xhigh` only to a deployment declared to take it. */
+export type AzureEffort = 'low' | 'medium' | 'high' | 'xhigh';
+/** The levels one deployment offers, in order. */
+export const azureEfforts = (entry: Pick<AzureDeployment, 'reasoning' | 'xhigh'>): AzureEffort[] =>
+  !entry.reasoning ? [] : entry.xhigh ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
 
 export const azureConnectionSchema = z
   .strictObject({
     v: z.literal(1),
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
     resourceName: z.string().regex(AZURE_RESOURCE),
+    /** Absent on records saved before Foundry support: those are classic Azure OpenAI. */
+    host: azureHostSchema.optional(),
     baseUrl: z.string(),
     apiVersion: z.literal(AZURE_API_VERSION),
     deployments: z.array(azureDeploymentSchema).min(1).max(16),
@@ -95,7 +118,7 @@ export const azureConnectionSchema = z
     updatedAt: iso,
   })
   .superRefine((value, context) => {
-    if (value.baseUrl !== azureEndpoint(value.resourceName))
+    if (value.baseUrl !== azureEndpoint(value.resourceName, value.host))
       context.addIssue({ code: 'custom', path: ['baseUrl'], message: 'The endpoint must be the resource’s own v1 endpoint.' });
     const models = new Set(value.deployments.map((entry) => entry.model));
     const names = new Set(value.deployments.map((entry) => entry.deployment));
@@ -183,10 +206,12 @@ function inspectAzureBody(deployment: string) {
 export function azureBinding(
   connection: AzureConnection,
   entry: AzureDeployment,
-  effort: 'low' | 'medium' | 'high',
+  requested: AzureEffort,
   /** Whether a thinking sink is listening: summaries are asked for only then. */
   summaries: boolean,
 ): RouteBinding {
+  // A deployment not declared to take xhigh is asked for high, its own top level.
+  const effort = requested === 'xhigh' && !entry.xhigh ? 'high' : requested;
   return {
     route: AZURE_OPENAI_ROUTE,
     prefix: 'azure',
@@ -293,7 +318,7 @@ export async function respondAzure(
     instructions: string;
     messages: ModelMessage[];
     tools: readonly ToolDescriptor[];
-    effort: 'low' | 'medium' | 'high';
+    effort: AzureEffort;
     limits: RespondLimits;
     signal: AbortSignal;
     transport?: typeof globalThis.fetch;

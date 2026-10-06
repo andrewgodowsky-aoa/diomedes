@@ -13,6 +13,7 @@ import {
   azureDeploymentFor,
   respondAzure,
   type AzureConnection,
+  type AzureEffort,
 } from '../engines/azure-openai.js';
 import { admitJobStep, CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
 import type { ModelRateCard, SpendExposure } from '../spend-exposure.js';
@@ -37,7 +38,7 @@ export interface AzureModelAdapterOptions extends StreamSinks {
   exposure: SpendExposure;
   transcripts: ModelTranscripts;
   instructions: string;
-  effort: 'low' | 'medium' | 'high';
+  effort: AzureEffort;
   limits?: RespondLimits;
   transport?: typeof globalThis.fetch;
   now?: () => Date;
