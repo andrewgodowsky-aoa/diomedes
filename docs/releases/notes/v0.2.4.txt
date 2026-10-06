@@ -1,0 +1,239 @@
+WHAT IS NEW
+  A Home built around your jobs, a Work view with the board beside the thread,
+  credits charged by tier, jobs that check in before they spend more, and the
+  Nectovia Agent on your own Personal work with credits you buy.
+
+  Home is built around your jobs. Its rail lists Needs your input, Working and
+  Finished, each with its count, and a row opens that job's thread, decision
+  or card. When the business has more than one project, a line at the top of
+  the rail switches between All projects and each project. The ask box sits
+  under the greeting, over the newest exchange, and Earlier opens the rest of
+  the conversation.
+
+  Home shows up to two tasks a Nectovia run proposed and left in the Inbox,
+  newest first. Accept moves a task to the Board, where it starts only when
+  you start it, and Not now hides it on this computer.
+
+  Home and the Nectovia thread pin the newest bar, line or area chart a reply
+  carried, with a caption saying when it was written. While a step runs, a
+  line sweeps along the chart's baseline, and it stays still when reduced
+  motion is on.
+
+  Once the Nectovia conversation has started, Home's ask box has a thread's
+  row in place of the Style box: Engine, Model or tier, Effort and Agent. Its
+  Engine menu lists the AI tools a conversation can run on.
+
+  The Agent menu no longer grays out every worker when the conversation is on
+  the Nectovia Agent. Only workers that lead with Build or Fix are grayed, and
+  they say why: the Nectovia Agent doesn't take those modes yet.
+
+  A project's top bar has a switch, Nectovia | Work. Work replaces Architect,
+  and a project you kept in Architect opens in Work. The view choice left the
+  ··· menu, and Settings, Appearance and Ctrl K name the two views the same
+  way.
+
+  In Work, the board sits beside the thread: Needs your input, Working, Up
+  next and Finished today, under the open count and Open full board. A card
+  opens its thread, and a decision opens where it waits. The thread's own Team
+  and Loop run stay at the top of that column, and Activity and Recent are no
+  longer in it.
+
+  On the free version, projects open in Work and the Nectovia tab shows a
+  lock. It opens a short notice with Sign up for a plan, Remind me later and
+  Don't remind me again. The view you chose before is kept, and it comes back
+  with a plan.
+
+  Automations are called Routines everywhere you read them, the rail,
+  Everything, Ctrl K and Settings included. Routines is one of the rail's
+  default pins, and on the free version its row says Paid plans.
+
+  The team view stays on every plan. On the free version you lead the team,
+  and Nectovia's seat shows that it can lead it on a plan.
+
+  Without a plan, you can buy credits and use the Nectovia Agent on your own
+  Personal work while they last. In Personal, Settings, Usage shows the
+  credits you bought and a buy box that buys for you alone. The free version's
+  notice says you can buy credits. Leading a team, Routines and a Nectovia
+  worker or advisor in a loop still need a plan. When the credits run out,
+  work stops at the end of the step in progress and keeps what it did.
+
+  In a business with no plan, the Nectovia Agent still needs a plan, and
+  owners and admins are told so wherever they start it. The buy box there says
+  the credits wait for a plan.
+
+  Nectovia Agent work is charged in credits at the rate for its tier:
+  Efficient, Focused or Thorough. The rates come from a credit price table
+  Nectovia publishes, and they're the same whichever model does the work. A
+  job's estimate before it starts uses them too.
+
+  Jobs check in instead of stopping at a cap. When a job reaches its check-in
+  amount, it finishes the step in progress, saves, and asks whether to keep
+  going. Keep going lets that one job use the same amount again, and Stop here
+  keeps what it did. A loop that reaches its amount waits in Needs you, where
+  Keep going starts it again.
+
+  Nectovia's check-in amounts are 100 credits for Efficient, 250 for Focused
+  and 500 for Thorough. Owners and admins can set their business's own amounts
+  in Settings, Usage, under Job check-ins, and a change applies to jobs that
+  start after it.
+
+FIXED
+  A loop run waiting to pick up where it left off no longer starts working
+  while Nectovia closes. It picks up the next time Nectovia opens.
+
+UPDATES
+  Settings > App updates offers stable releases only. Nothing is downloaded,
+  verified or installed until you confirm it, and a download is accepted only
+  when its SHA-256 matches the digest the release publishes. An installed
+  0.1.7, 0.1.8, 0.1.9, 0.1.10, 0.1.11, 0.2.0, 0.2.1 or 0.2.3 on Windows can
+  find this release when you press Check for updates.
+
+  An update from 0.1.9, 0.1.10, 0.1.11, 0.2.0, 0.2.1 or 0.2.3 keeps your
+  settings, routes, saved keys, projects and conversations. An update from
+  0.1.7 or 0.1.8 that skips 0.1.9 still gets the one-time fresh start 0.1.9
+  introduced: the earlier version's data and the Documents\Diomedes folder are
+  set aside, renamed with "before 0.1.9" and the date, and nothing is deleted.
+
+  Your install is refreshed the first time this version opens, and again after
+  each later update. Settings you never changed move to the new defaults,
+  anything you chose is kept, cached screens are cleared, and a byte-for-byte
+  backup and a record of what moved are kept. A custom look keeps its colours,
+  fonts and artwork, while text sizes, line spacing and density follow the new
+  version. You see it once: Updated to 0.2.4, with how many settings moved.
+
+  Saving AI routing and privacy settings needs 0.2.3 or later, because the
+  account service no longer accepts them from 0.2.1. A choice saved in 0.2.1
+  keeps working under its earlier rules until you save it again.
+
+  This release has no Mac build. A Mac keeps the version it has, and Check for
+  updates there doesn't offer this Windows release.
+
+LIMITS
+  This build is unsigned and experimental. On Windows, SmartScreen may warn
+  before the installer runs: choose More info, then Run anyway, after checking
+  the file's SHA-256.
+
+  Settings > Account and the Nectovia Agent's AI service were tested only
+  against stand-ins for the Nectovia account service. A real sign-in has run
+  on one installed Windows copy of a test build made before 0.2.3. Two sign-in
+  fixes came after it: finishing without a second press, and the page the
+  browser tab ends on. Both were tested only against stand-ins. The account
+  service this version uses is still a staging service with a fixed testing
+  budget: while it is, the Nectovia Agent's answers are kept short, and the
+  Agent stops answering once that budget is spent.
+
+  The account service hasn't published models or credit prices for any tier
+  yet. Until it does, work on a Nectovia tier is refused with a note that the
+  tier has no Nectovia model right now, and nothing is charged. Work on your
+  own AI tools isn't affected.
+
+  The page in the browser tab needs port 47319 on your computer. If another
+  program is using that port, the tab stays on a loading bar as before, and
+  sign-in still finishes in the app. If you quit Nectovia before you finish in
+  the browser, the browser says it can't connect. Open Nectovia and sign in
+  again.
+
+  The Norton change was checked with Norton on one Windows computer. Other
+  antivirus programs weren't tried.
+
+  Signing in needs the Nectovia account service, so if it can't be reached
+  when Nectovia starts, you can't open anything, your own projects included;
+  the sign-in screen says why. A connection lost after you sign in doesn't
+  sign you out.
+
+  Buying credits isn't available yet. Until payments are set up on the account
+  service, Settings, Usage answers that buying isn't available right now, and
+  buying has run only against a stand-in payment service. Pay as you go can't
+  be used until then.
+
+  Once buying opens, credits you buy without a plan run the Nectovia Agent in
+  Home's conversation. This version still shows you Nectovia locked in the
+  Nectovia | Work switch and grayed in the Engine menu.
+
+  Pay as you go, credit prices, check-ins, credit limits, bought credits,
+  Individual credits and the paid-access changes were tested against stand-ins
+  and test databases, not against the live account service.
+
+  This version has no screen for setting a member's monthly limit. Unless one
+  is set, a member's limit is the plan's whole allowance.
+
+  When an Individual plan ends, Personal Agent work is refused, but the
+  default conversation doesn't move back to your own AI tool the way a
+  business's does.
+
+  A routine that reaches its check-in amount waits in Needs you without Keep
+  going. Start it again to go on.
+
+  Routines has a New routine button that can't be used yet.
+
+  Under All projects, when the business has more than one project, Home shows
+  no suggestions and no Finished group.
+
+  The new account routing has not yet completed a real signed-in,
+  paid-provider acceptance run. Automated routing tests use synthetic model
+  responses. A route without current qualification or required privacy consent
+  stays unavailable.
+
+  Apart from a few conversation turns on one outside engine and a connection
+  check on the company's AI account, nothing in this version was tried against
+  a real provider.
+
+  Board work on the Nectovia Agent, including work a request starts in
+  Automatic mode, was tested with stand-in model responses only. Helpers and
+  teams don't run on it.
+
+  Team cards and hand-offs were tested with stand-in tools only.
+
+  The phone apps can't reach this computer through the relay yet; this version
+  only connects the computer and lists it as online. The relay was tested
+  against a stand-in and hasn't yet run on the live account service.
+
+  An update that installs this version over an earlier one, including the
+  change from Diomedes.exe to nectovia.exe, hasn't been run on an installed
+  copy.
+
+  Routines run the weekly brief alone, and only while this computer is on.
+  They tell you inside the app and send nothing by push, email or phone.
+
+  Resume, Retry, Fork and Steer work on Codex runs only.
+
+  Run checks run only the checks a task declares, and never run your project's
+  own code. Nothing checks a run automatically when it finishes.
+
+  Files has no PDF viewer. Pictures and PDFs cannot be sent to an AI, and a
+  binary file cannot be put back from an earlier version.
+
+  Trigger rules don't watch conversations, Ask or Plan. Tool rules don't reach
+  Codex, Claude Code, OpenCode or other outside tools, which run their own
+  tools, and on every outside tool except Codex a text rule reads the text
+  after secrets are removed, so a rule looking for a secret may not fire
+  there. A correction asked of a tool other than Codex was not tested, and a
+  rule that asks a work loop run to correct still can't reach it: the
+  correction is recorded and shown as not sent.
+
+  Delegates that change files in their own copy, and a lead that runs a team
+  of them on your own connected services, are built but can't be started from
+  the app yet, though the Loop run dialog can now add a Nectovia worker and
+  advisor. The Console still has no History screen and no Make tasks from this
+  plan.
+
+  Every route except the Nectovia Agent still runs on, and is billed to, your
+  own account. A provider connection you saved yourself works only for a
+  business whose plan includes the Nectovia Agent, or for Personal work on an
+  Individual plan. You can still choose such a connection for a thread, and
+  Settings has no place to change or remove it.
+
+  The local model needs a server that answers llama.cpp's props request, so
+  Nectovia can tell which profile is running. Without it the model shows as
+  running, and work that names a profile is refused.
+
+  Prompt caching and the route checks were built and tested against stand-ins.
+  No call reached a provider while building them, so whether a provider honors
+  Off shows only in a route check on your own connection.
+
+  The local model can't be chosen for a Team member or a loop run from the app
+  yet.
+
+  The Nectovia worker and advisor in the Loop run dialog were tested only
+  against stand-ins, a scripted local model server and the offline scripted
+  account service, never a live Nectovia tier or the live account service.

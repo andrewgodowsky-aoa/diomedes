@@ -226,7 +226,9 @@ describe('the brand', () => {
 
   // The third place was the Workbook's own top bar, which went with the Workbook.
   it('draws NectoviaMark at the places the old mark stood', () => {
-    expect(read('client/console/Shell.tsx')).toMatch(/<header className="top">\s*<NectoviaMark \/>/);
+    // The Console strip draws the glyph beside the Nectovia | Work switch, whose first tab spells
+    // the name (round 2 reskin, slice 3).
+    expect(read('client/console/Shell.tsx')).toMatch(/<header className="top">[\s\S]{0,300}<NectoviaMark word=\{false\} \/>\s*<ViewSwitch/);
     expect(read('client/console/TopStrip.tsx')).toMatch(/aria-label="Nectovia projects"[\s\S]{0,80}<NectoviaMark \/>/);
   });
 });

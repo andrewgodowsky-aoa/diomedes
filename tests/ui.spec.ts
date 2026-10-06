@@ -353,13 +353,14 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
-  // The menu offers the Console's two views, the detail levels and the conversation text
-  // size, and nothing that leaves the Console.
+  // The two views are the top switch, Nectovia | Work (round 2 reskin, slice 3). The menu
+  // offers the detail levels and the conversation text size, and nothing that leaves the Console.
+  const views = page.getByRole('navigation', { name: 'View', exact: true });
+  await expect(views.getByRole('button')).toHaveText(['Nectovia', 'Work']);
+  await expect(views.getByRole('button', { name: 'Nectovia', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitemradio')).toHaveText([
-    'Conversation',
-    'Architect',
     'Guided',
     'Standard',
     'Technical',

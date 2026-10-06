@@ -14,6 +14,7 @@ import { Mark } from '../components';
 import { AttentionList, ScheduleSection } from './AutomationSchedule';
 import { PlansLink, useFreePlan } from './FreePlanNotice';
 import './automations.css';
+import { ROUTINES } from './work-view';
 
 /**
  * Automations (Milestones A and B).
@@ -604,7 +605,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
       }
     } catch (failure) {
       if (started !== epoch.current || request.signal.aborted) return;
-      const message = failure instanceof Error ? failure.message : 'Automations could not be read.';
+      const message = failure instanceof Error ? failure.message : "Routines couldn't be read.";
       // A list already on screen stays, marked with when it was read: a
       // failed refresh is not an empty list.
       if (shown.current) setStale(message);
@@ -675,13 +676,18 @@ export function AutomationsPage(props: AutomationsPageProps) {
     <div className="col automations-page">
       <header className="auto-page-head">
         <div>
-          <h1>Automations</h1>
+          <h1>{ROUTINES}</h1>
           <p>
             {list
               ? `What runs for ${list.organization.name}, what it last did, and what needs you.`
               : 'What runs for a business, what it last did, and what needs you.'}
           </p>
         </div>
+        {/* A routine of a person's own isn't built yet, so its place is kept and says so
+            (board BD3; Andrew, 2026-09-20: an unbuilt feature keeps a real, disabled slot). */}
+        <button type="button" className="auto-refresh" aria-disabled="true" title="Not ready yet">
+          New routine
+        </button>
         <button
           type="button"
           className="auto-refresh"
@@ -704,12 +710,12 @@ export function AutomationsPage(props: AutomationsPageProps) {
           </button>
         </div>
       )}
-      {loading && !loaded && !error && <p role="status">Reading automations...</p>}
-      {/* On the free version there's no business to switch to: automations come with a plan. */}
+      {loading && !loaded && !error && <p role="status">Reading routines...</p>}
+      {/* On the free version there's no business to switch to: routines come with a plan. */}
       {loaded?.kind === 'personal' &&
         (freePlan ? (
           <div className="auto-empty">
-            <h2>Automations are part of a paid plan</h2>
+            <h2>Routines are part of a paid plan</h2>
             <p>You're on the free version. With a plan, work like the weekly brief runs on a schedule.</p>
             <PlansLink plan={freePlan} className="auto-plans">
               See plans
@@ -717,9 +723,9 @@ export function AutomationsPage(props: AutomationsPageProps) {
           </div>
         ) : (
           <div className="auto-empty">
-            <h2>Personal has no automations</h2>
+            <h2>Personal has no routines</h2>
             <p>
-              Automations are set up per business workspace. Switch to a business under Change
+              Routines are set up per business workspace. Switch to a business under Change
               workspace to see what runs for it.
             </p>
           </div>
@@ -757,7 +763,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
               </p>
             </div>
           ) : (
-            <ul className="auto-list" aria-label="Automations">
+            <ul className="auto-list" aria-label={ROUTINES}>
               {list.automations.map((automation) => (
                 <Row
                   key={automation.id}

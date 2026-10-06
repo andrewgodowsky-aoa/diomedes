@@ -43,7 +43,9 @@ export type TeamProps = { project: Project; state: ProjectState; members: TeamMe
   onMessage(to: Slot | 'diomedes', text: string): Promise<void>; onStop(m: TeamMember): Promise<void>; onWake(m: TeamMember): Promise<void>; onOpenThread(m: TeamMember): void;
   /** Routes a member may run on, with their models, from the host. Absent until read. */
   teamRoutes?: import('../../shared/team-routes').TeamRoutesView | null;
-  onAddMember?(input: import('../../shared/team-routes').NewTeamMember): Promise<void>; };
+  onAddMember?(input: import('../../shared/team-routes').NewTeamMember): Promise<void>;
+  /** The free version (round 2 board BD2): the person leads, and Nectovia's seat waits for a plan. */
+  free?: import('../../shared/accounts').AccountPlanView | null; };
 export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loading: boolean; failure: string | null; openPath: string | null; width: number;
   onOpen(path: string | null): void; onWidth(width: number): void; onClose(): void;
   /** Write in a file, on the main stage. The pane itself stays a reader (decision 13). */

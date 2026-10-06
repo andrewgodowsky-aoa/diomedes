@@ -258,7 +258,9 @@ describe('shared attribution presentation', () => {
     expect(html).toContain('Nectovia');
   });
 
-  it('ledger recent history carries the recorded actor', () => {
+  // The aside is the board beside the thread now (round 2 board BD1): it lists the board's cards
+  // rather than recent history, and its line for the thread's own work names the recorded actor.
+  it('the board beside the thread carries the recorded actor', () => {
     const session = baseSession();
     const entry: HistoryEntry = {
       id: 'history-1',
@@ -301,7 +303,6 @@ describe('shared attribution presentation', () => {
         onReviewNeed: noAction,
       }),
     );
-    expect(html).toContain('Wrote notes.');
     expect(html).toContain('s-model');
   });
 
@@ -340,7 +341,8 @@ describe('shared attribution presentation', () => {
       expect(html).not.toContain('>running</span>');
       expect(html).toContain(sessionState === 'waiting' ? 'Needs your decision' : 'Run finished');
       if (sessionState === 'waiting') {
-        const work = html.split('id="secWork"')[1].split('</section>')[0];
+        // A waiting task is a card under Needs your input, with who has it.
+        const work = html.split('id="secNeeds"')[1].split('</section>')[0];
         expect(work).toContain('s-model');
         // A model's run is never credited to the product, under either name.
         expect(work).not.toContain('Diomedes');

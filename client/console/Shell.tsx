@@ -137,6 +137,8 @@ import { AccountMenu } from './AccountMenu';
 import { PlaybookPanel } from './PlaybookPanel';
 import type { LoadedContribution } from '../../shared/pack-contributions';
 import { shortcutHint } from '../keyboard';
+import { ViewSwitch } from './ViewSwitch';
+import { ROUTINES, ROUTINES_PAID, shownView } from './work-view';
 
 interface ShellProps {
   projectId: string;
@@ -189,9 +191,10 @@ const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
  * already in the view switch and the Files pane that was already in its foot.
  * Every one of them can be taken out. Everything else is one click away in
  * Everything. A stored pin for the retired History screen names nothing any
- * more, and the rail skips it.
+ * more, and the rail skips it. Routines joined them with the Work view (round 2
+ * board BD1), so the foot reads the way the board draws it.
  */
-const DEFAULT_PINS = ['thread', 'board', 'team', 'files'];
+const DEFAULT_PINS = ['thread', 'board', 'team', 'files', 'automations'];
 
 // Cap for the live streamed display: ephemeral text never persists.
 const MAX_STREAM_CHARS = 256 * 1024;
@@ -256,6 +259,9 @@ export function Shell({
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   // The free version lists Nectovia grayed in the ask row; null when accounts are off.
   const freePlan = useFreePlan();
+  // The free version's notice behind the locked Nectovia tab, open only when the person asks.
+  const [viewNotice, setViewNotice] = useState(false);
+  const closeViewNotice = useCallback(() => setViewNotice(false), []);
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
@@ -1682,6 +1688,11 @@ export function Shell({
       void newThread(task.id);
     }
   }
+  // A card on the board beside the thread (round 2 board BD1) names its task by id.
+  function openTaskById(taskId: string) {
+    const task = state?.tasks.find((item) => item.id === taskId);
+    if (task) leaveEditor(() => openTaskThread(task));
+  }
   // Palette Message: open the Team view with the member selected and focus
   // its composer. The lane view has no composer yet, so this records the
   // target and focuses the first composer available.
@@ -1807,8 +1818,10 @@ export function Shell({
     },
     {
       id: 'automations',
-      label: 'Automations',
+      label: ROUTINES,
       hint: 'What runs for this business, what it last did, and what needs you.',
+      // Routines stay on a paid plan (board BD1): the free version shows the row, locked.
+      badge: freePlan ? ROUTINES_PAID : undefined,
     },
     {
       id: 'connections',
@@ -1909,7 +1922,7 @@ export function Shell({
     currentThread: selected,
     policy,
     view,
-    consoleView: settings.view ?? 'architect',
+    consoleView: shownView(settings.view, freePlan !== null),
     focusTaskId: selectedTask?.id,
     focusTaskName: selectedTask?.name,
     pendingTaskId,
@@ -1952,7 +1965,7 @@ export function Shell({
         setView('Thread');
       }),
       setView: leavingEditor((v: ShellView) => setView(v)),
-      setConsoleView: (v) => void saveSettings({ ...settings, view: v }),
+      setConsoleView: freePlan ? undefined : (v) => void saveSettings({ ...settings, view: v }),
       openProject: (p) => onOpenProject(p),
       openDocument,
       launchSkill: leavingEditor((skill: PackSkill) => void launchSkill(skill)),
@@ -1965,13 +1978,20 @@ export function Shell({
   // The two views (shared/types.ts ConsoleView). Conversation hides the Ledger,
   // the pinned rail destinations and the worker picker; everything stays
   // reachable from Everything, Ctrl K and the ··· menu.
-  const conversation = settings.view === 'conversation';
+  const consoleView = shownView(settings.view, freePlan !== null);
+  const conversation = consoleView === 'conversation';
   const elsewhere = conversation
     ? waiting.filter((n) => !(selected && view === 'Thread' && threadOwnsNeed(selected, n, state)))
     : [];
   const chooseView = (next: ConsoleView) => {
     setMenuOpen(false);
-    if (settings.view !== next) void saveSettings({ ...settings, view: next });
+    // The free version keeps Work: the Nectovia tab opens its notice instead (board BD1).
+    if (next === 'conversation' && freePlan) {
+      setViewNotice(true);
+      return;
+    }
+    setViewNotice(false);
+    if (consoleView !== next) void saveSettings({ ...settings, view: next });
   };
   // Attach a project file to the open thread's next message; offered only while a thread is open.
   const attachToThread =
@@ -1992,7 +2012,18 @@ export function Shell({
       className={`console${conversation ? ' conversation' : ''}${!online ? ' disconnected' : ''}`}
     >
       <header className="top">
-        <NectoviaMark />
+        {/* The mark's glyph and the view switch share the strip's first cell; the switch's
+            first tab spells the name, so the mark does not repeat it. */}
+        <div className="top-lead">
+          <NectoviaMark word={false} />
+          <ViewSwitch
+            view={consoleView}
+            free={freePlan}
+            notice={viewNotice}
+            onChoose={chooseView}
+            onCloseNotice={closeViewNotice}
+          />
+        </div>
         <nav className="crumb" aria-label="Open projects">
           <button type="button" onClick={onShowProjects}>
             Projects
@@ -2050,24 +2081,8 @@ export function Shell({
                 {/* The button opening this menu is labelled "Interface detail
                     menu" and held no detail control at all, because Detail was
                     gated on the Workbook. It is kept now, so the label is true. */}
-                <p className="caption">View</p>
-                {(
-                  [
-                    ['conversation', 'Conversation'],
-                    ['architect', 'Architect'],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={(settings.view ?? 'architect') === id}
-                    className={(settings.view ?? 'architect') === id ? 'on' : ''}
-                    onClick={() => chooseView(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
+                {/* The view is the top switch now (Nectovia | Work, round 2 board BD1), so the
+                    menu keeps the detail levels and the text size. */}
                 {conversation && (
                   <button
                     type="button"
@@ -2175,7 +2190,7 @@ export function Shell({
           </section>
         )}
         {!editing && view === 'Automations' && (
-          <section className="screen on" aria-label="Automations">
+          <section className="screen on" aria-label={ROUTINES}>
             <AutomationsPage
               projectId={projectId}
               onOpenTask={(taskId) => {
@@ -2362,6 +2377,7 @@ export function Shell({
               latest={latestTaskSession}
               openNeeds={waiting}
               onLoopRun={selectedTask ? () => setLoopTask(selectedTask) : undefined}
+              onOpenTask={openTaskById}
               onBoard={() => setView('Board')}
               onTeam={() => setView('Team')}
               onReviewNeed={(need) => {
@@ -2402,6 +2418,7 @@ export function Shell({
               running={false}
               latest={null}
               openNeeds={waiting}
+              onOpenTask={openTaskById}
               onBoard={() => setView('Board')}
               onTeam={() => setView('Team')}
               onReviewNeed={(need) => {
@@ -2477,6 +2494,7 @@ export function Shell({
             <TeamView
               project={project}
               state={state}
+              free={freePlan}
               members={team.members}
               mail={team.messages}
               runs={team.runs}

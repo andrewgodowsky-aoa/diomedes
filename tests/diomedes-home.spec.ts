@@ -176,10 +176,10 @@ test('the app opens to Diomedes, and looking at it creates nothing', async ({ pa
   // Automations opens the business's output project on its screen (D4). The signed-in owner
   // works in Juniper Street Bakery, which has not chosen the project it writes into, so it says
   // why and opens nothing, and creates nothing.
-  const automations = page.getByRole('button', { name: /Automations/ }).first();
+  const automations = page.getByRole('button', { name: /Routines/ }).first();
   await expect(automations).not.toHaveAttribute('aria-disabled', 'true');
   await automations.click();
-  await expect(page.getByRole('status').filter({ hasText: 'nowhere to open Automations' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: "nowhere to open Routines" })).toBeVisible();
   await expect(composer(page)).toBeVisible();
   expect(await home()).toBeNull();
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();

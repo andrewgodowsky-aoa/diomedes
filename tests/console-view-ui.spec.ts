@@ -9,11 +9,12 @@ import type { Project, Settings } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 
 /**
- * The Console's two views (Andrew, 2026-09-23). Conversation is the prompt box
- * and the threads; Architect is the full Console. A view changes what is shown,
- * never what Nectovia can do, so each hidden thing is checked for a way back:
- * the ··· menu, Ctrl K and Settings all switch, and a Need waiting outside the
- * open thread is still reachable without the Ledger that used to list it.
+ * The Console's two views (Andrew, 2026-09-23; renamed 2026-10-03). Nectovia is the
+ * prompt box and the threads, stored as `conversation`; Work replaced Architect and
+ * keeps its stored value, `architect`, so a saved choice opens Work. A view changes
+ * what is shown, never what Nectovia can do, so each hidden thing is checked for a way
+ * back: the top switch, Ctrl K and Settings all switch, and a Need waiting outside the
+ * open thread is still reachable without the board beside the thread.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -97,7 +98,9 @@ async function enter(page: Page) {
   await expect(page.locator('.console')).toBeVisible();
 }
 
-test('Conversation shows the prompt box and the threads, and nothing else', async ({ page }) => {
+const views = (page: Page) => page.getByRole('navigation', { name: 'View', exact: true });
+
+test('Nectovia shows the prompt box and the threads, and nothing else', async ({ page }) => {
   await enter(page);
   await expect(page.locator('html')).toHaveAttribute('data-view', 'conversation');
   await rail(page).getByRole('button', { name: /Talk it through/ }).click();
@@ -110,13 +113,19 @@ test('Conversation shows the prompt box and the threads, and nothing else', asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('the ··· menu switches to Architect and back, and the choice is kept', async ({ page }) => {
+test('the top switch moves to Work and back, and the choice is kept', async ({ page }) => {
   await enter(page);
-  await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('menuitemradio', { name: 'Architect' }).click();
+  await expect(views(page).getByRole('button')).toHaveText(['Nectovia', 'Work']);
+  await views(page).getByRole('button', { name: 'Work', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-view', 'architect');
+  await expect(views(page).getByRole('button', { name: 'Work', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await rail(page).getByRole('button', { name: /Talk it through/ }).click();
+  // The board beside the thread (round 2 board BD1), in the aside's place.
   await expect(ledger(page)).toBeVisible();
+  await expect(ledger(page).getByRole('heading', { name: 'Board', level: 2 })).toBeVisible();
+  for (const name of [/^Needs your input/, /^Working/, /^Up next/, /^Finished today/])
+    await expect(ledger(page).getByRole('heading', { name, level: 3 })).toBeVisible();
+  await expect(rail(page).locator('.foot').getByRole('button', { name: /^Routines\b/ })).toBeVisible();
   await expect(rail(page).locator('.foot').getByRole('button', { name: /^Board\b/ })).toBeVisible();
   expect((await api<Settings>('/settings')).view).toBe('architect');
 
@@ -124,8 +133,7 @@ test('the ··· menu switches to Architect and back, and the choice is kept', a
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-view', 'architect');
 
-  await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('menuitemradio', { name: 'Conversation' }).click();
+  await views(page).getByRole('button', { name: 'Nectovia', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-view', 'conversation');
   await expect(ledger(page)).toHaveCount(0);
   expect((await api<Settings>('/settings')).view).toBe('conversation');
@@ -136,8 +144,8 @@ test('Ctrl K offers the other view as a switch', async ({ page }) => {
   await page.keyboard.press('Control+k');
   const palette = page.getByRole('dialog', { name: 'Find and act' });
   await expect(palette).toBeVisible();
-  await palette.getByRole('textbox').fill('architect');
-  await palette.getByText('Architect view', { exact: true }).click();
+  await palette.getByRole('textbox').fill('work view');
+  await palette.getByText('Work view', { exact: true }).click();
   await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('data-view', 'architect');
   await api('/settings', 'PUT', { view: 'conversation' });
@@ -150,10 +158,10 @@ test('Settings chooses the view under Appearance', async ({ page }) => {
     .getByRole('navigation', { name: 'Settings', exact: true })
     .getByRole('button', { name: 'Appearance', exact: true })
     .click();
-  await expect(page.getByRole('radio', { name: /Conversation/ })).toBeChecked();
+  await expect(page.getByRole('radio', { name: /^Nectovia Ask/ })).toBeChecked();
   // The radio is controlled: it shows the stored view, so it turns once the save lands.
-  await page.getByRole('radio', { name: /Architect/ }).click();
-  await expect(page.getByRole('radio', { name: /Architect/ })).toBeChecked();
+  await page.getByRole('radio', { name: /^Work Your threads/ }).click();
+  await expect(page.getByRole('radio', { name: /^Work Your threads/ })).toBeChecked();
   expect((await api<Settings>('/settings')).view).toBe('architect');
   await api('/settings', 'PUT', { view: 'conversation' });
 });
