@@ -73,6 +73,26 @@ export const DEMO_POLICY = {
   note: `Faux seed: ${DEMO_ROUTES.find((r) => r.id === DEMO_POLICY_ROUTE)!.label} behind all three tiers, answered by the scripted provider (2026-09-25).`,
 };
 
+/**
+ * Obviously synthetic credit prices (Model B) for the faux cloud and its tests: round numbers that put
+ * every faux and test route under the ceiling, and a ceiling at the ledger's own scale. They are not
+ * Nectovia's prices, which staff publish into the account service's database and never into this
+ * repository. Ledger units per million tokens; 100,000 units are one credit.
+ */
+export const FAUX_CREDIT_CHARGE = Object.freeze({
+  inputMicroUsdPerMillion: 2_000_000,
+  outputMicroUsdPerMillion: 10_000_000,
+  cacheReadMicroUsdPerMillion: 1_000_000,
+  cacheWriteMicroUsdPerMillion: 2_500_000,
+  requestFeeMicroUsd: 100,
+});
+export const FAUX_CREDIT_PRICES = Object.freeze({
+  baseVersion: 0,
+  ceilingMicroUsdPerCredit: 100_000,
+  tiers: { efficient: { ...FAUX_CREDIT_CHARGE }, focused: { ...FAUX_CREDIT_CHARGE }, thorough: { ...FAUX_CREDIT_CHARGE } },
+  note: 'Faux seed: synthetic credit prices for local development and tests. Not Nectovia’s prices.',
+});
+
 export interface SeedResult {
   seeded: boolean;
   password: string;
@@ -121,6 +141,8 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
     ...DEMO_POLICY,
     baseRevision: 0,
   });
+  // The first credit price table, synthetic, so managed calls are priced in local development.
+  await cloud.commercial.publishCreditPrices(tokens.staffRouting, FAUX_CREDIT_PRICES);
 
   // Juniper Street Bakery holds Business; Harbor Hardware holds nothing yet.
   await cloud.commercial.issueGrant(tokens.staffBilling, juniper.id, {
