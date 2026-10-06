@@ -28,8 +28,8 @@ import { individualCycleId, type IndividualBillingCycle } from '../../../shared/
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
 import { chargeHold, chargeSnapshot, checkCeiling, type ChargeSnapshot, type CreditPriceTable, type PriceFields } from '../../../shared/credit-prices.js';
+import { checkInAmount, resolveCheckIns } from '../../../shared/job-check-ins.js';
 import {
-  approvedJobCap,
   isJobTier,
   isUsageClass,
   micro,
@@ -836,6 +836,7 @@ export class ManagedInferenceService {
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
       kind: 'generation', route: entry.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate, charge,
       maxMicroUsd: chargeHold(charge, bound, maxOutputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member,
+      checkInMicroUsd: checkInAmount(state.checkIns, h.tier),
     }, () => this.sameTable(charge));
     // 11. The call: the allowlisted body, with the route's model, store off, streaming,
     // and the output cap the hold was priced at.
@@ -946,7 +947,8 @@ export class ManagedInferenceService {
             priceObservedAt: price.observedAt, priceValidUntil: price.validUntil } };
         const ref = await this.holdAndDispatch({ ...h, attemptId, parentAttemptId: previous?.attemptId ?? h.parentAttemptId }, admission.tenantId, admission.state.grants,
           { kind: 'generation', route: route.id, requestDigest: await digest(canonicalJson({ body: forwarded, routing: rate.routing })), rate, charge: ceiling.charge,
-            maxMicroUsd: chargeHold(ceiling.charge, actualEnvelope.inputTokens, outputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member }, async () => {
+            maxMicroUsd: chargeHold(ceiling.charge, actualEnvelope.inputTokens, outputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member,
+            checkInMicroUsd: checkInAmount(admission.state.checkIns, h.tier) }, async () => {
             // Reservation and native preparation can wait on I/O. Recheck the actual
             // authority immediately before committing this attempt's dispatch.
             if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.');
@@ -1122,6 +1124,7 @@ export class ManagedInferenceService {
     const ref = await this.holdAndDispatch(h, tenantId, state.grants, {
       kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate, charge,
       maxMicroUsd: chargeHold(charge, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd, member,
+      checkInMicroUsd: checkInAmount(state.checkIns, h.tier),
     }, () => this.sameTable(charge));
     // 11. The call, once, and its settlement before anything is answered.
     return this.decide(ref, row, credential, forwarded, headers);
@@ -1151,6 +1154,9 @@ export class ManagedInferenceService {
       policy: await tx.policy(),
       routes: await tx.routes(),
       priceTable: (await tx.priceTable()) ?? null,
+      // The amount a job of this account checks in at (migration 020): the business's own setting, else
+      // the staff default, else the code default. A Personal account has no business setting.
+      checkIns: resolveCheckIns(await tx.checkInDefaults(), h.scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, h.organizationId))?.amounts : undefined),
     }));
     this.checkAdmission(state.admission, { person: member.person, tenantId }, h);
     const view = state.individual ?? entitlementFromGrants(state.grants, state.accessRevision, at);
@@ -1197,11 +1203,13 @@ export class ManagedInferenceService {
     charge: ChargeSnapshot;
     /** The verified member this call is for, so the funding service can enforce their monthly limit. Null for a personal workspace. */
     member?: { personId: string; role: MemberRole } | null;
+    /** What this job checks in at: its cap when it is opened. Resolved here from the account's settings, never from a request. */
+    checkInMicroUsd: MicroUsd;
   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
     await this.options.funding.openJob({
       tenantId, organizationId: h.organizationId, rootJobId: h.jobId, runRef: h.jobId, parentRunRef: null,
-      tier: h.tier, capMicroUsd: approvedJobCap(h.tier),
+      tier: h.tier, capMicroUsd: null, checkInMicroUsd: hold.checkInMicroUsd,
     });
     const individualCycle = await this.ensurePeriod(tenantId, h.scope, grants);
     // The company ceiling is checked inside the reserving transaction, so a refusal holds nothing.

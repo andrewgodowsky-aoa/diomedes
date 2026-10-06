@@ -115,7 +115,7 @@ describe('concurrent reserve', () => {
     await h.allocate('2026-09');
     await h.open();
     const results = await Promise.allSettled(
-      [1, 2, 3].map((index) => h.reserve(`child_${index}`, 8)),
+      [1, 2, 3].map((index) => h.reserve(`child_${index}`, 40)),
     );
     expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(2);
     const refused = results.find((item) => item.status === 'rejected') as PromiseRejectedResult;
@@ -203,12 +203,12 @@ describe('lost response', () => {
     const h = harness();
     await h.allocate('2026-09');
     await h.open();
-    await h.reserve('attempt_1', 15);
+    await h.reserve('attempt_1', 75);
     await h.service.markDispatched(h.ref('attempt_1'));
     await h.service.markUncertain({ ...h.ref('attempt_1'), reason: 'connection dropped before the response' });
-    expect((await h.usage()).uncertainMicroUsd).toBe(c(15));
+    expect((await h.usage()).uncertainMicroUsd).toBe(c(75));
     // A retry is a new attempt under the same root, and the lost one still counts.
-    const retry = await refusal(h.reserve('attempt_1_retry', 10, { parentAttemptId: 'attempt_1' }));
+    const retry = await refusal(h.reserve('attempt_1_retry', 30, { parentAttemptId: 'attempt_1' }));
     expect(retry.code).toBe('cap_request_required');
     expect((await refusal(h.service.release(h.ref('attempt_1')))).code).toBe('uncertain_hold');
   });
@@ -490,15 +490,15 @@ describe('parent-job caps', () => {
       h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_child2', runRef: 'run_child2', parentRunRef: 'run_job_1', tier: null, capMicroUsd: c(20) }),
     );
     expect(escape.code).toBe('child_cannot_set_cap');
-    await h.reserve('parent_step', 15);
-    const childStep = await refusal(h.reserve('child_step', 10, { rootJobId: child.rootJobId }));
+    await h.reserve('parent_step', 75);
+    const childStep = await refusal(h.reserve('child_step', 30, { rootJobId: child.rootJobId }));
     expect(childStep.code).toBe('cap_request_required');
   });
 
-  it('a root job takes its tier’s approved cap, 20, 50 or 100 credits, and nothing above it', async () => {
+  it('a root job takes its tier’s check-in amount, 100, 250 or 500 credits, and nothing above it', async () => {
     const h = harness();
     await h.allocate('2026-09');
-    for (const [tier, credits] of [['efficient', 20], ['focused', 50], ['thorough', 100]] as const) {
+    for (const [tier, credits] of [['efficient', 100], ['focused', 250], ['thorough', 500]] as const) {
       const job = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `tier_${tier}`, runRef: `run_tier_${tier}`, parentRunRef: null, tier, capMicroUsd: null });
       expect(job.capMicroUsd).toBe(c(credits));
     }
@@ -506,11 +506,11 @@ describe('parent-job caps', () => {
     const small = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'small', runRef: 'run_small', parentRunRef: null, tier: 'focused', capMicroUsd: c(10) });
     expect(small.capMicroUsd).toBe(c(10));
     const over = await refusal(
-      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'big', runRef: 'run_big', parentRunRef: null, tier: 'efficient', capMicroUsd: c(25) }),
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'big', runRef: 'run_big', parentRunRef: null, tier: 'efficient', capMicroUsd: c(101) }),
     );
     expect(over.code).toBe('cap_request_required');
     const thoroughOver = await refusal(
-      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'bigger', runRef: 'run_bigger', parentRunRef: null, tier: 'thorough', capMicroUsd: c(101) }),
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'bigger', runRef: 'run_bigger', parentRunRef: null, tier: 'thorough', capMicroUsd: c(501) }),
     );
     expect(thoroughOver.code).toBe('cap_request_required');
     // A root job must name its tier; there is no silent default.
@@ -524,18 +524,18 @@ describe('parent-job caps', () => {
     const h = harness();
     await h.allocate('2026-09');
     await h.open();
-    await h.reserve('step_1', 15);
-    expect((await refusal(h.reserve('step_2', 10))).code).toBe('cap_request_required');
-    const request = await h.service.requestCapIncrease({ tenantId: T, organizationId: O, rootJobId: 'job_1', requestId: 'cap_req_1', requestedCapMicroUsd: c(40), requestedBy: 'person_member' });
+    await h.reserve('step_1', 75);
+    expect((await refusal(h.reserve('step_2', 30))).code).toBe('cap_request_required');
+    const request = await h.service.requestCapIncrease({ tenantId: T, organizationId: O, rootJobId: 'job_1', requestId: 'cap_req_1', requestedCapMicroUsd: c(140), requestedBy: 'person_member' });
     expect(request.state).toBe('pending');
     // A request alone is not approval.
-    expect((await refusal(h.reserve('step_2', 10))).code).toBe('cap_request_required');
+    expect((await refusal(h.reserve('step_2', 30))).code).toBe('cap_request_required');
 
     const member = snapshot('member');
     expect((await refusal(h.service.decideCapIncrease({ membership: member, requestId: 'cap_req_1', approve: true }))).status).toBe(403);
     const decided = await h.service.decideCapIncrease({ membership: snapshot('owner'), requestId: 'cap_req_1', approve: true });
     expect(decided.state).toBe('approved');
-    const step = await h.reserve('step_2', 10);
+    const step = await h.reserve('step_2', 30);
     expect(step.state).toBe('pending');
   });
 });
