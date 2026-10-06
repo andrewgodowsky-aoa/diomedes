@@ -29,10 +29,10 @@ GRANT SELECT, INSERT ON control_plane.organization_setups TO cp_runtime;
 -- role may call, so it needs no grant) it reads the stored customer and, when there is
 -- none, stores the one Stripe made. The receiver stores each verified paid Stripe event
 -- through PostgresRepository.recordVerifiedPayment, under the same lock, and stores an
--- event of a type nothing handles, marked ignored, through recordIgnoredEvent (017 lets an
+-- event of a type nothing handles, marked ignored, through recordIgnoredEvent (016 lets an
 -- inbox row carry no business). All of these are plain SELECT and INSERT statements, with no
 -- row lock or DELETE: an event or a customer is written once and never rewritten. The one
--- thing that moves afterwards is an inbox event's state: markEvent (017) takes a pending
+-- thing that moves afterwards is an inbox event's state: markEvent (016) takes a pending
 -- event to processed or quarantined with one UPDATE of state and processed_at, which is
 -- why this login holds UPDATE on those two columns of webhook_inbox and nothing else of it.
 -- The funding login (cp_funding) is not granted these tables, so it cannot make a top-up

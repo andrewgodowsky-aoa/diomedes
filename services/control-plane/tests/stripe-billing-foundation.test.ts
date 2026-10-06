@@ -1,6 +1,6 @@
 /**
- * The billing foundation's schema and reserved actor (slice 1, 2026-10-05): migration 017's text, where the runner
- * will and will not apply it, the reserved billing-system actor, and the retired single price.
+ * The billing foundation's schema and reserved actor (slice 1, 2026-10-05): migration 016's text, where the runner
+ * applies it, the reserved billing-system actor, and the retired single price.
  *
  * These are static checks and a protocol model of the runner. They do not run the SQL: no PostgreSQL is used here.
  */
@@ -16,7 +16,7 @@ import { accountStateSchema, emptyAccountState } from '../src/domain.js';
 import { BILLING_SYSTEM_ACTOR, BILLING_SYSTEM_NAME, BILLING_SYSTEM_ROLE, isBillingSystemActor } from '../src/billing-system.js';
 import { addStaffInput, auditEventSchema, featureGrantSchema } from '../src/commercial.js';
 
-const MIGRATION = '017_stripe_billing_foundation.sql';
+const MIGRATION = '016_stripe_billing_foundation.sql';
 const sql = () => readFileSync(new URL(`../migrations/${MIGRATION}`, import.meta.url), 'utf8');
 /** The statements, with the comments taken off. */
 const code = () => sql().replace(/--.*$/gm, '');
@@ -45,10 +45,9 @@ const loadThrough015 = () => Promise.all(NAMES.map(async (name, index) => {
   const text = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
   return { version: index + 1, name, sql: text, sha256: createHash('sha256').update(text).digest('hex') } satisfies Migration;
 }));
-const m017 = (): Migration => ({ version: 17, name: MIGRATION, sql: sql(), sha256: createHash('sha256').update(sql()).digest('hex') });
-const standIn016: Migration = { version: 16, name: '016_stand_in_for_draft_196.sql', sql: 'SELECT 1', sha256: 'c'.repeat(64) };
+const m016 = (): Migration => ({ version: 16, name: MIGRATION, sql: sql(), sha256: createHash('sha256').update(sql()).digest('hex') });
 
-describe('migration 017', () => {
+describe('migration 016', () => {
   it('is LF only, ends by revoking public access, and names no destructive statement', () => {
     expect(sql().includes(String.fromCharCode(13))).toBe(false);
     expect(sql().trim().endsWith('REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
@@ -100,44 +99,24 @@ describe('migration 017', () => {
   });
 });
 
-describe('where the runner applies 017', () => {
-  it('does not list 017 in the migrate script yet, so the runner keeps working, and the script says why', () => {
+describe('where the runner applies 016', () => {
+  it('lists 016 in the migrate script, directly after 015', () => {
     const script = readFileSync(new URL('../scripts/migrate.ts', import.meta.url), 'utf8');
-    // The list ends at 015: listing 017 without a 016 makes the runner refuse the whole list.
-    expect(script).toContain("'015_credit_purchases.sql']");
-    expect(script).not.toContain("'017_stripe_billing_foundation.sql'");
-    expect(script).toContain('017_stripe_billing_foundation.sql is deliberately NOT listed');
+    expect(script).toContain("'015_credit_purchases.sql','016_stripe_billing_foundation.sql'");
   });
 
-  it('has no 016 file here, and the number is kept for draft #196', () => {
-    expect(readdirSync(new URL('../migrations/', import.meta.url)).filter((name) => name.startsWith('016'))).toEqual([]);
+  it('is the only 016 file here', () => {
+    expect(readdirSync(new URL('../migrations/', import.meta.url)).filter((name) => name.startsWith('016'))).toEqual([MIGRATION]);
   });
 
-  it('refuses 017 as the sixteenth entry: with 016 absent the runner will not apply it, or anything', async () => {
-    const files = [...(await loadThrough015()), m017()];
-    const db = database();
-    await expect(migrate(db.factory, files)).rejects.toThrow('Migration sequence');
-    // It refused before opening a transaction: nothing ran, nothing was recorded.
-    expect(db.calls).toEqual([]);
-    expect(db.state).toEqual([]);
-  });
-
-  it('applies 017 once a 016 is listed before it, and an 015 database upgrades by 016 and 017 only', async () => {
+  it('applies after 015: a new database takes 1 to 16, and an 015 database upgrades by 016 only', async () => {
     const through015 = await loadThrough015();
-    const files = [...through015, standIn016, m017()];
-    expect(await migrate(database().factory, files)).toEqual(Array.from({ length: 17 }, (_, index) => index + 1));
+    const files = [...through015, m016()];
+    expect(await migrate(database().factory, files)).toEqual(Array.from({ length: 16 }, (_, index) => index + 1));
     const db = database(through015);
-    expect(await migrate(db.factory, files)).toEqual([16, 17]);
+    expect(await migrate(db.factory, files)).toEqual([16]);
     expect(db.calls).not.toContain(through015[14].sql);
     expect(db.calls).toContain(sql());
-  });
-
-  it('cannot take 016 after 017: a database that applied 017 first refuses the list that adds 016 (016 must land first)', async () => {
-    const through015 = await loadThrough015();
-    // The state of a database that was migrated by a runner that let 017 follow 015, then gets the list with 016 in its place.
-    const first = database([...through015, m017()]);
-    await expect(migrate(first.factory, [...through015, standIn016, m017()])).rejects.toThrow('Migration history');
-    expect(first.calls.filter((text) => text === 'SELECT 1')).toEqual([]);
   });
 });
 

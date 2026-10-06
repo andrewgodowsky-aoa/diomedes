@@ -2,11 +2,10 @@
 -- router, the credit rates and the billing system actor stand on. Code and tests only: no production migration is
 -- authorized by this file, and it is applied to accounts_staging with main's runner before the code that needs it merges.
 --
--- NUMBERING. This is 017 because draft #196 holds 016. The runner (src/migrations.ts) takes each version from the file
--- name's number and refuses a list that is not 1..n with no gap, and refuses a history that is not a prefix of the list. So
--- 017 cannot be applied to any database until 016 is in the list before it, and a database that applied 017 first could never
--- accept 016 afterwards. Listing 017 without 016 would make the runner refuse the whole list, so scripts/migrate.ts does not
--- list it yet. Whichever of the two merges second adds its entry there, 016 before 017.
+-- NUMBERING. Numbered 016 at merge (2026-10-06), in merge order. Draft #196 had reserved 016 and takes the next free number
+-- when it lands. The runner (src/migrations.ts) takes each version from the file name's number and refuses a list that is not
+-- 1..n with no gap, and refuses a history that is not a prefix of the list, so this file applies after 015 and before anything
+-- numbered after it.
 --
 -- 1. ENVIRONMENT. billing_customers, webhook_inbox and credit_purchases each gain `environment` ('test' or 'live'). Every
 -- existing row is a test row (nothing live has ever run), so the column is added NOT NULL DEFAULT 'test', which backfills

@@ -294,7 +294,7 @@ export class PostgresRepository implements AccountRepository {
   }
 
   /**
-   * A verified event of a type nothing handles, stored once and marked ignored (migration 017 lets an inbox row carry no business). The business
+   * A verified event of a type nothing handles, stored once and marked ignored (migration 016 lets an inbox row carry no business). The business
    * and tenant come from our own customer row for the customer the event names in this environment, never from the event; with no such row the
    * event is stored with none. The customer is checked before anything is written. Two deliveries of one event serialize on its id, so the
    * second finds the first's row: the same contents store nothing, other contents are a 409 and nothing is written.
@@ -324,7 +324,7 @@ export class PostgresRepository implements AccountRepository {
   }
 
   /**
-   * Move a stored event out of pending: processed once its payment is applied, quarantined once it is refused for good (migration 017's inbox
+   * Move a stored event out of pending: processed once its payment is applied, quarantined once it is refused for good (migration 016's inbox
    * states). Only a pending row moves, so a replay never rewrites a row that was already settled. The Worker login holds UPDATE on these two
    * columns of webhook_inbox and nothing else of it. True when this call moved the row.
    */

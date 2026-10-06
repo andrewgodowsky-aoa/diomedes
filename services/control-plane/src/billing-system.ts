@@ -3,7 +3,7 @@
  *
  * Stripe decides whether a period is paid; the account service decides access. When a verified payment later writes a
  * plan grant, the grant's `issuedBy` and the staff audit row name this actor, so a payment is never attributed to a person
- * who did not make it (AGENTS.md, actor attribution). Migration 017 gives it one persons row, which is what the audit
+ * who did not make it (AGENTS.md, actor attribution). Migration 016 gives it one persons row, which is what the audit
  * table and the grant records point at.
  *
  * It is an actor and never a login: it has no external subject, so no session can be opened as it, no membership, and no
