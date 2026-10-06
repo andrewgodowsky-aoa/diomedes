@@ -280,6 +280,15 @@ describe("the local guard follows what a person paying as they go bought (DIO-22
       usage: { inputTokens: 10_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 } });
     const settled = await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(900));
     expect(settled.capMicroUsd).toBe(settled.settledMicroUsd + creditAmount(900));
+    // Within one admission the reported balance does not change, so the cap follows what settles: it rises by the spend and is
+    // approved again. The local guard does not bind inside an admission; the service's refusal does, and the next admission
+    // brings a fresh balance.
+    const before = exposure.allowance(connectionId)!;
+    await spend(connectionId, 200);
+    const after = await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(900));
+    expect(after.capMicroUsd).toBe(before.capMicroUsd + creditAmount(200));
+    expect(exposure.allowance(connectionId)!.revision).toBe(before.revision + 1);
+    expect(after.availableMicroUsd).toBe(creditAmount(900));
     // A balance of nothing leaves nothing to send with: the guard stops this computer too.
     expect((await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(0))).availableMicroUsd).toBe(0);
   });
