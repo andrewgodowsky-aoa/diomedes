@@ -217,7 +217,7 @@ export interface Task {
   from: { plan: string; step: number } | null;
   owner: Owner;
   state: TaskState;
-  reason: 'needs-ok' | 'changes-ready' | 'went-wrong' | null;
+  reason: 'needs-ok' | 'changes-ready' | 'went-wrong' | 'check-in' | null;
   needId: string | null;
   sessionIds: string[];
   changeIds: string[];
