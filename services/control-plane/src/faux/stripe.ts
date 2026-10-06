@@ -1,3 +1,5 @@
+import { STRIPE_API_VERSION } from '../credit-purchases.js';
+
 /**
  * A stand-in for the three things the faux cloud needs from Stripe so the desktop can buy credits without it:
  * the Customer create call, the Checkout Session create call, and the signed event Stripe sends when a session is paid.
@@ -52,6 +54,8 @@ export function fauxStripeFetch(): FauxStripeFetch {
       return refuse(404, 'The faux Stripe knows only the Customer and Checkout Session create calls.');
     const headers = new Headers(init.headers);
     if (headers.get('authorization') !== `Bearer ${FAUX_STRIPE_SECRET_KEY}`) return refuse(401, 'Invalid API key.');
+    // Every request pins the API version, as the real service allows; a call that forgets it fails here, so a test catches it.
+    if (headers.get('stripe-version') !== STRIPE_API_VERSION) return refuse(400, 'Every request must pin the Stripe-Version this service was built against.');
     const idempotencyKey = headers.get('idempotency-key');
     if (!idempotencyKey) return refuse(400, 'An idempotency key is required here.');
     const form = new URLSearchParams(String(init.body ?? ''));
@@ -97,7 +101,7 @@ export interface FauxPaidSession { sessionId: string; purchaseId: string; organi
 /** The checkout.session.completed event a paid session sends. Its id is the session's, so paying twice is one event. */
 export function fauxPaidEvent(session: FauxPaidSession, nowMs: number): string {
   return JSON.stringify({
-    id: `evt_faux_${session.sessionId.replace(/^cs_/, '')}`, object: 'event', type: 'checkout.session.completed', created: Math.floor(nowMs / 1000),
+    id: `evt_faux_${session.sessionId.replace(/^cs_/, '')}`, object: 'event', type: 'checkout.session.completed', created: Math.floor(nowMs / 1000), livemode: false,
     data: { object: {
       id: session.sessionId, object: 'checkout.session', status: 'complete', payment_status: 'paid', amount_total: session.amountCents, currency: 'usd',
       client_reference_id: session.purchaseId, customer: session.customerId,

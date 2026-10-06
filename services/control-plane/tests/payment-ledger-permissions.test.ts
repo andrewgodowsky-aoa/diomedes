@@ -11,29 +11,40 @@ import { PostgresRepository, type SqlClient } from '../src/postgres.js';
 import { describePrivileges, needs, read, recording, runtimeGrants } from './support/runtime-grants.js';
 
 const payment = {
-  eventId: 'evt_ledger_1', customerId: 'cus_ledger_1', organizationId: 'org_1', tenantId: 'tenant_1',
+  environment: 'test' as const, eventId: 'evt_ledger_1', customerId: 'cus_ledger_1', organizationId: 'org_1', tenantId: 'tenant_1',
   payloadHash: 'a'.repeat(64), eventType: 'checkout.session.completed',
   payload: { id: 'evt_ledger_1', data: { object: { id: 'cs_ledger_1', customer: 'cus_ledger_1' } } },
 };
 
 /** billing_customers and webhook_inbox as rows, answering the statements the ledger sends. */
 function database() {
-  const customers: { customer_id: string; organization_id: string; tenant_id: string }[] = [];
-  const events: { event_id: string; customer_id: string; organization_id: string; tenant_id: string; payload_hash: string }[] = [];
+  const customers: { customer_id: string; organization_id: string; tenant_id: string; environment: string }[] = [];
+  const events: { event_id: string; customer_id: string | null; organization_id: string | null; tenant_id: string | null; payload_hash: string; environment: string;
+    state: string; processed_at: string | null }[] = [];
   const db = recording((sql, values) => {
     if (sql.startsWith('SELECT customer_id FROM control_plane.billing_customers'))
-      return customers.filter((row) => row.tenant_id === values[1] && row.organization_id === values[2]).map((row) => ({ customer_id: row.customer_id }));
+      return customers.filter((row) => row.tenant_id === values[1] && row.organization_id === values[2] && row.environment === values[3]).map((row) => ({ customer_id: row.customer_id }));
+    if (sql.startsWith('SELECT customer_id,organization_id,tenant_id,environment FROM control_plane.billing_customers'))
+      return customers.filter((row) => row.customer_id === values[1] || (row.tenant_id === values[2] && row.organization_id === values[3] && row.environment === values[4]));
     if (sql.startsWith('SELECT customer_id,organization_id,tenant_id FROM control_plane.billing_customers'))
-      return customers.filter((row) => row.customer_id === values[1] || (row.tenant_id === values[2] && row.organization_id === values[3]));
+      return customers.filter((row) => row.environment === values[1] && row.customer_id === values[2]);
     if (sql.startsWith('INSERT INTO control_plane.billing_customers(')) {
-      customers.push({ customer_id: String(values[1]), organization_id: String(values[2]), tenant_id: String(values[3]) });
+      customers.push({ customer_id: String(values[1]), organization_id: String(values[2]), tenant_id: String(values[3]), environment: String(values[4]) });
       return [];
     }
-    if (sql.startsWith('SELECT customer_id,organization_id,tenant_id,payload_hash FROM control_plane.webhook_inbox'))
+    if (sql.startsWith('SELECT customer_id,organization_id,tenant_id,payload_hash,environment FROM control_plane.webhook_inbox')
+      || sql.startsWith('SELECT payload_hash,environment FROM control_plane.webhook_inbox'))
       return events.filter((row) => row.event_id === values[1]);
     if (sql.startsWith('INSERT INTO control_plane.webhook_inbox(')) {
-      events.push({ event_id: String(values[1]), customer_id: String(values[2]), organization_id: String(values[3]), tenant_id: String(values[4]), payload_hash: String(values[5]) });
+      events.push({ event_id: String(values[1]), customer_id: values[2] as string | null, organization_id: values[3] as string | null, tenant_id: values[4] as string | null,
+        payload_hash: String(values[5]), environment: String(values[8]), state: sql.includes("'ignored'") ? 'ignored' : 'pending', processed_at: null });
       return [];
+    }
+    if (sql.startsWith('UPDATE control_plane.webhook_inbox')) {
+      // Only a pending row of this environment and event moves, as the statement says.
+      const moved = events.filter((row) => row.environment === values[2] && row.event_id === values[3] && row.state === 'pending');
+      for (const row of moved) { row.state = String(values[0]); row.processed_at = values[1] as string | null; }
+      return moved.map((row) => ({ event_id: row.event_id }));
     }
     return [];
   });
@@ -82,8 +93,9 @@ describe('the payment ledger on the Worker login', () => {
     expect(sql.at(-1)).toBe('COMMIT');
     expect(calls.find((call) => call.sql.startsWith('SELECT pg_advisory_xact_lock'))!.values).toEqual([JSON.stringify(['payment-ledger', 'tenant_1', 'org_1'])]);
     expect(statementsOf(calls)).toEqual(['SELECT billing_customers', 'INSERT INTO billing_customers', 'SELECT webhook_inbox', 'INSERT INTO webhook_inbox']);
-    expect(customers).toEqual([{ customer_id: 'cus_ledger_1', organization_id: 'org_1', tenant_id: 'tenant_1' }]);
-    expect(events).toEqual([{ event_id: 'evt_ledger_1', customer_id: 'cus_ledger_1', organization_id: 'org_1', tenant_id: 'tenant_1', payload_hash: payment.payloadHash }]);
+    expect(customers).toEqual([{ customer_id: 'cus_ledger_1', organization_id: 'org_1', tenant_id: 'tenant_1', environment: 'test' }]);
+    expect(events).toEqual([{ event_id: 'evt_ledger_1', customer_id: 'cus_ledger_1', organization_id: 'org_1', tenant_id: 'tenant_1', payload_hash: payment.payloadHash,
+      environment: 'test', state: 'pending', processed_at: null }]);
     // A row is written pending (the inbox default): nothing in the statement sets a state.
     expect(calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.webhook_inbox'))!.sql).not.toMatch(/state|processed/);
   });
@@ -91,12 +103,12 @@ describe('the payment ledger on the Worker login', () => {
   it('binds every value: no id, hash or payload is ever spliced into the SQL text', async () => {
     const { repository, calls } = database();
     await repository.recordVerifiedPayment(payment);
-    await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' });
+    await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1', environment: 'test' });
     for (const { sql } of calls)
       for (const value of ['evt_ledger_1', 'cus_ledger_1', 'org_1', 'tenant_1', payment.payloadHash, 'cs_ledger_1', 'checkout.session.completed'])
         expect(sql).not.toContain(value);
     const inbox = calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.webhook_inbox'))!;
-    expect(inbox.values).toEqual(['stripe', 'evt_ledger_1', 'cus_ledger_1', 'org_1', 'tenant_1', payment.payloadHash, 'checkout.session.completed', JSON.stringify(payment.payload)]);
+    expect(inbox.values).toEqual(['stripe', 'evt_ledger_1', 'cus_ledger_1', 'org_1', 'tenant_1', payment.payloadHash, 'checkout.session.completed', JSON.stringify(payment.payload), 'test']);
   });
 
   it('stores a replay once: the same event again writes nothing', async () => {
@@ -150,18 +162,20 @@ describe('the payment ledger on the Worker login', () => {
 
   it('reads the stored customer by tenant and business, and answers null when there is none', async () => {
     const { repository, calls } = database();
-    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' })).toBeNull();
+    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1', environment: 'test' })).toBeNull();
     await repository.recordVerifiedPayment(payment);
-    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' })).toBe('cus_ledger_1');
-    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_2' })).toBeNull();
-    expect(await repository.storedCustomer({ tenantId: 'tenant_2', organizationId: 'org_1' })).toBeNull();
+    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1', environment: 'test' })).toBe('cus_ledger_1');
+    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_2', environment: 'test' })).toBeNull();
+    expect(await repository.storedCustomer({ tenantId: 'tenant_2', organizationId: 'org_1', environment: 'test' })).toBeNull();
+    // A test customer is never the business's live one.
+    expect(await repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1', environment: 'live' })).toBeNull();
     const select = calls.find((call) => call.sql.startsWith('SELECT customer_id FROM'))!;
-    expect(select.sql).toBe('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3');
-    expect(select.values).toEqual(['stripe', 'tenant_1', 'org_1']);
+    expect(select.sql).toBe('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3 AND environment=$4');
+    expect(select.values).toEqual(['stripe', 'tenant_1', 'org_1', 'test']);
   });
 });
 
-const business = { tenantId: 'tenant_1', organizationId: 'org_1' };
+const business = { tenantId: 'tenant_1', organizationId: 'org_1', environment: 'test' as const };
 
 describe('the business\'s one customer, made before its first session', () => {
   it('reads the stored customer and makes none when there is one, taking the business\'s lock first and writing nothing', async () => {
@@ -193,9 +207,9 @@ describe('the business\'s one customer, made before its first session', () => {
     expect(sql.at(-1)).toBe('COMMIT');
     expect(statementsOf(calls)).toEqual(['SELECT billing_customers', 'INSERT INTO billing_customers']);
     const insert = calls.find((call) => call.sql.startsWith('INSERT INTO control_plane.billing_customers'))!;
-    expect(insert.values).toEqual(['stripe', 'cus_made_1', 'org_1', 'tenant_1']);
+    expect(insert.values).toEqual(['stripe', 'cus_made_1', 'org_1', 'tenant_1', 'test']);
     expect(insert.sql).not.toMatch(/state|processed|ON CONFLICT|webhook_inbox/);
-    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1' }]);
+    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1', environment: 'test' }]);
   });
 
   it('stores nothing and rolls back when the Stripe call fails, and the next call asks again', async () => {
@@ -232,7 +246,7 @@ describe('the business\'s one customer, made before its first session', () => {
     const answers = await Promise.all([repository.ensureCustomer(business, make), repository.ensureCustomer(business, make), repository.ensureCustomer(business, make)]);
     expect(answers).toEqual(['cus_made_1', 'cus_made_1', 'cus_made_1']);
     expect(made).toBe(1);
-    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1' }]);
+    expect(customers).toEqual([{ customer_id: 'cus_made_1', organization_id: 'org_1', tenant_id: 'tenant_1', environment: 'test' }]);
     expect(calls.filter((call) => call.sql.startsWith('INSERT INTO control_plane.billing_customers'))).toHaveLength(1);
   });
 
@@ -251,7 +265,7 @@ describe('the business\'s one customer, made before its first session', () => {
     const { repository, customers } = lockingDatabase();
     let made = 0;
     const make = async () => `cus_biz_${++made}`;
-    await Promise.all([repository.ensureCustomer(business, make), repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_2' }, make)]);
+    await Promise.all([repository.ensureCustomer(business, make), repository.ensureCustomer({ ...business, organizationId: 'org_2' }, make)]);
     expect(made).toBe(2);
     expect(customers.map((row) => row.organization_id).sort()).toEqual(['org_1', 'org_2']);
   });
@@ -272,28 +286,37 @@ describe('the Worker login and the payment ledger', () => {
     await first.repository.recordVerifiedPayment(payment);
     await first.repository.recordVerifiedPayment(payment);
     await first.repository.recordVerifiedPayment({ ...payment, eventId: 'evt_ledger_2', payloadHash: 'b'.repeat(64) });
-    await first.repository.storedCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' });
+    await first.repository.storedCustomer(business);
     // The customer made before a first session: a read that finds none and writes one, and a read that finds it.
     const second = database();
-    await second.repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
-    await second.repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
-    return [...first.calls, ...second.calls].map((call) => call.sql);
+    await second.repository.ensureCustomer(business, async () => 'cus_ledger_1');
+    await second.repository.ensureCustomer(business, async () => 'cus_ledger_1');
+    // An event of a type nothing handles, with a customer of ours and without, and the marks that move a stored event.
+    const third = database();
+    await third.repository.recordVerifiedPayment(payment);
+    await third.repository.recordIgnoredEvent({ environment: 'test', eventId: 'evt_ignored_1', customerId: 'cus_ledger_1', payloadHash: 'd'.repeat(64), eventType: 'customer.created', payload: {} });
+    await third.repository.recordIgnoredEvent({ environment: 'test', eventId: 'evt_ignored_2', customerId: null, payloadHash: 'e'.repeat(64), eventType: 'product.created', payload: {} });
+    await third.repository.markEvent({ environment: 'test', eventId: 'evt_ledger_1' }, 'processed');
+    await third.repository.markEvent({ environment: 'test', eventId: 'evt_ledger_1' }, 'quarantined');
+    return [...first.calls, ...second.calls, ...third.calls].map((call) => call.sql);
   }
 
-  it('needs exactly the SELECT and INSERT on billing_customers and webhook_inbox that cp_runtime is granted, and nothing else', async () => {
+  it('needs exactly the SELECT and INSERT on billing_customers, and the SELECT, INSERT and UPDATE of state and processed_at on webhook_inbox, that cp_runtime is granted, and nothing else', async () => {
     const used = needs(await everyPath());
     const granted = runtimeGrants(read('../scripts/runtime-permissions.sql'));
     for (const table of ['billing_customers', 'webhook_inbox']) {
       // Both ways: every privilege the ledger uses is granted, and nothing granted on the table goes unused.
       expect(describePrivileges(used.get(table)), table).toEqual(describePrivileges(granted.get(table)));
-      expect(describePrivileges(used.get(table)), table).toEqual({ select: true, insert: true, update: [] });
     }
+    expect(describePrivileges(used.get('billing_customers'))).toEqual({ select: true, insert: true, update: [] });
+    // An event is marked, and nothing else of it is ever rewritten: UPDATE on these two columns and no more.
+    expect(describePrivileges(used.get('webhook_inbox'))).toEqual({ select: true, insert: true, update: ['processed_at', 'state'] });
     expect([...used.keys()].sort()).toEqual(['billing_customers', 'webhook_inbox']);
   });
 
   it('needs nothing more for making the customer than the SELECT and INSERT on billing_customers it is already granted', async () => {
     const { repository, calls } = database();
-    await repository.ensureCustomer({ tenantId: 'tenant_1', organizationId: 'org_1' }, async () => 'cus_ledger_1');
+    await repository.ensureCustomer(business, async () => 'cus_ledger_1');
     const used = needs(calls.map((call) => call.sql));
     expect([...used.keys()]).toEqual(['billing_customers']);
     expect(describePrivileges(used.get('billing_customers'))).toEqual({ select: true, insert: true, update: [] });
@@ -303,11 +326,18 @@ describe('the Worker login and the payment ledger', () => {
     expect(read('../scripts/runtime-permissions.sql')).not.toMatch(/pg_advisory/);
   });
 
-  it('writes an event or a customer once and never rewrites or deletes one', () => {
+  it('writes an event or a customer once and never rewrites or deletes one, apart from marking an event\'s state', () => {
     const adapter = read('../src/postgres.ts');
-    const ledger = adapter.slice(adapter.indexOf('async storedCustomer('), adapter.indexOf('\n}', adapter.indexOf('async recordVerifiedPayment(')));
+    // Code only: the comments above the methods may name the statements they do not send.
+    const ledger = adapter.slice(adapter.indexOf('async storedCustomer('), adapter.indexOf('async markEvent(')).replace(/\/\*[\s\S]*?\*\//g, '');
     expect(ledger).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE|DROP|FOR (KEY )?(SHARE|UPDATE)|ON CONFLICT)\b/);
+    // The one UPDATE moves a pending event's state and time, and nothing else of it.
+    const mark = adapter.slice(adapter.indexOf('async markEvent('), adapter.indexOf('\n}', adapter.indexOf('async markEvent(')));
+    expect(mark.match(/UPDATE control_plane\./g)).toHaveLength(1);
+    expect(mark).toContain("SET state=$1, processed_at=$2 WHERE provider='stripe' AND environment=$3 AND event_id=$4 AND state='pending'");
+    expect(mark).not.toMatch(/\b(DELETE|TRUNCATE|DROP)\b/);
     const granted = runtimeGrants(read('../scripts/runtime-permissions.sql'));
-    for (const table of ['billing_customers', 'webhook_inbox']) expect(granted.get(table)!.update.size).toBe(0);
+    expect(granted.get('billing_customers')!.update.size).toBe(0);
+    expect([...granted.get('webhook_inbox')!.update].sort()).toEqual(['processed_at', 'state']);
   });
 });

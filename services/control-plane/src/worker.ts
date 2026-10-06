@@ -7,7 +7,7 @@ import { WorkOSIdentityVerifier, signingKeyCache, type SigningKeyCache } from '.
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
-import { CREDIT_PURCHASES_UNAVAILABLE, CreditPurchaseService, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
+import { CREDIT_PURCHASES_UNAVAILABLE, CreditPurchaseService, GrantPlanLookup, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
 import { MemberLimits, MemberLimitsService, askRaiseInput, decideRaiseInput, setLimitInput, setSettingsInput } from './member-limits.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
@@ -184,7 +184,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   // so the funding login alone cannot make bought credits.
   const ledgerFor = (config: Configuration) => new PostgresRepository(neonClientFactory(config.databaseUrl));
   const createCreditPurchases = options.createCreditPurchases ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
-    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
+    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config),
+      plans: new GrantPlanLookup(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))) }));
   const createStripeWebhook = options.createStripeWebhook ?? ((config: Configuration, env: Record<string, unknown>) =>
     new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
 
@@ -576,11 +577,20 @@ export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
-  /** Whole cents for 100 credits. A setting, never a default: unset, every quote and purchase answers 503. */
-  CREDIT_PRICE_CENTS_PER_100?: string | number;
+  /**
+   * What one step of credits costs, written "cents:credits" (1000:110 is $10.00 for 110 credits), for a business with an active plan grant and for one
+   * without. Settings, never defaults: unset, a quote or purchase at that rate answers 503. The server picks the rate from the paying business's plan
+   * and stores it on the purchase.
+   */
+  CREDIT_RATE_PLAN?: string;
+  CREDIT_RATE_FREE?: string;
+  /** "1" lets a live key and live events through. Anything else, or unset, is test mode: a key that is not sk_test_ or rk_test_ is not used, and a livemode event is refused. */
+  STRIPE_LIVE?: string;
   /** Stripe secret key, and the endpoint secret for /billing/stripe/webhook. Both Worker secrets. */
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  /** The endpoint secret before a rotation. A signature valid under it or STRIPE_WEBHOOK_SECRET is accepted. */
+  STRIPE_WEBHOOK_SECRET_PREVIOUS?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;

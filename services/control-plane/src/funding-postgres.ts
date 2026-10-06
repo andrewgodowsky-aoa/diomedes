@@ -104,9 +104,12 @@ function creditPurchaseFrom(row: Row): CreditPurchaseRow {
   const state = text(row.state);
   if (state !== 'pending' && state !== 'paid' && state !== 'expired' && state !== 'failed') throw new Error('Stored purchase state is not a known value.');
   if (text(row.currency) !== 'usd') throw new Error('Stored purchase currency is not a known value.');
+  const environment = text(row.environment);
+  if (environment !== 'test' && environment !== 'live') throw new Error('Stored purchase environment is not a known value.');
   return {
     tenantId: text(row.tenant_id), organizationId: text(row.organization_id), purchaseId: text(row.purchase_id), personId: text(row.person_id),
-    credits: whole(row.credits), amountCents: whole(row.amount_cents), currency: 'usd', checkoutSessionId: textOrNull(row.stripe_checkout_session_id),
+    credits: whole(row.credits), amountCents: whole(row.amount_cents), rateCents: whole(row.rate_cents), rateCredits: whole(row.rate_credits), environment,
+    currency: 'usd', checkoutSessionId: textOrNull(row.stripe_checkout_session_id),
     state, createdAt: iso(row.created_at), resolvedAt: isoOrNull(row.resolved_at), stripeEventId: textOrNull(row.stripe_event_id),
   };
 }
@@ -256,10 +259,11 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && creditPurchaseFrom(row);
   }
   async saveCreditPurchase(row: CreditPurchaseRow) {
-    await this.client.query(`INSERT INTO control_plane.credit_purchases(tenant_id,purchase_id,organization_id,person_id,credits,amount_cents,currency,stripe_checkout_session_id,state,created_at,resolved_at,stripe_event_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    await this.client.query(`INSERT INTO control_plane.credit_purchases(tenant_id,purchase_id,organization_id,person_id,credits,amount_cents,currency,stripe_checkout_session_id,state,created_at,resolved_at,stripe_event_id,rate_cents,rate_credits,environment)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT (tenant_id,purchase_id) DO UPDATE SET stripe_checkout_session_id=EXCLUDED.stripe_checkout_session_id,state=EXCLUDED.state,resolved_at=EXCLUDED.resolved_at,stripe_event_id=EXCLUDED.stripe_event_id`,
-      [row.tenantId, row.purchaseId, row.organizationId, row.personId, row.credits, row.amountCents, row.currency, row.checkoutSessionId, row.state, row.createdAt, row.resolvedAt, row.stripeEventId]);
+      [row.tenantId, row.purchaseId, row.organizationId, row.personId, row.credits, row.amountCents, row.currency, row.checkoutSessionId, row.state, row.createdAt, row.resolvedAt, row.stripeEventId,
+        row.rateCents, row.rateCredits, row.environment]);
   }
 
   async capRequest(tenantId: string, requestId: string): Promise<CapRequestRow | undefined> {

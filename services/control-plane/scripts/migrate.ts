@@ -28,7 +28,9 @@ const factory = local ? () => new pg.Client({ connectionString, connectionTimeou
 const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql','005_customer_access.sql','006_staff_keys.sql','007_relay_devices.sql','008_organization_setup.sql','009_individual_plans.sql','010-scoped-routing.sql','011_individual_funding.sql','012_individual_subscription_periods.sql','013_purchased_usage_holds.sql','014_member_credit_limits.sql','015_credit_purchases.sql'].map(async (name) => {
   const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
   // The version is the file name's number, so 013 is refused until 011 and 012 are in the list before it,
-  // and 015 until 014 is too.
+  // and 015 until 014 is too. 017_stripe_billing_foundation.sql is deliberately NOT listed: draft #196 holds 016, and listing 017
+  // without it makes this runner refuse the whole list (even 001 to 015) before it opens a transaction. Whichever of the two
+  // merges second adds its entry here, 016 before 017.
   return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
 }));
 try {

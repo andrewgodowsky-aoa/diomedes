@@ -1,18 +1,25 @@
 /**
- * Buying credits (Andrew, 2026-10-01, DIO-161 slice 1).
+ * Buying credits (Andrew, 2026-10-01, DIO-161 slice 1; rates and the test and live guard from the 2026-10-05 billing foundation).
  *
- * An owner or an admin buys more credits for their business through Stripe Checkout. The price is the
- * Worker's own setting, CREDIT_PRICE_CENTS_PER_100 (whole cents for 100 credits): there is no default
- * here, and nothing but a quoted total for an asked amount ever leaves this service. A purchase is a
- * pending row (migration 015) until a verified Stripe event pays it, and the event that pays it
- * records the top-up in the same transaction (FundingService.resolveCreditPurchase).
+ * An owner or an admin buys more credits for their business through Stripe Checkout. What a step of credits costs is the
+ * Worker's own setting, written "cents:credits" per step: CREDIT_RATE_PLAN for a business on a paid plan and CREDIT_RATE_FREE for
+ * one without. There is no default here, and nothing but a quoted total for an asked amount ever leaves this service. The server
+ * picks the rate from the paying business's own plan grants at the moment the purchase is made and stores it, with the credits and
+ * the price, on the purchase row; the event that pays the purchase credits exactly what the row says and never works a rate out
+ * again. A purchase is a pending row (migration 015) until a verified Stripe event pays it, and the event that pays it records the
+ * top-up in the same transaction (FundingService.resolveCreditPurchase).
  *
  * Two services, both over FundingService:
  * - CreditPurchaseService: quote, buy and read. It verifies membership and the owner or admin role,
  *   makes sure the business has its one Stripe customer (made at Stripe and stored before its first session), makes the
  *   pending row, asks Stripe for a Checkout Session by fetch, and answers where to pay.
  * - StripeWebhookService: the receiver for Stripe's events. It reads the raw body, verifies the
- *   Stripe-Signature header before it parses a byte, and answers 200 to anything it will not act on.
+ *   Stripe-Signature header before it parses a byte, refuses an event from the other mode, and hands a verified event to
+ *   the router (src/stripe-events.ts), which answers 200 to anything it will not act on.
+ *
+ * Test and live. Nothing live runs unless STRIPE_LIVE=1 is set on purpose. Without it, a secret key that is not an sk_test_ or
+ * rk_test_ key is not used, and an event with livemode true is refused before anything is stored. With it, only an sk_live_ or
+ * rk_live_ key is used, and an event with livemode false is refused. Every Stripe request names its API version.
  *
  * Two database logins, kept apart on purpose. A top-up names a stored verified event (credit_topups.source_event_id
  * references webhook_inbox), and the event is stored, with the business's Stripe customer, by the Worker's login through
@@ -23,25 +30,32 @@
  * secret is ever logged, answered or stored.
  */
 import { z } from 'zod';
+import { AGENT_FEATURE } from '../../../shared/access.js';
 import { canSeePurchasedUsage } from '../../../shared/workspaces.js';
-import { CREDIT_PURCHASE_MAX_CREDITS, CREDIT_PURCHASE_MIN_CREDITS, CREDIT_PURCHASE_STEP, isAllowedCheckoutUrl, isPurchasableCredits,
+import { CREDIT_PURCHASE_MAX_CREDITS, isAllowedCheckoutUrl,
   type CreditPurchaseStarted as CreditPurchaseAnswer, type CreditPurchaseStatus as CreditPurchaseRead, type CreditQuote } from '../../../shared/credit-purchases.js';
 import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
 import { FundingError, type FundingService } from './funding.js';
+import { grantState, type CommercialRepository } from './commercial.js';
+import { StripeEventRouter, type StripeEvent, type StripeEventContext, type StripeEventHandler, type StripeMode } from './stripe-events.js';
 import type { AccountService } from './account-service.js';
 
-/**
- * Credits are bought in whole steps of 100, at least one step and at most 100,000 in one purchase (shared with the
- * desktop, which steps through the same amounts). The cap is an engineering one, not an owner figure; at any price the
- * setting allows, the total is also held under what a single Stripe charge can be.
- */
-export { CREDIT_PURCHASE_STEP, CREDIT_PURCHASE_MIN_CREDITS, CREDIT_PURCHASE_MAX_CREDITS };
+export type { StripeMode };
+/** Credits are bought in whole steps, and at most this many in one purchase (shared with the desktop). An engineering cap, not an owner figure. */
+export { CREDIT_PURCHASE_MAX_CREDITS };
 /** Stripe's largest single USD charge, in cents ($999,999.99). */
 export const STRIPE_MAX_CHARGE_CENTS = 99_999_999;
-/** The price setting is whole cents for 100 credits. These bound a setting that could only be a typing slip. */
-const PRICE_MIN_CENTS = 50;
-const PRICE_MAX_CENTS = 1_000_000;
+/**
+ * The Stripe API version every request is pinned to, so a change of the account's default version never changes what this service
+ * sends or reads. Raising it is a deliberate edit, tested against Stripe's test mode (the faux Stripe refuses a request without it).
+ */
+export const STRIPE_API_VERSION = '2026-08-26.dahlia';
+/** A rate setting is cents for one step. These bound a setting that could only be a typing slip. */
+const RATE_CENTS_MIN = 50;
+const RATE_CENTS_MAX = 1_000_000;
+const RATE_CREDITS_MIN = 1;
+const RATE_CREDITS_MAX = 10_000;
 /** Stripe takes a Checkout Session expiry between 30 minutes and 24 hours out; this is just past the shortest. */
 const CHECKOUT_LIFETIME_SECONDS = 35 * 60;
 /** Stripe's signature timestamp may differ from this service's clock by this much, either way. */
@@ -62,17 +76,31 @@ export const NOT_OWNER_OR_ADMIN = 'Only a Business owner or a Manager can buy cr
 export const PAYMENT_PAGE_UNAVAILABLE = 'The payment page couldn\'t be opened. Try again.';
 const UNKNOWN_PURCHASE = 'That purchase was not found for this business.';
 const THOUSANDS = (count: number) => String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-const BAD_CREDITS = `Credits are bought in steps of ${CREDIT_PURCHASE_STEP}, from ${CREDIT_PURCHASE_MIN_CREDITS} up to ${THOUSANDS(CREDIT_PURCHASE_MAX_CREDITS)}.`;
 const TOO_MUCH = 'That is more than one purchase can cover. Try a smaller amount.';
+
+// --- settings ---------------------------------------------------------------------------------------
+
+/** What a step of credits costs: `credits` credits for `cents` cents. One step is the least a purchase can be, and a purchase is whole steps. */
+export interface CreditRate { cents: number; credits: number }
+export type RateKind = 'plan' | 'free';
 
 /** What the Worker's environment says about buying. Parsed once per request; holds secrets, so it is never logged. */
 export interface BillingSettings {
-  /** Whole cents for 100 credits, or null when the setting is unset or unusable. */
-  creditPriceCentsPer100: number | null;
-  /** The rule a set but unusable price broke, or 'not-set'. Never the value. Null when the price is usable. */
-  priceProblem: string | null;
+  /** Test unless STRIPE_LIVE=1 was set on purpose. */
+  mode: StripeMode;
+  /** CREDIT_RATE_PLAN: the rate for a business with an active plan grant. Null when the setting is unset or unusable. */
+  creditRatePlan: CreditRate | null;
+  /** CREDIT_RATE_FREE: the rate for a business without one. */
+  creditRateFree: CreditRate | null;
+  /** The rule a set but unusable rate broke, or 'not-set'. Never the value. Null when the rate is usable. */
+  rateProblems: Record<RateKind, string | null>;
+  /** The secret key, only when it belongs to the mode: sk_test_ or rk_test_ in test, sk_live_ or rk_live_ in live. */
   stripeSecretKey: string | null;
+  /** The rule a set but refused key broke, or 'not-set'. Never the key. Null when the key is usable. */
+  keyProblem: string | null;
   stripeWebhookSecret: string | null;
+  /** The secret this endpoint used before a rotation. A signature valid under either secret is accepted. */
+  stripeWebhookSecretPrevious: string | null;
 }
 
 const secretText = (value: unknown): string | null => {
@@ -81,30 +109,67 @@ const secretText = (value: unknown): string | null => {
   return /^[\x21-\x7e]{8,200}$/.test(trimmed) ? trimmed : null;
 };
 
-/** CREDIT_PRICE_CENTS_PER_100, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, read as the Worker reads them. */
+/** "cents:credits": whole numbers, no sign, no decimals, inside the bounds. */
+export function parseCreditRate(raw: unknown): { rate: CreditRate | null; problem: string | null } {
+  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) return { rate: null, problem: 'not-set' };
+  const parts = typeof raw === 'string' ? /^([1-9][0-9]{0,9}):([1-9][0-9]{0,9})$/.exec(raw.trim()) : null;
+  if (parts === null) return { rate: null, problem: 'not-cents-colon-credits' };
+  const cents = Number(parts[1]);
+  const credits = Number(parts[2]);
+  if (!Number.isSafeInteger(cents) || !Number.isSafeInteger(credits) || cents < RATE_CENTS_MIN || cents > RATE_CENTS_MAX
+    || credits < RATE_CREDITS_MIN || credits > RATE_CREDITS_MAX) return { rate: null, problem: 'out-of-range' };
+  return { rate: { cents, credits }, problem: null };
+}
+
+/** The mode a Worker is in: STRIPE_LIVE=1 and nothing else is live. */
+export const stripeModeOf = (env: Record<string, unknown>): StripeMode => (env.STRIPE_LIVE === '1' || env.STRIPE_LIVE === 1 ? 'live' : 'test');
+
+/** CREDIT_RATE_PLAN, CREDIT_RATE_FREE, STRIPE_LIVE, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_WEBHOOK_SECRET_PREVIOUS, read as the Worker reads them. */
 export function readBillingSettings(env: Record<string, unknown>): BillingSettings {
-  const raw = env.CREDIT_PRICE_CENTS_PER_100;
-  let price: number | null = null;
-  let problem: string | null = null;
-  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) problem = 'not-set';
-  else {
-    const value = typeof raw === 'string' ? (/^[1-9][0-9]{0,9}$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN) : raw;
-    if (typeof value !== 'number' || !Number.isSafeInteger(value)) problem = 'not-a-whole-number';
-    else if (value < PRICE_MIN_CENTS || value > PRICE_MAX_CENTS) problem = 'out-of-range';
-    else price = value;
-  }
-  return { creditPriceCentsPer100: price, priceProblem: problem, stripeSecretKey: secretText(env.STRIPE_SECRET_KEY), stripeWebhookSecret: secretText(env.STRIPE_WEBHOOK_SECRET) };
+  const mode = stripeModeOf(env);
+  const plan = parseCreditRate(env.CREDIT_RATE_PLAN);
+  const free = parseCreditRate(env.CREDIT_RATE_FREE);
+  const key = secretText(env.STRIPE_SECRET_KEY);
+  const belongs = mode === 'live' ? /^(sk|rk)_live_/ : /^(sk|rk)_test_/;
+  // A key that is not for this mode is not used, and the guard says why without saying the key: a live key without STRIPE_LIVE=1
+  // never reaches Stripe, and a test key with it never does either.
+  const keyProblem = key === null ? 'not-set' : belongs.test(key) ? null : mode === 'live' ? 'not-a-live-key' : 'live-key-needs-stripe-live';
+  return {
+    mode,
+    creditRatePlan: plan.rate,
+    creditRateFree: free.rate,
+    rateProblems: { plan: plan.problem, free: free.problem },
+    stripeSecretKey: keyProblem === null ? key : null,
+    keyProblem,
+    stripeWebhookSecret: secretText(env.STRIPE_WEBHOOK_SECRET),
+    stripeWebhookSecretPrevious: secretText(env.STRIPE_WEBHOOK_SECRET_PREVIOUS),
+  };
 }
 
-/** The total for a whole number of credits, in cents. Credits must already be a whole multiple of the step. */
-export function creditPriceCents(credits: number, centsPer100: number): number {
-  return (credits / CREDIT_PURCHASE_STEP) * centsPer100;
+/** Whole steps at a rate: the credits, and the price in cents, in integers. Throws a 422 for a purchase no single charge can cover. */
+export function creditStepsCost(steps: number, rate: CreditRate): { credits: number; amountCents: number } {
+  const credits = steps * rate.credits;
+  const amountCents = steps * rate.cents;
+  if (!Number.isSafeInteger(credits) || !Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > STRIPE_MAX_CHARGE_CENTS) throw new AccountError(422, TOO_MUCH);
+  return { credits, amountCents };
 }
 
-/** A credit count from a query string (text) or a body (number): a whole multiple of 100 inside the bounds, or null. */
-function wholeCredits(value: unknown): number | null {
-  const credits = typeof value === 'string' ? (/^[1-9][0-9]{0,9}$/.test(value) ? Number(value) : Number.NaN) : value;
-  return isPurchasableCredits(credits) ? credits : null;
+/** The most credits one purchase can be at a rate: whole steps, held under the cap. */
+export const maxCreditsAt = (rate: CreditRate): number => Math.floor(CREDIT_PURCHASE_MAX_CREDITS / rate.credits) * rate.credits;
+
+const badCredits = (rate: CreditRate) =>
+  new AccountError(422, `Credits are bought in steps of ${THOUSANDS(rate.credits)}, from ${THOUSANDS(rate.credits)} up to ${THOUSANDS(maxCreditsAt(rate))}.`);
+
+/**
+ * How many whole steps an asked amount is: a credit count from a query string (text) or a body (number) that is a whole multiple of the
+ * rate's step, inside the bounds. No amount asked is one step, which is how a screen learns the step before it asks for more.
+ */
+function stepsAsked(asked: unknown, rate: CreditRate): number {
+  if (asked === undefined || asked === null) return 1;
+  const credits = typeof asked === 'string' ? (/^[1-9][0-9]{0,9}$/.test(asked) ? Number(asked) : Number.NaN) : asked;
+  if (typeof credits !== 'number' || !Number.isSafeInteger(credits) || credits < rate.credits || credits > CREDIT_PURCHASE_MAX_CREDITS || credits % rate.credits !== 0)
+    throw badCredits(rate);
+  return credits / rate.credits;
 }
 
 export const creditPurchaseInput = z.strictObject({ credits: z.number() });
@@ -112,8 +177,35 @@ export const creditPurchaseInput = z.strictObject({ credits: z.number() });
 /** A Stripe customer id, as Stripe makes them. */
 const CUSTOMER_ID = /^cus_[A-Za-z0-9_]{1,128}$/;
 
+// --- the plan the payer holds -------------------------------------------------------------------------
+
+/** Whether a business holds an active plan grant, which is what picks its rate. */
+export interface PlanLookup {
+  hasActivePlan(ref: { tenantId: string; organizationId: string }, atMs: number): Promise<boolean>;
+}
+
+/**
+ * A plan grant is one with the managed-inference or the nectovia-agent feature, valid now, however it was issued. Read from the
+ * business's own grants on the Worker login (feature_grants is granted to cp_runtime), never from a request.
+ */
+export class GrantPlanLookup implements PlanLookup {
+  constructor(private readonly repository: CommercialRepository) {}
+
+  async hasActivePlan(ref: { tenantId: string; organizationId: string }, atMs: number): Promise<boolean> {
+    const grants = await this.repository.transaction((tx) => tx.grants(ref.organizationId));
+    return grants.some((grant) => grant.tenantId === ref.tenantId && grantState(grant, atMs) === 'active'
+      && (grant.features.includes('managed-inference') || grant.features.includes(AGENT_FEATURE)));
+  }
+}
+
+// --- the payment ledger -------------------------------------------------------------------------------
+
+/** A business in one Stripe environment: it has one customer in each. */
+export interface BillingRef { tenantId: string; organizationId: string; environment: StripeMode }
+
 /** What the receiver stores for one verified paid event: the event, its payload and the business's Stripe customer. */
 export interface VerifiedPayment {
+  environment: StripeMode;
   eventId: string;
   /** From the verified event only. */
   customerId: string;
@@ -127,29 +219,47 @@ export interface VerifiedPayment {
   payload: Record<string, unknown>;
 }
 
+/** A verified event of a type nothing handles, stored and marked ignored. */
+export interface IgnoredEvent {
+  environment: StripeMode;
+  eventId: string;
+  /** The customer the event names, when it names one in Stripe's own form. It attributes the row only if it is a customer of ours. */
+  customerId: string | null;
+  payloadHash: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+}
+
 /**
- * The payment ledger: one reusable Stripe customer per business, and the verified events its payments arrive in.
+ * The payment ledger: one reusable Stripe customer per business in each environment, and the verified events its payments arrive in.
  * Both rows live in migration 002's billing_customers and webhook_inbox and are written by the Worker's login
  * (PostgresRepository), the receiver path, never by the funding login.
  */
 export interface PaymentLedger {
-  /** The business's stored Stripe customer, or null when it has none yet. Our own row, nothing else. */
-  storedCustomer(ref: { tenantId: string; organizationId: string }): Promise<string | null>;
+  /** The business's stored Stripe customer in this environment, or null when it has none yet. Our own row, nothing else. */
+  storedCustomer(ref: BillingRef): Promise<string | null>;
   /**
-   * The business's one Stripe customer, made before its first Checkout Session. Under a lock held per business, the same
+   * The business's one Stripe customer in this environment, made before its first Checkout Session. Under a lock held per business, the same
    * lock a paid event takes, it reads the stored customer and answers it; when there is none it runs `make` (which asks
    * Stripe for a customer and answers the id Stripe gave) and stores that id in the same locked step. So two first
    * purchases made at once share one customer: the second waits, then finds the first's row. An id is trusted only from
    * `make`'s own Stripe answer, checked to be a Stripe customer id, or from our stored row, never from a request. When `make`
    * throws nothing is stored and the error reaches the caller.
    */
-  ensureCustomer(ref: { tenantId: string; organizationId: string }, make: () => Promise<string>): Promise<string>;
+  ensureCustomer(ref: BillingRef, make: () => Promise<string>): Promise<string>;
   /**
    * Store a verified paid event, and the business's customer when it has none yet, in one transaction. Idempotent by
    * event id. A 409 AccountError when the event is already stored with other contents, when the customer belongs to
-   * another business, or when the business already has a different customer.
+   * another business, or when the business already has a different customer in this environment.
    */
   recordVerifiedPayment(input: VerifiedPayment): Promise<{ inserted: boolean }>;
+  /**
+   * Store a verified event of a type nothing handles, marked ignored. The business comes from our own customer row for the customer
+   * the event names, or the row has none. Idempotent by event id; a 409 AccountError when the event is already stored with other contents.
+   */
+  recordIgnoredEvent(input: IgnoredEvent): Promise<{ inserted: boolean }>;
+  /** Move a stored event out of pending once it has been applied (processed) or refused for good (quarantined). False when it was not pending. */
+  markEvent(ref: { environment: StripeMode; eventId: string }, state: 'processed' | 'quarantined'): Promise<boolean>;
 }
 
 export type { CreditQuote, CreditPurchaseAnswer, CreditPurchaseRead };
@@ -158,6 +268,8 @@ export interface CreditPurchaseOptions {
   settings: BillingSettings;
   /** Where a business's one Stripe customer is read, or made and stored the first time, so every purchase reuses it. */
   ledger: Pick<PaymentLedger, 'ensureCustomer'>;
+  /** The business's plan grants, which pick the rate. */
+  plans: PlanLookup;
   /** The transport to Stripe. Tests and the faux cloud pass their own; the Worker uses the global fetch. */
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -177,6 +289,12 @@ class CustomerNotMade extends Error {}
 
 type BuyingFunding = Pick<FundingService, 'startCreditPurchase' | 'attachCheckoutSession' | 'failCreditPurchase' | 'readCreditPurchase'>;
 
+/** The headers every Stripe request carries: the key, the form encoding, the idempotency key and the pinned API version. */
+export function stripeRequestHeaders(secretKey: string, idempotencyKey: string): Record<string, string> {
+  return { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey,
+    'Stripe-Version': STRIPE_API_VERSION, Accept: 'application/json' };
+}
+
 export class CreditPurchaseService {
   private readonly now: () => number;
   private readonly send: typeof globalThis.fetch;
@@ -195,43 +313,44 @@ export class CreditPurchaseService {
     return snapshot;
   }
 
-  /** The price, or a 503 that says nothing but that buying is not available; the Worker's log says which rule. */
-  private price(): number {
-    const { creditPriceCentsPer100, priceProblem } = this.options.settings;
-    if (creditPriceCentsPer100 === null) {
-      console.error(JSON.stringify({ event: 'credit-purchases-price-unavailable', setting: 'CREDIT_PRICE_CENTS_PER_100', rule: priceProblem ?? 'not-set' }));
+  /**
+   * The rate this business buys at right now: the plan rate while it holds an active plan grant, otherwise the free rate. A 503 that says
+   * nothing but that buying is not available when the setting that rate needs is not usable; the Worker's log says which rule.
+   */
+  private async rate(ref: { tenantId: string; organizationId: string }): Promise<CreditRate> {
+    const plan = await this.options.plans.hasActivePlan(ref, this.now());
+    const kind: RateKind = plan ? 'plan' : 'free';
+    const rate = plan ? this.options.settings.creditRatePlan : this.options.settings.creditRateFree;
+    if (rate === null) {
+      console.error(JSON.stringify({ event: 'credit-purchases-rate-unavailable', setting: plan ? 'CREDIT_RATE_PLAN' : 'CREDIT_RATE_FREE', rule: this.options.settings.rateProblems[kind] ?? 'not-set' }));
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
-    return creditPriceCentsPer100;
+    return rate;
   }
 
-  private total(credits: number, price: number): number {
-    const cents = creditPriceCents(credits, price);
-    if (!Number.isSafeInteger(cents) || cents < 1 || cents > STRIPE_MAX_CHARGE_CENTS) throw new AccountError(422, TOO_MUCH);
-    return cents;
-  }
-
-  /** What an amount of credits would cost. Writes nothing and asks Stripe nothing. */
+  /** What an amount of credits would cost, and the step it is bought in. Writes nothing and asks Stripe nothing. */
   async quote(token: string, organizationId: string, asked: unknown): Promise<CreditQuote> {
-    await this.buyer(token, organizationId);
-    const credits = wholeCredits(asked);
-    if (credits === null) throw new AccountError(422, BAD_CREDITS);
-    return { credits, amountCents: this.total(credits, this.price()), currency: 'usd' };
+    const snapshot = await this.buyer(token, organizationId);
+    const rate = await this.rate({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id });
+    const steps = stepsAsked(asked, rate);
+    const { credits, amountCents } = creditStepsCost(steps, rate);
+    return { credits, amountCents, currency: 'usd', steps, stepCredits: rate.credits, stepCents: rate.cents };
   }
 
   /**
    * Make the pending purchase and a Checkout Session for it, and answer where to pay. The amount is the
-   * server's own: the request names credits and nothing else. A session Stripe could not make leaves
-   * the purchase failed, not pending, so it never waits for a payment that cannot come.
+   * server's own: the request names credits and nothing else. The rate it was priced at is chosen here and stored on the row, so a
+   * plan that lapses before the payment changes nothing: the paid event credits what the row says. A session Stripe could not make
+   * leaves the purchase failed, not pending, so it never waits for a payment that cannot come.
    */
   async create(token: string, organizationId: string, input: z.infer<typeof creditPurchaseInput>, returnBase: string): Promise<CreditPurchaseAnswer> {
     const snapshot = await this.buyer(token, organizationId);
-    const credits = wholeCredits(input.credits);
-    if (credits === null) throw new AccountError(422, BAD_CREDITS);
-    const amountCents = this.total(credits, this.price());
-    const { stripeSecretKey } = this.options.settings;
+    const rate = await this.rate({ tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id });
+    const steps = stepsAsked(input.credits, rate);
+    const { credits, amountCents } = creditStepsCost(steps, rate);
+    const { stripeSecretKey, keyProblem, mode } = this.options.settings;
     if (stripeSecretKey === null) {
-      console.error(JSON.stringify({ event: 'credit-purchases-stripe-unavailable', setting: 'STRIPE_SECRET_KEY', rule: 'not-set' }));
+      console.error(JSON.stringify({ event: 'credit-purchases-stripe-unavailable', setting: 'STRIPE_SECRET_KEY', rule: keyProblem ?? 'not-set' }));
       throw new AccountError(503, CREDIT_PURCHASES_UNAVAILABLE);
     }
     const ref = { tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, purchaseId: this.newId() };
@@ -239,13 +358,13 @@ export class CreditPurchaseService {
     // purchase behind. From our own stored row or Stripe's own answer to our own request: never from a request to us.
     let customerId: string;
     try {
-      customerId = await this.options.ledger.ensureCustomer({ tenantId: ref.tenantId, organizationId: ref.organizationId },
+      customerId = await this.options.ledger.ensureCustomer({ tenantId: ref.tenantId, organizationId: ref.organizationId, environment: mode },
         () => this.createCustomer(stripeSecretKey, ref));
     } catch (error) {
       if (error instanceof CustomerNotMade) throw new AccountError(503, PAYMENT_PAGE_UNAVAILABLE);
       throw error;
     }
-    await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents });
+    await this.funding.startCreditPurchase({ ...ref, personId: snapshot.person.id, credits, amountCents, rateCents: rate.cents, rateCredits: rate.credits, environment: mode });
     const session = await this.checkoutSession(stripeSecretKey, ref, credits, amountCents, returnBase, customerId);
     if (session === null) {
       await this.funding.failCreditPurchase(ref).catch(() => undefined);
@@ -276,7 +395,7 @@ export class CreditPurchaseService {
     try {
       const response = await this.send(STRIPE_CUSTOMERS, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': key, Accept: 'application/json' },
+        headers: stripeRequestHeaders(secretKey, key),
         body: form.toString(),
         signal: AbortSignal.timeout(STRIPE_CUSTOMER_TIMEOUT_MS),
       });
@@ -320,7 +439,7 @@ export class CreditPurchaseService {
     try {
       const response = await this.send(STRIPE_CHECKOUT_SESSIONS, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': ref.purchaseId, Accept: 'application/json' },
+        headers: stripeRequestHeaders(secretKey, ref.purchaseId),
         body: form.toString(),
         signal: AbortSignal.timeout(STRIPE_TIMEOUT_MS),
       });
@@ -411,7 +530,8 @@ export async function verifyStripeSignature(rawBody: string | Uint8Array, header
 
 // --- the receiver -----------------------------------------------------------------------------------
 
-const eventSchema = z.object({ id: z.string().regex(/^evt_[A-Za-z0-9_]{1,128}$/), type: z.string().min(1).max(200), data: z.object({ object: z.unknown() }) });
+/** `livemode` is required, never defaulted: an event that does not say which mode it came from is not an event this service will act on. */
+const eventSchema = z.object({ id: z.string().regex(/^evt_[A-Za-z0-9_]{1,128}$/), type: z.string().min(1).max(200), livemode: z.boolean(), data: z.object({ object: z.unknown() }) });
 const sessionSchema = z.object({
   id: z.string().regex(/^cs_[A-Za-z0-9_]{1,250}$/),
   payment_status: z.string().nullish(),
@@ -422,13 +542,15 @@ const sessionSchema = z.object({
   customer: z.unknown().optional(),
   client_reference_id: z.string().nullish(),
 });
+/** What an event of any type may be asked: the id of the object it is about, and its customer when it has one. Nothing else is read or stored. */
+const objectRefSchema = z.object({ id: z.string().max(255).nullish(), customer: z.unknown().optional() });
 
 export interface WebhookAnswer { status: number; body: Record<string, unknown> }
 
 export interface StripeWebhookOptions {
   settings: BillingSettings;
-  /** Where a verified paid event and its customer are stored before the purchase is paid. */
-  ledger: Pick<PaymentLedger, 'recordVerifiedPayment'>;
+  /** Where a verified event and its customer are stored, and marked once it is applied. */
+  ledger: Pick<PaymentLedger, 'recordVerifiedPayment' | 'recordIgnoredEvent' | 'markEvent'>;
   now?: () => number;
 }
 
@@ -438,9 +560,13 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 
 export class StripeWebhookService {
   private readonly now: () => number;
+  /** One handler per event type: the Checkout Session events here, everything else stored and ignored. */
+  readonly router: StripeEventRouter;
 
   constructor(private readonly funding: Pick<FundingService, 'previewCreditPurchase' | 'resolveCreditPurchase'>, private readonly options: StripeWebhookOptions) {
     this.now = options.now ?? Date.now;
+    const checkout: StripeEventHandler = (context) => this.checkout(context);
+    this.router = new StripeEventRouter(Object.fromEntries(Object.keys(KINDS).map((type) => [type, checkout])), (context) => this.ignore(context));
   }
 
   /**
@@ -448,14 +574,14 @@ export class StripeWebhookService {
    * is written), then store the verified event and the business's customer in the ledger, against the stored purchase's own
    * business and tenant. False when the event pays nothing, so nothing is stored for it.
    */
-  private async storePayment(event: z.infer<typeof eventSchema>, object: z.infer<typeof sessionSchema>, raw: Uint8Array): Promise<boolean> {
+  private async storePayment(event: StripeEvent, object: z.infer<typeof sessionSchema>, raw: Uint8Array, environment: StripeMode): Promise<boolean> {
     const ask = {
       sessionId: object.id, purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null,
-      tenantId: object.metadata?.tenant_id ?? null, amountTotal: object.amount_total ?? null, currency: object.currency ?? null,
+      tenantId: object.metadata?.tenant_id ?? null, amountTotal: object.amount_total ?? null, currency: object.currency ?? null, environment,
     };
     const payable = await this.funding.previewCreditPurchase(ask);
     if (payable.outcome === 'ignored') {
-      if (payable.reason === 'amount_mismatch' || payable.reason === 'metadata_mismatch')
+      if (MISMATCHES.includes(payable.reason))
         console.error(JSON.stringify({ event: 'credit-purchase-mismatch', reason: payable.reason, purchaseId: payable.purchaseId, eventId: event.id }));
       return false;
     }
@@ -466,22 +592,97 @@ export class StripeWebhookService {
       return false;
     }
     await this.options.ledger.recordVerifiedPayment({
-      eventId: event.id, customerId, organizationId: payable.organizationId, tenantId: payable.tenantId,
+      environment, eventId: event.id, customerId, organizationId: payable.organizationId, tenantId: payable.tenantId,
       payloadHash: await sha256Hex(raw), eventType: event.type,
-      payload: { id: event.id, type: event.type, data: { object: {
+      payload: { id: event.id, type: event.type, livemode: event.livemode, data: { object: {
         id: object.id, payment_status: object.payment_status ?? null, amount_total: object.amount_total ?? null, currency: object.currency ?? null,
         customer: customerId, client_reference_id: object.client_reference_id ?? null, metadata: object.metadata ?? null } } },
     });
     return true;
   }
 
+  /** Move a stored event out of pending. A failure here is logged and nothing more: the payment it records is already applied or already refused. */
+  private async mark(eventId: string, environment: StripeMode, state: 'processed' | 'quarantined'): Promise<void> {
+    try {
+      await this.options.ledger.markEvent({ environment, eventId }, state);
+    } catch {
+      console.error(JSON.stringify({ event: 'stripe-event-mark-failed', eventId, state }));
+    }
+  }
+
   /**
-   * One Stripe event. 400 for a body whose signature does not verify, or that is not an event, with nothing
-   * recorded. 503 when the signing secret is not set or the write could not be made, so Stripe sends it again.
+   * The Checkout Session events, as they were before the router: a paid event is stored and then applied to the purchase its session pays, and the
+   * stored event is marked processed, or quarantined when the purchase refuses it for good. An expired or failed session changes the purchase and stores
+   * nothing. A failure a retry could change is thrown, so the receiver answers 503 and the event stays pending.
+   */
+  private async checkout({ event, raw, environment }: StripeEventContext): Promise<void> {
+    const kind = KINDS[event.type];
+    if (!kind) return;
+    const session = sessionSchema.safeParse(event.data.object);
+    if (!session.success) return;
+    const object = session.data;
+    // A completed session that is not paid yet is waiting on a delayed payment; its own event settles it.
+    if (kind === 'paid' && object.payment_status !== 'paid') return;
+    let stored = false;
+    try {
+      if (kind === 'paid') {
+        stored = await this.storePayment(event, object, raw, environment);
+        if (!stored) return;
+      }
+      const result = await this.funding.resolveCreditPurchase({
+        kind, sessionId: object.id, eventId: event.id, environment,
+        purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null, tenantId: object.metadata?.tenant_id ?? null,
+        amountTotal: object.amount_total ?? null, currency: object.currency ?? null,
+      });
+      const refused = result.outcome === 'ignored' && result.reason !== null && MISMATCHES.includes(result.reason);
+      if (refused) console.error(JSON.stringify({ event: 'credit-purchase-mismatch', reason: result.reason, purchaseId: result.purchaseId, eventId: event.id }));
+      if (stored) await this.mark(event.id, environment, refused || (result.outcome === 'ignored' && result.reason === 'unknown_session') ? 'quarantined' : 'processed');
+    } catch (error) {
+      if (error instanceof FundingError) {
+        // A refusal a retry will not change. Answering 200 stops Stripe from sending it again; the log names it.
+        console.error(JSON.stringify({ event: 'credit-purchase-refused', code: error.code, eventId: event.id }));
+        if (stored) await this.mark(event.id, environment, 'quarantined');
+        return;
+      }
+      if (error instanceof AccountError && error.status === 409) {
+        // The ledger refused: the event is stored with other contents, or the customer is not this business's. A retry
+        // will not change it, and nothing was paid. The log carries the event id to repair it by hand.
+        console.error(JSON.stringify({ event: 'credit-purchase-ledger-refused', code: error.code ?? 'conflict', eventId: event.id }));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * An event of a type nothing handles: stored in the inbox and marked ignored, with only the id of the object it is about and its customer, never
+   * the object. Idempotent, so a second delivery stores nothing.
+   */
+  private async ignore({ event, raw, environment }: StripeEventContext): Promise<void> {
+    const ref = objectRefSchema.safeParse(event.data.object);
+    const customerId = ref.success && typeof ref.data.customer === 'string' && CUSTOMER_ID.test(ref.data.customer) ? ref.data.customer : null;
+    try {
+      await this.options.ledger.recordIgnoredEvent({
+        environment, eventId: event.id, customerId, payloadHash: await sha256Hex(raw), eventType: event.type,
+        payload: { id: event.id, type: event.type, livemode: event.livemode, data: { object: { id: ref.success ? ref.data.id ?? null : null, customer: customerId } } },
+      });
+    } catch (error) {
+      if (error instanceof AccountError && error.status === 409) {
+        // Stored already with other contents: nothing to change, and a retry will not change it.
+        console.error(JSON.stringify({ event: 'stripe-event-ledger-refused', code: error.code ?? 'conflict', eventId: event.id }));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * One Stripe event. 400 for a body whose signature does not verify under either secret, that is not an event, or whose mode is not the
+   * Worker's, with nothing recorded. 503 when the signing secret is not set or the write could not be made, so Stripe sends it again.
    * 200 for everything else, including an event this service does not act on and one it finds already applied.
    */
   async handle(request: Request): Promise<WebhookAnswer> {
-    const secret = this.options.settings.stripeWebhookSecret;
+    const { stripeWebhookSecret: secret, stripeWebhookSecretPrevious: previous, mode } = this.options.settings;
     if (secret === null) {
       console.error(JSON.stringify({ event: 'credit-purchases-webhook-unavailable', setting: 'STRIPE_WEBHOOK_SECRET', rule: 'not-set' }));
       return { status: 503, body: { error: 'Payments are not set up here yet.' } };
@@ -493,9 +694,11 @@ export class StripeWebhookService {
       if (error instanceof RangeError) return { status: 413, body: { error: 'The event is too large.' } };
       return { status: 400, body: { error: 'A readable event is required.' } };
     }
-    if (!(await verifyStripeSignature(raw, request.headers.get('stripe-signature'), secret, this.now())))
-      return { status: 400, body: { error: 'The signature could not be verified.' } };
-    let event: z.infer<typeof eventSchema>;
+    // A rotation: the new secret, or the one before it, may have signed the event.
+    const header = request.headers.get('stripe-signature');
+    const signed = (await verifyStripeSignature(raw, header, secret, this.now())) || (previous !== null && (await verifyStripeSignature(raw, header, previous, this.now())));
+    if (!signed) return { status: 400, body: { error: 'The signature could not be verified.' } };
+    let event: StripeEvent;
     try {
       const parsed = eventSchema.safeParse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)));
       if (!parsed.success) return { status: 400, body: { error: 'That is not an event.' } };
@@ -503,39 +706,19 @@ export class StripeWebhookService {
     } catch {
       return { status: 400, body: { error: 'That is not an event.' } };
     }
-    const received = { status: 200, body: { received: true } };
-    const kind = KINDS[event.type];
-    if (!kind) return received;
-    const session = sessionSchema.safeParse(event.data.object);
-    if (!session.success) return received;
-    const object = session.data;
-    // A completed session that is not paid yet is waiting on a delayed payment; its own event settles it.
-    if (kind === 'paid' && object.payment_status !== 'paid') return received;
+    // The guard: an event is acted on only in the mode the Worker is in. A live event never reaches a Worker that was not set live on purpose,
+    // and a test event never reaches one that was. Nothing is stored for it.
+    if (event.livemode !== (mode === 'live')) {
+      console.error(JSON.stringify({ event: 'stripe-event-wrong-mode', eventId: event.id, eventLivemode: event.livemode, mode }));
+      return { status: 400, body: { error: 'That event is not from the mode this service is in.' } };
+    }
     try {
-      if (kind === 'paid' && !(await this.storePayment(event, object, raw))) return received;
-      const result = await this.funding.resolveCreditPurchase({
-        kind, sessionId: object.id, eventId: event.id,
-        purchaseId: object.metadata?.purchase_id ?? null, organizationId: object.metadata?.organization_id ?? null, tenantId: object.metadata?.tenant_id ?? null,
-        amountTotal: object.amount_total ?? null, currency: object.currency ?? null,
-      });
-      if (result.outcome === 'ignored' && (result.reason === 'amount_mismatch' || result.reason === 'metadata_mismatch'))
-        console.error(JSON.stringify({ event: 'credit-purchase-mismatch', reason: result.reason, purchaseId: result.purchaseId, eventId: event.id }));
-    } catch (error) {
-      if (error instanceof FundingError) {
-        // A refusal a retry will not change. Answering 200 stops Stripe from sending it again; the log names it.
-        console.error(JSON.stringify({ event: 'credit-purchase-refused', code: error.code, eventId: event.id }));
-        return received;
-      }
-      if (error instanceof AccountError && error.status === 409) {
-        // The ledger refused: the event is stored with other contents, or the customer is not this business's. A retry
-        // will not change it, and nothing was paid. The log carries the event id to repair it by hand.
-        console.error(JSON.stringify({ event: 'credit-purchase-ledger-refused', code: error.code ?? 'conflict', eventId: event.id }));
-        return received;
-      }
+      await this.router.dispatch({ event, raw, environment: mode });
+    } catch {
       console.error(JSON.stringify({ event: 'credit-purchase-webhook-failed', eventId: event.id }));
       return { status: 503, body: { error: 'The event could not be recorded. Try again.' } };
     }
-    return received;
+    return { status: 200, body: { received: true } };
   }
 }
 
@@ -545,6 +728,8 @@ const KINDS: Record<string, 'paid' | 'expired' | 'failed' | undefined> = Object.
   'checkout.session.async_payment_failed': 'failed',
   'checkout.session.expired': 'expired',
 });
+/** Why a stored purchase can refuse an event for good: the event does not belong to it. */
+const MISMATCHES: readonly string[] = ['amount_mismatch', 'metadata_mismatch', 'environment_mismatch'];
 
 // --- the page Stripe sends the buyer back to ----------------------------------------------------------
 

@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { ControlPlaneClient } from '../server/accounts/client';
 import { testOnlySecretBox } from '../server/connection-secrets';
-import { createFauxCloud, FAUX_BACKEND_LABEL, FAUX_CREDIT_PRICE_CENTS_PER_100, type FauxCloud } from '../services/control-plane/src/faux/cloud';
+import { createFauxCloud, FAUX_BACKEND_LABEL, FAUX_CREDIT_RATE_PLAN, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 import { RATE_CARD_V1, creditAmount, micro, periodIdFor, type AttemptSettlement } from '../shared/managed-usage';
 import type { WorkspaceView } from '../shared/workspaces';
@@ -23,7 +23,7 @@ import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Browser proof of the Usage screen in Settings (DIO-161): the owner of a business finds it, and a member finds only their own use; the
- * bar changes colour at the shared warning points; and buying 1,000 credits over the faux account service, paying on its
+ * bar changes colour at the shared warning points; and buying about 1,000 credits over the faux account service, paying on its
  * checkout page, ends with the paid line and the refreshed balances.
  *
  * The account service is the real control-plane handler over the faux store, in this process, as the desktop's own tests
@@ -39,7 +39,9 @@ test.describe.configure({ mode: 'serial' });
 const HEADERS = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 /** The grant the bar is measured against. Every figure below is a share of it. */
 const GRANTED_CREDITS = 1000;
-const BOUGHT_CREDITS = 1000;
+/** The business holds a plan in the faux seed, so it buys at the faux plan rate: whole steps, starting at about 1,000 credits. */
+const [PLAN_STEP_CENTS, PLAN_STEP_CREDITS] = FAUX_CREDIT_RATE_PLAN.split(':').map(Number);
+const BOUGHT_CREDITS = Math.floor(1000 / PLAN_STEP_CREDITS) * PLAN_STEP_CREDITS;
 
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
@@ -68,7 +70,7 @@ test.beforeAll(async () => {
   const results = path.resolve('test-results');
   await fs.mkdir(results, { recursive: true });
   fixtureRoot = await fs.mkdtemp(path.join(results, 'settings-usage-'));
-  cloud = await createFauxCloud({ file: null, passwordIterations: 1_000, billing: { creditPriceCentsPer100: FAUX_CREDIT_PRICE_CENTS_PER_100 } });
+  cloud = await createFauxCloud({ file: null, passwordIterations: 1_000, billing: { creditRatePlan: FAUX_CREDIT_RATE_PLAN } });
   juniper = (await seedDemo(cloud)).organizations!.juniper;
   server = createServer();
   await new Promise<void>((resolve, reject) => {
@@ -234,14 +236,14 @@ for (const { percent, tone, fill, note } of TONES) {
   });
 }
 
-test('buying 1,000 credits, and paying on the faux checkout page, shows the paid line and the new balances', async ({ page }) => {
+test('buying about 1,000 credits in the plan step, and paying on the faux checkout page, shows the paid line and the new balances', async ({ page }) => {
   await setUsedPercent(10);
   await openUsage(page);
   const balances = bought(page);
   await expect(balances).toBeVisible();
   const before = { bought: number(await fact(balances, 'Bought').textContent()), available: number(await fact(balances, 'Available').textContent()) };
 
-  const cents = BOUGHT_CREDITS / 100 * FAUX_CREDIT_PRICE_CENTS_PER_100;
+  const cents = BOUGHT_CREDITS / PLAN_STEP_CREDITS * PLAN_STEP_CENTS;
   const dollars = (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   const buy = page.getByRole('region', { name: 'Buy credits' });
   await expect(buy.getByLabel('Credits to buy')).toHaveValue(String(BOUGHT_CREDITS));
@@ -381,7 +383,7 @@ test('when the owner turns off members seeing their own usage, a member has no U
     await expect(usageEntry(page)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Agent usage', level: 2 })).toHaveCount(0);
 
-    const quote = await fetch(`${baseURL}/api${base()}/allowance/credit-purchases/quote?credits=100`, { headers: HEADERS });
+    const quote = await fetch(`${baseURL}/api${base()}/allowance/credit-purchases/quote?credits=${PLAN_STEP_CREDITS}`, { headers: HEADERS });
     expect(quote.ok).toBe(false);
     const members = await fetch(`${baseURL}/api${base()}/credit-usage/members`, { headers: HEADERS });
     expect(members.status).toBe(403);

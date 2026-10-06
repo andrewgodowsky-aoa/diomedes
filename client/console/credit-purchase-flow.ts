@@ -1,10 +1,8 @@
 import { ApiError } from '../api';
 import {
   CREDIT_PURCHASE_MAX_CREDITS,
-  CREDIT_PURCHASE_MIN_CREDITS,
-  CREDIT_PURCHASE_STEP,
   isAllowedCheckoutUrl,
-  isPurchasableCredits,
+  isAskableCredits,
   type CreditPurchaseStarted,
   type CreditPurchaseStatus,
   type CreditQuote,
@@ -15,7 +13,9 @@ import {
  *
  * It asks the desktop for a quote of an amount, starts a purchase, hands the payment page to an
  * opener, then follows the purchase until it is paid, expired or failed. It never works out a price:
- * the total it holds is the one the quote route answered, for the amount that was asked. It never
+ * the total it holds is the one the quote route answered, for the amount that was asked. Nor does it
+ * know the step credits are bought in: it asks for a quote with no amount, which is one step, and takes
+ * the step from that answer (a business with a plan buys in a different step than one without). It never
  * opens an address the desktop has not already vetted: a payment page that is not the processor's own
  * (or, in the test service, the local test one) is refused here as well, and nothing is opened.
  */
@@ -28,8 +28,20 @@ export const POLL_SLOW_MS = 10_000;
 export const POLL_SLOW_AFTER_MS = 120_000;
 /** Reads in a row that may fail before the flow stops following the purchase. */
 const POLL_FAILURES_ALLOWED = 5;
-/** What the amount field starts at. */
+/** What the amount field starts at before the step is known, and the amount it rounds down to a whole step once it is. */
 export const START_CREDITS = '1000';
+
+/** One step as the account service quoted it: this many credits for this many cents. */
+export interface CreditStep {
+  credits: number;
+  cents: number;
+}
+
+/** The starting amount at a step: about START_CREDITS, in whole steps, and at least one. */
+export const startCreditsFor = (step: number): number => Math.max(1, Math.floor(Number(START_CREDITS) / step)) * step;
+
+/** The most credits one purchase can be at a step: whole steps, held under the cap. */
+export const maxCreditsFor = (step: number): number => Math.floor(CREDIT_PURCHASE_MAX_CREDITS / step) * step;
 
 export type QuoteView =
   | { state: 'loading' }
@@ -51,6 +63,8 @@ export interface FlowState {
   input: string;
   quote: QuoteView;
   purchase: PurchaseView;
+  /** The step credits are bought in, from the last quote the service answered. Null until there is one. */
+  step: CreditStep | null;
 }
 
 export interface PurchaseFlowDeps {
@@ -63,19 +77,27 @@ export interface PurchaseFlowDeps {
   onPaid(): void;
 }
 
-const INVALID_MESSAGE = `Enter ${CREDIT_PURCHASE_MIN_CREDITS} credits or more, in steps of ${CREDIT_PURCHASE_STEP}, up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
+/** What an amount can be, in the step the service quoted (or, before there is one, only that it is a whole number inside the cap). */
+const invalidMessage = (step: number | null) =>
+  step === null
+    ? `Enter a whole number of credits, up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`
+    : `Enter ${step.toLocaleString('en-US')} credits or more, in steps of ${step.toLocaleString('en-US')}, up to ${maxCreditsFor(step).toLocaleString('en-US')}.`;
 const QUOTE_UNAVAILABLE = 'Buying credits isn’t available right now.';
 const START_FAILED = 'The payment couldn’t be started. Try again in a moment.';
 const PAGE_REFUSED = 'That payment page can’t be opened from here. Try again in a moment.';
 const CANT_CHECK = 'The payment can’t be checked right now.';
 const SIGN_IN = 'Sign in to buy credits.';
 
-/** The text of an amount field as an amount of credits, or null when it is not one that can be bought. */
-export function parseCredits(text: string): number | null {
+/**
+ * The text of an amount field as an amount of credits, or null when it is not one that can be bought. With a step it must be a whole
+ * number of steps; without one (no quote has answered yet) any amount inside the cap is asked for and the service says if it is a step.
+ */
+export function parseCredits(text: string, step: number | null = null): number | null {
   const trimmed = text.trim();
   if (!/^[0-9]{1,9}$/.test(trimmed)) return null;
   const credits = Number(trimmed);
-  return isPurchasableCredits(credits) ? credits : null;
+  if (!isAskableCredits(credits)) return null;
+  return step === null || credits % step === 0 ? credits : null;
 }
 
 /** A total in cents, shown as dollars. Display only: the amount in cents is always the service's. */
@@ -112,12 +134,18 @@ function plain(error: unknown, fallback: string): string {
   return fallback;
 }
 
-const isQuote = (value: unknown, asked: number): value is CreditQuote =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as CreditQuote).credits === asked &&
-  Number.isSafeInteger((value as CreditQuote).amountCents) &&
-  (value as CreditQuote).amountCents >= 0;
+/** A quote for the amount asked (or, asked with no amount, for one step), whose total is whole steps of the step it names. */
+const isQuote = (value: unknown, asked: number | null): value is CreditQuote => {
+  if (typeof value !== 'object' || value === null) return false;
+  const quote = value as CreditQuote;
+  const whole = [quote.credits, quote.amountCents, quote.steps, quote.stepCredits, quote.stepCents].every((part) => Number.isSafeInteger(part) && part > 0);
+  return (
+    whole &&
+    (asked === null || quote.credits === asked) &&
+    quote.credits === quote.steps * quote.stepCredits &&
+    quote.amountCents === quote.steps * quote.stepCents
+  );
+};
 
 const isStarted = (value: unknown): value is CreditPurchaseStarted =>
   typeof value === 'object' &&
@@ -129,7 +157,7 @@ const isStarted = (value: unknown): value is CreditPurchaseStarted =>
 
 export function createPurchaseFlow(deps: PurchaseFlowDeps) {
   const base = `/workspace/organizations/${encodeURIComponent(deps.organizationId)}/allowance/credit-purchases`;
-  let state: FlowState = { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' } };
+  let state: FlowState = { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' }, step: null };
   const listeners = new Set<(next: FlowState) => void>();
   let disposed = false;
   let quoteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -145,16 +173,28 @@ export function createPurchaseFlow(deps: PurchaseFlowDeps) {
     for (const listener of [...listeners]) listener(state);
   };
 
-  const askForQuote = async (credits: number) => {
+  /** A quote of an amount, or, with none, of one step: how a screen learns the step before it asks for more. */
+  const askForQuote = async (credits: number | null) => {
     const seq = ++quoteSeq;
     try {
-      const answer = await deps.read<unknown>(`${base}/quote?credits=${credits}`);
+      const answer = await deps.read<unknown>(credits === null ? `${base}/quote` : `${base}/quote?credits=${credits}`);
       if (disposed || seq !== quoteSeq) return;
       if (!isQuote(answer, credits)) {
         set({ quote: { state: 'unavailable', message: QUOTE_UNAVAILABLE } });
         return;
       }
-      set({ quote: { state: 'ready', credits, amountCents: answer.amountCents } });
+      const step = { credits: answer.stepCredits, cents: answer.stepCents };
+      if (credits === null) {
+        // The step is known: start at about 1,000 credits, in whole steps.
+        const start = startCreditsFor(step.credits);
+        if (start === answer.credits) set({ step, input: String(start), quote: { state: 'ready', credits: start, amountCents: answer.amountCents } });
+        else {
+          set({ step, input: String(start), quote: { state: 'loading' } });
+          void askForQuote(start);
+        }
+        return;
+      }
+      set({ step, quote: { state: 'ready', credits, amountCents: answer.amountCents } });
     } catch (error) {
       if (disposed || seq !== quoteSeq) return;
       set({ quote: { state: 'unavailable', message: plain(error, QUOTE_UNAVAILABLE) } });
@@ -218,9 +258,9 @@ export function createPurchaseFlow(deps: PurchaseFlowDeps) {
       return () => void listeners.delete(listener);
     },
 
-    /** Asks for a quote of the starting amount. */
+    /** Asks for one step's quote to learn the step, then for a quote of the starting amount in whole steps. */
     start() {
-      void askForQuote(Number(START_CREDITS));
+      void askForQuote(null);
     },
 
     /** The amount field changed. Held while a payment is starting or waiting. */
@@ -228,9 +268,9 @@ export function createPurchaseFlow(deps: PurchaseFlowDeps) {
       if (disposed || state.purchase.phase === 'starting' || state.purchase.phase === 'waiting') return;
       clearTimeout(quoteTimer);
       quoteSeq += 1;
-      const credits = parseCredits(text);
+      const credits = parseCredits(text, state.step?.credits ?? null);
       if (credits === null) {
-        set({ input: text, quote: { state: 'invalid', message: INVALID_MESSAGE } });
+        set({ input: text, quote: { state: 'invalid', message: invalidMessage(state.step?.credits ?? null) } });
         return;
       }
       set({ input: text, quote: { state: 'loading' } });

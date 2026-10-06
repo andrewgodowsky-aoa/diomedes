@@ -341,12 +341,14 @@ async function runGatewayPaths() {
     body: JSON.stringify({ email: DEMO_ACCOUNTS.owner.email, password: FAUX_DEMO_PASSWORD }),
   }));
   const ownerToken = (await ownerSignIn.json()).accessToken as string;
-  const billing = { CREDIT_PRICE_CENTS_PER_100: '1200', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
+  const billing = { CREDIT_RATE_PLAN: '1000:110', CREDIT_RATE_FREE: '1200:100', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
+  // The business buys without a plan here, at the free rate, in steps of 100.
+  const plans = { hasActivePlan: async () => false };
   const settings = readBillingSettings(billing);
   const ledger = cloud.paymentLedger;
   const faux = fauxStripeFetch();
-  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger });
-  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger });
+  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger, plans });
+  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger, plans });
   const receiving = new StripeWebhookService(funding, { settings, now, ledger });
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const paid = await buying.create(ownerToken, organizationId, { credits: 300 }, 'http://127.0.0.1:8795');
@@ -478,9 +480,11 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
       expect(FUNDING_SQL).not.toMatch(new RegExp(`GRANT[^;]*control_plane\.${table}`));
     }
     const runtime = parseGrants(RUNTIME_SQL, 'cp_runtime');
+    // The Worker login marks an inbox event's state (017) and nothing else of it; a customer is never rewritten.
+    const updates: Record<string, string[]> = { webhook_inbox: ['processed_at', 'state'], billing_customers: [] };
     for (const table of ['webhook_inbox', 'billing_customers'])
-      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])] })
-        .toEqual({ table, insert: true, select: true, update: [] });
+      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])].sort() })
+        .toEqual({ table, insert: true, select: true, update: updates[table] });
     // And it does not write funding rows or credit purchases.
     expect(runtime.tables.get('credit_purchases')).toBeUndefined();
   });
