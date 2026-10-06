@@ -287,7 +287,7 @@ export function managedEvaluationPort(options: ManagedEvaluationOptions): Evalua
       const connectionId = nectoviaConnectionId(organizationId, now());
       let hold: ExposureReservation;
       try {
-        if ((await ensureNectoviaGuard(options.exposure, connectionId, admitted.planId)).availableMicroUsd <= 0)
+        if ((await ensureNectoviaGuard(options.exposure, connectionId, admitted.planId, admitted.boughtAvailable)).availableMicroUsd <= 0)
           throw refuse('transport_unavailable', NOT_SENT.guard);
         hold = await options.exposure.reserve({
           connectionId,

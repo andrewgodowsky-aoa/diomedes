@@ -131,10 +131,16 @@ export interface EntitlementView {
   reason: string;
   /**
    * A person's own Individual billing scope only (DIO-219, pay as you go): whether the credits they bought are above zero now,
-   * all spent or held, or were never bought. Never the figure.
+   * all spent or held, or were never bought. The amount is `boughtAvailable`.
    * It grants no feature and changes no field above; a gate reads it only when no plan includes the Agent. Absent elsewhere.
    */
   boughtCredits?: 'available' | 'spent' | 'none';
+  /**
+   * The same scope's bought balance in ledger units (100,000 to a credit), a whole number, so this computer's local safety guard
+   * can follow what the person bought instead of a fixed monthly figure (DIO-223). The account service's ledger stays the
+   * authority. Absent from an older service, from any read that failed, and from every scope but a person's own.
+   */
+  boughtAvailable?: number;
 }
 
 // People see this under Workspaces, so it names no product: the control plane's own sentence
