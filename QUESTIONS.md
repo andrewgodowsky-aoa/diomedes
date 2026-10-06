@@ -694,6 +694,10 @@ branch `feature/individual-tier`).
    rollout against the real database, the Operations and site changes in their own
    repositories, self-service checkout and automated payment collection, and the canonical
    Drive wording.
+5. **Pay as you go.** Decided by Andrew on 2026-10-05: a person with no plan who holds bought
+   credits may use the Nectovia Agent for their own Personal work, funded only by those
+   credits, so item 3 gains a second way in. Not built yet; the terms are in
+   `docs/business/PRICING_STRATEGY_2026-09-15.md`.
 
 These describe the local routing composition; its verification and publication are recorded
 separately in `docs/implementation/2026-09-28-operations-routing.md`.

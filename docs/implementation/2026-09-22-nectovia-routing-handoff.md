@@ -1,6 +1,6 @@
 # Nectovia routing and commercial implementation handoff
 
-NC-2026-09-28.1. Commercial inference requirements reconciled with the canonical Drive policy; older routing qualification observations below retain their stated dates. Read `../business/PRICING_STRATEGY_2026-09-15.md` first; its "Status of terms" table is authoritative for what is approved, proposed, withdrawn or superseded; update both tables together. Andrew's decisions of 2026-09-23 supersede source package NC-2026-09-22.1 and PR #35 where they differ; replaced rules are kept under "Superseded 2026-09-23" at the end and are not operative. This file does not activate runtime entitlements or authorize spending/deployment. This policy update is not evidence of deployed billing or live provider qualification.
+NC-2026-10-05.1. Commercial inference requirements reconciled with the canonical Drive policy; older routing qualification observations below retain their stated dates. Read `../business/PRICING_STRATEGY_2026-09-15.md` first; its "Status of terms" table is authoritative for what is approved, proposed, withdrawn or superseded; update both tables together. Andrew's decisions of 2026-09-23 supersede source package NC-2026-09-22.1 and PR #35 where they differ; replaced rules are kept under "Superseded 2026-09-23" at the end and are not operative. This file does not activate runtime entitlements or authorize spending/deployment. This policy update is not evidence of deployed billing or live provider qualification.
 
 Nectovia is the product. Diomedes is the company.
 
@@ -12,7 +12,11 @@ Nectovia is the product. Diomedes is the company.
 | Customer expert model picker, lead-only / all-call pins, no-substitution choice | withdrawn | Owner decision 2026-09-23 |
 | Efficient GPT-6 Luna on AWS Bedrock; Focused Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: a Vertex API key, local ADC the alternative); Thorough GPT-6 Sol on AWS Bedrock | approved (not live-qualified) | Owner decision 2026-09-23 |
 | Sol-primary Focused, Muse Standard preference, Opus 5.5 Thorough | superseded | Replaced by owner decision 2026-09-23 |
-| Parent-job caps Efficient 20 / Focused 50 / Thorough 100, with pre-send warning dialog | approved | Owner decision 2026-09-23 |
+| Parent-job caps Efficient 20 / Focused 50 / Thorough 100, with pre-send warning dialog | superseded | Replaced by job check-ins, owner decision 2026-10-05 |
+| Credits priced by tier from a private, versioned price table; provider cost recorded beside each call (Model B) | approved | Owner decision 2026-10-05 |
+| Extra credits: $100 for 1,100 on a paid plan, $130 for 1,000 without one; bought credits expire 12 months after purchase | approved | Owner decision 2026-10-05 |
+| Nectovia Agent for a person with no plan, in their own Personal work, while they hold bought credits | approved | Owner decision 2026-10-05; Core Pillars 2026-10-05.1 |
+| Job check-ins at a step boundary at 100 / 250 / 500 credits, settable by owners | approved | Owner decision 2026-10-05 |
 | Jev through OpenRouter | approved (not live-qualified) | Owner decision 2026-09-23 |
 | Jev through TypeSafe direct as the pathway | superseded | Replaced by owner decision 2026-09-23 |
 | Subscription-backed external search only for the licensed user/device; never pooled organization funding | approved | Owner decisions 2026-09-23 and 2026-09-28 |
