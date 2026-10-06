@@ -4,8 +4,8 @@
  *
  * A refusal whose hold was released is a known outcome (nothing was charged for that step), so it
  * is recorded as a failed step, never parked for reconciliation. Only the two out-of-credits
- * codes are read that way: the job cap, a busy service and an unreleased hold keep the existing
- * handling.
+ * codes and the job's check-in (`nectovia_cap_request_required`, which stops work to ask whether to
+ * keep going) are read that way: a busy service and an unreleased hold keep the existing handling.
  */
 import { afterEach, describe, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
@@ -56,7 +56,7 @@ const model: StepDefinition = {
 };
 
 describe('the run service and a refusal that sent and charged nothing', () => {
-  test.each(['nectovia_insufficient_allowance', 'nectovia_no_period'])('%s with its hold released is a failed step, not a parked one', async (code) => {
+  test.each(['nectovia_insufficient_allowance', 'nectovia_no_period', 'nectovia_cap_request_required'])('%s with its hold released is a failed step, not a parked one', async (code) => {
     const { runs } = await setup();
     await begin(runs, 'r1');
     await expect(runs.step('r1', 'host', model, () => { throw refusal(code); }, principal)).rejects.toMatchObject({ code });
@@ -71,7 +71,7 @@ describe('the run service and a refusal that sent and charged nothing', () => {
   });
 
   test.each([
-    ['the job cap, which keeps its own path', 'nectovia_cap_request_required', 'released' as const],
+    ['a job check-in whose hold is not known released', 'nectovia_cap_request_required', 'uncertain' as const],
     ['a busy service, which keeps its own path', 'nectovia_provider_busy', 'released' as const],
     ['an out-of-credits code whose hold is not known released', 'nectovia_insufficient_allowance', 'uncertain' as const],
   ])('%s stays parked for reconciliation', async (_label, code, hold) => {

@@ -60,6 +60,9 @@ export function taskEvidence(
   if (task.workflow?.inbox) return result('Inbox', 'Accept this proposed task before it can run');
   if (task.workflow?.pendingPhase) return result('Review', 'Approve the next phase to continue');
   if (openNeed) return result('Review', 'Needs your decision');
+  // Work nobody was watching stopped at its check-in: the stop's own sentence says so, and Keep going answers it.
+  if (task.reason === 'check-in' && session?.state === 'stopped')
+    return result('Review', [...session.log].reverse().find((line) => line.level === 'plain')?.sentence || 'A routine stopped to check in.');
   if (active?.state === 'waiting') {
     if (pendingChanges || task.reason === 'changes-ready')
       return result('Review', 'Changes to review');

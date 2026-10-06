@@ -173,6 +173,10 @@ const CONFIRM: Record<'resume' | 'retry', (route: string, support: string | null
   retry: (route) => `Sends the same request to ${route} again, as a new attempt.`,
 };
 
+/** A job that stopped to check in is kept going by its Retry: the same request, with one more amount. */
+const KEEP_GOING = 'Keep going';
+const KEEP_GOING_CONFIRM = (route: string) => `Sends the same request to ${route} again as a new attempt. The job can use one more amount before it checks in again.`;
+
 /**
  * Stop, Resume, Retry and Fork for one run, in the run's own record: the Stop
  * cluster while it runs, the rest once it has settled. Only what the route
@@ -247,6 +251,8 @@ export function RunControls({
     (control === 'fork' || latest);
   const shown = (['resume', 'retry', 'fork'] as const).filter(offered);
   if (!shown.length) return null;
+  const checkedIn = task.reason === 'check-in';
+  const labelOf = (control: RunControl) => (control === 'retry' && checkedIn ? KEEP_GOING : CONTROL_LABELS[control]);
   const routeName = routeDisplayName(profile.workRoute);
   return (
     <span className="run-controls">
@@ -264,14 +270,16 @@ export function RunControls({
                 : setConfirming(confirming === control ? null : control)
             }
           >
-            {CONTROL_LABELS[control]}
+            {labelOf(control)}
           </button>
         ))}
       </span>
       {confirming && (
         <span className="run-control-confirm" role="group" aria-label={`Confirm ${confirming}`}>
           <span className="caption">
-            {CONFIRM[confirming](routeName, profile.controls[confirming].support)}
+            {confirming === 'retry' && checkedIn
+              ? KEEP_GOING_CONFIRM(routeName)
+              : CONFIRM[confirming](routeName, profile.controls[confirming].support)}
           </span>{' '}
           <button
             type="button"
@@ -283,7 +291,7 @@ export function RunControls({
               void act(control);
             }}
           >
-            {CONTROL_LABELS[confirming]} now
+            {labelOf(confirming)} now
           </button>{' '}
           <button type="button" onClick={() => setConfirming(null)}>
             Cancel
