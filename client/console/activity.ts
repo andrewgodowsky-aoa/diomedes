@@ -48,6 +48,11 @@ export interface ProjectActivity {
 export const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** And at most this many rows, so a busy day cannot flood the screen. */
 export const RECENT_LIMIT = 10;
+/**
+ * The home rail's Finished window: the week, as the round 2 boards count it ("Six things done this
+ * week"). Only the rail passes it; the Board and the overview keep the 24 hour window.
+ */
+export const WEEK_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const parse = (iso: string | null | undefined): number | null => {
   if (!iso) return null;
@@ -148,7 +153,9 @@ export function projectActivity(
   state: ProjectState,
   now: number = Date.now(),
   attention: readonly ActivityRow[] = [],
+  options: { windowMs?: number } = {},
 ): ProjectActivity {
+  const windowMs = options.windowMs ?? RECENT_WINDOW_MS;
   const working: ActivityRow[] = [];
   const needsYou = waitingOnYou(state).map((item) => waitingRow(item, state));
   const finishedRecently: ActivityRow[] = [];
@@ -173,7 +180,7 @@ export function projectActivity(
       const at = finishedAt(task, session, state.history);
       const ms = parse(at);
       // An undated finish is not claimed as recent.
-      if (ms === null || now - ms > RECENT_WINDOW_MS || ms > now + 60_000) continue;
+      if (ms === null || now - ms > windowMs || ms > now + 60_000) continue;
       finishedRecently.push(taskRow(task, evidence.detail, session, state, at));
     }
   }
