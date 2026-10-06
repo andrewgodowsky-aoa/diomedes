@@ -40,7 +40,7 @@ import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
 import { RoutingService } from '../routing.js';
 import { AccountError } from '../errors.js';
 import { FundingService, PurchasedUsageService, UsageService } from '../funding.js';
-import { CreditPurchaseService, GrantPlanLookup, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
+import { CommercialPersonScopes, CreditPurchaseService, GrantPlanLookup, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from './stripe.js';
 import { StatePaymentLedger } from './payment-ledger.js';
 import type { PaymentLedger } from '../credit-purchases.js';
@@ -301,10 +301,10 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createCommercial: () => commercial,
       createPurchased: () => new PurchasedUsageService(accounts, funding),
       createCreditPurchases: (_config, _accounts, env) => new CreditPurchaseService(accounts, funding, { settings: readBillingSettings(env), fetch: fauxStripe, now,
-        localCheckout: true, ledger: paymentLedger, plans: new GrantPlanLookup(store.commercial) }),
+        localCheckout: true, ledger: paymentLedger, plans: new GrantPlanLookup(store.commercial), persons: new CommercialPersonScopes(store.commercial, now) }),
       createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
       createLimits: () => new MemberLimitsService(accounts, new MemberLimits(store.funding, { now })),
-      createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
+      createRouting: () => new RoutingService(accounts, store.commercial, now, funding, funding),
       createCheckIns: () => new JobCheckInService(accounts, store.commercial, funding, now),
       createManaged: () => managed,
       createRelay: () => relay,

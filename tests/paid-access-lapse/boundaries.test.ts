@@ -29,7 +29,8 @@ describe('independent free harness and paid Agent boundaries at 05ef1b0', () => 
     expect(response.status).toBe(403);
     const body = await response.json() as { error: string; code: string };
     expect(body.code).toBe('AGENT_NOT_INCLUDED');
-    expect(body.error.match(/Nothing was sent\./g)).toHaveLength(1);
+    // The free-version refusal no longer ends on a reassurance tail (Model B section 7, 2026-10-05).
+    expect(body.error).not.toMatch(/Nothing was sent/);
     expect(body.error).toContain('free version');
     expect(body.error).not.toMatch(/business|install|switch/i);
     expect(f.calls.direct + f.calls.model).toBe(0);

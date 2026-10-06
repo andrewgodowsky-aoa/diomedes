@@ -454,6 +454,17 @@ function balanceOf(totals: TopUpTotals): PurchasedBalance {
 
 const leaseFrom = (at: string) => new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
 
+/**
+ * Pay as you go (DIO-219, migration 019). A person with no plan has no billing period, so a reservation for their own
+ * Individual billing scope draws on the credits they bought and binds to the scope's one bought-credits row: no grant,
+ * no source, and no end inside the life of the product. It never funds anything itself; only the scope's bought balance does.
+ */
+export const BOUGHT_CREDITS_PLAN = 'bought-credits';
+export const BOUGHT_CREDITS_PERIOD = 'bought-credits';
+const BOUGHT_CREDITS_ENDS_AT = '9999-12-31T00:00:00.000Z';
+/** A person's own Individual billing scope (010: ids `individual_...`). Only such a scope may hold a bought-credits row. */
+export const isIndividualScopeId = (id: string): boolean => id.startsWith('individual_');
+
 export interface FundingOptions {
   now?: () => number;
 }
@@ -609,6 +620,31 @@ export class FundingService {
     const row: TopUpRow = { tenantId, organizationId, topUpId, amountMicroUsd: input.amountMicroUsd, provider: 'stripe', sourceEventId, recordedAt: this.at() };
     await tx.saveTopUp(row);
     return row;
+  }
+
+  /**
+   * What a billing scope's bought credits leave free right now, read with SELECT only: no lock and no sweep, so it runs on the
+   * Worker login, which may only read funding rows. A hold whose lease has lapsed is not counted (topUpTotals reads it so), so
+   * this is never less than the locked read would give. Admission asks it; the reservation decides under the lock.
+   */
+  async boughtAvailable(tenantId: string, organizationId: string): Promise<MicroUsd> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'organization');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)));
+  }
+
+  /**
+   * Whether a billing scope's bought credits are above zero now, all spent or held, or were never bought: the same SELECT-only
+   * read, saying no figure. Admission and the person's own access view ask it.
+   */
+  async boughtState(tenantId: string, organizationId: string): Promise<'available' | 'spent' | 'none'> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'organization');
+    const at = this.at();
+    const totals = await this.repository.transaction((tx) => tx.topUpTotals(tenantId, organizationId, at));
+    if (topUpAvailable(totals) > 0) return 'available';
+    return totals.purchasedMicroUsd > 0 ? 'spent' : 'none';
   }
 
   /** What a business bought outright and what of it is held or spent. Read-only; money only from recorded top-ups. */
@@ -1006,6 +1042,12 @@ export class FundingService {
      * and legacy Individual grants).
      */
     individualCycle?: IndividualBillingCycle;
+    /**
+     * Pay as you go (DIO-219): the gateway sets it for a person's own Individual billing scope when no plan funds the work.
+     * Never a client value. When the scope has no billing period, the reservation draws on its bought credits only and binds
+     * to the scope's bought-credits row instead of failing `no_period`. A business scope never takes this path.
+     */
+    boughtOnly?: boolean;
   }): Promise<FundedAttempt> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
@@ -1028,8 +1070,9 @@ export class FundingService {
     if (member && !MEMBER_ROLES.includes(member.role)) throw new FundingError(422, 'A member has an owner, admin or member role.', 'invalid_request');
     const cycle = input.individualCycle === undefined ? null : verifiedIndividualCycle(input.individualCycle);
     if (input.individualCycle !== undefined && !cycle) throw new FundingError(422, 'That is not a verified Individual billing period.', 'invalid_period');
+    const boughtOnly = input.boughtOnly === true && !cycle && isIndividualScopeId(organizationId);
     // A personal Individual billing scope has no members: nothing there is limited or attributed to a person.
-    const limitedMember = cycle ? null : member;
+    const limitedMember = cycle || boughtOnly ? null : member;
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
       // Read after the lock, so a reservation that waited past a period's end is judged at its end.
@@ -1056,7 +1099,9 @@ export class FundingService {
       if (cycle && !cycleContains(cycle, at))
         throw new FundingError(409, 'This billing period has ended, so its credits fund nothing new. Nothing was reserved.', 'period_ended');
       const periodId = cycle ? individualCycleId(cycle) : periodIdFor(at);
-      const period = await tx.period(tenantId, organizationId, periodId);
+      let period = await tx.period(tenantId, organizationId, periodId);
+      // No billing period, and the person pays as they go: bought credits only, on the scope's bought-credits row.
+      if (!period && boughtOnly) period = await this.boughtCreditsRow(tx, tenantId, organizationId, at);
       if (!period)
         throw new FundingError(409, 'This billing period has no credit grant recorded yet, so nothing can be reserved.', 'no_period');
       if (cycle && (period.planId !== 'individual' || period.startsAt !== cycle.startsAt || period.endsAt !== cycle.endsAt))
@@ -1067,7 +1112,7 @@ export class FundingService {
         throw new FundingError(409, 'A monthly Individual term now funds this account; earlier funding is kept for settlement only.', 'period_superseded');
       const decision = decideReserve({
         maxMicroUsd: input.maxMicroUsd,
-        monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, periodId)),
+        monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, period.periodId)),
         topUpAvailableMicroUsd: topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)),
         job: { capMicroUsd: job.capMicroUsd, usedMicroUsd: await tx.jobUsed(tenantId, rootJobId) },
       });
@@ -1083,7 +1128,7 @@ export class FundingService {
           throw new FundingError(503, 'This hold would take the company’s provider spend past its ceiling.', 'company_ceiling');
       }
       const attempt: FundedAttempt = {
-        id: attemptId, organizationId, periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
+        id: attemptId, organizationId, periodId: period.periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,
         resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate,
         ...(charge ? { chargeSnapshot: charge } : {}), usageClass,
@@ -1093,6 +1138,19 @@ export class FundingService {
       if (limitedMember) await tx.saveAttemptPerson({ tenantId, attemptId, organizationId, personId: limitedMember.personId });
       return attempt;
     });
+  }
+
+  /**
+   * The person's own bought-credits row (migration 019), written once, on their first reservation with no billing period,
+   * inside the reserving transaction and under its lock. It grants nothing: a reservation bound to it draws on bought credits only.
+   */
+  private async boughtCreditsRow(tx: FundingTransaction, tenantId: string, organizationId: string, at: string): Promise<CreditPeriodRow> {
+    const existing = await tx.period(tenantId, organizationId, BOUGHT_CREDITS_PERIOD);
+    if (existing) return existing;
+    const row: CreditPeriodRow = { tenantId, organizationId, periodId: BOUGHT_CREDITS_PERIOD, planId: BOUGHT_CREDITS_PLAN, rateCardVersion: RATE_CARD_V1.version,
+      grantedMicroUsd: micro(0), startsAt: at, endsAt: BOUGHT_CREDITS_ENDS_AT, sourceGrantId: '', allocatedAt: at };
+    await tx.savePeriod(row);
+    return row;
   }
 
   /**

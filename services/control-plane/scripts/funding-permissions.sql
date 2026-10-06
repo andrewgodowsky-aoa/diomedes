@@ -28,6 +28,10 @@ REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM cp_funding;
 -- period check, allocatePeriod, reserve). INSERT: savePeriod(), "INSERT INTO
 -- control_plane.credit_periods(...) VALUES (...)" (allocatePeriod).
 GRANT SELECT, INSERT ON control_plane.credit_periods TO cp_funding;
+-- 019 pay as you go (DIO-219): when no billing period funds a person's own Personal work, reserve writes the
+-- scope's one bought-credits row (plan_id and period_id 'bought-credits', granted 0, no source) with this same
+-- savePeriod() INSERT, and the gateway reads the person's bought balance with topUpTotals()'s SELECTs below.
+-- No grant changes.
 -- funded_jobs. SELECT: job(), "SELECT * FROM control_plane.funded_jobs WHERE
 -- tenant_id=$1 AND root_job_id=$2 FOR UPDATE" (openJob, reserve). INSERT:
 -- saveJob(), "INSERT INTO control_plane.funded_jobs(...)" (openJob). UPDATE on
@@ -111,6 +115,8 @@ GRANT UPDATE (state, decided_by, decided_at, extra_micro_usd, allow_purchased, p
 -- creation-time column can be rewritten.
 GRANT SELECT, INSERT ON control_plane.credit_purchases TO cp_funding;
 GRANT UPDATE (stripe_checkout_session_id, state, resolved_at, stripe_event_id) ON control_plane.credit_purchases TO cp_funding;
+-- 019: a person's purchase for their own Individual billing scope (POST /account/credit-purchases) runs the same
+-- statements; its row names that scope and its tenant, the person. No grant changes.
 -- 009 Individual agreements allocate the same credit_periods through the
 -- existing funding writer. Scope, consent, routing and staff records remain
 -- on cp_runtime; foreign-key checks need no extra cp_funding table grants.

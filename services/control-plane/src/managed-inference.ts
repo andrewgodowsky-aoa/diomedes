@@ -22,7 +22,8 @@
  * (docs/implementation/2026-09-26-jev-managed-evaluations.md).
  */
 import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
-import { FEATURE_LABELS } from '../../../shared/access.js';
+import { FEATURE_LABELS, OUT_OF_CREDITS_PERSONAL } from '../../../shared/access.js';
+import { decidePayAsYouGo } from '../../../shared/pay-as-you-go.js';
 import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
 import { individualCycleId, type IndividualBillingCycle } from '../../../shared/individual-period.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
@@ -799,7 +800,7 @@ export class ManagedInferenceService {
     const h = gatewayHeaders(request.headers);
     const escalated = escalationRole(request.headers) !== null;
     // 2 to 4. Membership, the stored admission and the entitlement.
-    const { tenantId, state, member } = await this.admitted(h);
+    const { tenantId, state, member } = await this.admitted(h, { escalated });
     // Escalated work only: the account's escalation control decides, before the body, any hold or any send.
     if (escalated) await this.escalationAllowed(h);
     // 5. The body.
@@ -858,6 +859,7 @@ export class ManagedInferenceService {
   /** One request can spend on several explicitly configured attempts; all use the existing root job cap. */
   private async runScoped(request: Request, h: GatewayHeaders, body: ResponsesBody, bytes: Uint8Array, env: ProviderEnv, headers: Headers, ctx?: ManagedContext): Promise<Response> {
     if (h.protocol !== 'nectovia-managed/2') throw new ManagedError(426, 'client_update_required', 'This account uses versioned routing. Update the desktop before continuing.');
+    const escalated = escalationRole(request.headers) !== null;
     const controls = spendControls(env);
     const outputTokens = Math.min(body.max_output_tokens ?? 0, controls.maxOutputTokens ?? Number.MAX_SAFE_INTEGER);
     if (outputTokens < 1) throw new ManagedError(400, 'invalid_body', 'Provide a positive output bound.');
@@ -898,7 +900,7 @@ export class ManagedInferenceService {
     try {
       for (let index = 0; index < selection.candidates.length; index++) {
         if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled.');
-        const admission = await this.admitted(h);
+        const admission = await this.admitted(h, { escalated });
         const current = await readCurrent();
         if (current.globalRevision !== initial.globalRevision || current.scopeRevision !== initial.scopeRevision || current.preference?.revision !== preferenceRevision ||
             (current.priceTable?.version ?? 0) !== tableVersion) throw changed();
@@ -948,11 +950,11 @@ export class ManagedInferenceService {
         const ref = await this.holdAndDispatch({ ...h, attemptId, parentAttemptId: previous?.attemptId ?? h.parentAttemptId }, admission.tenantId, admission.state.grants,
           { kind: 'generation', route: route.id, requestDigest: await digest(canonicalJson({ body: forwarded, routing: rate.routing })), rate, charge: ceiling.charge,
             maxMicroUsd: chargeHold(ceiling.charge, actualEnvelope.inputTokens, outputTokens), ceilingMicroUsd: controls.ceilingMicroUsd, member: admission.member,
-            checkInMicroUsd: checkInAmount(admission.state.checkIns, h.tier) }, async () => {
+            checkInMicroUsd: checkInAmount(admission.state.checkIns, h.tier), boughtOnly: admission.payAsYouGo }, async () => {
             // Reservation and native preparation can wait on I/O. Recheck the actual
             // authority immediately before committing this attempt's dispatch.
             if (request.signal.aborted) throw new ManagedError(499, 'cancelled', 'The request was cancelled before dispatch.');
-            await this.admitted(h);
+            await this.admitted(h, { escalated });
             const latest = await readCurrent();
             // A credit price table published since the first read changes what this call would cost.
             if (latest.globalRevision !== initial.globalRevision || latest.scopeRevision !== initial.scopeRevision || latest.preference?.revision !== preferenceRevision ||
@@ -1136,7 +1138,7 @@ export class ManagedInferenceService {
    * (evidence of intent, never a bearer credential); and the business's grants,
    * read now, still admit the Agent and include AI usage.
    */
-  private async admitted(h: JobHeaders) {
+  private async admitted(h: JobHeaders, options: { escalated?: boolean } = {}) {
     const member = await authorizeScope(this.options.accounts, this.options.commercial, h.token, h.scope).catch(error => {
       if (error instanceof AccountError && error.status === 401)
         throw new ManagedError(401, 'sign_in_required', 'Your Nectovia sign-in has ended. Sign in again to continue.');
@@ -1160,6 +1162,23 @@ export class ManagedInferenceService {
     }));
     this.checkAdmission(state.admission, { person: member.person, tenantId }, h);
     const view = state.individual ?? entitlementFromGrants(state.grants, state.accessRevision, at);
+    // The verified person and their role, for the member's own monthly limit. Only a business has members.
+    const asMember = h.scope.kind === 'organization' ? { personId: member.person.id, role: member.role } : null;
+    // Pay as you go (DIO-219): Personal work that no plan of the person's holds the Agent for runs on their own bought credits,
+    // checked again on every call and every attempt. The work must be one a person starts (never a team, an automation or a role
+    // under another lead), and the balance above zero. At zero this is the out-of-credits stop (402 insufficient_allowance), so the
+    // step after the money runs out ends with the same words as any other: the desktop reads the code.
+    // Work admitted under a plan that has since ended, with nothing bought, is refused below as it always was.
+    if (h.scope.kind === 'individual' && !(view.state === 'active' && view.agent)) {
+      const bought = await this.options.funding.boughtAvailable(tenantId, h.scope.id);
+      if (bought > 0 || state.admission?.planId === null) {
+        const work = decidePayAsYouGo({ surface: state.admission?.surface ?? 'other', routeKind: state.admission?.routeKind ?? 'managed',
+          escalated: options.escalated === true, usageClass: h.usageClass }, true);
+        if (!work.admitted) throw new ManagedError(403, 'plan_required', work.reason);
+        if (bought <= 0) throw new ManagedError(402, 'insufficient_allowance', OUT_OF_CREDITS_PERSONAL);
+        return { tenantId, state, view, member: asMember, payAsYouGo: true };
+      }
+    }
     const decision = decideAgentAdmission({ workspace: h.scope.kind === 'individual' ? 'personal' : 'business', member: true,
       entitlement: snapshotFromView(view), ...(h.scope.kind === 'individual' ? { individual: snapshotFromView(view) } : {}), at });
     if (!decision.admitted) throw new ManagedError(403, 'agent_not_included', decision.reason);
@@ -1167,9 +1186,7 @@ export class ManagedInferenceService {
     // read from the same current grants. A month's credit period outlives the grant that funded it,
     // so funding alone doesn't answer this. Refused before the job is opened or anything is held.
     if (!view.managedInference) throw new ManagedError(403, 'agent_not_included', MANAGED_USAGE_NOT_INCLUDED);
-    // The verified person and their role, for the member's own monthly limit. Only a business has members.
-    const asMember = h.scope.kind === 'organization' ? { personId: member.person.id, role: member.role } : null;
-    return { tenantId, state, view, member: asMember };
+    return { tenantId, state, view, member: asMember, payAsYouGo: false };
   }
 
   /**
@@ -1205,6 +1222,8 @@ export class ManagedInferenceService {
     member?: { personId: string; role: MemberRole } | null;
     /** What this job checks in at: its cap when it is opened. Resolved here from the account's settings, never from a request. */
     checkInMicroUsd: MicroUsd;
+    /** Pay as you go: a person's own scope with no plan, funded from bought credits only (admitted() decides it, never a request). */
+    boughtOnly?: boolean;
   }, beforeDispatch?: () => Promise<void>): Promise<AttemptRef> {
     const ref: AttemptRef = { tenantId, organizationId: h.organizationId, attemptId: h.attemptId };
     await this.options.funding.openJob({
@@ -1220,6 +1239,7 @@ export class ManagedInferenceService {
         requestDigest: hold.requestDigest, rateSnapshot: hold.rate, chargeSnapshot: hold.charge, maxMicroUsd: hold.maxMicroUsd, usageClass: h.usageClass,
         companyCeilingMicroUsd: hold.ceilingMicroUsd, ...(hold.member ? { member: hold.member } : {}),
         ...(individualCycle ? { individualCycle } : {}),
+        ...(hold.boughtOnly && h.scope.kind === 'individual' ? { boughtOnly: true } : {}),
       });
     } catch (error) {
       if (!(error instanceof FundingError && error.code === 'company_ceiling')) throw error;

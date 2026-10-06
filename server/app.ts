@@ -4031,9 +4031,14 @@ export async function createApp(options: AppOptions) {
     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
     const scope = accountRouting?.scopeFor(projectId);
     const entitlement = scope?.kind === 'organization' ? accountSession?.entitlement(organizationId) : null;
-    if (!scope || !accountRouting?.includes(scope, 'nectovia-agent'))
-      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
-    if (!accountRouting.includes(scope, 'managed-inference'))
+    // Pay as you go (DIO-219): Personal work with no plan runs on the person's own bought credits, on this route only.
+    const payg = Boolean(scope && accountRouting?.paysAsYouGo(scope));
+    if (!scope || !(accountRouting?.includes(scope, 'nectovia-agent') || payg)) {
+      // A business with no plan says so in the words for this person's role there (Model B section 7).
+      const reason = scope?.kind === 'organization' && entitlement?.state === 'none' ? accountRouting?.businessPlanReason(scope.id) : entitlement?.reason;
+      throw new EngineError(AGENT_NOT_INCLUDED, reason || 'This account does not include the Nectovia Agent.', false);
+    }
+    if (!payg && !accountRouting!.includes(scope, 'managed-inference'))
       throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
     const tier = nectoviaTier({
       style: style(),

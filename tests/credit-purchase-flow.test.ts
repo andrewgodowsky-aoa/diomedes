@@ -12,8 +12,11 @@ import {
   POLL_SLOW_AFTER_MS,
   POLL_FAST_MS,
   QUOTE_DELAY_MS,
+  INITIAL_FLOW,
+  PERSONAL_PURCHASES,
   checkoutOriginFor,
   createPurchaseFlow,
+  formatPrice,
   formatUsd,
   maxCreditsFor,
   parseCredits,
@@ -447,5 +450,58 @@ describe('small helpers', () => {
     expect(checkoutOriginFor('https://example.com/faux/checkout/x')).toBeNull();
     expect(checkoutOriginFor('http://faux.local.evil.example/faux/checkout/x')).toBeNull();
     expect(checkoutOriginFor('not a url')).toBeNull();
+  });
+});
+
+describe('buying for Personal work (pay as you go, DIO-219)', () => {
+  /** The person's own routes, quoting the no-plan step and saying what one step is on a plan (invented figures). */
+  function personalDesktop(extra: Record<string, unknown> = { onPlan: false, planStep: { credits: 110, cents: 1000 } }) {
+    const calls: string[] = [];
+    const read = vi.fn(async (path: string, method = 'GET') => {
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/quote`) return { ...quoteOf(100, 100, 1300), ...extra };
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/quote?credits=1000`) return { ...quoteOf(1000, 100, 1300), ...extra };
+      if (method === 'POST' && path === PERSONAL_PURCHASES)
+        return { purchaseId: 'cp_0123456789abcdef', checkoutUrl: STRIPE_URL, credits: 1000, amountCents: 13000 };
+      if (method === 'GET' && path === `${PERSONAL_PURCHASES}/cp_0123456789abcdef`)
+        return { purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 13000, state: 'paid' };
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const flow = createPurchaseFlow({ organizationId: null, read: read as never, open: () => {}, onPaid: () => {} });
+    return { flow, calls };
+  }
+
+  it('asks the person’s own routes, never a business’s, and carries whether the quote is on a plan', async () => {
+    const { flow, calls } = personalDesktop();
+    expect(flow.getState()).toEqual(INITIAL_FLOW);
+    flow.start();
+    await settle();
+    expect(calls).toEqual([`GET ${PERSONAL_PURCHASES}/quote`, `GET ${PERSONAL_PURCHASES}/quote?credits=1000`]);
+    expect(flow.getState()).toMatchObject({ step: { credits: 100, cents: 1300 }, onPlan: false, planStep: { credits: 110, cents: 1000 },
+      quote: { state: 'ready', credits: 1000, amountCents: 13000 } });
+    await flow.buy();
+    await vi.advanceTimersByTimeAsync(POLL_FAST_MS);
+    expect(calls).toContain(`POST ${PERSONAL_PURCHASES}`);
+    expect(calls.some((call) => call.includes('/organizations/'))).toBe(false);
+    flow.dispose();
+  });
+
+  it('reads a quote that says nothing of plans as on a plan, and drops a plan step it can’t use', async () => {
+    const silent = personalDesktop({});
+    silent.flow.start();
+    await settle();
+    expect(silent.flow.getState()).toMatchObject({ onPlan: true, planStep: null });
+    silent.flow.dispose();
+    const odd = personalDesktop({ onPlan: false, planStep: { credits: -1, cents: 1000 } });
+    odd.flow.start();
+    await settle();
+    expect(odd.flow.getState()).toMatchObject({ onPlan: false, planStep: null });
+    odd.flow.dispose();
+  });
+
+  it('shows a whole-dollar price without cents, and keeps cents otherwise', () => {
+    expect(formatPrice(13000)).toBe('$130');
+    expect(formatPrice(10000)).toBe('$100');
+    expect(formatPrice(1250)).toBe('$12.50');
   });
 });

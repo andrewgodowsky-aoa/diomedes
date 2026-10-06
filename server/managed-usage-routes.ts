@@ -54,6 +54,7 @@ import {
   type ChargeKind,
   type UsageState,
 } from '../shared/managed-usage.js';
+import type { PurchasedBalanceAnswer } from './accounts/client.js';
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
 import type { AllowanceLedger } from './managed-usage.js';
@@ -81,6 +82,9 @@ const organizationId = (req: Request) => String(req.params.organizationId ?? '')
 
 export const NOT_CONNECTED_REASON =
   'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
+
+/** Personal work's bought credits, when this app isn't signed in to read them. */
+const NOT_CONNECTED_PERSONAL = 'Sign in to see the credits you bought.';
 
 const invalid = (message: string, code: string) => new ApiError(400, message, { code });
 
@@ -138,6 +142,14 @@ export interface CreditPurchasing {
   readCreditPurchase(organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus>;
   /** The origin of the test service's own checkout page when the account service is the test one, else null. */
   localCheckoutOrigin(): string | null;
+  /**
+   * Pay as you go (DIO-219): the same, for the signed-in person's own Personal work. The account service resolves the person and
+   * their own billing scope; nothing here names either. Left out, Personal has no buy box here.
+   */
+  quotePersonalCredits?(credits: number | null): Promise<CreditQuote>;
+  startPersonalCreditPurchase?(credits: number): Promise<CreditPurchaseStarted>;
+  readPersonalCreditPurchase?(purchaseId: string): Promise<CreditPurchaseStatus>;
+  personalPurchasedBalance?(): Promise<PurchasedBalanceAnswer>;
 }
 
 // Whether the amount is a whole number of the business's steps is the account service's to say: the step depends on the business's plan.
@@ -357,6 +369,68 @@ export function mountManagedUsageRoutes(
       if (!PURCHASE_ID.test(purchaseId))
         throw new ApiError(404, 'That purchase was not found for this business.', { code: 'unknown_purchase' });
       return buying.readCreditPurchase(id, purchaseId);
+    }, false),
+  );
+
+  /**
+   * Pay as you go (DIO-219): buying credits for the signed-in person's own Personal work. Anyone signed in may; the account
+   * service resolves the person and their own billing scope, so nothing here names a person, a scope or a business, and what
+   * they buy can only ever land in their own scope. As above, nothing here prices an amount or opens a page.
+   */
+  const personalBuyer = () => {
+    if (!credits?.quotePersonalCredits || !credits.startPersonalCreditPurchase || !credits.readPersonalCreditPurchase)
+      throw new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
+    return credits as Required<CreditPurchasing>;
+  };
+
+  app.get(
+    '/api/workspace/personal/allowance/credit-purchases/quote',
+    route(async (req) => {
+      const buying = personalBuyer();
+      const text = req.query.credits;
+      if (text === undefined) return buying.quotePersonalCredits(null);
+      return buying.quotePersonalCredits(askedCredits(typeof text === 'string' && /^[1-9][0-9]{0,9}$/.test(text) ? Number(text) : undefined));
+    }, false),
+  );
+
+  app.post(
+    '/api/workspace/personal/allowance/credit-purchases',
+    route(async (req, res) => {
+      const buying = personalBuyer();
+      const value = req.body as unknown;
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => key !== 'credits'))
+        throw invalid('Send only the credits to buy.', 'invalid_request');
+      const started = await buying.startPersonalCreditPurchase(askedCredits((value as { credits?: unknown }).credits));
+      if (!isAllowedCheckoutUrl(started.checkoutUrl, buying.localCheckoutOrigin()))
+        throw new ApiError(502, 'The payment page the account service sent isn’t one this app will open.', { code: 'checkout_url_refused' });
+      res.status(201);
+      return started;
+    }, false),
+  );
+
+  app.get(
+    '/api/workspace/personal/allowance/credit-purchases/:purchaseId',
+    route(async (req) => {
+      const buying = personalBuyer();
+      const purchaseId = String(req.params.purchaseId ?? '');
+      if (!PURCHASE_ID.test(purchaseId)) throw new ApiError(404, 'That purchase was not found.', { code: 'unknown_purchase' });
+      return buying.readPersonalCreditPurchase(purchaseId);
+    }, false),
+  );
+
+  /** The person's own bought credits, read from the account service. Unread is never zero: it says so instead. */
+  app.get(
+    '/api/workspace/personal/allowance/purchased',
+    route(async () => {
+      if (!credits?.personalPurchasedBalance)
+        return { state: 'not-connected', organizationId: 'personal', reason: NOT_CONNECTED_PERSONAL } satisfies PurchasedUsageState;
+      try {
+        return { state: 'ready', organizationId: 'personal', balance: await credits.personalPurchasedBalance() } satisfies PurchasedUsageState;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401)
+          return { state: 'not-connected', organizationId: 'personal', reason: NOT_CONNECTED_PERSONAL } satisfies PurchasedUsageState;
+        return { state: 'unavailable', organizationId: 'personal', reason: 'The account service couldn’t say what you’ve bought, so nothing is shown.' } satisfies PurchasedUsageState;
+      }
     }, false),
   );
 

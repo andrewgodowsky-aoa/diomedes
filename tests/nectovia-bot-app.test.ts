@@ -24,11 +24,10 @@ import { NECTOVIA_SIGN_IN, NECTOVIA_UNAVAILABLE } from '../server/engines/nectov
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
-import { AGENT_PERSONAL_INDIVIDUAL_REASON } from '../shared/individual-plan';
-import { PLANS_URL } from '../shared/access';
+import { AGENT_PERSONAL_REASON, PLANS_URL } from '../shared/access';
 
 /** The free-version refusal, whatever it goes on to suggest. */
-const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\. .*Nothing was sent\.$/;
+const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\.(?: (?!.*Nothing was sent).+)?$/;
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 import type { AccountStateView } from '../shared/accounts';
@@ -222,8 +221,8 @@ describe('the Nectovia bot', () => {
     const refused = await say(binding, 'm-unlinked', 'How many loaves are on order?');
     expect(refused.status).toBe(403);
     // Selecting Business cannot change the payer of an unowned project. This
-    // person has no Individual plan, so Personal admission refuses the work.
-    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_INDIVIDUAL_REASON });
+    // person has no plan for Personal work and no credits of their own, so Personal admission refuses the work and names both ways in.
+    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_REASON });
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
 

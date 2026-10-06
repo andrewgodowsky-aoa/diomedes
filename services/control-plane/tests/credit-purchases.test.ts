@@ -57,7 +57,7 @@ interface StripeCall { url: string; method: string; headers: Record<string, stri
 async function fixture(options: { env?: Record<string, unknown>; stripe?: (call: StripeCall, count: number) => Response | Promise<Response>;
   customer?: (call: StripeCall, count: number) => Response | Promise<Response>; plan?: boolean } = {}) {
   /** Whether the business holds an active plan grant right now: a test moves it to lapse or give a plan. */
-  const plan = { active: options.plan ?? false };
+  const plan = { active: options.plan ?? false, personActive: false };
   const { accounts } = setup();
   const organization = await accounts.createOrganization('alice', 'Fernbrook Joinery');
   const bobInvite = await accounts.invite('alice', organization.id, { subject: 'user_bob', role: 'member', ttlMs: 5000 });
@@ -107,7 +107,7 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
   const handler = createHandler(() => accounts, (_config, account) => new UsageService(account, funding), {
     createPurchased: (_config, account) => new PurchasedUsageService(account, funding),
     createCreditPurchases: (_config, account, runtimeEnv) => new CreditPurchaseService(account, funding, {
-      settings: readBillingSettings(runtimeEnv), fetch: stripeFetch, now: () => clock.at, ledger, plans: { hasActivePlan: async () => plan.active },
+      settings: readBillingSettings(runtimeEnv), fetch: stripeFetch, now: () => clock.at, ledger, plans: { hasActivePlan: async () => plan.active, hasActivePersonPlan: async () => plan.personActive },
     }),
     createStripeWebhook: (_config, runtimeEnv) => new StripeWebhookService(funding, { settings: readBillingSettings(runtimeEnv), now: () => clock.at, ledger }),
   });
@@ -157,9 +157,9 @@ async function fixture(options: { env?: Record<string, unknown>; stripe?: (call:
 describe('the quote', () => {
   it('prices credits at the rate: 100 is 1200 cents and 1000 is 12000, and says the step it is bought in', async () => {
     const { quote } = await fixture();
-    expect(await (await quote(100)).json()).toEqual({ credits: 100, amountCents: 1200, currency: 'usd', steps: 1, stepCredits: 100, stepCents: 1200 });
-    expect(await (await quote(1000)).json()).toEqual({ credits: 1000, amountCents: 12000, currency: 'usd', steps: 10, stepCredits: 100, stepCents: 1200 });
-    expect(await (await quote(2300)).json()).toEqual({ credits: 2300, amountCents: 27600, currency: 'usd', steps: 23, stepCredits: 100, stepCents: 1200 });
+    expect(await (await quote(100)).json()).toEqual({ credits: 100, amountCents: 1200, currency: 'usd', steps: 1, stepCredits: 100, stepCents: 1200, onPlan: false, planStep: { credits: 110, cents: 1000 } });
+    expect(await (await quote(1000)).json()).toEqual({ credits: 1000, amountCents: 12000, currency: 'usd', steps: 10, stepCredits: 100, stepCents: 1200, onPlan: false, planStep: { credits: 110, cents: 1000 } });
+    expect(await (await quote(2300)).json()).toEqual({ credits: 2300, amountCents: 27600, currency: 'usd', steps: 23, stepCredits: 100, stepCents: 1200, onPlan: false, planStep: { credits: 110, cents: 1000 } });
   });
 
   it('follows the setting, so the price never lives in code', async () => {
@@ -180,7 +180,7 @@ describe('the quote', () => {
     // No amount asked is one step, which is how a screen learns the step before it asks for more.
     const learned = await request(`${base}/quote`);
     expect(learned.status).toBe(200);
-    expect(await learned.json()).toEqual({ credits: 100, amountCents: 1200, currency: 'usd', steps: 1, stepCredits: 100, stepCents: 1200 });
+    expect(await learned.json()).toEqual({ credits: 100, amountCents: 1200, currency: 'usd', steps: 1, stepCredits: 100, stepCents: 1200, onPlan: false, planStep: { credits: 110, cents: 1000 } });
   });
 
   it('refuses a query it does not know, and a second credits value', async () => {
@@ -1116,13 +1116,13 @@ describe('the faux cloud', () => {
   it('prices from the option it is given, and says the step', async () => {
     const { organizationId, call } = await faux({ creditRatePlan: '1500:100' });
     expect(await (await call('GET', `/account/organizations/${organizationId}/credit-purchases/quote?credits=200`)).json())
-      .toEqual({ credits: 200, amountCents: 3000, currency: 'usd', steps: 2, stepCredits: 100, stepCents: 1500 });
+      .toEqual({ credits: 200, amountCents: 3000, currency: 'usd', steps: 2, stepCredits: 100, stepCents: 1500, onPlan: true, planStep: null });
   });
 
   it('quotes the faux defaults: $10.00 for 110 credits on a plan', async () => {
     const { organizationId, call } = await faux();
     expect(await (await call('GET', `/account/organizations/${organizationId}/credit-purchases/quote`)).json())
-      .toEqual({ credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000 });
+      .toEqual({ credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000, onPlan: true, planStep: null });
   });
 });
 
@@ -1531,8 +1531,8 @@ describe('credit rates', () => {
 
   it('prices a business with an active plan at the plan rate, in whole steps of 110', async () => {
     const { quote, buy, purchases } = await fixture({ plan: true });
-    expect(await (await quote(110)).json()).toEqual({ credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000 });
-    expect(await (await quote(550)).json()).toEqual({ credits: 550, amountCents: 5000, currency: 'usd', steps: 5, stepCredits: 110, stepCents: 1000 });
+    expect(await (await quote(110)).json()).toEqual({ credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000, onPlan: true, planStep: null });
+    expect(await (await quote(550)).json()).toEqual({ credits: 550, amountCents: 5000, currency: 'usd', steps: 5, stepCredits: 110, stepCents: 1000, onPlan: true, planStep: null });
     // 100 is a free-rate amount, not a plan-rate one.
     const refused = await quote(100);
     expect(refused.status).toBe(422);
