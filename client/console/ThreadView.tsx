@@ -612,7 +612,7 @@ export function ThreadView({
   }
 
   return (
-    <main className="work" aria-label={title}>
+    <main className={`work${pinned ? ' pinned' : ''}`} aria-label={title}>
       <div className="col head">
         <h1 onClick={onRename} title="Rename thread">
           {title}

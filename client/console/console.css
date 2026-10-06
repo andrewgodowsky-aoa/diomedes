@@ -376,6 +376,62 @@ html[data-surface='console'] body {
   height: 1px;
   background: var(--hair-2);
 }
+/* The Nectovia home's rail groups (the Rail sections, round 2 reskin N1): a folding heading with
+   its count, then the jobs on the same spine the threads use, without the selected point. */
+.console .rail-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 8px;
+}
+.console .rail-group .grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px 4px;
+  text-align: left;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+}
+.console .rail-group .grp:hover {
+  color: var(--t1);
+}
+.console .rail-group .grp .chev {
+  flex: none;
+  transition: transform var(--quick);
+}
+.console .rail-group .grp[aria-expanded='false'] .chev {
+  transform: rotate(-90deg);
+}
+.console .rail-group .grp .hd {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.console .rail-group .grp .ct {
+  flex: none;
+  color: var(--t3);
+}
+.console .rail-jobs small.fail {
+  color: var(--fail);
+}
+/* The home's scope control (round 2 reskin, decision 4): one line at the top of the rail. */
+.console .rail-scope {
+  display: block;
+  padding: 12px 16px 2px;
+}
+.console .rail-scope select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background: var(--raised);
+  color: var(--t1);
+  font: 500 var(--dm-type-ui) / 1.3 var(--ui);
+  text-overflow: ellipsis;
+}
 .console .rail .foot > button,
 .console .rail .foot .ev-trigger {
   display: flex;
@@ -555,6 +611,16 @@ html[data-surface='console'] body {
 .console .seg button.on {
   color: var(--t1);
   background: var(--raised);
+}
+/* A pinned chart (round 2 reskin, N1 and N2) sits between the instruments and the transcript,
+   so the transcript scrolls below it and the chart stays in view. */
+.console .work.pinned {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'heading' 'instruments' 'pin' 'transcript' 'composer';
+}
+.console .work > .pin {
+  grid-area: pin;
+  padding-top: 12px;
 }
 .console .transcript {
   grid-area: transcript;

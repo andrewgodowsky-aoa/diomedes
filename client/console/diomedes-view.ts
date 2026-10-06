@@ -151,6 +151,16 @@ export function paragraphs(text: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Where the home's newest exchange starts: the index of the person's last message, so the page
+ * shows that message and everything after it under the ask box, with Earlier for the rest. Zero
+ * when there is nothing earlier to fold: no message of theirs yet, or only the one exchange.
+ */
+export function newestExchange(turns: readonly { role: string }[]): number {
+  for (let index = turns.length - 1; index >= 0; index -= 1) if (turns[index].role === 'you') return index;
+  return 0;
+}
+
 /** False for empty or whitespace-only text, while pending, or when unavailable. */
 export function canSend(text: string, pending: boolean, unavailable: string | null): boolean {
   return text.trim() !== '' && !pending && unavailable === null;

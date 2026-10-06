@@ -5,7 +5,8 @@ import { routeDisplayName } from '../../shared/engines';
 import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import { speakerName } from '../attribution-display';
 import type { EverythingItem } from './Everything';
-import { Rail } from './Rail';
+import { Rail, type RailSection } from './Rail';
+import { showsScope } from './home-rail';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
@@ -25,8 +26,8 @@ import {
   keyIntent,
   paragraphs,
   scopeFromSpineId,
+  newestExchange,
   selectedSpineId,
-  spineItems,
   visibleResults,
   type DiomedesResult,
   type OutcomeCard,
@@ -127,6 +128,14 @@ export interface DiomedesPageProps {
   session?: ReactNode;
   /** Who is working in the scoped project now (WorkerRows.tsx, compact), above the composer. */
   workers?: ReactNode;
+  /** The rail's job groups for the scope (home-rail.ts), drawn in place of a project list. */
+  sections?: RailSection[];
+  /** Opens one job row from the rail. */
+  onOpenRow?(id: string): void;
+  /** The conversation's pinned chart (PinnedChartView), above the ask box, when there is one. */
+  chart?: ReactNode;
+  /** "Nectovia suggests" (Suggestions.tsx), beside the conversation, when a run proposed something. */
+  suggestions?: ReactNode;
 }
 
 /** The one control the history line and a refusal for want of history both carry. */
@@ -226,8 +235,22 @@ export function Diomedes({
   recorded = null,
   session = null,
   workers = null,
+  sections = [],
+  onOpenRow,
+  chart = null,
+  suggestions = null,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
+  // The home shows the newest exchange under the ask box; Earlier opens the whole conversation.
+  // A new scope starts folded again.
+  const [showEarlier, setShowEarlier] = useState(false);
+  const [foldedFor, setFoldedFor] = useState(scopeId);
+  if (foldedFor !== scopeId) {
+    setFoldedFor(scopeId);
+    setShowEarlier(false);
+  }
+  const earlier = newestExchange(turns);
+  const shownFrom = showEarlier ? 0 : earlier;
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
   // stays until text arrives, stepping aside while a tool call is already saying what it does.
   const streamed = pending ? live : null;
@@ -253,10 +276,9 @@ export function Diomedes({
     });
   };
 
-  const spine = spineItems(projects, Date.now());
   const visible = visibleResults(results);
-  // The "In" select shows this name in a fixed-width box (decision 5): the
-  // title carries the full name past whatever the ellipsis cuts.
+  // The scope control shows this name in a fixed-width box: the title carries the full name
+  // past whatever the ellipsis cuts.
   const scopeName = scopeId === null ? 'All projects' : (projects.find((p) => p.id === scopeId)?.name ?? 'All projects');
 
   return (
@@ -266,11 +288,35 @@ export function Diomedes({
         style={artifacts.record ? ({ '--art-w': `${artifactWidth}px` } as CSSProperties) : undefined}
       >
         <Rail
-          title="Talking about"
-          navLabel="Projects and destinations"
-          items={spine}
-          selectedId={selectedSpineId(scopeId)}
-          onSelect={(id) => onScope(scopeFromSpineId(id))}
+          title="Conversations"
+          navLabel="Conversations and destinations"
+          newLabel="New project"
+          top={
+            showsScope(projects) ? (
+              // One line at the top of the rail, drawn only for a business with more than one
+              // project. The standing conversation and the groups below follow it.
+              <label className="rail-scope">
+                <select
+                  aria-label="Project"
+                  title={scopeName}
+                  value={selectedSpineId(scopeId)}
+                  onChange={(e) => onScope(scopeFromSpineId(e.target.value))}
+                >
+                  <option value={ALL_PROJECTS}>All projects</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id} title={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : undefined
+          }
+          items={[]}
+          sections={sections}
+          onOpenRow={onOpenRow}
+          selectedId={null}
+          onSelect={() => undefined}
           onNew={onNewProject}
           destinations={destinations}
           pinned={pinned}
@@ -300,7 +346,152 @@ export function Diomedes({
               <div className="col">
                 {plan}
                 {brief}
-                {turns.map((turn, index) => (
+                {chart}
+                <div className="dio-ask">
+                  {notice !== null && (
+                    <p className="dio-notice" role="alert">
+                      {notice}
+                      {noticeSharesHistory && onShareHistory && (
+                        <button type="button" className="send" onClick={onShareHistory}>
+                          {SHARE_HISTORY}
+                        </button>
+                      )}
+                      {onNoticeSignIn && (
+                        <button type="button" className="send" onClick={onNoticeSignIn}>
+                          Sign in
+                        </button>
+                      )}
+                    </p>
+                  )}
+                  {/* A status, not an alert: nothing went wrong, and the person may never ask a
+                      follow-up. Not a `.turn` either: the transcript stays what the record holds. */}
+                  {history !== null && (
+                    <div className="dio-history" role="status">
+                      <p>{history}</p>
+                      {onShareHistory && (
+                        <button type="button" className="send" onClick={onShareHistory}>
+                          {SHARE_HISTORY}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {onReadAgain !== null && (
+                    <div className="dio-reread">
+                      <button type="button" className="send" onClick={onReadAgain}>
+                        Read again
+                      </button>
+                    </div>
+                  )}
+                  {unconfirmed !== null && !pending && (
+                    <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
+                      <p>
+                        Nectovia could not confirm your last message. Sending it again checks what
+                        happened and never asks twice.
+                      </p>
+                      <p className="dio-quote" title={unconfirmed}>
+                        {unconfirmed}
+                      </p>
+                      <div className="dio-row">
+                        <button type="button" className="send ready" onClick={onResend}>
+                          Send again
+                        </button>
+                        <button type="button" className="send" onClick={onDiscard}>
+                          Discard
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {workers}
+                  {session}
+                  {modelControls}
+                  {unavailable !== null ? (
+                    <p className="composer dio-unavailable">{unavailable}</p>
+                  ) : (
+                    <div className={`composer${turns.length === 0 ? ' quiet' : ''}${pending ? ' busy' : ''}`}>
+                      <textarea
+                        rows={turns.length === 0 ? 3 : 1}
+                        aria-label={`Message ${AGENT_NAME}`}
+                        placeholder={`Ask a question or give ${AGENT_NAME} something to do.`}
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => {
+                          const intent = keyIntent({
+                            key: e.key,
+                            shiftKey: e.shiftKey,
+                            isComposing: e.nativeEvent.isComposing,
+                          });
+                          if (intent === 'send') {
+                            e.preventDefault();
+                            submit();
+                          }
+                        }}
+                      />
+                      <div className="bar">
+                        <label className="dio-field">
+                          <span>Mode</span>
+                          <select
+                            aria-label="Mode"
+                            value={restriction}
+                            onChange={(e) => onRestriction(e.target.value as Restriction)}
+                          >
+                            {RESTRICTIONS.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {workStyle !== undefined && onWorkStyle && (
+                          <label className="dio-field">
+                            <span>Style</span>
+                            <select
+                              aria-label="Style"
+                              value={workStyle ?? ''}
+                              title={workStyle ? WORK_STYLE_DESCRIPTIONS[workStyle] : 'Follows the default in Settings'}
+                              disabled={pending}
+                              onChange={(e) =>
+                                onWorkStyle(isWorkStyle(e.target.value) ? e.target.value : null)
+                              }
+                            >
+                              <option value="">Default</option>
+                              {WORK_STYLES.map((style) => (
+                                <option key={style} value={style} title={WORK_STYLE_DESCRIPTIONS[style]}>
+                                  {WORK_STYLE_LABELS[style]}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        <span className="cap">{CAPS[restriction]}</span>
+                        {pending ? (
+                          <button type="button" className="send ready" onClick={onStop}>
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`send${ready ? ' ready' : ''}`}
+                            aria-disabled={!ready || undefined}
+                            onClick={() => {
+                              if (ready) submit();
+                            }}
+                          >
+                            Send
+                          </button>
+                        )}
+                        <span className="hint" aria-hidden="true">
+                          Enter
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {earlier > 0 && !showEarlier && (
+                  <button type="button" className="dio-earlier" onClick={() => setShowEarlier(true)}>
+                    Earlier
+                  </button>
+                )}
+                {turns.map((turn, index) => index < shownFrom ? null : (
                   <div className={`turn ${turn.role === 'you' ? 'you' : 'dio'}`} key={turn.id}>
                     <div className="who">
                       <b>{speakerName(turn.role)}</b>
@@ -371,165 +562,10 @@ export function Diomedes({
                 )}
               </div>
             </div>
-
-            <div className="col compose">
-              {notice !== null && (
-                <p className="dio-notice" role="alert">
-                  {notice}
-                  {noticeSharesHistory && onShareHistory && (
-                    <button type="button" className="send" onClick={onShareHistory}>
-                      {SHARE_HISTORY}
-                    </button>
-                  )}
-                  {onNoticeSignIn && (
-                    <button type="button" className="send" onClick={onNoticeSignIn}>
-                      Sign in
-                    </button>
-                  )}
-                </p>
-              )}
-              {/* A status, not an alert: nothing went wrong, and the person may never ask a
-                  follow-up. Not a `.turn` either: the transcript stays what the record holds. */}
-              {history !== null && (
-                <div className="dio-history" role="status">
-                  <p>{history}</p>
-                  {onShareHistory && (
-                    <button type="button" className="send" onClick={onShareHistory}>
-                      {SHARE_HISTORY}
-                    </button>
-                  )}
-                </div>
-              )}
-              {onReadAgain !== null && (
-                <div className="dio-reread">
-                  <button type="button" className="send" onClick={onReadAgain}>
-                    Read again
-                  </button>
-                </div>
-              )}
-              {unconfirmed !== null && !pending && (
-                <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
-                  <p>
-                    Nectovia could not confirm your last message. Sending it again checks what
-                    happened and never asks twice.
-                  </p>
-                  <p className="dio-quote" title={unconfirmed}>
-                    {unconfirmed}
-                  </p>
-                  <div className="dio-row">
-                    <button type="button" className="send ready" onClick={onResend}>
-                      Send again
-                    </button>
-                    <button type="button" className="send" onClick={onDiscard}>
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              )}
-              {workers}
-              {session}
-              {modelControls}
-              {unavailable !== null ? (
-                <p className="composer dio-unavailable">{unavailable}</p>
-              ) : (
-                <div className={`composer${turns.length === 0 ? ' quiet' : ''}${pending ? ' busy' : ''}`}>
-                  <textarea
-                    rows={turns.length === 0 ? 3 : 1}
-                    aria-label={`Message ${AGENT_NAME}`}
-                    placeholder={`Ask a question or give ${AGENT_NAME} something to do.`}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => {
-                      const intent = keyIntent({
-                        key: e.key,
-                        shiftKey: e.shiftKey,
-                        isComposing: e.nativeEvent.isComposing,
-                      });
-                      if (intent === 'send') {
-                        e.preventDefault();
-                        submit();
-                      }
-                    }}
-                  />
-                  <div className="bar">
-                    <label className="dio-field">
-                      <span>In</span>
-                      <select
-                        aria-label="In"
-                        title={scopeName}
-                        value={selectedSpineId(scopeId)}
-                        onChange={(e) => onScope(scopeFromSpineId(e.target.value))}
-                      >
-                        <option value={ALL_PROJECTS}>All projects</option>
-                        {projects.map((p) => (
-                          <option key={p.id} value={p.id} title={p.name}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="dio-field">
-                      <span>Mode</span>
-                      <select
-                        aria-label="Mode"
-                        value={restriction}
-                        onChange={(e) => onRestriction(e.target.value as Restriction)}
-                      >
-                        {RESTRICTIONS.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {workStyle !== undefined && onWorkStyle && (
-                      <label className="dio-field">
-                        <span>Style</span>
-                        <select
-                          aria-label="Style"
-                          value={workStyle ?? ''}
-                          title={workStyle ? WORK_STYLE_DESCRIPTIONS[workStyle] : 'Follows the default in Settings'}
-                          disabled={pending}
-                          onChange={(e) =>
-                            onWorkStyle(isWorkStyle(e.target.value) ? e.target.value : null)
-                          }
-                        >
-                          <option value="">Default</option>
-                          {WORK_STYLES.map((style) => (
-                            <option key={style} value={style} title={WORK_STYLE_DESCRIPTIONS[style]}>
-                              {WORK_STYLE_LABELS[style]}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    <span className="cap">{CAPS[restriction]}</span>
-                    {pending ? (
-                      <button type="button" className="send ready" onClick={onStop}>
-                        Stop
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`send${ready ? ' ready' : ''}`}
-                        aria-disabled={!ready || undefined}
-                        onClick={() => {
-                          if (ready) submit();
-                        }}
-                      >
-                        Send
-                      </button>
-                    )}
-                    <span className="hint" aria-hidden="true">
-                      Enter
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
           </main>
 
-          <aside className="ledger" aria-label="Recent results">
+          <aside className="ledger" aria-label="Suggestions and results">
+            {suggestions}
             {visible.length > 0 && (
               <>
                 <h2>Recent results</h2>
