@@ -14,7 +14,6 @@ import {
 } from '../shared/context-accounting';
 import { MAX_HISTORY_CHARS, MAX_HISTORY_TURNS, boundedHistory } from '../server/harness/conversation-history';
 import {
-  RECENT_KEEP,
   SUMMARY_MAX_CHARS,
   accountContext,
   cacheSupport,
@@ -77,42 +76,52 @@ describe('selective retrieval', () => {
     const own = run(steps);
     const selected = selectHistory({ own, message: 'Has the Harbor Supply invoice been paid?' });
     const selection = selected.selection!;
-    expect(selection.method).toBe('recency+lexical/1');
+    // DIO-23: the history folds in steps, so the version changed.
+    expect(selection.method).toBe('stepped+lexical/2');
     expect(selection.available).toBe(20);
     expect(selection.budget).toEqual({ turns: MAX_HISTORY_TURNS, chars: MAX_HISTORY_CHARS });
     const by = (reason: string) => selection.included.filter((item) => item.reason === reason).map((item) => item.index);
-    // Never dropped: the newest messages and the conversation's opening one.
-    expect(by('recent')).toEqual([15, 16, 17, 18, 19, 20]);
+    // Never dropped: the newest messages and the conversation's opening one. The fold stepped at
+    // messages 13 and 20, each time to half the message bound with the opening message counted.
+    expect(by('recent')).toEqual([16, 17, 18, 19, 20]);
     expect(by('pinned')).toEqual([1]);
-    // Recalled ahead of newer ones for sharing words with this message.
-    expect(by('relevant')).toContain(3);
+    // Recalled for sharing more words with this message than any message already in full.
+    expect(by('relevant')).toEqual([3]);
     expect(selection.included.find((item) => item.index === 3)!.score).toBeGreaterThan(0);
-    expect(selection.included).toHaveLength(MAX_HISTORY_TURNS);
-    expect(selection.omitted).toHaveLength(8);
+    expect(selection.included).toHaveLength(7);
+    expect(selection.omitted).toHaveLength(13);
     expect(selection.omitted.every((item) => !item.carried)).toBe(true);
-    // In the text, oldest first, as a conversation reads.
+    // In the text, the opening message first and the kept ones oldest first; the recalled one
+    // follows them, next to the new message.
     expect(selected.text).toContain('Person: Where is the linen invoice from Harbor Supply?');
-    expect(selected.text.indexOf('Person: O1 asks')).toBeLessThan(selected.text.indexOf('Person: Where is the linen'));
-    expect(selected.text.indexOf('Person: Where is the linen')).toBeLessThan(selected.text.indexOf('Person: O20 asks'));
-    // The marker says what was left out, by message number, and the summary is marked as one.
+    expect(selected.text.indexOf('Person: O1 asks')).toBeLessThan(selected.text.indexOf('Person: O20 asks'));
+    expect(selected.text.indexOf('Person: O20 asks')).toBeLessThan(selected.text.indexOf('Person: Where is the linen'));
+    // The marker names the folded range, the record names each message left out, and the summary
+    // is marked as one.
     const omitted = selection.omitted.map((item) => item.index);
-    expect(selection.marker).toContain(`left out ${omitted.length} earlier messages`);
-    expect(omitted).toEqual([2, 4, 5, 6, 7, 8, 9, 10]);
-    expect(selection.marker).toContain('(2, 4–10)');
+    expect(omitted).toEqual([2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    expect(selection.marker).toBe('[Message 1 follows in full. Messages 2 to 15 are summarised after it.]');
     expect(selected.text.startsWith(selection.marker!)).toBe(true);
     const compaction = selected.compaction!;
     expect(compaction.kind).toBe('summary');
     expect(compaction.author).toBe('diomedes-application');
-    expect(compaction.turns.map((item) => item.index)).toEqual(omitted);
+    // The summary stands for the whole folded range, the recalled message included, so it is the
+    // same whatever this message recalls.
+    expect(compaction.turns.map((item) => item.index)).toEqual(Array.from({ length: 14 }, (_, i) => i + 2));
+    for (const index of omitted) expect(compaction.turns.some((item) => item.index === index)).toBe(true);
     expect(selected.text).toContain(compaction.text);
     expect(selected.text.length).toBeLessThanOrEqual(MAX_HISTORY_CHARS + 1);
   });
 
   test('the newest messages are never dropped for relevance, whatever the message says', () => {
     const own = run(numbered('O', 30));
-    const selected = selectHistory({ own, message: 'O2 asks about lunch O3 asks about lunch O4 O5 O6 O7 O8' });
-    const indexes = selected.selection!.included.map((item) => item.index);
-    for (let index = 31 - RECENT_KEEP; index <= 30; index++) expect(indexes).toContain(index);
+    // DIO-23: the kept messages are everything after the fold, which no message moves.
+    const kept = (message: string) =>
+      selectHistory({ own, message }).selection!.included.filter((item) => item.reason === 'recent').map((item) => item.index);
+    const recalled = kept('O2 asks about lunch O3 asks about lunch O4 O5 O6 O7 O8');
+    expect(recalled).toEqual(kept('nothing in common'));
+    expect(recalled.at(-1)).toBe(30);
+    expect(recalled).toEqual(Array.from({ length: recalled.length }, (_, i) => 31 - recalled.length + i));
   });
 
   test('carried messages from a retired lineage give way first and are not summarised', () => {
@@ -120,18 +129,24 @@ describe('selective retrieval', () => {
     const own = run(numbered('O', 12));
     const selected = selectHistory({ carried, own, message: 'C1 C2 C3 lunch' });
     expect(selected.text).not.toContain('C1 asks');
-    expect(selected.messages).toEqual(new Map([['own-run', 12]]));
+    // DIO-23: the fold steps to half the message bound, so past the three carried messages it
+    // also folds this lineage's own 2 to 5 behind its opening message, which stays whole.
+    expect(selected.messages).toEqual(new Map([['own-run', 8]]));
     const selection = selected.selection!;
     expect(selection.omitted.map((item) => [item.runId, item.carried])).toEqual([
       ['carried-run', true],
       ['carried-run', true],
       ['carried-run', true],
+      ['own-run', false],
+      ['own-run', false],
+      ['own-run', false],
+      ['own-run', false],
     ]);
-    expect(selected.compaction).toBeNull();
-    expect(selection.marker).toContain('3 earlier messages');
-    expect(selection.marker).toContain('not summarised');
-    // The same answer the bounded reader gives for which messages reach the model.
-    expect(boundedHistory([carried, own]).messages).toEqual(selected.messages);
+    // Only this lineage's own are summarised.
+    expect(selected.compaction!.turns.map((item) => item.index)).toEqual([5, 6, 7, 8]);
+    expect(selection.marker).toBe(
+      '[Messages 1 to 3 came before this conversation was updated and are left out. Message 4 follows in full. Messages 5 to 8 are summarised after it.]',
+    );
   });
 
   test('when the newest messages alone pass the character bound, the oldest are left out and summarised, never the newest', () => {
@@ -141,9 +156,11 @@ describe('selective retrieval', () => {
     const own = run([turn('1', long('first'), 'ok'), turn('2', long('second'), 'ok'), turn('3', long('third'), 'ok')]);
     const selected = selectHistory({ own, message: 'next' });
     expect(selected.selection!.cutChars).toBe(0);
-    expect(selected.selection!.omitted.map((item) => item.index)).toEqual([1]);
-    expect(selected.compaction!.turns.map((item) => item.index)).toEqual([1]);
-    expect(selected.text).toContain(`Person: ${long('second')}`);
+    // DIO-23: two of these no longer fit the kept messages' room, which leaves room for recalled
+    // messages, so the second is folded with the first.
+    expect(selected.selection!.omitted.map((item) => item.index)).toEqual([1, 2]);
+    expect(selected.compaction!.turns.map((item) => item.index)).toEqual([1, 2]);
+    expect(selected.text).not.toContain(`Person: ${long('second')}`);
     expect(selected.text).toContain(`Person: ${long('third')}`);
     expect(selected.text.endsWith('Diomedes: ok')).toBe(true);
   });

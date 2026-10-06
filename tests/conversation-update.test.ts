@@ -308,23 +308,27 @@ describe('"Update this conversation" with history sharing on', () => {
     expect(input).not.toHaveProperty('carriedMessages');
   });
 
-  test('the carried history is bounded: the last 12 messages, which give way to the new lineage\'s own', LONG_CONVERSATION, async () => {
+  test('the carried history is bounded, and gives way to the new lineage\'s own', LONG_CONVERSATION, async () => {
     composedFor.set('ask', main('ask'));
     for (let n = 1; n <= 14; n++) await send(`m-${n}`, `Q${String(n).padStart(2, '0')} question`, 'ask');
     composedFor.delete('ask');
     await updated('u-1');
 
+    // DIO-23: past the bounds the history folds in steps, to half the message bound, so the
+    // oldest carried messages give way together and the history then only appends.
     await send('m-15', 'Q15 question', 'ask');
     const carried = userText(seen.at(-1)!);
-    expect(carried).not.toContain('Person: Q01 question');
-    expect(carried).not.toContain('Person: Q02 question');
-    for (let n = 3; n <= 14; n++) expect(carried).toContain(`Person: Q${String(n).padStart(2, '0')} question`);
+    for (let n = 1; n <= 7; n++) expect(carried).not.toContain(`Person: Q${String(n).padStart(2, '0')} question`);
+    for (let n = 8; n <= 14; n++) expect(carried).toContain(`Person: Q${String(n).padStart(2, '0')} question`);
+    expect(carried).toContain('[Messages 1 to 7 came before this conversation was updated and are left out.]');
 
     await send('m-16', 'Q16 question', 'ask');
     const next = userText(seen.at(-1)!);
-    expect(next).not.toContain('Person: Q03 question');
-    expect(next).toContain('Person: Q04 question');
+    expect(next).not.toContain('Person: Q07 question');
+    expect(next).toContain('Person: Q08 question');
     expect(next).toContain('Person: Q15 question');
+    const history = (text: string) => text.slice(0, text.indexOf('\n\n---\n\n'));
+    expect(history(next).startsWith(history(carried))).toBe(true);
   });
 
   test('a retry of the same command reads back what it did and writes no second note, even after the conversation moved on', async () => {

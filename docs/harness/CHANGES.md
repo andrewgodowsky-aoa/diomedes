@@ -1,5 +1,21 @@
 # Harness host integration changes, 2026-09-09
 
+## The conversation history keeps its start between compaction steps, 2026-10-06
+
+Past its bounds a conversation's history was chosen again for every message, so its marker,
+summary and recalled messages changed each time and a follow-up shared little more than the
+instructions with the request before it (DIO-23). `selectHistory` now folds the oldest messages in
+steps: `foldPoint` is a pure function of the messages' sizes, the fold stays where it is while the
+kept messages fit their room and then steps to half of it, and between steps the history only
+appends. The history reads as a stable head (a marker naming the folded range, the opening
+message whole when it is short, the unchanged summary), then the kept messages, then at most two
+summarised messages this message recalls, after their own note. The method is
+`stepped+lexical/2`, the record still names every message left out, and the Context panel's Left
+out line reads which messages have a line from the summary record. In the N4 probe the average
+reuse over 30 messages went from 60.6% to 88.4% with 600-character answers and from 46.6% to
+81.2% with 2,000-character answers. No live provider call was made; see
+[the record](../implementation/2026-10-06-cache-stable-history.md).
+
 ## The Work view, round 2 reskin slice 3, 2026-10-06
 
 Slice 3 of the round 2 reskin (DIO-200) builds boards BD1 to BD3: the Work view replaces Architect,

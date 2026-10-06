@@ -21,6 +21,25 @@ const signed = (value: number) => (value > 0 ? `+${n(value)}` : n(value));
 const plural = (indexes: readonly number[], what: string) =>
   indexes.length ? `${indexes.length === 1 ? 'message' : 'messages'} ${indexes.join(', ')}, ${what}. ` : '';
 
+/**
+ * The Left out line: the messages the summary has a line for, those it only counts, and those
+ * that gave way at an update. The summary lists its first `listed` messages in order. A message
+ * recalled in full (DIO-23) is in the text, so it is not left out, though the summary keeps its
+ * line.
+ */
+export function leftOutLine(
+  history: Pick<NonNullable<ContextAccount['history']>, 'omitted'>,
+  compaction: ContextAccount['compaction'],
+): string {
+  const own = history.omitted.filter((item) => !item.carried).map((item) => item.index);
+  const lined = new Set((compaction?.turns ?? []).slice(0, compaction ? summarisedCount(compaction) : 0).map((item) => item.index));
+  return (
+    plural(own.filter((index) => lined.has(index)), 'summarised') +
+    plural(own.filter((index) => !lined.has(index)), 'left out without a line in the summary') +
+    plural(history.omitted.filter((item) => item.carried).map((item) => item.index), 'from before the update, not summarised')
+  );
+}
+
 export function ContextUsed({ account }: { account: ContextAccount }) {
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState(false);
@@ -30,9 +49,6 @@ export function ContextUsed({ account }: { account: ContextAccount }) {
   const history = account.history;
   const compaction = account.compaction;
   const prefix = account.stablePrefix;
-  // The summary lists the first omitted messages it has room for, in order; the rest are only counted.
-  const ownOmitted = (history?.omitted ?? []).filter((item) => !item.carried).map((item) => item.index);
-  const listed = compaction ? summarisedCount(compaction) : 0;
 
   return (
     <div className="context-used">
@@ -108,11 +124,7 @@ export function ContextUsed({ account }: { account: ContextAccount }) {
             {history && history.omitted.length > 0 && (
               <>
                 <dt>Left out</dt>
-                <dd>
-                  {plural(ownOmitted.slice(0, listed), 'summarised')}
-                  {plural(ownOmitted.slice(listed), 'left out without a line in the summary')}
-                  {plural(history.omitted.filter((item) => item.carried).map((item) => item.index), 'from before the update, not summarised')}
-                </dd>
+                <dd>{leftOutLine(history, compaction)}</dd>
               </>
             )}
           </dl>
