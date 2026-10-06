@@ -17,16 +17,16 @@ import { AccountRoutingSession } from '../server/accounts/routing-session';
 import type { AccountSessionService } from '../server/accounts/session';
 import type { WorkspaceService } from '../server/workspaces';
 import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, type AccountScope, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
-import { creditAmount, micro, type RateSnapshot } from '../shared/managed-usage';
+import { creditAmount, micro, publishedMonthlyGrant, type RateSnapshot } from '../shared/managed-usage';
 import {
   AGENT_FREE_VERSION_REASON, AGENT_PERSONAL_REASON, BUSINESS_PLAN_NEEDED_BUYER, BUSINESS_PLAN_NEEDED_MEMBER, OUT_OF_CREDITS_PERSONAL,
   PAY_AS_YOU_GO_PLAN_ONLY_REASON,
 } from '../shared/access';
 import { decidePayAsYouGo } from '../shared/pay-as-you-go';
-import { gatewayRefusal, nectoviaConnectionId, nectoviaRateCard, OUT_OF_CREDITS_BUYER, respondNectovia } from '../server/engines/nectovia';
+import { ensureNectoviaGuard, gatewayRefusal, nectoviaConnectionId, nectoviaRateCard, OUT_OF_CREDITS_BUYER, respondNectovia } from '../server/engines/nectovia';
 import { CONVERSATION_LIMITS } from '../server/engines/model-api-core';
 import { exposureAttempt } from '../server/engines/aws-bedrock';
-import { SpendExposure } from '../server/spend-exposure';
+import { SpendExposure, type ModelRateCard } from '../server/spend-exposure';
 
 let cloud: FauxCloud, client: ControlPlaneClient, exposure: SpendExposure, directory: string, juniper: string;
 let sent: number;
@@ -197,6 +197,157 @@ describe('Personal work on bought credits', () => {
     expect(d.routing.personalRefusal(null)).toBe(OUT_OF_CREDITS_PERSONAL);
     await expect(d.routing.admit({ phase: 'admit', surface: 'conversation', projectId: null, rootJobId: 'new-job', routeKind: 'managed' }))
       .rejects.toMatchObject({ message: OUT_OF_CREDITS_PERSONAL, refusalCode: 'insufficient_allowance' });
+  });
+});
+
+describe("the local guard follows what a person paying as they go bought (DIO-223)", () => {
+  /** A synthetic card, priced so that one credit is 5,000 input tokens. Only the ledger's arithmetic matters here. */
+  const LOCAL_CARD: ModelRateCard = { version: 'fixture-local-1', route: 'fixture-route', modelId: 'fixture-model', source: 'Synthetic fixture only.',
+    shortContextMaxInputTokens: 1_000_000, short: { input: 20_000_000, cacheWrite: 0, cacheRead: 0, output: 20_000_000 },
+    long: { input: 20_000_000, cacheWrite: 0, cacheRead: 0, output: 20_000_000 } };
+  let guardCount = 0;
+  const guardConnection = () => nectoviaConnectionId(`guard-fixture-${++guardCount}`, new Date());
+  /** One call that held and settled this many credits on the connection, as a run does. */
+  async function spend(connectionId: string, credits: number) {
+    const held = await exposure.reserve({ connectionId, route: LOCAL_CARD.route, modelId: LOCAL_CARD.modelId, card: LOCAL_CARD,
+      attempt: exposureAttempt('guard-run', `step-${++guardCount}`, { guardCount }), maxMicroUsd: creditAmount(credits) });
+    return exposure.settle(held.id, { card: LOCAL_CARD, providerRequestId: `request-${guardCount}`,
+      usage: { inputTokens: credits * 5_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 } });
+  }
+  /** The account service's view of the bought balance, as it reaches this computer's session with the person's own scope. */
+  async function boughtWith(credits: number) {
+    const d = await desktop('free');
+    await buy(d.token, credits);
+    return d;
+  }
+
+  it('carries the service’s amount from the access view to the admission, and lets one computer settle past the default in a month', async () => {
+    const d = await boughtWith(3000);
+    const admitted = await admitJob(d, 'big-job');
+    expect(admitted.planId).toBeNull();
+    expect(admitted.boughtAvailable).toBe(creditAmount(3000));
+    const connectionId = nectoviaConnectionId(d.scope.id, new Date());
+    let guard = await ensureNectoviaGuard(exposure, connectionId, admitted.planId, admitted.boughtAvailable);
+    expect(guard).toMatchObject({ capMicroUsd: creditAmount(3000), availableMicroUsd: creditAmount(3000) });
+    // 1,500 credits settle on this computer: past the 1,000 default, and the guard still has room.
+    await spend(connectionId, 1500);
+    // The next admission reports what the service has left, which is what was bought less what was spent.
+    guard = await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(3000 - 1500));
+    expect(guard.settledMicroUsd).toBe(creditAmount(1500));
+    expect(guard.availableMicroUsd).toBe(creditAmount(1500));
+    await spend(connectionId, 1000);
+    guard = await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(3000 - 2500));
+    expect(guard.settledMicroUsd).toBe(creditAmount(2500));
+    expect(guard.availableMicroUsd).toBe(creditAmount(500));
+    // What was bought was spent exactly: the cap never moved, so it never needed a new revision.
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(3000), revision: 1 });
+  });
+
+  it('approves the cap again, as a new revision, whenever the figure differs from the approved one, and says whose balance it is', async () => {
+    const connectionId = guardConnection();
+    await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(3000));
+    const first = exposure.allowance(connectionId)!;
+    expect(first).toMatchObject({ capMicroUsd: creditAmount(3000), revision: 1 });
+    expect(first.approvedBy).toMatch(/bought balance/);
+    expect(first.approvedBy).toMatch(/this computer's host/);
+    expect(first.note).toMatch(/bought balance/);
+    expect(first.note).toMatch(/ledger is the authority/);
+    // The same figure again changes nothing.
+    await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(3000));
+    expect(exposure.allowance(connectionId)!.revision).toBe(1);
+    // They bought more, then the service held some for other work: each a new approval at the new figure.
+    await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(3500));
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(3500), revision: 2 });
+    await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(2000));
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(2000), revision: 3 });
+  });
+
+  it('never sets the cap above what is already out plus the balance the service reported', async () => {
+    const connectionId = guardConnection();
+    await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(2000));
+    await spend(connectionId, 700);
+    const open = await exposure.reserve({ connectionId, route: LOCAL_CARD.route, modelId: LOCAL_CARD.modelId, card: LOCAL_CARD,
+      attempt: exposureAttempt('guard-run', 'still-running', { open: true }), maxMicroUsd: creditAmount(100) });
+    for (const reported of [2000, 1300, 1299, 50, 0, 4000].map(creditAmount)) {
+      const guard = await ensureNectoviaGuard(exposure, connectionId, null, reported);
+      const out = guard.settledMicroUsd + guard.pendingMicroUsd + guard.uncertainMicroUsd + guard.writtenOffMicroUsd;
+      expect(guard.capMicroUsd).toBe(out + reported);
+      expect(guard.capMicroUsd).toBeLessThanOrEqual(guard.settledMicroUsd + creditAmount(100) + reported);
+      expect(guard.availableMicroUsd).toBe(reported);
+    }
+    // With nothing held, the cap is the settled amount plus the reported balance, and no more.
+    await exposure.settle(open.id, { card: LOCAL_CARD, providerRequestId: 'request-open',
+      usage: { inputTokens: 10_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 } });
+    const settled = await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(900));
+    expect(settled.capMicroUsd).toBe(settled.settledMicroUsd + creditAmount(900));
+    // A balance of nothing leaves nothing to send with: the guard stops this computer too.
+    expect((await ensureNectoviaGuard(exposure, connectionId, null, creditAmount(0))).availableMicroUsd).toBe(0);
+  });
+
+  it('keeps the plan’s published cap, set once, for a plan holder and for a business, whatever amount is passed', async () => {
+    for (const planId of ['individual', 'business']) {
+      const connectionId = guardConnection();
+      const published = publishedMonthlyGrant(planId) ?? creditAmount(1_000);
+      await ensureNectoviaGuard(exposure, connectionId, planId, creditAmount(3000));
+      expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: published, revision: 1 });
+      expect(exposure.allowance(connectionId)!.approvedBy).toBe(`the ${planId} plan, by this computer's host`);
+      await ensureNectoviaGuard(exposure, connectionId, planId, creditAmount(7000));
+      await ensureNectoviaGuard(exposure, connectionId, planId);
+      expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: published, revision: 1 });
+    }
+    // A business scope's admission never carries an amount, even for an owner who bought credits for their own Personal work.
+    const owner = await desktop('owner', { plan: 'paid', owner: juniper });
+    await buy(owner.token, 100);
+    const admitted = await owner.routing.admit({ phase: 'admit', surface: 'conversation', projectId: 'business-project', rootJobId: 'business-job', routeKind: 'managed' });
+    expect(admitted.scope).toEqual({ kind: 'organization', id: juniper });
+    expect(admitted.planId).not.toBeNull();
+    expect(admitted).not.toHaveProperty('boughtAvailable');
+    const connectionId = nectoviaConnectionId(juniper, new Date());
+    await ensureNectoviaGuard(exposure, connectionId, admitted.planId, admitted.boughtAvailable);
+    expect(exposure.allowance(connectionId)!.capMicroUsd).toBe(publishedMonthlyGrant(admitted.planId!) ?? creditAmount(1_000));
+  });
+
+  it('keeps the 1,000 credit default, set once and never guessed at, when the service sent no amount', async () => {
+    // The service of before: the same access view without the amount.
+    const original = client.scopedAccess.bind(client);
+    vi.spyOn(client, 'scopedAccess').mockImplementation(async (...args) => {
+      const view = await original(...args);
+      const { boughtAvailable: _dropped, ...older } = view;
+      return older;
+    });
+    const d = await boughtWith(3000);
+    const admitted = await admitJob(d, 'older-service-job');
+    expect(admitted.planId).toBeNull();
+    expect(admitted).not.toHaveProperty('boughtAvailable');
+    const connectionId = nectoviaConnectionId(d.scope.id, new Date());
+    await ensureNectoviaGuard(exposure, connectionId, admitted.planId, admitted.boughtAvailable);
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(1_000), revision: 1 });
+    await spend(connectionId, 400);
+    await ensureNectoviaGuard(exposure, connectionId, admitted.planId, admitted.boughtAvailable);
+    await ensureNectoviaGuard(exposure, connectionId, null, null);
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(1_000), revision: 1 });
+    // The default still stops this computer at 1,000: that is today's behaviour, not a regression.
+    await spend(connectionId, 600);
+    expect((await ensureNectoviaGuard(exposure, connectionId, null)).availableMicroUsd).toBe(0);
+  });
+
+  it('reaches both places that hold on the guard, the same way the plan does', async () => {
+    const fs = await import('node:fs');
+    const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
+    expect(read('server/engines/service.ts')).toContain('ensureNectoviaGuard(api.exposure, handle.connectionId, admitted.planId, admitted.boughtAvailable)');
+    expect(read('server/harness/evaluation-managed.ts')).toContain('ensureNectoviaGuard(options.exposure, connectionId, admitted.planId, admitted.boughtAvailable)');
+  });
+
+  it('is not sent for a person whose own plan holds the Agent, even when they also bought credits', async () => {
+    const d = await desktop('free');
+    const grant = await api('POST', `/ops/people/${d.person.id}/grants`, await login('staffBilling'),
+      { planId: 'individual', source: 'internal-test', reference: 'Synthetic Personal plan', note: '', validUntil: new Date(Date.now() + 86_400_000).toISOString() });
+    expect(grant).toBeTruthy();
+    await buy(d.token, 110);
+    const admitted = await d.routing.admit({ phase: 'admit', surface: 'conversation', projectId: null, rootJobId: 'plan-job', routeKind: 'byo' });
+    expect(admitted.planId).not.toBeNull();
+    expect(admitted).not.toHaveProperty('boughtAvailable');
+    expect(d.routing.paysAsYouGo(d.scope)).toBe(false);
   });
 });
 

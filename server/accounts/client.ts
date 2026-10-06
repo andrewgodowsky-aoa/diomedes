@@ -33,8 +33,10 @@ const scopedEntitlementSchema = z.object({ plan: z.string(), planLabel: z.string
   state: z.enum(['none', 'active', 'expired', 'revoked', 'unknown']), features: z.array(z.string()).max(100),
   agent: z.boolean(), managedInference: z.boolean(), validFrom: z.iso.datetime().nullable(), validUntil: z.iso.datetime().nullable(),
   revision: z.number().int().nonnegative(), source: z.enum(['none', 'account-service']), reason: z.string(),
-  // A person's own scope only (pay as you go, DIO-219): whether their bought credits are above zero. Never a figure.
+  // A person's own scope only (pay as you go, DIO-219): whether their bought credits are above zero, and how many.
   boughtCredits: z.enum(['available', 'spent', 'none']).optional(),
+  // And how much of it, in ledger units, for the local guard (DIO-223). Absent from an older service.
+  boughtAvailable: z.number().int().nonnegative().optional(),
 });
 
 /**

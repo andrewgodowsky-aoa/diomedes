@@ -15,6 +15,7 @@ import { creditAmount, micro, type RateSnapshot } from '../../../shared/managed-
 import { OUT_OF_CREDITS_PERSONAL, PAY_AS_YOU_GO_PLAN_ONLY_REASON } from '../../../shared/access.js';
 import { ESCALATION_HEADER } from '../../../shared/escalation-controls.js';
 import { BOUGHT_CREDITS_PERIOD, FundingError, FundingService } from '../src/funding.js';
+import { RoutingService } from '../src/routing.js';
 import { FundingMemoryRepository } from './support/funding-memory.js';
 
 const at = '2026-09-28T00:00:00.000Z', until = '2026-10-28T00:00:00.000Z';
@@ -217,7 +218,7 @@ describe('the Agent on bought credits', () => {
     const person = await personOf(free);
     const scope = await personalScope(free);
     await buyPersonal(free, 1000);
-    // The access view says the credits are there, never how many, and grants no feature.
+    // The access view says the credits are there, and how many (for the desktop's local guard), and grants no feature.
     const view = await access(free, scope);
     expect(view).toMatchObject({ state: 'none', agent: false, managedInference: false, boughtCredits: 'available' });
     expect(view.features ?? []).toEqual([]);
@@ -335,6 +336,66 @@ describe('the Agent on bought credits', () => {
     const attempt = cloud.store.snapshot().funding.attempts[0];
     expect(attempt.periodId).not.toBe(BOUGHT_CREDITS_PERIOD);
     expect(attempt.monthlyHoldMicroUsd).toBeGreaterThan(0);
+  });
+});
+
+describe("the access view's bought amount (DIO-223)", () => {
+  it("carries the person's own balance in ledger units, a whole number that follows what they buy and hold", async () => {
+    const free = await signIn('free');
+    const scope = await personalScope(free);
+    expect(await access(free, scope)).toMatchObject({ boughtCredits: 'none', boughtAvailable: 0 });
+    await buyPersonal(free, 1000);
+    const view = await access(free, scope);
+    expect(view).toMatchObject({ boughtCredits: 'available', boughtAvailable: creditAmount(1000) });
+    expect(Number.isInteger(view.boughtAvailable)).toBe(true);
+    expect(view.boughtAvailable).toBe((await balance(free)).availableMicroUsd);
+    await buyPersonal(free, 100);
+    expect((await access(free, scope)).boughtAvailable).toBe(creditAmount(1100));
+    // Credits held by other work are not free to spend: the figure is what is left, never the purchase total (1,100 bought, 100 held).
+    const person = await personOf(free);
+    await cloud.funding.openJob({ tenantId: person.id, organizationId: scope.id, rootJobId: 'other-work', runRef: 'run_other_work', parentRunRef: null, tier: 'thorough', capMicroUsd: null });
+    await cloud.funding.reserve({ tenantId: person.id, organizationId: scope.id, attemptId: 'other-hold', rootJobId: 'other-work', parentAttemptId: null,
+      kind: 'generation', route: 'primary', requestDigest: 'digest_other', rateSnapshot: RATE, maxMicroUsd: creditAmount(100), usageClass: 'metered-work', boughtOnly: true });
+    expect(await access(free, scope)).toMatchObject({ boughtCredits: 'available', boughtAvailable: creditAmount(1000) });
+  });
+
+  it("is never on a business's view, even for an owner who bought credits for their own Personal work", async () => {
+    const owner = await signIn('owner');
+    const personal = await personalScope(owner);
+    await buyPersonal(owner, 100);
+    expect(await access(owner, personal)).toMatchObject({ boughtAvailable: creditAmount(100) });
+    const business = await access(owner, { kind: 'organization', id: juniper });
+    expect(business).not.toHaveProperty('boughtAvailable');
+    expect(business).not.toHaveProperty('boughtCredits');
+  });
+
+  it('is never sent to another person asking for the scope', async () => {
+    const free = await signIn('free');
+    const scope = await personalScope(free);
+    await buyPersonal(free, 100);
+    const other = await call('GET', `/account/routing/individual/${scope.id}/access`, await signIn('owner'));
+    expect(other.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(other.body)).not.toContain('boughtAvailable');
+  });
+
+  it('is absent when the amount cannot be read or there is no reader, and the state still comes when only the amount failed', async () => {
+    const free = await signIn('free');
+    const scope = await personalScope(free);
+    await buyPersonal(free, 100);
+    const view = (reader: ConstructorParameters<typeof RoutingService>[4]) =>
+      new RoutingService(cloud.accounts, cloud.store.commercial, () => clock, null, reader).access(free, scope);
+    const amountFails = await view({ boughtState: async () => 'available', boughtAvailable: async () => { throw new Error('synthetic read failure'); } });
+    expect(amountFails).toMatchObject({ boughtCredits: 'available' });
+    expect(amountFails).not.toHaveProperty('boughtAvailable');
+    const fail = async () => { throw new Error('synthetic read failure'); };
+    const bothFail = await view({ boughtState: fail, boughtAvailable: fail });
+    expect(bothFail).not.toHaveProperty('boughtCredits');
+    expect(bothFail).not.toHaveProperty('boughtAvailable');
+    const noReader = await view(null);
+    expect(noReader).not.toHaveProperty('boughtCredits');
+    expect(noReader).not.toHaveProperty('boughtAvailable');
+    // A figure that is not a whole non-negative number is dropped, never guessed.
+    expect(await view({ boughtState: async () => 'available', boughtAvailable: async () => -1 as never })).not.toHaveProperty('boughtAvailable');
   });
 });
 
