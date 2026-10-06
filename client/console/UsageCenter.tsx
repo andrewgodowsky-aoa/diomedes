@@ -13,7 +13,7 @@ import { Button } from '../components';
 import { PurchasedCreditsView, canSeePurchasedCredits, loadPurchasedUsage } from './PurchasedCredits';
 import { useNectoviaUsage } from './NectoviaUsage';
 import { usageBarModel, type UsageTone } from './nectovia-usage-model';
-import { START_CREDITS, createPurchaseFlow, formatUsd, type FlowState, type PurchaseFlow } from './credit-purchase-flow';
+import { START_CREDITS, createPurchaseFlow, formatUsd, maxCreditsFor, type FlowState, type PurchaseFlow } from './credit-purchase-flow';
 import './usage-center.css';
 
 /**
@@ -134,6 +134,8 @@ export function BuyCreditsView({
   onReset(): void;
 }) {
   const { quote, purchase } = state;
+  // The step is the one the account service quoted for this business; until it has, the field takes any whole number.
+  const step = state.step?.credits ?? 1;
   const held = purchase.phase === 'starting' || purchase.phase === 'waiting';
   const form = purchase.phase === 'idle' || held;
   return (
@@ -145,9 +147,9 @@ export function BuyCreditsView({
           <input
             type="number"
             inputMode="numeric"
-            min={100}
-            max={100000}
-            step={100}
+            min={step}
+            max={maxCreditsFor(step)}
+            step={step}
             value={state.input}
             disabled={held}
             onChange={(event) => onInput(event.target.value)}
@@ -335,7 +337,7 @@ function UsageCenterPanel({
       usage={usage}
       now={now}
       purchased={purchased}
-      buy={state ?? { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' } }}
+      buy={state ?? { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' }, step: null }}
       onInput={(text) => flow?.setInput(text)}
       onBuy={() => void flow?.buy()}
       onReset={() => flow?.reset()}

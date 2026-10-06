@@ -222,7 +222,7 @@ describe('the agent usage bar', () => {
 
 const owner = { id: 'm_1', organizationId: 'org_a', personId: 'p_1', role: 'owner', state: 'active' } as unknown as Membership;
 const asRole = (role: Membership['role'], state: Membership['state'] = 'active') => ({ ...owner, role, state }) as Membership;
-const idle: FlowState = { input: '1000', quote: { state: 'ready', credits: 1000, amountCents: 12000 }, purchase: { phase: 'idle' } };
+const idle: FlowState = { input: '1000', quote: { state: 'ready', credits: 1000, amountCents: 12000 }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 } };
 const STRIPE_URL = 'https://checkout.stripe.com/c/pay/cs_test_a1B2c3';
 const buyView = (state: FlowState) =>
   renderToStaticMarkup(createElement(BuyCreditsView, { state, onInput: () => {}, onBuy: () => {}, onReset: () => {} }));
@@ -317,6 +317,17 @@ describe('the buy form', () => {
     expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
+  it('takes its step and bounds from the quote: a plan step of 110 is a field in steps of 110 up to 99,990, and before any quote it takes any whole number', () => {
+    const plan = buyView({ ...idle, input: '990', quote: { state: 'ready', credits: 990, amountCents: 9000 }, step: { credits: 110, cents: 1000 } });
+    expect(plan).toMatch(/<input[^>]*min="110"/);
+    expect(plan).toMatch(/<input[^>]*step="110"/);
+    expect(plan).toMatch(/<input[^>]*max="99990"/);
+    const unknown = buyView({ ...idle, quote: { state: 'loading' }, step: null });
+    expect(unknown).toMatch(/<input[^>]*min="1"/);
+    expect(unknown).toMatch(/<input[^>]*step="1"/);
+    expect(unknown).toMatch(/<input[^>]*max="100000"/);
+  });
+
   it('shows whatever total the quote gave, because the client never works one out', () => {
     const page = text(buyView({ ...idle, quote: { state: 'ready', credits: 1000, amountCents: 999 } }));
     expect(page).toContain('1,000 credits for $9.99 at the current usage rate');
@@ -329,7 +340,7 @@ describe('the buy form', () => {
     expect(text(loading)).toContain('Working out the total.');
     expect(text(loading)).not.toContain('$');
 
-    const invalid = buyView({ input: '150', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' } });
+    const invalid = buyView({ input: '150', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 } });
     expect(invalid).toMatch(/<button[^>]*disabled/);
     expect(text(invalid)).toContain('Enter 100 credits or more, in steps of 100, up to 100,000.');
 
@@ -344,6 +355,7 @@ describe('the buy form', () => {
       input: '1000',
       quote: { state: 'ready', credits: 1000, amountCents: 12000 },
       purchase: { phase: 'waiting', purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 12000, checkoutUrl: STRIPE_URL },
+      step: { credits: 100, cents: 1200 },
     });
     const page = text(html);
     expect(page).toContain('Waiting for your payment for 1,000 credits.');
@@ -391,7 +403,7 @@ describe('what customers read here', () => {
     ['whole screen', whole(ready(800), bought)],
     ['buy idle', buyView(idle)],
     ['buy loading', buyView({ ...idle, quote: { state: 'loading' } })],
-    ['buy invalid', buyView({ input: '1', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' } })],
+    ['buy invalid', buyView({ input: '1', quote: { state: 'invalid', message: 'Enter 100 credits or more, in steps of 100, up to 100,000.' }, purchase: { phase: 'idle' }, step: { credits: 100, cents: 1200 } })],
     ['buy starting', buyView({ ...idle, purchase: { phase: 'starting' } })],
     ['buy waiting', buyView({ ...idle, purchase: { phase: 'waiting', purchaseId: 'cp_0123456789abcdef', credits: 1000, amountCents: 12000, checkoutUrl: STRIPE_URL } })],
     ['buy paid', buyView({ ...idle, purchase: { phase: 'paid', credits: 1000, amountCents: 12000 } })],

@@ -15,7 +15,6 @@ import type { UsageState } from '../../shared/managed-usage.js';
 import type { Membership, MemberRole, Organization, Person } from '../../shared/workspaces.js';
 import {
   CREDIT_PURCHASE_MAX_CREDITS,
-  CREDIT_PURCHASE_MIN_CREDITS,
   type CreditPurchaseStarted,
   type CreditPurchaseStatus,
   type CreditQuote,
@@ -82,9 +81,13 @@ export type PurchasedHoldAnswer = z.infer<typeof purchasedHoldSchema>;
  * where it is used (shared/credit-purchases.ts), never trusted for arriving in a well-formed answer.
  */
 const purchaseIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
-const creditsSchema = z.number().int().min(CREDIT_PURCHASE_MIN_CREDITS).max(CREDIT_PURCHASE_MAX_CREDITS);
+const creditsSchema = z.number().int().min(1).max(CREDIT_PURCHASE_MAX_CREDITS);
 const centsSchema = z.number().int().positive().max(99_999_999);
-const creditQuoteSchema = z.strictObject({ credits: creditsSchema, amountCents: centsSchema, currency: z.literal('usd') });
+const creditQuoteSchema = z.strictObject({
+  credits: creditsSchema, amountCents: centsSchema, currency: z.literal('usd'),
+  steps: z.number().int().min(1), stepCredits: z.number().int().min(1).max(10_000), stepCents: centsSchema,
+}).refine((quote) => quote.credits === quote.steps * quote.stepCredits && quote.amountCents === quote.steps * quote.stepCents,
+  'The quote is not whole steps of its own step.');
 const creditPurchaseStartedSchema = z.strictObject({
   purchaseId: purchaseIdSchema, checkoutUrl: z.string().min(1).max(4096), credits: creditsSchema, amountCents: centsSchema,
 });
@@ -400,10 +403,11 @@ export class ControlPlaneClient {
   }
   // --- buying credits (owner or admin; the service checks) -------------------------------
 
-  /** What an amount of credits costs. The service prices it; this app never does. */
-  async quoteCredits(token: string, organizationId: string, credits: number): Promise<CreditQuote> {
-    const parsed = creditQuoteSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases/quote?credits=${credits}`, token));
-    return parsed.success && parsed.data.credits === credits ? parsed.data : this.unreadable();
+  /** What an amount of credits costs, and the step it is bought in. With no amount it quotes one step. The service prices it; this app never does. */
+  async quoteCredits(token: string, organizationId: string, credits: number | null): Promise<CreditQuote> {
+    const query = credits === null ? '' : `?credits=${credits}`;
+    const parsed = creditQuoteSchema.safeParse(await this.call<unknown>('GET', `/account/organizations/${encodeURIComponent(organizationId)}/credit-purchases/quote${query}`, token));
+    return parsed.success && (credits === null || parsed.data.credits === credits) ? parsed.data : this.unreadable();
   }
   /** Start a purchase. The answer carries the payment page; whether this app may open it is for the caller to judge. */
   async startCreditPurchase(token: string, organizationId: string, credits: number): Promise<CreditPurchaseStarted> {
