@@ -5,7 +5,8 @@
 -- NUMBERING. This is 017 because draft #196 holds 016. The runner (src/migrations.ts) takes each version from the file
 -- name's number and refuses a list that is not 1..n with no gap, and refuses a history that is not a prefix of the list. So
 -- 017 cannot be applied to any database until 016 is in the list before it, and a database that applied 017 first could never
--- accept 016 afterwards. Whichever of the two merges second has to sit in the right place; 016 must come first.
+-- accept 016 afterwards. Listing 017 without 016 would make the runner refuse the whole list, so scripts/migrate.ts does not
+-- list it yet. Whichever of the two merges second adds its entry there, 016 before 017.
 --
 -- 1. ENVIRONMENT. billing_customers, webhook_inbox and credit_purchases each gain `environment` ('test' or 'live'). Every
 -- existing row is a test row (nothing live has ever run), so the column is added NOT NULL DEFAULT 'test', which backfills

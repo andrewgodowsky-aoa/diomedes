@@ -674,10 +674,14 @@ before it.
 
 Migration 017 (`017_stripe_billing_foundation.sql`) is numbered 017 because 016 is
 taken by the draft pull request #196. The runner needs the versions in its list to
-equal their position plus one, so it refuses 017 until a 016 is listed before it:
-if #196 lands after this, its entry goes in the list between 015 and 017 and
-nothing in 017 changes; if this lands first, the runner will not apply 017 until
-016 is listed, and the list must not be reordered. The migration adds
+equal their position plus one, and refuses the whole list, before it opens a
+transaction, when they do not. So 017 cannot be listed until a 016 is listed before
+it, and `scripts/migrate.ts` does not list it yet: the runner keeps applying 001 to
+015 as it did. Whichever of the two merges second adds its entry to that list, 016
+before 017, and nothing in the 017 file changes; a database must never be migrated
+with 017 ahead of 016, because it could never accept 016 afterwards (the runner
+refuses a history that is not a prefix of its list). Applying 017 to
+`accounts_staging` therefore waits for 016. The migration adds
 `environment` (`test` or `live`, existing rows backfilled to `test`) to
 `billing_customers`, `webhook_inbox` and `credit_purchases`, and makes the
 customer's uniqueness per environment; it adds `ignored` to the inbox states and

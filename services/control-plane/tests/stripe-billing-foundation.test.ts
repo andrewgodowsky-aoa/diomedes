@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { migrate, type Migration } from '../src/migrations.js';
 import type { SqlClient } from '../src/postgres.js';
+import { accountStateSchema, emptyAccountState } from '../src/domain.js';
 import { BILLING_SYSTEM_ACTOR, BILLING_SYSTEM_NAME, BILLING_SYSTEM_ROLE, isBillingSystemActor } from '../src/billing-system.js';
 import { addStaffInput, auditEventSchema, featureGrantSchema } from '../src/commercial.js';
 
@@ -100,10 +101,12 @@ describe('migration 017', () => {
 });
 
 describe('where the runner applies 017', () => {
-  it('lists 017 after 015 in the migrate script, and the script says it waits for 016', () => {
+  it('does not list 017 in the migrate script yet, so the runner keeps working, and the script says why', () => {
     const script = readFileSync(new URL('../scripts/migrate.ts', import.meta.url), 'utf8');
-    expect(script).toContain("'015_credit_purchases.sql','017_stripe_billing_foundation.sql']");
-    expect(script).toMatch(/017 is likewise refused until 016 \(draft #196\)/);
+    // The list ends at 015: listing 017 without a 016 makes the runner refuse the whole list.
+    expect(script).toContain("'015_credit_purchases.sql']");
+    expect(script).not.toContain("'017_stripe_billing_foundation.sql'");
+    expect(script).toContain('017_stripe_billing_foundation.sql is deliberately NOT listed');
   });
 
   it('has no 016 file here, and the number is kept for draft #196', () => {
@@ -139,6 +142,16 @@ describe('where the runner applies 017', () => {
 });
 
 describe('the billing system actor', () => {
+  it('has a persons record the account store parses and the table\'s own checks accept', () => {
+    const record = JSON.parse(/'(\{"v":1,"id":"billing-system"[^']*\})'::jsonb/.exec(code())![1]);
+    expect(Object.keys(record).sort()).toEqual(['assurance', 'createdAt', 'id', 'name', 'v']);
+    expect(record.assurance).toBe('hosted');
+    // The person record itself parses. The in-memory account state also requires every person to have an external subject, which the
+    // actor must never have, so a faux store would refuse a whole state that held it: slice 1 does not put it in a faux store.
+    expect(accountStateSchema.shape.persons.element.safeParse(record).success).toBe(true);
+    expect(accountStateSchema.safeParse({ ...emptyAccountState(), persons: [record] }).success).toBe(false);
+  });
+
   it('is one reserved id, in the audit role billing, and nothing else is it', () => {
     expect(BILLING_SYSTEM_ACTOR).toBe('billing-system');
     expect(BILLING_SYSTEM_ROLE).toBe('billing');
