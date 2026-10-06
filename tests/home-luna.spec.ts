@@ -283,9 +283,11 @@ test('the home conversation opens on Nectovia (GPT-5.6 Luna) and answers with no
 
 test('a project scope conversation is provisioned on Nectovia too', async ({ page }) => {
   const project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  // The home's scope control is drawn only for a business with more than one project.
+  await api<Project>('/projects', 'POST', { name: 'Second shop' });
   await linkToBusiness(api, project.id);
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Linen service' });
   await say(page, 'About this project');
   await expect(answers(page).last()).toHaveText('You said: About this project');
   const state = await api<ProjectState>(`/projects/${project.id}/state`);
@@ -600,8 +602,8 @@ test('a late interrupt answer cannot paint the scope the person moved to', async
     // The request is on the wire, unanswered.
     await ack.recorded;
     // The person is somewhere else entirely before the answer arrives.
-    await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Away scope' });
-    const scope = page.getByRole('combobox', { name: 'In' });
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Away scope' });
+    const scope = page.getByRole('combobox', { name: 'Project' });
     await expect(scope).toHaveValue(project.id);
     await expect(composer(page)).toBeVisible();
     ack.release();
@@ -637,7 +639,7 @@ test('a late failed interrupt cannot paint a newer visit to the same scope', asy
     await ack.recorded;
     // Leave and come back: the home scope the person returns to is a newer visit, and it is
     // visibly the active one before the failure lands.
-    const scope = page.getByRole('combobox', { name: 'In' });
+    const scope = page.getByRole('combobox', { name: 'Project' });
     await scope.selectOption({ label: 'Layover' });
     await expect(scope).toHaveValue(project.id);
     await scope.selectOption({ label: 'All projects' });
@@ -754,7 +756,7 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
     await old.recorded;
     // The new scope's delivery is the one on screen now: it provisions, dispatches, and its
     // provider call holds long enough to be stopped.
-    const scope = page.getByRole('combobox', { name: 'In' });
+    const scope = page.getByRole('combobox', { name: 'Project' });
     await scope.selectOption({ label: 'Second scope' });
     await expect(scope).toHaveValue(project.id);
     await composer(page).fill('SLOW newer delivery');
@@ -803,7 +805,7 @@ test('a tier change that starts the conversation fresh says so in the thread', a
   const project = await api<Project>('/projects', 'POST', { name: 'Tier change' });
   await linkToBusiness(api, project.id);
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Tier change' });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Tier change' });
   await say(page, 'Where is the linen order?');
   await expect(answers(page).last()).toHaveText('You said: Where is the linen order?');
   const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
@@ -828,6 +830,8 @@ test('a tier change that starts the conversation fresh says so in the thread', a
     "Nectovia started this conversation fresh because this conversation moved to the Focused tier. Your earlier messages are still here, but it won't remember them.";
   await expect(notes).toHaveCount(1);
   await expect(notes.locator('.body')).toHaveText(note);
+  // The home shows the newest exchange; Earlier opens the rest of the conversation.
+  await page.getByRole('button', { name: 'Earlier', exact: true }).click();
   await expect(page.locator('.transcript .turn .body')).toHaveText([
     'Where is the linen order?',
     'You said: Where is the linen order?',
@@ -875,7 +879,7 @@ async function openedBefore(page: Page, name: string, words: string, answer: str
   await linkToBusiness(api, project.id);
   const read = dryRuns(page, project.id);
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: name });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: name });
   await say(page, words);
   await expect(answers(page).last()).toContainText(answer);
   await expect(page.locator('.dio-pending')).toHaveCount(0);
@@ -896,7 +900,7 @@ async function openedBefore(page: Page, name: string, words: string, answer: str
   run.input.instructions = fixture.texts.find((row) => row.build === '0.1.8' && row.mode === 'auto')!.text;
   await fs.writeFile(runFile, JSON.stringify(run));
   await open(page);
-  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: name });
+  await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: name });
   await expect(answers(page).last()).toContainText(answer);
   return { project, opened, lineage };
 }
@@ -971,6 +975,8 @@ test('"Update this conversation" moves a conversation opened before this build, 
   const callsBefore = seen.length;
   await say(page, 'And the invoice?');
   await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  // The home shows the newest exchange; Earlier opens the rest of the conversation.
+  await page.getByRole('button', { name: 'Earlier', exact: true }).click();
   await expect(page.locator('.transcript .turn .body')).toHaveText([
     'Where is the linen order?',
     'You said: Where is the linen order?',
@@ -1027,6 +1033,8 @@ test('with history sharing off, the update says the conversation won\'t be remem
   const callsBefore = seen.length;
   await say(page, 'And the invoice?');
   await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  // The home shows the newest exchange; Earlier opens the rest of the conversation.
+  await page.getByRole('button', { name: 'Earlier', exact: true }).click();
   await expect(page.locator('.transcript .turn .body')).toHaveText([
     'Where is the linen order?',
     'You said: Where is the linen order?',

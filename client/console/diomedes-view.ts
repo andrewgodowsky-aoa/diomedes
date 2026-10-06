@@ -152,13 +152,22 @@ export function paragraphs(text: string): string[] {
 }
 
 /**
- * Where the home's newest exchange starts: the index of the person's last message, so the page
- * shows that message and everything after it under the ask box, with Earlier for the rest. Zero
- * when there is nothing earlier to fold: no message of theirs yet, or only the one exchange.
+ * Where the home's newest exchange starts: the person's last message, so the page shows that
+ * message and everything after it under the ask box, with Earlier for the rest. A note Nectovia
+ * wrote between the last answer and that message ("Nectovia started this conversation fresh...")
+ * says how the newest exchange was answered, so it stays with it: a reply that follows another
+ * reply, rather than a message, is a note. Zero when there is nothing earlier to fold.
  */
 export function newestExchange(turns: readonly { role: string }[]): number {
-  for (let index = turns.length - 1; index >= 0; index -= 1) if (turns[index].role === 'you') return index;
-  return 0;
+  let start = -1;
+  for (let index = turns.length - 1; index >= 0; index -= 1)
+    if (turns[index].role === 'you') {
+      start = index;
+      break;
+    }
+  if (start <= 0) return 0;
+  while (start >= 2 && turns[start - 1].role !== 'you' && turns[start - 2].role !== 'you') start -= 1;
+  return start;
 }
 
 /** False for empty or whitespace-only text, while pending, or when unavailable. */

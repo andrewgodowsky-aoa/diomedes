@@ -130,6 +130,9 @@ describe('the ask box over the newest exchange', () => {
     expect(newestExchange(turns.slice(0, 2))).toBe(0);
     expect(newestExchange(turns)).toBe(2);
     expect(newestExchange([turn('a', 'diomedes', 'Hello.')])).toBe(0);
+    // A note written between the last answer and the newest message stays with the newest exchange.
+    const noted = [...turns.slice(0, 2), turn('n', 'diomedes', 'Nectovia started this conversation fresh.'), ...turns.slice(2)];
+    expect(newestExchange(noted)).toBe(2);
   });
 
   it('shows the newest exchange under the ask box, with Earlier for the rest', () => {
