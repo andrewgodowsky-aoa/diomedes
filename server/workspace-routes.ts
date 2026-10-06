@@ -348,13 +348,13 @@ export function mountWorkspaceRoutes(
       if (run?.state === 'failed' && run.failure?.name === 'waiting_for_data')
         throw new ApiError(409, run.failure.message, { code: 'waiting_for_data', ...links });
       if (run && ['queued', 'running'].includes(run.state))
-        throw new ApiError(409, 'The brief is still being prepared. Follow it in Automations.', {
+        throw new ApiError(409, 'The brief is still being prepared. Follow it in Routines.', {
           code: 'brief_still_running',
           ...links,
         });
       throw new ApiError(
         409,
-        'The brief stopped before it was saved. Open Automations to see why.',
+        'The brief stopped before it was saved. Open Routines to see why.',
         { code: 'brief_failed', ...links },
       );
     }, false),

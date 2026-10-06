@@ -171,7 +171,7 @@ const openDestination = async (page: Page, label: string) => {
   await page.getByRole('button', { name: 'Everything', exact: true }).click();
   await page.getByRole('menuitem', { name: new RegExp(`^${label}\\b`) }).click();
 };
-const screen = (page: Page) => page.getByRole('region', { name: 'Automations' });
+const screen = (page: Page) => page.getByRole('region', { name: 'Routines' });
 const row = (page: Page) => screen(page).getByRole('article').first();
 const detail = () =>
   api<AutomationDetail>(
@@ -187,8 +187,8 @@ test('finds the manual brief, runs it once, follows its records, sees missing da
   await expect(page.locator('.console')).toBeVisible();
 
   // 1. Found from Everything, in the Nectovia group beside AI engines (D4).
-  await openDestination(page, 'Automations');
-  await expect(screen(page).getByRole('heading', { name: 'Automations', level: 1 })).toBeVisible();
+  await openDestination(page, 'Routines');
+  await expect(screen(page).getByRole('heading', { name: 'Routines', level: 1 })).toBeVisible();
 
   // 2. Manual, not scheduled, and a recorded weekly answer that stays inactive.
   await expect(row(page)).toContainText('Manual, not scheduled');
@@ -213,7 +213,7 @@ test('finds the manual brief, runs it once, follows its records, sees missing da
   await row(page).getByRole('button', { name: 'Keep or undo the draft' }).click();
   await expect(page.locator('#scrThread')).toBeVisible();
   await expect(page.locator('#scrThread')).toContainText('Prepare the weekly brief');
-  await openDestination(page, 'Automations');
+  await openDestination(page, 'Routines');
 
   // 5. A missing source: Waiting for data, naming the file, nothing written.
   await fs.rm(path.join(project.folder, selection[0]!));
@@ -246,7 +246,7 @@ test('finds the manual brief, runs it once, follows its records, sees missing da
   await launch();
   await page.goto(url);
   await reopenLastProject(page);
-  await openDestination(page, 'Automations');
+  await openDestination(page, 'Routines');
   await expect(row(page)).toContainText('Waiting for data');
   await expect(row(page)).not.toContainText('Running');
   const after = await detail();
@@ -266,17 +266,17 @@ test('finds the manual brief, runs it once, follows its records, sees missing da
   await page.screenshot({ path: 'test-results/automations-narrow.png', fullPage: true });
 });
 
-test('the palette opens Automations too', async ({ page }) => {
+test('the palette opens Routines too', async ({ page }) => {
   await page.goto(url);
   await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await page.keyboard.press('Control+k');
   const palette = page.getByRole('dialog', { name: 'Find and act' });
   await expect(palette).toBeVisible();
-  await palette.getByRole('textbox').fill('Automations');
+  await palette.getByRole('textbox').fill('Routines');
   // A row runs its first action, Open, when it is clicked.
-  await palette.getByText('Automations', { exact: true }).click();
-  await expect(screen(page).getByRole('heading', { name: 'Automations', level: 1 })).toBeVisible();
+  await palette.getByText('Routines', { exact: true }).click();
+  await expect(screen(page).getByRole('heading', { name: 'Routines', level: 1 })).toBeVisible();
 });
 
 test('an owner turns a schedule on, sees the next run, the due slot starts on its own, and a pause stops the next', async ({
@@ -300,7 +300,7 @@ test('an owner turns a schedule on, sees the next run, the due slot starts on it
 
   await page.goto(url);
   await reopenLastProject(page);
-  await openDestination(page, 'Automations');
+  await openDestination(page, 'Routines');
   // One clean manual run first, so the last run no longer reads Waiting for data.
   await row(page).getByRole('button', { name: 'Run once' }).click();
   await expect(row(page)).toContainText('Draft saved for review', { timeout: 30_000 });

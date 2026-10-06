@@ -390,7 +390,7 @@ export const PAID_ABILITIES: readonly string[] = Object.freeze([
   'Included AI usage every month',
   'A better price on extra credits',
   'Business rules and trigger rules',
-  'Automations',
+  'Routines',
   'Phone access',
 ]);
 
@@ -402,4 +402,4 @@ export const PHONE_RELAY_NOT_INCLUDED_REASON =
   'Reaching this computer from your phone is part of a paid plan.';
 /** The sentence a person reads wherever a business without a plan would start an Automation. */
 export const AUTOMATIONS_NOT_INCLUDED_REASON =
-  'Automations are part of a paid plan. Their setup and history are kept, but nothing runs until this business has one.';
+  "Routines are part of a paid plan. Their setup and history are kept, but nothing runs until this business has one.";

@@ -534,3 +534,48 @@ html[data-motion='reduced'] .console .lane header .pt.landed {
     margin: 0 16px;
   }
 }
+/* The free version's lead seats and its one note (round 2 board BD2). Type tokens only. */
+.console .team-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 32px 12px 56px;
+}
+.console .team-seats .seat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+  color: var(--t1);
+}
+.console .team-seats .seat.locked {
+  border-style: dashed;
+  color: var(--t3);
+}
+.console .team-seats .seat-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--t3);
+  font-size: var(--dm-type-meta);
+}
+.console .team-upsell {
+  margin: 0 32px 16px 56px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--hair-2);
+  font-size: var(--dm-type-ui);
+}
+.console .team-upsell p {
+  margin: 0;
+  color: var(--t1);
+}
+.console .team-upsell-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

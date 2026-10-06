@@ -1,0 +1,80 @@
+/* The top switch, Nectovia | Work (round 2 reskin, slice 3). It shares the strip's first cell with
+   the mark, so the strip keeps its three columns at every width. Sizes are the type tokens only. */
+.console .top .top-lead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.console .top .top-lead .dm-nmark {
+  padding: 0 12px 0 16px;
+}
+.console .view-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.console .view-switch .views {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.console .view-switch .view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--rb);
+  white-space: nowrap;
+  color: var(--t3);
+  font-size: var(--dm-type-ui);
+}
+.console .view-switch .view-tab:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .view-switch .view-tab.on {
+  color: var(--t1);
+  font-weight: 600;
+  background: var(--raised);
+}
+.console .view-switch .view-tab.locked svg {
+  color: var(--t3);
+}
+.console .view-notice {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: 22rem;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--hair-2);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  white-space: normal;
+}
+.console .view-notice .vn-title {
+  margin: 0;
+  font-size: var(--dm-type-body);
+  font-weight: 600;
+  color: var(--t1);
+}
+.console .view-notice .vn-line {
+  margin: 4px 0 0;
+  font-size: var(--dm-type-ui);
+  line-height: 1.45;
+  color: var(--t2);
+}
+.console .view-notice .vn-error {
+  margin: 8px 0 0;
+  font-size: var(--dm-type-caption);
+  color: var(--fail, var(--attn));
+}
+.console .view-notice .vn-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}

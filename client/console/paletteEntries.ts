@@ -15,6 +15,7 @@ import type {
 import type { PackSkill } from '../../shared/capability-packs';
 import { AGENT_NAME } from '../../shared/agent-name';
 import type { PaletteEntry, PalettePoint, ShellView } from './types';
+import { ROUTINES, VIEW_LABELS } from './work-view';
 
 /**
  * Ctrl+K entries: 1:1 with the "Ctrl+K: find a thing and act on it in its
@@ -44,7 +45,7 @@ export interface PaletteHandlers {
   wakeMember(member: TeamMember): void | Promise<void>;
   selectThread(threadId: string): void;
   setView(view: ShellView): void;
-  /** Switch between the Conversation and Architect views (shared/types.ts ConsoleView). */
+  /** Switch between the Nectovia and Work views (shared/types.ts ConsoleView; Work is stored as architect). */
   setConsoleView?(view: ConsoleView): void;
   openProject(project: Project): void;
   /** Open a project document in the Files pane, opening the pane if it is shut. */
@@ -420,7 +421,9 @@ function viewEntries(ctx: PaletteContext): PaletteEntry[] {
   ).map((v) => ({
     group: 'Views',
     id: `view:${v}`,
-    name: v,
+    // Automations are called Routines wherever a person reads them; the screen keeps its id.
+    name: v === 'Automations' ? ROUTINES : v,
+    ...(v === 'Automations' ? { search: 'automations schedule' } : {}),
     sub: `${focus}, from here`,
     point: '',
     actions: [{ label: 'Open', run: () => ctx.handlers.setView(v) }],
@@ -435,12 +438,12 @@ function viewEntries(ctx: PaletteContext): PaletteEntry[] {
     {
       group: 'Views',
       id: `console-view:${other}`,
-      name: other === 'conversation' ? 'Conversation view' : 'Architect view',
+      name: `${VIEW_LABELS[other]} view`,
       sub:
         other === 'conversation'
-          ? 'The prompt box and your threads'
-          : 'The full Console, with Board, Team, History and Files',
-      search: 'simple advanced mode layout',
+          ? `Ask ${AGENT_NAME}, and keep your threads`
+          : 'Your threads beside the board',
+      search: 'simple advanced mode layout architect conversation',
       point: '',
       actions: [{ label: 'Switch', run: () => switchTo(other) }],
     },

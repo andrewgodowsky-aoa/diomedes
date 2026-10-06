@@ -444,7 +444,7 @@ export function WorkspacePanel({
                       <>
                         {' '}
                         <button type="button" className="ws-link" onClick={onOpenAutomations}>
-                          See its run in Automations
+                          See its run in Routines
                         </button>
                       </>
                     )}
