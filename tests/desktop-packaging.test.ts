@@ -49,6 +49,7 @@ async function fixture() {
     'desktop/update-helper.mjs',
     'desktop/fresh-start.mjs',
     'desktop/diomedes.ico',
+    'desktop/nectovia.icns',
     'desktop/service.ts',
     'fixtures/harness/report-lines.txt',
     'LICENSE',
@@ -81,9 +82,10 @@ async function fixture() {
       platform: string;
       arch: string;
       extraResource: string[];
+      icon?: string;
     }) => {
       const output = path.join(options.out, `${options.name}-${options.platform}-${options.arch}`);
-      const resources = path.join(output, 'Diomedes.app/Contents/Resources');
+      const resources = path.join(output, `${options.name}.app/Contents/Resources`);
       await fs.mkdir(resources, { recursive: true });
       await fs.copyFile(
         path.join(options.dir, 'BUILD_INFO.json'),
@@ -188,13 +190,16 @@ describe('FD01 same desktop packaging entry point', () => {
       expect.objectContaining({
         platform: 'darwin',
         arch: 'arm64',
-        name: 'Diomedes',
+        // Nectovia.app on screen, the bundle id existing installs carry underneath.
+        name: 'Nectovia',
+        appBundleId: 'com.electron.diomedes',
         asar: true,
         electronZipDir: options.electronZipDir,
       }),
     );
     const call = deps.packager.mock.calls[0][0];
-    expect(call).not.toHaveProperty('icon');
+    // The Mac carries its own icon, never the Windows one.
+    expect(call.icon).toBe(path.join(root, 'desktop/nectovia.icns'));
     expect(call).not.toHaveProperty('win32metadata');
     expect(call).not.toHaveProperty('osxSign');
     expect(call).not.toHaveProperty('asarIntegrityDigest');
@@ -212,12 +217,12 @@ describe('FD01 same desktop packaging entry point', () => {
     });
     expect(JSON.stringify(manifest.nativeRuntime)).not.toMatch(/\.exe/);
     const output = JSON.parse(
-      await fs.readFile(path.join(root, 'release/Diomedes-darwin-arm64.manifest.json'), 'utf8'),
+      await fs.readFile(path.join(root, 'release/Nectovia-darwin-arm64.manifest.json'), 'utf8'),
     );
     expect(output.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'Diomedes.app/Contents/Resources/app.asar',
+          path: 'Nectovia.app/Contents/Resources/app.asar',
           sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
         }),
       ]),
@@ -239,7 +244,11 @@ describe('FD01 same desktop packaging entry point', () => {
     expect(auth).toContain("export const NATIVE_AUTH_CALLBACK = 'diomedes-auth://callback';");
     // Windows keeps registering the scheme at run time; only the macOS bundle declares it.
     const script = await fs.readFile(path.join(repo, 'scripts/package-desktop.mjs'), 'utf8');
-    expect(script).toContain("...(platform === 'darwin' ? { protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }] } : {}),");
+    const darwin = script.slice(
+      script.indexOf("...(platform === 'darwin'"),
+      script.indexOf("...(platform === 'win32'"),
+    );
+    expect(darwin).toContain("protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }],");
     // macOS delivers the callback as `open-url`; main subscribes to it before the app is ready.
     const main = await fs.readFile(path.join(repo, 'desktop/main.mjs'), 'utf8');
     const capture = main.indexOf('captureNativeAuthCallbacks(app, process.argv)');

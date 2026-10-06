@@ -259,17 +259,17 @@ jobs:
       - name: Ad-hoc bundle signature
         run: |
           set -eu
-          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          app="release/Nectovia-darwin-arm64/Nectovia.app"
           codesign --force --deep --sign - "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
       - name: Disk image
         run: |
           set -eu
-          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          app="release/Nectovia-darwin-arm64/Nectovia.app"
           dmg="release/Diomedes-Experimental-$VERSION_BASE-mac-arm64.dmg"
           stage="$RUNNER_TEMP/dmg-stage"
           rm -rf "$stage" && mkdir -p "$stage"
-          ditto "$app" "$stage/Diomedes.app"
+          ditto "$app" "$stage/Nectovia.app"
           ln -s /Applications "$stage/Applications"
           hdiutil create -volname "Nectovia $VERSION_BASE" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
           hdiutil verify "$dmg"
@@ -283,7 +283,7 @@ jobs:
       - name: Signature facts
         run: |
           set +e
-          app="release/Diomedes-darwin-arm64/Diomedes.app"
+          app="release/Nectovia-darwin-arm64/Nectovia.app"
           mkdir -p test-results/mac
           codesign -dv --verbose=2 "$app" > test-results/mac/codesign-display.txt 2>&1
           codesign --verify --deep --strict --verbose=2 "$app" > test-results/mac/codesign-verify.txt 2>&1; verify=$?
@@ -296,8 +296,8 @@ jobs:
               bundleSignatureVerifies: $verify === 0,
               gatekeeperAccepts: $assess === 0,
               codesignDisplay: read('codesign-display.txt').replace(/^Executable=.*\n/m, ''),
-              codesignVerify: read('codesign-verify.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
-              spctl: read('spctl.txt').replace(/^[^:]*Diomedes\.app: /m, 'Diomedes.app: '),
+              codesignVerify: read('codesign-verify.txt').replace(/^[^:]*Nectovia\.app: /m, 'Nectovia.app: '),
+              spctl: read('spctl.txt').replace(/^[^:]*Nectovia\.app: /m, 'Nectovia.app: '),
             }, null, 2) + '\n');
           "
           exit 0
@@ -309,7 +309,7 @@ jobs:
           mkdir -p "$mount"
           hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg"
           status=0
-          node scripts/packaged-launch-smoke.mjs "$mount/Diomedes.app/Contents/MacOS/Diomedes" test-results/mac/launch || status=$?
+          node scripts/packaged-launch-smoke.mjs "$mount/Nectovia.app/Contents/MacOS/Nectovia" test-results/mac/launch || status=$?
           hdiutil detach "$mount" || hdiutil detach -force "$mount"
           exit $status
         env:

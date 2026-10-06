@@ -336,8 +336,12 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     };
     await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));
     // The packager only warns about a missing icon and ships Electron's instead; fail here.
-    const icon = platform === 'win32' ? path.join(root, 'desktop/diomedes.ico') : undefined;
-    if (icon) await fs.access(icon);
+    // Each platform's file is the Nectovia mark that scripts/app-icon.mjs draws.
+    const icon =
+      platform === 'win32'
+        ? path.join(root, 'desktop/diomedes.ico')
+        : path.join(root, 'desktop/nectovia.icns');
+    await fs.access(icon);
     const outputs = await packageApp({
       dir: stage,
       out: path.join(root, 'release'),
@@ -345,16 +349,25 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       platform,
       arch,
       asar: true,
-      ...(icon ? { icon } : {}),
+      icon,
       electronVersion,
       ...(electronZipDir ? { electronZipDir } : {}),
       extraResource: [runtime],
       ignore: /^\/native-runtime(?:\/|$)/,
       appVersion: manifest.version,
       overwrite: true,
-      // macOS routes a sign-in's diomedes-auth://callback to the app only for a scheme its
-      // Info.plist declares (CFBundleURLTypes). Windows registers the scheme at run time instead.
-      ...(platform === 'darwin' ? { protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }] } : {}),
+      ...(platform === 'darwin'
+        ? {
+            // What macOS shows for the app (Finder, the Dock, the menu bar): Nectovia.app. The
+            // bundle id stays the one existing installs carry, and Electron's app name stays
+            // Diomedes in the staged package.json, which keeps the data folder and the Keychain item.
+            name: 'Nectovia',
+            appBundleId: 'com.electron.diomedes',
+            // macOS routes a sign-in's diomedes-auth://callback to the app only for a scheme its
+            // Info.plist declares (CFBundleURLTypes). Windows registers the scheme at run time instead.
+            protocols: [{ name: 'Nectovia sign-in', schemes: ['diomedes-auth'] }],
+          }
+        : {}),
       ...(platform === 'win32'
         ? {
             // What Windows shows for the running app (Task Manager, the file's details).

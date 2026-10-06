@@ -261,10 +261,11 @@ export function releaseReadme({
   const macFile = mac
     ? `
   ${mac.dmgName}
-    macOS on Apple Silicon (arm64). Open the disk image and drag Diomedes.app
-    to Applications. It is not signed with an Apple Developer ID and not
-    notarized, so macOS will refuse to open it until you allow it, and that
-    choice is yours. ${macTested}`
+    macOS on Apple Silicon (arm64). Open the disk image and drag Nectovia.app
+    to Applications. If an earlier Diomedes.app is there, move it to the Trash;
+    your work and settings stay. It is not signed with an Apple Developer ID
+    and not notarized, so macOS will refuse to open it until you allow it, and
+    that choice is yours. ${macTested}`
     : '';
   return `Nectovia ${version} - ${mac ? 'Windows x64 and macOS arm64' : 'Windows x64'} experimental build (${tag})
 Release ID: ${record.releaseId}
