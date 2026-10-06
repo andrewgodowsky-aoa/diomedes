@@ -47,7 +47,7 @@ import { ToolRegistry } from './tools.js';
 import { PLAYBOOK_TOOL, registerPlaybookTool } from './capabilities/pack-playbooks.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
-import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localContextBudget, type LocalModelProfile } from '../../shared/local-model.js';
 import { contextMessage } from '../engines/contract.js';
 import { answeredTurns, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
@@ -218,6 +218,7 @@ export interface ModelSessionTurn {
     onToolActivity(raw: RawToolActivity): void;
     /** Raw thinking chunks, fenced to the same attempt; absent where the route declares none. */
     onReasoningDelta?(text: string): void;
+    onPromptProgress?: StreamSinks['onPromptProgress'];
     finish(): Promise<void>;
   };
 }
@@ -315,6 +316,8 @@ function sharingGuarded(adapter: ModelAdapter, check: (phase: 'dispatch' | 'resu
     destination: adapter.destination,
     contract: adapter.contract,
     ...(adapter.enforcesSourceRestrictions ? { enforcesSourceRestrictions: true as const } : {}),
+    // The local route's prepared-request allowance; without it a long read_source hits the 262,144 default.
+    ...(adapter.preparedRequestMaxBytes !== undefined ? { preparedRequestMaxBytes: adapter.preparedRequestMaxBytes } : {}),
     capabilities: () => adapter.capabilities(),
     ...(adapter.prepare ? { prepare: async (value, signal) => {
       await check('dispatch');
@@ -819,7 +822,7 @@ export class ModelSessionRuns {
       throw new EngineError('SESSION_MISMATCH', 'The conversation scope changed.');
     if (request.mode === 'start' && run.steps.some((step) => step.intent.stepId.startsWith('turn:')))
       throw new EngineError('SESSION_EXISTS', 'Use follow-up for an existing conversation.');
-    await this.runs.claim(runId, this.owner, 35 * 60_000);
+    await this.runs.claim(runId, this.owner, Math.max(35 * 60_000, turnWallMs + 60_000));
     const unfinished = run.steps.find((step) => step.intent.stepId === turnId);
     const bound =
       input.binding !== undefined && !(unfinished && (unfinished.intent.input as SavedTurn)?.binding === undefined);
@@ -890,6 +893,7 @@ export class ModelSessionRuns {
         const sinks: StreamSinks | undefined = preview
           ? {
               onDelta: (text) => preview.onDelta(text),
+              onPromptProgress: preview.onPromptProgress,
               onReasoningDelta: preview.onReasoningDelta
                 ? (text) => preview.onReasoningDelta?.(text)
                 : undefined,
@@ -901,8 +905,8 @@ export class ModelSessionRuns {
             }
           : undefined;
         // The attached sources always; the host-set read tools only on an Ask or Plan turn.
-        const offered = sourceTools(input.documents);
-        const reads = input.readScope ? readScopeTools(input.readScope, { stop, deps: request.readTools }) : null;
+        const offered = sourceTools(input.documents, local);
+        const reads = input.readScope ? readScopeTools(input.readScope, { stop, deps: request.readTools, localProfile: local }) : null;
         for (const tool of reads?.tools ?? []) offered.register(tool);
         // P04: the pack playbooks this message was admitted with, as an index; bodies load on demand.
         if (input.playbooks) registerPlaybookTool(offered, input.playbooks);
@@ -1003,7 +1007,7 @@ export class ModelSessionRuns {
             separatorBytes: composed.separatorBytes,
             documents: input.documents.length,
             images: input.documents.filter(document => document.image).length,
-            requestLimitBytes: CONVERSATION_LIMITS.maxRequestBytes,
+            requestLimitBytes: local ? localContextBudget(local).requestBytes : CONVERSATION_LIMITS.maxRequestBytes,
             prefix: { sha: system.sha, bytes: system.bytes },
             previousPrefixSha: previousPrefix(run!, turnId),
             history: history.selection,
@@ -1191,6 +1195,8 @@ export class ModelSessionRuns {
   }): Promise<OwnedTeamResponseResult> {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The conversation runtime is shutting down.');
     const { input, route, ownedResponse } = request;
+    const local = route === LOCAL_MODEL_ROUTE ? this.localProfile(input.model) : undefined;
+    const turnWallMs = local?.turnTimeoutMs ?? TURN_WALL_MS;
     const metadata = ownedResponse ? ownedTeamResponseMetadataSchema.parse(ownedResponse.metadata) : null;
     const principal = ownedResponse ? structuredClone(ownedResponse.principal) : localHarnessPrincipal(input.projectId);
     if (ownedResponse && (!Number.isInteger(ownedResponse.maxModelCalls) || ownedResponse.maxModelCalls < 1 ||
@@ -1227,7 +1233,7 @@ export class ModelSessionRuns {
       );
     const controller = new AbortController();
     this.work.add(controller);
-    const wall = AbortSignal.timeout(TURN_WALL_MS);
+    const wall = AbortSignal.timeout(turnWallMs);
     const stop = AbortSignal.any([controller.signal, wall, ...(input.signal ? [input.signal] : [])]);
     let cancellation: Promise<void> | null = null;
     const cancelOwned = () => {
@@ -1267,11 +1273,11 @@ export class ModelSessionRuns {
             workBinding: binding, maxModelCalls: maxCalls, effort: input.effort ?? null, connectionId: admission.connectionId, connectionRevision: admission.revision } : {}),
         },
         budget: ownedResponse
-          ? { units: AGENT_TEAM_RESPONSE_UNITS, modelCalls: maxCalls, toolCalls: maxCalls, wallMs: TURN_WALL_MS }
-          : { units: 96, modelCalls: 24, toolCalls: 48, wallMs: TURN_WALL_MS },
+          ? { units: AGENT_TEAM_RESPONSE_UNITS, modelCalls: maxCalls, toolCalls: maxCalls, wallMs: turnWallMs }
+          : { units: 96, modelCalls: 24, toolCalls: 48, wallMs: turnWallMs },
       });
       if (ownedResponse) { stop.throwIfAborted(); await ownedResponse.validate('dispatch'); }
-      await this.runs.claim(runId, this.owner, TURN_WALL_MS + 60_000);
+      await this.runs.claim(runId, this.owner, turnWallMs + 60_000);
       const adapter = await request.adapter(admission, `${input.instructions}\n\n${ownedResponse ? TEAM_RESPONSE_NOTE : TEAM_WORK_NOTE}`, stop);
       const check = async (phase: 'dispatch' | 'result') => {
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), false, route);
@@ -1281,7 +1287,7 @@ export class ModelSessionRuns {
       const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), request.registry);
       let text: string;
       try {
-        text = await agent.run(runId, this.owner, contextMessage(input), principal, {
+        text = await agent.run(runId, this.owner, contextMessage(input, local), principal, {
           maxTurns: maxCalls,
           ...(metadata ? { sourceRestrictions: sourceRules(await this.runs.get(metadata.rootRunId)) } : {}),
         });

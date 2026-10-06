@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import { EngineService } from '../server/engines/service.js';
+import { baselineRedact } from '../server/secrets.js';
 import { LocalModelError, LocalModelRuntime, type LocalModelHost } from '../server/bonsai/runtime.js';
 import { localModelIntegrations } from '../server/bonsai/routes.js';
 import type { LocalModelStatus, LocalModelsView } from '../shared/local-model.js';
@@ -16,7 +17,7 @@ import type { Conversation, IntegrationStatus, Project } from '../shared/types.j
 import { conversationSources } from '../client/console/thread-send.js';
 import { turnRunId } from '../server/harness/model-session-run.js';
 import type { RunService } from '../server/harness/run-service.js';
-import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel, localAnswerStream, meadowDescriptor, MEADOW_FOLDER } from './fixtures/local-model.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVnQAAAAASUVORK5CYII=', 'base64');
 const headers = { 'content-type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -25,6 +26,7 @@ let root: string, base: string, app: Awaited<ReturnType<typeof createApp>>, serv
 let project: Project, thread: Conversation, host: LocalModelHost;
 type ChatBody = { model: string; messages: { role: string; content: unknown }[]; tools: { function: { name: string } }[]; reasoning_effort: string };
 let calls: ChatBody[], mode: 'answer' | 'tool' | 'hang' | 'proposal', dispatched: boolean;
+let source: FixedLocalModel, longPrompt: boolean, toolPreface: string | null, progressAfterTool: boolean, toolPath: string;
 const store = () => app.locals.store as Store;
 async function request(route: string, method = 'GET', body?: unknown) {
   return realFetch(`${base}/api${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -35,6 +37,32 @@ async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T>
   return JSON.parse(text) as T;
 }
 const threadPath = () => `/projects/${project.id}/threads/${thread.id}`;
+/** Reads /api/events the way the Console does, so a frame the stream never forwards fails the test. */
+async function openEvents() {
+  const controller = new AbortController();
+  const response = await realFetch(`${base}/api/events`, { signal: controller.signal,
+    headers: { Accept: 'text/event-stream', 'X-Diomedes-Client': '1' } });
+  expect(response.status).toBe(200);
+  const reader = response.body!.getReader(), decoder = new TextDecoder();
+  let buffer = '';
+  const next = async (name: string, timeoutMs = 5_000): Promise<unknown> => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      for (let boundary = buffer.indexOf('\n\n'); boundary >= 0; boundary = buffer.indexOf('\n\n')) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        if (block.match(/^event: (.+)$/m)?.[1].trim() === name) return JSON.parse(block.match(/^data: (.+)$/m)![1]);
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const chunk = await Promise.race([reader.read(), new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`No ${name} event arrived on /api/events.`)), Math.max(1, deadline - Date.now()));
+      })]).finally(() => clearTimeout(timer));
+      if (chunk.done) throw new Error(`The event stream ended before ${name} arrived.`);
+      buffer += decoder.decode(chunk.value, { stream: true });
+    }
+  };
+  return { next, close: async () => { controller.abort(); await reader.cancel().catch(() => undefined); } };
+}
 const select = (model = 'local:gaming', effort = 'xhigh') => api<Conversation>(threadPath(), 'PUT', {
   engine: 'bonsai', requested: { model, effort, agent: 'auto' },
 });
@@ -53,7 +81,7 @@ const body = (text = 'Hello', sources: { path: string; sha: string }[] = []) => 
 const transport: typeof fetch = async (url, init) => {
   expect(String(url)).toMatch(/^http:\/\/127\.0\.0\.1:18082\//);
   if (String(url).endsWith('/apply-template')) return Response.json({ prompt: 'Fixture template' });
-  if (String(url).endsWith('/tokenize')) return Response.json({ tokens: [1, 2, 3] });
+  if (String(url).endsWith('/tokenize')) return Response.json({ tokens: longPrompt ? Array(115_164).fill(7) : [1, 2, 3] });
   expect(String(url)).toBe('http://127.0.0.1:18082/v1/chat/completions');
   const sent: ChatBody = JSON.parse(String(init?.body)); calls.push(sent); dispatched = true;
   if (mode === 'hang') return new Promise<Response>((_resolve, reject) => {
@@ -63,24 +91,30 @@ const transport: typeof fetch = async (url, init) => {
   });
   const toolResult = sent.messages.find(m => m.role === 'tool');
   const toolCall = mode === 'tool' && !toolResult;
-  return Response.json({ id: `local-${calls.length}`, model: BONSAI_MODEL,
+  // The long prefill is the call that carries the ledger: Work inlines it, a conversation reads it with read_source.
+  const carriesLedger = longPrompt && String(init?.body).includes('ledger ledger ledger');
+  return localAnswerStream({ id: `local-${calls.length}`, model: sent.model,
     choices: [{ finish_reason: toolCall ? 'tool_calls' : 'stop', message: toolCall
-      ? { content: null, tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'read_source', arguments: '{"path":"note.md"}' } }] }
+      ? { content: toolPreface, tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'read_source', arguments: JSON.stringify({ path: toolPath }) } }] }
       : { content: mode === 'proposal' ? JSON.stringify({ summary: 'Write the agreed checklist',
           changes: [{ path: 'checklist.md', text: '# Checklist\n\n- Verify the result\n', summary: 'Add the checklist.' }] })
-        : toolResult ? `Read result: ${String(toolResult.content)}` : 'The local model answered.' } }],
-    usage: { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 } });
+        : toolResult ? `Read result: ${String(toolResult.content).slice(0, 400)}` : 'The local model answered.' } }],
+    usage: { prompt_tokens: longPrompt ? 115_164 : 30, completion_tokens: 10, total_tokens: longPrompt ? 115_174 : 40 } },
+    carriesLedger ? { total: 115_164, cache: 0, processed: 512, time_ms: 500 }
+      : progressAfterTool && toolResult ? { total: 4_096, cache: 2_048, processed: 3_072, time_ms: 250 } : undefined);
 };
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-route-app-'));
   calls = []; mode = 'answer'; dispatched = false;
+  source = new FixedLocalModel(); longPrompt = false; toolPreface = null; progressAfterTool = false; toolPath = 'note.md';
   host = {
     inspect: vi.fn(async (): Promise<LocalModelStatus> => ({ state: 'unloaded', installed: true, owned: false, mode: null, detail: 'Choose a profile.' })),
     acquire: vi.fn(async profile => ({ status: { state: 'ready' as const, installed: true, mode: profile.mode, owned: true, detail: 'Ready.' }, release: async () => {} })),
   };
+  // The desktop's own redaction (app.ts redactFor): without it live text is never held, so order bugs hide.
   app = await createApp({ dataDir: path.join(root, 'data'), projectRoot: path.join(root, 'projects'),
-    engineService: new EngineService(path.join(root, 'engines'), { discover: async () => [] }),
-    reviewerAdapter: null, modelApiTransport: transport, localModel: { host, source: new FixedLocalModel() }, automationTickMs: null });
+    engineService: new EngineService(path.join(root, 'engines'), { discover: async () => [], redactFor: () => baselineRedact }),
+    reviewerAdapter: null, modelApiTransport: transport, localModel: { host, source }, automationTickMs: null });
   server = await new Promise<Server>(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   vi.stubGlobal('fetch', ((url: RequestInfo | URL, init?: RequestInit) => String(url).startsWith('/api/')
@@ -251,5 +285,69 @@ describe('the local model through the native Nectovia host', () => {
       proposalDigest: need.approval!.proposalDigest, actionDigest: need.approval!.actionDigest, baseDigest: need.approval!.baseDigest });
     await vi.waitFor(async () => expect(await fs.readFile(path.join(store().state(project.id).project.folder, 'checklist.md'), 'utf8')).toContain('Verify the result'));
     expect(calls).toHaveLength(1);
+  });
+
+  async function longSource() {
+    const raw = meadowDescriptor('http://127.0.0.1:18082');
+    source.use({ ...raw, profiles: { Deep: { ...raw.profiles.Deep, outputTokens: 12_288,
+      effortBudgets: { medium: { thinking: true, reasoningTokens: 4096, outputTokens: 8192 },
+        xhigh: { thinking: true, reasoningTokens: 8192, outputTokens: 12_288 } } } } }, MEADOW_FOLDER);
+    await select('local:deep', 'medium');
+    const text = 'ledger '.repeat(41_111);
+    await fs.writeFile(path.join(store().state(project.id).project.folder, 'ledger.txt'), text);
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', { expectedVersion: 1, routes: ['bonsai'],
+      documents: ['ledger.txt'], shareConversationHistory: true, shareReviewPackets: false });
+    longPrompt = true;
+    return { text, sources: await conversationSources(project.id, ['ledger.txt']) };
+  }
+
+  it('admits a long local conversation and publishes reading progress under the active attempt', async () => {
+    const { text, sources } = await longSource(); mode = 'tool'; toolPath = 'ledger.txt';
+    const events = await openEvents();
+    try {
+      await events.next('ready');
+      const emitted = vi.spyOn(store(), 'emit');
+      const response = await request(`${threadPath()}/messages`, 'POST', body('Reconcile the ledger.', sources));
+      expect(response.status, await response.clone().text()).toBe(200);
+      // A conversation lists its files; the ledger arrives whole as the read_source result.
+      expect(calls).toHaveLength(2);
+      expect(JSON.stringify(calls[0])).not.toContain(text);
+      expect(JSON.stringify(calls[1])).toContain(text);
+      const frames = emitted.mock.calls.filter(([name]) => name === 'engine-prompt-progress');
+      expect(frames).toHaveLength(1);
+      expect(frames[0][1]).toMatchObject({ projectId: project.id, threadId: thread.id,
+        kind: 'local-prompt-progress', text: 'Reading the document.', total: 115_164,
+        processed: 512, cache: 0, time_ms: 500, attempt: 1, fence: expect.any(Number), seq: 1 });
+      // The Console only sees what /api/events forwards.
+      expect(await events.next('engine-prompt-progress')).toMatchObject({ projectId: project.id, threadId: thread.id,
+        kind: 'local-prompt-progress', text: 'Reading the document.', total: 115_164, processed: 512, seq: 1 });
+    } finally {
+      await events.close();
+    }
+  });
+
+  it('shows the next call\'s reading line without waiting behind text the earlier call left held', async () => {
+    await select(); mode = 'tool'; toolPreface = 'Reading the note first.'; progressAfterTool = true;
+    const sources = await conversationSources(project.id, ['note.md']);
+    const emitted = vi.spyOn(store(), 'emit');
+    const answer = await api<{ answerText: string }>(`${threadPath()}/messages`, 'POST', body('Read the note.', sources));
+    expect(answer.answerText).toContain('Only the selected note.');
+    expect(calls).toHaveLength(2);
+    const sent = emitted.mock.calls.map(([name, frame]) => ({ name, text: (frame as { text?: unknown } | undefined)?.text }));
+    const reading = sent.findIndex(frame => frame.name === 'engine-prompt-progress');
+    const preface = sent.findIndex(frame => frame.name === 'engine-text' && String(frame.text ?? '').includes('Reading the note'));
+    expect(reading).toBeGreaterThanOrEqual(0);
+    // The first call's short text is held for redaction until more text arrives; the reading line must not wait for it.
+    expect(preface).toBeGreaterThan(reading);
+  });
+
+  it('admits the same long local Work source and leaves the proposal behind the existing approval', async () => {
+    const { text } = await longSource(); mode = 'proposal';
+    const response = await request(`/projects/${project.id}/ask`, 'POST', { threadId: thread.id,
+      route: 'bonsai', mode: 'build', text: 'Write a checklist from the ledger.', consent: true, sources: ['ledger.txt'] });
+    expect(response.status, await response.clone().text()).toBe(200);
+    await vi.waitFor(() => expect(store().state(project.id).needs.some(need => need.state === 'open')).toBe(true), { timeout: 15000 });
+    expect(JSON.stringify(calls[0])).toContain(text);
+    await expect(fs.stat(path.join(store().state(project.id).project.folder, 'checklist.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

@@ -28,9 +28,12 @@ import { checkedSourceRules, copy, digest, HarnessError, units } from './policy.
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import { commandGate, type AdapterRouteContract } from '../../shared/adapter-contract.js';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
 
 export interface ModelAdapter {
   id: string;
+  /** Host-bound serialization allowance; only the local adapter declares a larger envelope. */
+  preparedRequestMaxBytes?: number;
   version: string;
   /** The host must authorize external inference before dispatch and result acceptance. */
   destination?: Destination;
@@ -74,7 +77,7 @@ const inspectionSchema = z.strictObject({
     .max(30),
 });
 
-export function validatePrepared(before: ModelRequest, after: ModelRequest): ModelRequest {
+export function validatePrepared(before: ModelRequest, after: ModelRequest, maxBytes?: number): ModelRequest {
   const parsed = z.json().safeParse(after);
   if (!parsed.success) throw new HarnessError('invalid_prepared_context', 'Context assembly must return bounded plain JSON.');
   const json = parsed.data;
@@ -82,8 +85,11 @@ export function validatePrepared(before: ModelRequest, after: ModelRequest): Mod
   const following = checkedSourceRules('invalid_prepared_context', after.sourceRestrictions ?? []);
   if (prior.some(rule => !following.some(next => digest(next) === digest(rule))))
     throw new HarnessError('invalid_prepared_context', 'Context assembly cannot remove a source privacy restriction.');
+  const serialized = JSON.stringify(json);
+  if (maxBytes === undefined ? serialized.length > 262144 :
+    !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 24_000_000 || Buffer.byteLength(serialized) > maxBytes)
+    throw new HarnessError('invalid_prepared_context', 'The prepared context exceeds this route\'s request size limit.');
   if (
-    JSON.stringify(json).length > 262144 ||
     after.runId !== before.runId ||
     after.capabilityId !== before.capabilityId ||
     digest(after.transcript) !== digest(before.transcript) ||
@@ -249,6 +255,7 @@ export class NativeAgent {
           ...(restrictions.length ? { sourceRestrictions: restrictions } : {}),
         };
         const prepare = this.adapter.prepare?.bind(this.adapter);
+        const maxBytes = this.adapter.contract.routeId === LOCAL_MODEL_ROUTE ? this.adapter.preparedRequestMaxBytes : undefined;
         const effective = prepare
           ? validatePrepared(
               original,
@@ -266,9 +273,10 @@ export class NativeAgent {
                   origin: applicationOrigin(),
                 },
                 async ({ signal }) =>
-                  validatePrepared(original, await prepare(copy(original), signal)),
+                  validatePrepared(original, await prepare(copy(original), signal), maxBytes),
                 principal,
               ),
+              maxBytes,
             )
           : original;
         if (effective.sourceRestrictions?.length && this.adapter.destination === 'external' && !this.adapter.enforcesSourceRestrictions)

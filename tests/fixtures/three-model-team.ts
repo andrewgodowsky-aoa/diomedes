@@ -13,7 +13,7 @@ import { LocalModelError, LOCAL_MODEL_NOT_RUNNING, type LocalModelHost } from '.
 import type { Principal, TrustBackend } from '../../server/trust/index.js';
 import type { AgentGatePort } from '../../server/accounts/agent-gate.js';
 import type { LocalModelStatus } from '../../shared/local-model.js';
-import { BONSAI_MODEL } from './local-model.js';
+import { BONSAI_MODEL, localAnswerStream } from './local-model.js';
 import { AWS_KIMI_K3, type AwsConnectionView, type AzureConnectionView } from '../../shared/model-api.js';
 import type { TeamMember } from '../../shared/types.js';
 import { chatEvents, responsesEvents, sseResponse } from './model-api-streams.js';
@@ -104,7 +104,8 @@ function memberAnswer(target: string): Response {
   if (target.endsWith('/tokenize')) return Response.json({ tokens: [1, 2, 3] });
   if (target !== `${LOCAL_BASE}v1/chat/completions`) throw new Error(`The local fixture never answers ${target}.`);
   const usage = { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 };
-  return Response.json({ id: 'local-1', model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'stop', message: { content: MEMBER_ANSWER } }] });
+  // The local route reads a stream (DIO-247), in llama.cpp's final-chunk order.
+  return localAnswerStream({ id: 'local-1', model: BONSAI_MODEL, usage, choices: [{ finish_reason: 'stop', message: { content: MEMBER_ANSWER } }] });
 }
 
 /** One transport for every route, by host. Anything else is refused, never fetched. */

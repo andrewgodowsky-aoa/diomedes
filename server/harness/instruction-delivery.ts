@@ -532,6 +532,8 @@ export async function messageRules(input: {
   routeId: string;
   /** The bytes the message's selected documents already take. */
   sourceBytes: number;
+  /** Host-derived serialization allowance; omitted on every other route. */
+  requestLimitBytes?: number;
   /** The documents the message selected: nested instruction files govern only inside them. */
   workPaths: readonly string[];
   allowedDocuments?: readonly string[];
@@ -541,7 +543,7 @@ export async function messageRules(input: {
     state: input.state,
     routeId: input.routeId,
     agentRole: 'Diomedes conversation answer',
-    budgetBytes: instructionSectionBudget(input.sourceBytes),
+    budgetBytes: instructionSectionBudget(input.sourceBytes, input.requestLimitBytes),
     ...(input.allowedDocuments === undefined ? {} : { allowedDocuments: input.allowedDocuments }),
     workPaths: input.workPaths,
     ...(input.productKnowledge ? { productKnowledge: input.productKnowledge } : {}),

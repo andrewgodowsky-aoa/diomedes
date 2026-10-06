@@ -55,6 +55,25 @@ export function meadowDescriptor(base = 'http://127.0.0.1:18100') {
 }
 export const MEADOW_FOLDER = 'D:\\Models\\Meadow';
 
+/** Turns an accounted test answer into the final-chunk order used by llama.cpp. */
+export function localAnswerStream(answer: {
+  id: string; model: string; choices: { finish_reason: string; message: Record<string, unknown> }[];
+  usage?: unknown; timings?: unknown;
+}, progress?: { total: number; cache: number; processed: number; time_ms: number }) {
+  const envelope = { id: answer.id, model: answer.model };
+  const choice = answer.choices[0];
+  const calls = choice.message.tool_calls as Record<string, unknown>[] | undefined;
+  const delta = { ...choice.message, ...(calls ? { tool_calls: calls.map((call, index) => ({ ...call, index })) } : {}) };
+  const chunks = [
+    ...(progress ? [{ ...envelope, choices: [{ index: 0, delta: { role: 'assistant', content: null }, finish_reason: null }], prompt_progress: progress }] : []),
+    { ...envelope, choices: [{ index: 0, delta, finish_reason: null }] },
+    { ...envelope, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }], timings: answer.timings },
+    { ...envelope, choices: [], usage: answer.usage },
+  ];
+  return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n',
+    { headers: { 'content-type': 'text/event-stream' } });
+}
+
 /**
  * A source that answers with one descriptor, checked by the shared parser, the way a folder that
  * passed every check does. `use(null)` is a computer with no folder set; `use(raw)` a new file.

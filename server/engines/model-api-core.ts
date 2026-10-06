@@ -586,10 +586,19 @@ export async function admitJobStep(input: {
 
 /** The adapter-facing raw sinks a streamed call feeds. Both are previews; neither is the answer. */
 export interface StreamSinks {
+  /** Observed local prompt ingestion, separate from answer and reasoning previews. */
+  onPromptProgress?: (progress: PromptProgress) => void;
   onDelta?: (text: string) => void;
   onToolActivity?: (raw: RawToolActivity) => void;
   /** Raw thinking chunks. A preview only; never the answer. */
   onReasoningDelta?: (text: string) => void;
+}
+
+export interface PromptProgress {
+  total: number;
+  cache: number;
+  processed: number;
+  time_ms: number;
 }
 
 /**

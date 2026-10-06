@@ -75,7 +75,7 @@ import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWork
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
 import type { EscalationRole } from '../../../shared/escalation-controls.js';
 import type { RoleTier } from '../../../shared/escalation-roles.js';
-import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localContextBudget, type LocalModelProfile } from '../../../shared/local-model.js';
 import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
@@ -198,7 +198,11 @@ export async function readFor(
   input: string,
   /** H14: the explicit files this run may read; null is the whole project as the route allows. */
   scope: readonly string[] | null = null,
+  localProfile?: LocalModelProfile,
 ): Promise<Json> {
+  const routeList = typeof routes === 'string' ? [routes] : routes;
+  const maxReadChars = localProfile && routeList.length > 0 && routeList.every(route => route === LOCAL_MODEL_ROUTE)
+    ? localContextBudget(localProfile).sourceChars : READ_MAX_CHARS;
   let path: string;
   try {
     path = relativeName(input);
@@ -226,8 +230,8 @@ export async function readFor(
     found: true,
     sha: hash(text),
     bytes: Buffer.byteLength(text),
-    text: text.length > READ_MAX_CHARS ? text.slice(0, READ_MAX_CHARS) : text,
-    truncated: text.length > READ_MAX_CHARS,
+    text: text.length > maxReadChars ? text.slice(0, maxReadChars) : text,
+    truncated: text.length > maxReadChars,
   };
 }
 
@@ -265,7 +269,8 @@ const childInput = (run: Pick<HarnessRun, 'input'>): LoopChildInput => {
  * `runId`: the loop binds them, and the tool checks at dispatch that it is the
  * running step of a loop run in that project, the way `propose_write` does.
  */
-export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunService) {
+export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunService,
+  localProfile?: (model: unknown) => LocalModelProfile | undefined) {
   const read = {
     version: 'v1',
     effect: 'read',
@@ -314,12 +319,17 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   tools.register({
     ...read,
     name: 'read_project_file',
+    // The registry is shared across runs. readFor still enforces each run's route-specific
+    // text allowance before this hard serialization ceiling is checked.
+    limits: { maxOutputBytes: 8 * 1024 * 1024 },
     outputSchema: READ_OUTPUT,
     description: 'Read one project file as text.',
     schema: scope.extend({ path: z.string().trim().min(1).max(400) }),
     execute: async (context) => {
       const run = await ownRun(context, context.input, 'read_project_file');
-      return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run));
+      const input = run.capabilityId === NATIVE_LOOP.id ? loopInput(run) : childInput(run);
+      return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run),
+        input.route === LOCAL_MODEL_ROUTE ? localProfile?.(input.model) : undefined);
     },
   });
   const proposal = scope.extend({

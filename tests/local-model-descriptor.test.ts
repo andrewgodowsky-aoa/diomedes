@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   findLocalProfile,
   localDeadlines,
+  localCallCeiling,
   localModelCatalog,
   localProfileRefusal,
   localProfileSlug,
@@ -30,6 +31,59 @@ const refusal = (raw: unknown, folder = BONSAI_FOLDER) => {
   }
   return null;
 };
+
+describe('optional local effort and measured rate records', () => {
+  const extended = () => {
+    const raw = meadowDescriptor();
+    return { ...raw, profiles: { Deep: { ...raw.profiles.Deep,
+      effortBudgets: {
+        medium: { thinking: true, reasoningTokens: 4096, outputTokens: 8192 },
+        xhigh: { thinking: true, reasoningTokens: 8192, outputTokens: 12288 },
+      },
+      measuredRates: { occupiedContextTokens: 115164, prefillTokensPerSecond: 945.64, decodeTokensPerSecond: 49.51 },
+    } } };
+  };
+  it('reads numeric budgets and measurements without making them a qualified total window', () => {
+    const profile = parseLocalModelDescriptor(extended(), MEADOW_FOLDER).profiles[0];
+    expect(profile.effortBudgets?.medium).toEqual({ thinking: true, reasoningTokens: 4096, outputTokens: 8192 });
+    expect(profile.measuredRates?.occupiedContextTokens).toBe(115164);
+    expect(profile.qualifiedTaskTotalWindow).toBeUndefined();
+    expect(profile.callTimeoutMs).toBeGreaterThanOrEqual(900000);
+    expect(profile.turnTimeoutMs).toBe(profile.callTimeoutMs * 4);
+    expect(localCallCeiling({ callTimeoutMs: 120000, measuredRates: profile.measuredRates }, 115164, 8192)).toBeGreaterThan(400000);
+  });
+  it.each([
+    ['thinking', 'yes'], ['reasoningTokens', -1], ['reasoningTokens', 1.5], ['outputTokens', 0],
+  ])('names a malformed %s field', (field, value) => {
+    const raw = extended();
+    Object.assign(raw.profiles.Deep.effortBudgets.medium, { [field]: value });
+    expect(refusal(raw, MEADOW_FOLDER)).toContain(`profiles.Deep.effortBudgets.medium.${field}`);
+  });
+  it('refuses missing efforts, reasoning that consumes the answer and output above the profile', () => {
+    const raw = extended();
+    expect(refusal({ ...raw, profiles: { Deep: { ...raw.profiles.Deep, effortBudgets: {} } } }, MEADOW_FOLDER)).toContain('effortBudgets.medium');
+    raw.profiles.Deep.effortBudgets.medium.reasoningTokens = 8192;
+    expect(refusal(raw, MEADOW_FOLDER)).toContain('effortBudgets.medium.reasoningTokens');
+    raw.profiles.Deep.effortBudgets.medium = { thinking: false, reasoningTokens: 1, outputTokens: 8192 };
+    expect(refusal(raw, MEADOW_FOLDER)).toContain('effortBudgets.medium.reasoningTokens');
+    raw.profiles.Deep.effortBudgets.medium = { thinking: false, reasoningTokens: 0, outputTokens: 65536 };
+    expect(refusal(raw, MEADOW_FOLDER)).toContain('effortBudgets.medium.outputTokens');
+  });
+  it.each([
+    ['occupiedContextTokens', 131073], ['prefillTokensPerSecond', 0],
+    ['decodeTokensPerSecond', Number.POSITIVE_INFINITY], ['decodeTokensPerSecond', Number.NaN],
+  ])('names an unusable measurement %s', (field, value) => {
+    const raw = extended();
+    Object.assign(raw.profiles.Deep.measuredRates, { [field]: value });
+    expect(refusal(raw, MEADOW_FOLDER)).toContain(`measuredRates.${field}`);
+  });
+  it('keeps legacy descriptors free of numeric overrides', () => {
+    for (const profile of parseLocalModelDescriptor(bonsai(), BONSAI_FOLDER).profiles) {
+      expect(profile.effortBudgets).toBeUndefined();
+      expect(profile.measuredRates).toBeUndefined();
+    }
+  });
+});
 
 describe("Bonsai's own description, from a copy of its file", () => {
   it('reads the name, the server, both profiles and both scripts, and ignores everything else', () => {

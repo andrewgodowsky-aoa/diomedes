@@ -95,6 +95,7 @@ export function modelApiContract(route: {
 
 export interface ModelApiAdapterSpec {
   route: string;
+  preparedRequestMaxBytes?: number;
   /** Error-code prefix: `aws`, `azure`, `openrouter`. */
   prefix: string;
   label: string;
@@ -244,6 +245,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     });
   return {
     id: spec.route,
+    ...(spec.preparedRequestMaxBytes !== undefined ? { preparedRequestMaxBytes: spec.preparedRequestMaxBytes } : {}),
     version: spec.sdk,
     contract: spec.contract,
     destination: spec.destination ?? 'external',
@@ -310,6 +312,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
         onReasoningDelta: spec.sinks?.onReasoningDelta,
+        onPromptProgress: spec.sinks?.onPromptProgress,
       });
       let response: ModelResult['response'];
       let portable: PortableMessage;

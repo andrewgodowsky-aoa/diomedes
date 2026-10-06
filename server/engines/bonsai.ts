@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ModelMessage } from 'ai';
-import { findLocalProfile, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
+import { findLocalProfile, localContextBudget, localCallCeiling, localDeadlines, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
   type LocalModelProfile } from '../../shared/local-model.js';
 import { MODEL_IMAGE_COUNT, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/model-images.js';
 import type { ToolDescriptor } from '../../shared/harness.js';
@@ -10,6 +10,7 @@ import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import { ModelApiError, CONVERSATION_LIMITS, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { chatUsage } from './openrouter.js';
 import { LocalModelError, LOCAL_MODEL_NOT_INSTALLED, type LocalModelRuntime } from '../bonsai/runtime.js';
+import { readLocalStream } from './local-stream.js';
 
 // Saved records carry these identifiers, so they keep the values they were first written with.
 export const LOCAL_MODEL_CONNECTION = 'bonsai-local';
@@ -41,7 +42,9 @@ function profileOf(runtime: LocalModelRuntime, model: string): LocalModelProfile
 /** Host-selected local allowance. Explicit per-call limits and the Runtime turn deadline still bound it. */
 export function localLimits(profile: LocalModelProfile | undefined, base: RespondLimits = CONVERSATION_LIMITS): RespondLimits {
   if (!profile) throw refused(LOCAL_MODEL_UNKNOWN_PROFILE);
-  return { ...base, maxOutputTokens: profile.maxOutputTokens, callWallMs: Math.max(base.callWallMs, profile.callTimeoutMs) };
+  return { ...base, maxRequestBytes: localContextBudget(profile).requestBytes,
+    maxResponseBytes: localContextBudget(profile).responseBytes,
+    maxOutputTokens: profile.maxOutputTokens, callWallMs: Math.max(base.callWallMs, profile.callTimeoutMs) };
 }
 
 export function localRateCard(profile: LocalModelProfile | undefined): ModelRateCard {
@@ -119,7 +122,7 @@ async function jsonRequest(url: string, payload: unknown, signal: AbortSignal, t
   catch { throw refused('The local model returned an invalid JSON response.', dispatched); }
 }
 
-const replySchema = z.object({ id: z.string(), model: z.string(), usage: z.unknown(),
+const replySchema = z.object({ id: z.string(), model: z.string(), usage: z.unknown(), timings: z.unknown().optional(),
   choices: z.array(z.object({ finish_reason: z.enum(['stop', 'tool_calls']), message: z.object({
     content: z.string().nullish(), reasoning_content: z.string().nullish(),
     tool_calls: z.array(z.object({ id: z.string().min(1), type: z.literal('function'),
@@ -140,10 +143,12 @@ export async function respondLocal(input: {
   const tools = input.tools.map(tool => ({ type: 'function', function: { name: tool.name,
     description: tool.description, parameters: tool.inputSchema } }));
   const limits = input.limits ?? localLimits(chosen);
-  const max_tokens = Math.min(chosen.maxOutputTokens, limits.maxOutputTokens);
+  const effortBudget = chosen.effortBudgets?.[effort as 'medium' | 'xhigh'];
+  const max_tokens = Math.min(chosen.maxOutputTokens, limits.maxOutputTokens, effortBudget?.outputTokens ?? chosen.maxOutputTokens);
   const request = { messages, tools, tool_choice: 'auto', parallel_tool_calls: false,
-    stream: false, max_tokens, reasoning_effort: effort,
-    chat_template_kwargs: { reasoning_effort: effort }, cache_prompt: false };
+    stream: true, stream_options: { include_usage: true }, return_progress: true, max_tokens, reasoning_effort: effort,
+    chat_template_kwargs: { reasoning_effort: effort, ...(effortBudget ? { enable_thinking: effortBudget.thinking } : {}) },
+    ...(effortBudget ? { reasoning_budget_tokens: Math.min(effortBudget.reasoningTokens, Math.max(0, max_tokens - 1)) } : {}), cache_prompt: true };
   const imageCount = messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url').length : 0), 0);
   const textMessages = messages.map(m => ({ ...m, content: Array.isArray(m.content)
     ? m.content.map(p => p.type === 'image_url' ? { type: 'text', text: '[image]' } : p) : m.content }));
@@ -159,16 +164,23 @@ export async function respondLocal(input: {
       const model = status.model ?? descriptor.model;
       // The running profile's context, as the server reported it.
       const window = status.contextTokens ?? profile.contextTokens;
+      const budget = localContextBudget(profile, { nativeTotalWindow: window, outputReserve: max_tokens });
       const body = { model, ...request };
       // Tokenize the actual chat template before inference; reserve a 1024-token cap per image.
       const template = z.object({ prompt: z.string() }).parse(await jsonRequest(`${descriptor.serverRoot}/apply-template`,
-        { ...body, messages: textMessages }, signal, transport, false));
+        { ...body, messages: textMessages }, signal, transport, false, budget.templateResponseBytes));
       const tokens = z.object({ tokens: z.array(z.number().int()).max(1_000_000) }).parse(await jsonRequest(`${descriptor.serverRoot}/tokenize`,
         { content: template.prompt, add_special: true }, signal, transport, false, 12_000_000));
-      if (tokens.tokens.length + imageCount * 1024 + max_tokens > window)
+      if (tokens.tokens.length + imageCount * 1024 > budget.inputRoom)
         throw refused(`This message and its answer need more than ${window.toLocaleString('en-US')} tokens. Start a new thread or reduce its sources.`);
       dispatched = true;
-      const raw = await jsonRequest(`${descriptor.baseUrl}/chat/completions`, body, signal, transport, true, limits.maxResponseBytes);
+      const ceiling = localCallCeiling({ measuredRates: profile.measuredRates,
+        callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, tokens.tokens.length, max_tokens);
+      const raw = await readLocalStream({ url: `${descriptor.baseUrl}/chat/completions`, body, model,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(limits.callWallMs, ceiling))]),
+        transport, maxResponseBytes: limits.maxResponseBytes,
+        onDelta: input.onDelta, onReasoningDelta: input.onReasoningDelta,
+        onToolActivity: input.onToolActivity, onPromptProgress: input.onPromptProgress });
       const parsed = replySchema.safeParse(raw);
       if (!parsed.success || parsed.data.model !== model)
         throw refused('The local model did not return a complete answer from the selected model. Its answer was not used.', true);
@@ -177,7 +189,7 @@ export async function respondLocal(input: {
       if (!usage) throw refused('The local model returned no usable token accounting. Its answer was not used.', true);
       const call = message.tool_calls?.[0];
       const content: Exclude<Extract<ModelMessage, { role: 'assistant' }>['content'], string> = [];
-      if (message.reasoning_content) { input.onReasoningDelta?.(message.reasoning_content); content.push({ type: 'reasoning', text: message.reasoning_content }); }
+      if (message.reasoning_content) content.push({ type: 'reasoning', text: message.reasoning_content });
       if (message.content) content.push({ type: 'text', text: message.content });
       let outcome: LocalModelReply['outcome'];
       if (call) {
@@ -188,13 +200,12 @@ export async function respondLocal(input: {
         if (!data.success) throw refused('The local model returned invalid tool arguments.', true);
         content.push({ type: 'tool-call', toolCallId: call.id, toolName: call.function.name, input: data.data });
         outcome = { kind: 'tool', callId: call.id, name: call.function.name, input: data.data };
-        input.onToolActivity?.({ callId: call.id, tool: call.function.name, phase: 'started', summary: call.function.name });
       } else {
         if (!message.content?.trim()) throw refused('The local model produced no final answer.', true);
         outcome = { kind: 'final', text: message.content };
-        input.onDelta?.(message.content);
       }
-      return { outcome, usage, rawUsage: { provider: response.usage, local: { profile: profile.slug, inferenceCostMicroUsd: 0 } },
+      return { outcome, usage, rawUsage: { provider: response.usage, local: { profile: profile.slug, inferenceCostMicroUsd: 0,
+        ...(response.timings !== undefined ? { timings: response.timings } : {}) } },
         reportedModel: model, responseId: response.id, providerRequestId: response.id,
         responseMessages: [{ role: 'assistant', content }], warnings: 0, servedBy: 'local' };
     });
@@ -218,9 +229,12 @@ export function createLocalAdapter(input: {
   return createModelApiAdapter({ route: LOCAL_MODEL_ROUTE, prefix: PREFIX, label: LABEL, sdk: LOCAL_MODEL_SDK,
     protocol: 'local-chat-completions', contract: LOCAL_MODEL_CONTRACT, connectionId: LOCAL_MODEL_CONNECTION, revision: 1,
     requestedModel: profile.slug, destination: 'local',
+    preparedRequestMaxBytes: localContextBudget(profile).requestBytes,
     profile: { model: profile.slug, alias: descriptor.model, mode: profile.mode, context: profile.contextTokens,
+      budget: localContextBudget(profile), effortBudgets: profile.effortBudgets,
       effort: input.effort ?? profile.defaultEffort, account: LOCAL_MODEL_ACCOUNT, images },
-    transcripts: input.transcripts, notes: ['Local inference; tools remain owned by Nectovia Runtime and Trust.'],
+    transcripts: input.transcripts.withLocalByteLimit?.(localContextBudget(profile).transcriptBytes) ?? input.transcripts,
+    notes: ['Local inference; tools remain owned by Nectovia Runtime and Trust.'],
     sinks: input.sinks,
     respond: async request => {
       const messages = structuredClone(request.messages);
