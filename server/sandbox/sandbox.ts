@@ -29,6 +29,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Json } from '../../shared/harness.js';
+import { localReadCutNote } from '../../shared/local-model.js';
 import {
   SANDBOX_LIMITS,
   inScope,
@@ -388,7 +389,15 @@ export class SandboxStore {
    * a file the child wrote itself is its own. The two writers exist only when
    * the child's grant holds `write-project-file`.
    */
-  registry(manifest: SandboxManifest, options: { readable: (path: string) => boolean; write: boolean }): ToolRegistry {
+  registry(manifest: SandboxManifest, options: {
+    readable: (path: string) => boolean;
+    write: boolean;
+    /**
+     * A child on the local model (DIO-255): how many characters one read may return, the fixed cap
+     * when absent, and that a cut read says so. Absent for any other child: its reads are as before.
+     */
+    read?: { maxChars?: number; note: boolean };
+  }): ToolRegistry {
     const work = this.work(manifest.projectId, manifest.runId);
     const snapshot = new Set(manifest.files.map((file) => file.path));
     const registry = new ToolRegistry();
@@ -419,11 +428,14 @@ export class SandboxStore {
       ...read,
       name: 'read_project_file',
       description: 'Read one file from your working copy, by its path.',
+      // A local child's read may be as long as its profile allows, past the default serialization limit.
+      ...(options.read?.maxChars ? { limits: { maxOutputBytes: 8 * 1024 * 1024 } } : {}),
       schema: z.strictObject({ path: z.string().trim().min(1).max(400) }),
       outputSchema: z.union([
         z.strictObject({ path: z.string(), refused: z.string() }),
         z.strictObject({ path: z.string(), found: z.literal(false) }),
-        z.strictObject({ path: z.string(), found: z.literal(true), sha: z.string(), bytes: z.number().int(), text: z.string(), truncated: z.boolean() }),
+        z.strictObject({ path: z.string(), found: z.literal(true), sha: z.string(), bytes: z.number().int(), text: z.string(), truncated: z.boolean(),
+          note: z.string().optional() }),
       ]) as unknown as z.ZodType<Json>,
       execute: async ({ input }): Promise<Json> => {
         let found;
@@ -441,14 +453,16 @@ export class SandboxStore {
         const bytes = await fs.readFile(found.absolute);
         const text = textOf(bytes);
         if (text === null) return { path: found.relative, refused: 'This file is not text.' };
-        const max = 24_000;
+        const max = options.read?.maxChars ?? 24_000;
+        const cut = text.length > max;
         return {
           path: found.relative,
           found: true,
           sha: sha256(bytes),
           bytes: bytes.byteLength,
-          text: text.length > max ? text.slice(0, max) : text,
-          truncated: text.length > max,
+          text: cut ? text.slice(0, max) : text,
+          truncated: cut,
+          ...(cut && options.read?.note ? { note: localReadCutNote(max, text.length) } : {}),
         };
       },
     });

@@ -467,6 +467,8 @@ describe('budgets, fan-out and authority on a stub model-API route', () => {
     const advice = (await loop(started.runId)).data.team!.advice[0];
     expect(advice).toMatchObject({ outcome: 'completed', text: 'Check the napkin count.' });
     expect(advice.models).toEqual([{ engine: 'google-vertex', reported: TEAM_STUB_REPORTED, calls: 1 }]);
+    // DIO-257: an advisor on a cloud route keeps its fixed two minutes; only the local route sizes it.
+    expect((await host().get(projectId, advice.childRunId!)).budget.wallMs).toBe(120_000);
   });
 });
 

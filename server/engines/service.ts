@@ -2866,8 +2866,10 @@ export class EngineService {
       : route === AZURE_OPENAI_ROUTE ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
     if (effort !== undefined && !supportedEfforts.includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
+    // DIO-254: a loop's call on the local model that won't fit its window makes room before it is refused.
     const callOptions = { instructions: request.instructions, effort,
-      transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
+      transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}),
+      ...(route === LOCAL_MODEL_ROUTE ? { makeRoom: true } : {}) };
     const admission = await this.admitModelApi(
       route,
       { ...request, requestId: request.runId, threadId },
@@ -3042,6 +3044,8 @@ interface RouteCallOptions {
   stablePrefix?: string | null;
   /** Told what each answered call's cache breakpoint marked (a conversation turn's record). */
   onCacheMarked?: (marked: CacheMark) => void;
+  /** An Agent loop's call on the local model (DIO-254): it makes room before it is refused. Other routes ignore it. */
+  makeRoom?: boolean;
 }
 type ConnectedRoute = {
   connected: true;

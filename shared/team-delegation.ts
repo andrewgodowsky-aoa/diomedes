@@ -28,6 +28,7 @@ import { reportedModels, type LoopModel } from './native-loop.js';
 import type { VerificationState } from './verification.js';
 import type { FundingKind, UsageObservation } from './funding-source.js';
 import { NECTOVIA_ROUTE } from './model-api.js';
+import { localCallCeiling, localContextBudget, localDeadlines, type LocalModelProfile } from './local-model.js';
 import type { EscalationRecord, RoleTier } from './escalation-roles.js';
 
 export const TEAM_CONTRACT_VERSION = 1 as const;
@@ -105,6 +106,27 @@ export const TEAM_LIMITS = Object.freeze({
   /** An advisor reads a little and answers; its budget is fixed. */
   advisor: { turns: 3, tokens: null, wallMs: 2 * 60_000 },
 });
+
+/**
+ * DIO-257: a team role's wall time on the local model, sized from the profile it runs on instead
+ * of a cloud role's fixed minutes. Each turn is one call, and the role gets, for each of its turns,
+ * the longest `respondLocal` lets one call run at the role's effort: `localCallCeiling` for a
+ * prompt as long as the input room that effort's answer leaves and an answer of the effort's whole
+ * output cap, over the floor `localDeadlines` gives the profile's output allowance (fifteen minutes
+ * for each 32,768 tokens, never under two minutes). With measured rates the ceiling is half again
+ * the prefill and decode time they give plus thirty seconds, where that is longer than the floor.
+ * The total is never more than `TEAM_LIMITS.maxWallMs`. `effort` is the role's pinned effort:
+ * absent, a loop role is sent at medium (`EngineService.loopAdapter`); null, at the profile's default.
+ */
+export function localRoleWallMs(profile: LocalModelProfile, turns: number, effort?: string | null): number {
+  const sent = effort === undefined ? 'medium' : (effort ?? profile.defaultEffort);
+  const cap = sent === 'medium' || sent === 'xhigh' ? profile.effortBudgets?.[sent]?.outputTokens : undefined;
+  const outputTokens = Math.min(profile.maxOutputTokens, cap ?? profile.maxOutputTokens);
+  const promptTokens = localContextBudget(profile, { outputReserve: outputTokens }).inputRoom;
+  const call = localCallCeiling({ measuredRates: profile.measuredRates,
+    callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, promptTokens, outputTokens);
+  return Math.min(TEAM_LIMITS.maxWallMs, turns * call);
+}
 
 /** A worker's budget as the person admitted it. Null tokens or wall time means "not limited here". */
 export interface WorkerBudget {

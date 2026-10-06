@@ -285,6 +285,21 @@ export interface ModelRequest {
 export type ModelResponse =
   | { type: 'final'; text: string }
   | { type: 'tool'; name: string; input: Json };
+/**
+ * DIO-254: what an Agent loop's call on the local model left out to fit its window, recorded on its
+ * model step. Absent when the call fit as it was, which is every call on any other route.
+ */
+export interface ModelRoom {
+  /** The prompt's tokens as first counted, the input room it had, and the tokens it was sent with. */
+  counted: number;
+  room: number;
+  sent: number;
+  /** The earlier assistant turns whose reasoning was left out, newest first, by position in the call's messages. */
+  reasoning: { message: number; chars: number }[];
+  /** The reads folded into a stub, newest first: their position, the file, and the characters and bytes left out. */
+  folded: { message: number; path: string; chars: number; bytes: number }[];
+}
+
 export interface ModelResult {
   response: ModelResponse;
   /** Immutable gateway receipts; current configuration never rewrites these. */
@@ -292,6 +307,8 @@ export interface ModelResult {
   transcript?: ProviderTranscriptRef | null;
   /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;
+  /** DIO-254: what this call left out to fit, when it had to. */
+  room?: ModelRoom;
 }
 
 /** A harness run in the words the Workbook and Console already use. */

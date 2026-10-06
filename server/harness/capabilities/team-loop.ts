@@ -42,6 +42,7 @@ import {
   childCapabilities,
   harnessBudgetOf,
   isExternalWorkerRoute,
+  localRoleWallMs,
   outcomeOf,
   reportedTokens,
   runWallMs,
@@ -69,6 +70,7 @@ import type { ToolRegistry } from '../tools.js';
 import type { HandoffLedger } from '../../team/handoff-ledger.js';
 import type { ChangeSetSummary } from '../../../shared/sandbox.js';
 import { fundingForRoute } from '../../../shared/funding-source.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
 import { routeName } from '../external-worker.js';
 import { ToolRegistry as ChildRegistry } from '../tools.js';
 
@@ -231,10 +233,18 @@ export interface TeamRouteRequest {
   readonly accountDigest?: string | null;
 }
 
+/** The route and model a child's role runs on, as the team was admitted. */
+export interface TeamChildRoute {
+  readonly route: string;
+  readonly model: string | null;
+}
+
 export interface TeamPortDeps {
   readonly store: Store;
   readonly runs: RunService;
   readonly ledger: HandoffLedger;
+  /** The app's local model profiles: an advisor on the local model is timed by its profile (DIO-257). */
+  localProfile?(model: unknown): LocalModelProfile | undefined;
   admit(
     route: string,
     input: {
@@ -249,8 +259,11 @@ export interface TeamPortDeps {
   ): Promise<{ model: string | null; accountRoute: string | null; accountDigest?: string | null }>;
   adapterFor(route: string, request: TeamRouteRequest, stop: AbortSignal, script: () => ModelAdapter): Promise<ModelAdapter>;
   heartbeat(runId: string, owner: string): () => void;
-  /** Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer. */
-  registry(projectId: string, routes: readonly string[], scope: readonly string[] | null): ToolRegistry;
+  /**
+   * Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer.
+   * `child` is the route and model the child's role runs on: a child on the local model reads by its profile.
+   */
+  registry(projectId: string, routes: readonly string[], scope: readonly string[] | null, child: TeamChildRoute): ToolRegistry;
   /**
    * A worker's sandbox (decision 2026-09-24): its copy of its scope and the tools rooted at it,
    * made once per child id and found again after a restart. Absent: workers read the project.
@@ -262,6 +275,7 @@ export interface TeamPortDeps {
     scope: readonly string[] | null;
     canWrite: boolean;
     create: boolean;
+    child: TeamChildRoute;
   }): Promise<{ registry: ToolRegistry } | { refusal: string }>;
   /** Record a finished worker's copy as a change set and settle it into the project. */
   settle?(spec: { lead: HarnessRun; child: HarnessRun; handoffId: string }): Promise<ChangeSetSummary | null>;
@@ -305,6 +319,17 @@ export function childInstructions(
 
 export function createTeamPort(deps: TeamPortDeps) {
   const { store, runs, ledger } = deps;
+
+  /**
+   * DIO-257: an advisor on the local model gets the time its profile's calls take
+   * (`localRoleWallMs`). On every other route its budget is the fixed `TEAM_LIMITS.advisor`.
+   */
+  const advisorBudget = (advisor: TeamRole): WorkerBudget => {
+    const profile = advisor.route === LOCAL_MODEL_ROUTE ? deps.localProfile?.(advisor.model) : undefined;
+    return profile
+      ? { ...TEAM_LIMITS.advisor, wallMs: localRoleWallMs(profile, TEAM_LIMITS.advisor.turns, (advisor as { effort?: string | null }).effort) }
+      : TEAM_LIMITS.advisor;
+  };
 
   const record = async (projectId: string, event: HandoffEvent) => ledger.append(projectId, event);
 
@@ -460,12 +485,13 @@ export function createTeamPort(deps: TeamPortDeps) {
     const external = externalRole(spec.role, spec.config);
     // A worker works in its own sandbox; the advisor only ever reads the project (decision 2026-09-24).
     const canWrite = principal.capabilities.includes('write-project-file');
-    let registry = external ? new ChildRegistry() : deps.registry(parent.projectId, routes, spec.scope);
+    const reader: TeamChildRoute = { route: spec.config.route, model: spec.config.model };
+    let registry = external ? new ChildRegistry() : deps.registry(parent.projectId, routes, spec.scope, reader);
     if (spec.role === 'advisor') assertReadOnly(registry);
     let child = await get(spec.childRunId);
     const sandboxed = spec.role === 'worker' && !external && deps.sandbox;
     if (sandboxed && (!child || ACTIVE.includes(child.state))) {
-      const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child });
+      const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child, child: reader });
       if ('refusal' in made) {
         if (child) await runs.cancel(child.id, made.refusal, principal).catch(() => undefined);
         else {
@@ -554,7 +580,14 @@ export function createTeamPort(deps: TeamPortDeps) {
       const input = child.input as unknown as TeamChildInput;
       const owner = identifier('team-child-');
       const childId = child.id;
-      const stopChild = (reason: string) => void runs.cancel(childId, reason, principal).catch(() => undefined);
+      // DIO-257: a stop (its wall time, its token budget, or its lead's) reaches the child's call in
+      // flight at once, down to the local server's socket, not only once the cancel is written down.
+      // The cancel is queued first, so the call that fails on the abort finds its step cancelled.
+      const controller = new AbortController();
+      const stopChild = (reason: string) => {
+        void runs.cancel(childId, reason, principal).catch(() => undefined);
+        controller.abort();
+      };
       const onParent = () => stopChild(PARENT_STOPPED);
       if (spec.signal.aborted) onParent();
       spec.signal.addEventListener('abort', onParent, { once: true });
@@ -565,7 +598,6 @@ export function createTeamPort(deps: TeamPortDeps) {
           ? null
           : setTimeout(() => stopChild(`budget reached (wall time ${Math.round((spec.budget.wallMs ?? 0) / 1000)} s)`), remaining);
       timer?.unref?.();
-      const controller = new AbortController();
       let beat = () => {};
       try {
         await runs.claim(childId, owner, 60_000, { refuseSettled: true });
@@ -821,6 +853,7 @@ export function createTeamPort(deps: TeamPortDeps) {
         const handoffId = `${parent.id}-t${turn}`;
         const childRunId = `${parent.id}-a${turn}`;
         const scope = team.scope;
+        const budget = advisorBudget(advisor);
         const envelope = envelopeFor(parent, `${handoffId}-e`, advisor, question, TEAM_LIMITS.depth - 1, 0);
         if (!envelope.envelope) {
           const reason = envelope.refusal ?? 'The handoff could not be opened.';
@@ -852,7 +885,7 @@ export function createTeamPort(deps: TeamPortDeps) {
             envelopeId: envelope.envelope.id,
             task: question,
             scope: [...(scope ?? [])],
-            budget: TEAM_LIMITS.advisor,
+            budget,
             agent: advisor.agent,
             route: advisor.route,
             model: advisor.model,
@@ -868,7 +901,7 @@ export function createTeamPort(deps: TeamPortDeps) {
           role: 'advisor',
           task: question,
           scope,
-          budget: TEAM_LIMITS.advisor,
+          budget,
           config: advisor,
           signal,
           script: () => advisorFixtureAdapter(question),
