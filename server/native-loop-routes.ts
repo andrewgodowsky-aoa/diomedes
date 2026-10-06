@@ -92,6 +92,7 @@ import {
   budgetRefusal,
   executionOf,
   isExternalWorkerRoute,
+  localRoleWallMs,
   type ExternalWorkerRoute,
   type TeamConfig,
   type TeamRetry,
@@ -655,7 +656,11 @@ export function mountNativeLoopRoutes(
     const advisor = spec.advisor
       ? await admitRole(projectId, taskId, 'advisor', spec.advisor, body, scope ?? [], consent, false, undefined, ids)
       : null;
-    return teamConfig(scope, worker, advisor, budget);
+    // DIO-257: a worker on the local model the person named no time for gets the time its profile's
+    // calls take, as its advisor does (`localRoleWallMs`). Any other worker keeps TEAM_LIMITS.worker.
+    const local = worker.route === LOCAL_MODEL_ROUTE && spec.worker.budget?.wallMs === undefined
+      ? harness.loop.localProfile(worker.model) : undefined;
+    return teamConfig(scope, worker, advisor, local ? { ...budget, wallMs: localRoleWallMs(local, budget.turns, worker.effort) } : budget);
   };
 
   /**

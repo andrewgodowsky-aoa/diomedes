@@ -914,6 +914,7 @@ export function createLoopProcedure(deps: {
     store,
     runs,
     ledger,
+    localProfile: (model) => deps.localProfile?.(model),
     // A child on the person's own engine is admitted by that engine; every other route as before.
     admit: (route, input) => (isExternalWorkerRoute(route) ? admitWorkerChild(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),

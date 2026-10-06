@@ -42,6 +42,7 @@ import {
   childCapabilities,
   harnessBudgetOf,
   isExternalWorkerRoute,
+  localRoleWallMs,
   outcomeOf,
   reportedTokens,
   runWallMs,
@@ -69,6 +70,7 @@ import type { ToolRegistry } from '../tools.js';
 import type { HandoffLedger } from '../../team/handoff-ledger.js';
 import type { ChangeSetSummary } from '../../../shared/sandbox.js';
 import { fundingForRoute } from '../../../shared/funding-source.js';
+import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
 import { routeName } from '../external-worker.js';
 import { ToolRegistry as ChildRegistry } from '../tools.js';
 
@@ -241,6 +243,8 @@ export interface TeamPortDeps {
   readonly store: Store;
   readonly runs: RunService;
   readonly ledger: HandoffLedger;
+  /** The app's local model profiles: an advisor on the local model is timed by its profile (DIO-257). */
+  localProfile?(model: unknown): LocalModelProfile | undefined;
   admit(
     route: string,
     input: {
@@ -315,6 +319,17 @@ export function childInstructions(
 
 export function createTeamPort(deps: TeamPortDeps) {
   const { store, runs, ledger } = deps;
+
+  /**
+   * DIO-257: an advisor on the local model gets the time its profile's calls take
+   * (`localRoleWallMs`). On every other route its budget is the fixed `TEAM_LIMITS.advisor`.
+   */
+  const advisorBudget = (advisor: TeamRole): WorkerBudget => {
+    const profile = advisor.route === LOCAL_MODEL_ROUTE ? deps.localProfile?.(advisor.model) : undefined;
+    return profile
+      ? { ...TEAM_LIMITS.advisor, wallMs: localRoleWallMs(profile, TEAM_LIMITS.advisor.turns, (advisor as { effort?: string | null }).effort) }
+      : TEAM_LIMITS.advisor;
+  };
 
   const record = async (projectId: string, event: HandoffEvent) => ledger.append(projectId, event);
 
@@ -565,7 +580,14 @@ export function createTeamPort(deps: TeamPortDeps) {
       const input = child.input as unknown as TeamChildInput;
       const owner = identifier('team-child-');
       const childId = child.id;
-      const stopChild = (reason: string) => void runs.cancel(childId, reason, principal).catch(() => undefined);
+      // DIO-257: a stop (its wall time, its token budget, or its lead's) reaches the child's call in
+      // flight at once, down to the local server's socket, not only once the cancel is written down.
+      // The cancel is queued first, so the call that fails on the abort finds its step cancelled.
+      const controller = new AbortController();
+      const stopChild = (reason: string) => {
+        void runs.cancel(childId, reason, principal).catch(() => undefined);
+        controller.abort();
+      };
       const onParent = () => stopChild(PARENT_STOPPED);
       if (spec.signal.aborted) onParent();
       spec.signal.addEventListener('abort', onParent, { once: true });
@@ -576,7 +598,6 @@ export function createTeamPort(deps: TeamPortDeps) {
           ? null
           : setTimeout(() => stopChild(`budget reached (wall time ${Math.round((spec.budget.wallMs ?? 0) / 1000)} s)`), remaining);
       timer?.unref?.();
-      const controller = new AbortController();
       let beat = () => {};
       try {
         await runs.claim(childId, owner, 60_000, { refuseSettled: true });
@@ -832,6 +853,7 @@ export function createTeamPort(deps: TeamPortDeps) {
         const handoffId = `${parent.id}-t${turn}`;
         const childRunId = `${parent.id}-a${turn}`;
         const scope = team.scope;
+        const budget = advisorBudget(advisor);
         const envelope = envelopeFor(parent, `${handoffId}-e`, advisor, question, TEAM_LIMITS.depth - 1, 0);
         if (!envelope.envelope) {
           const reason = envelope.refusal ?? 'The handoff could not be opened.';
@@ -863,7 +885,7 @@ export function createTeamPort(deps: TeamPortDeps) {
             envelopeId: envelope.envelope.id,
             task: question,
             scope: [...(scope ?? [])],
-            budget: TEAM_LIMITS.advisor,
+            budget,
             agent: advisor.agent,
             route: advisor.route,
             model: advisor.model,
@@ -879,7 +901,7 @@ export function createTeamPort(deps: TeamPortDeps) {
           role: 'advisor',
           task: question,
           scope,
-          budget: TEAM_LIMITS.advisor,
+          budget,
           config: advisor,
           signal,
           script: () => advisorFixtureAdapter(question),
