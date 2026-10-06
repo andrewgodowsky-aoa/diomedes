@@ -42,6 +42,7 @@ import { PostgresOrganizationExportRepository } from './organization-export/post
 import { RouteChecksService, postgresRouteCheckSpend, workerFetch } from './route-checks.js';
 import { routeChecksInputSchema } from '../../../shared/gateway-route-checks.js';
 import { routeInputRefusal } from './route-field-refusals.js';
+import { publishCreditPricesInput } from '../../../shared/credit-prices.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
@@ -536,6 +537,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (pathname === '/ops/routing/preview' && method === 'POST') return json(await ops.previewPolicy(token, await body(request, publishPolicyInput)));
         if (pathname === '/ops/routing/publish' && method === 'POST') return json(await ops.publishPolicy(token, await body(request, publishPolicyInput)), 201);
         if (pathname === '/ops/routing/rollback' && method === 'POST') return json(await ops.rollbackPolicy(token, await body(request, rollbackPolicyInput)), 201);
+        // The credit price table (Model B, migration 018): read with its history, and publish a version.
+        if (pathname === '/ops/credit-prices' && method === 'GET') return json(await ops.creditPrices(token));
+        if (pathname === '/ops/credit-prices/publish' && method === 'POST') return json(await ops.publishCreditPrices(token, await body(request, publishCreditPricesInput)), 201);
         if (pathname === '/ops/staff' && method === 'GET') return json(await ops.staffList(token));
         if (pathname === '/ops/staff' && method === 'POST') return json(await ops.addStaff(token, await body(request, addStaffInput)), 201);
         if ((match = route('/ops/staff/:id').exec(pathname)) && method === 'PATCH') return json(await ops.changeStaff(token, match[1], await body(request, changeStaffInput)));

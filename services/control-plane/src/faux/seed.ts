@@ -73,6 +73,26 @@ export const DEMO_POLICY = {
   note: `Faux seed: ${DEMO_ROUTES.find((r) => r.id === DEMO_POLICY_ROUTE)!.label} behind all three tiers, answered by the scripted provider (2026-09-25).`,
 };
 
+/**
+ * Obviously synthetic credit prices (Model B) for the faux cloud and its tests: round numbers that put
+ * every faux and test route under the ceiling, and a ceiling at the ledger's own scale. They are not
+ * Nectovia's prices, which staff publish into the account service's database and never into this
+ * repository. Ledger units per million tokens; 100,000 units are one credit.
+ */
+export const FAUX_CREDIT_CHARGE = Object.freeze({
+  inputMicroUsdPerMillion: 2_000_000,
+  outputMicroUsdPerMillion: 10_000_000,
+  cacheReadMicroUsdPerMillion: 1_000_000,
+  cacheWriteMicroUsdPerMillion: 2_500_000,
+  requestFeeMicroUsd: 100,
+});
+export const FAUX_CREDIT_PRICES = Object.freeze({
+  baseVersion: 0,
+  ceilingMicroUsdPerCredit: 100_000,
+  tiers: { efficient: { ...FAUX_CREDIT_CHARGE }, focused: { ...FAUX_CREDIT_CHARGE }, thorough: { ...FAUX_CREDIT_CHARGE } },
+  note: 'Faux seed: synthetic credit prices for local development and tests. Not Nectovia’s prices.',
+});
+
 export interface SeedResult {
   seeded: boolean;
   password: string;
@@ -80,11 +100,31 @@ export interface SeedResult {
   organizations: { juniper: string; harbor: string } | null;
 }
 
+/**
+ * A store this seeder filled before tier pricing (Model B) has routes and no credit price table, so
+ * every managed call from it would be refused as tier_unpriced. Give it the faux table once, as the
+ * routing operator the seed made. Written straight to the store: the faux routes sit inside its
+ * ceiling, which the fresh seed's publish proves.
+ */
+async function backfillCreditPrices(cloud: FauxCloud) {
+  const snapshot = cloud.store.snapshot();
+  if (snapshot.commercial.priceTables.length > 0) return;
+  const routing = snapshot.commercial.operators.find((row) => row.role === 'routing' && row.state === 'active');
+  if (!routing) return;
+  const { baseVersion: _base, ...table } = FAUX_CREDIT_PRICES;
+  await cloud.store.commercial.transaction(async (tx) => {
+    if (await tx.priceTable()) return;
+    await tx.savePriceTable({ v: 1, version: 1, ...table, publishedAt: new Date().toISOString(), publishedBy: routing.personId });
+  });
+}
+
 /** Seed an empty store. A store that already has any account is left alone. */
 export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
   const snapshot = cloud.store.snapshot();
-  if (snapshot.seeded !== null || snapshot.identity.users.length > 0 || snapshot.accounts.persons.length > 0)
+  if (snapshot.seeded !== null || snapshot.identity.users.length > 0 || snapshot.accounts.persons.length > 0) {
+    if (snapshot.seeded !== null) await backfillCreditPrices(cloud);
     return { seeded: false, password: FAUX_DEMO_PASSWORD, accounts: DEMO_ACCOUNTS, organizations: null };
+  }
   const tokens = {} as Record<DemoAccount, string>;
   for (const [key, account] of Object.entries(DEMO_ACCOUNTS) as [DemoAccount, (typeof DEMO_ACCOUNTS)[DemoAccount]][]) {
     tokens[key] = await cloud.seedSignIn({ name: account.name, email: account.email, password: FAUX_DEMO_PASSWORD });
@@ -121,6 +161,8 @@ export async function seedDemo(cloud: FauxCloud): Promise<SeedResult> {
     ...DEMO_POLICY,
     baseRevision: 0,
   });
+  // The first credit price table, synthetic, so managed calls are priced in local development.
+  await cloud.commercial.publishCreditPrices(tokens.staffRouting, FAUX_CREDIT_PRICES);
 
   // Juniper Street Bakery holds Business; Harbor Hardware holds nothing yet.
   await cloud.commercial.issueGrant(tokens.staffBilling, juniper.id, {

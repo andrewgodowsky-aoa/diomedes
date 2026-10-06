@@ -78,6 +78,8 @@ import { registryRow } from './managed-providers.js';
 import type { FundingService } from './funding.js';
 import { bindingProblemFields, routeInputRefusal } from './route-field-refusals.js';
 import { escalationControlSchema } from '../../../shared/escalation-controls.js';
+import { creditPriceTableSchema, publishCreditPricesInput, type CreditPriceTable } from '../../../shared/credit-prices.js';
+import { boundRoutes, ceilingRefusal, overCeiling, withinCeiling } from './credit-prices.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -256,6 +258,8 @@ export const AUDIT_ACTIONS = [
   'person-grant.revoked',
   /** One gateway route checks run (DIO-217): the receipt and its spend, on the route it checked. */
   'route.checked',
+  /** One credit price table version published (Model B, migration 018). */
+  'credit-prices.published',
 ] as const;
 export const auditEventSchema = z.strictObject({
   id: accountId,
@@ -265,7 +269,7 @@ export const auditEventSchema = z.strictObject({
   action: z.enum(AUDIT_ACTIONS),
   organizationId: accountId.nullable(),
   /** 'person-grant' events carry organizationId null and the person in `detail.personId`. */
-  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator', 'person-grant']),
+  targetKind: z.enum(['grant', 'funding', 'route', 'policy', 'operator', 'person-grant', 'credit-prices']),
   targetId: z.string().min(1).max(128),
   reason: text(1000),
   detail: z.record(z.string(), z.unknown()),
@@ -329,6 +333,15 @@ export interface CommercialTransaction extends RoutingTransaction {
   policy(revision?: number, scopeKey?: string): Promise<TierPolicy | undefined>;
   policies(limit: number, scopeKey?: string): Promise<TierPolicy[]>;
   savePolicy(row: TierPolicy): Promise<void>;
+  /**
+   * The credit price table (migration 018): the active version, or one version by number. Published
+   * under `lockPolicy`, so a table and a routing record are never published past each other.
+   */
+  priceTable(version?: number): Promise<CreditPriceTable | undefined>;
+  /** Published versions, newest first. */
+  priceTables(limit: number): Promise<CreditPriceTable[]>;
+  /** Append one version. Versions are immutable: a second write of a version is refused. */
+  savePriceTable(row: CreditPriceTable): Promise<void>;
   /** Serializes staff authority checks and role changes, including the last-admin check. */
   lockStaff(): Promise<void>;
   operator(personId: string): Promise<Operator | undefined>;
@@ -1313,7 +1326,8 @@ export class CommercialService {
             ...(parsed.data.model !== existing.model ? ['model'] : [])]);
       const { baseRevision: _base, ...fields } = parsed.data;
       const row: RouteEntry = { v: 1, ...fields, revision: (existing?.revision ?? 0) + 1, updatedAt: this.at(), updatedBy: actor.person.id };
-      await tx.saveRoute(row);
+      // A bound route's new price must stay under the credit price table's ceiling for its tiers.
+      await withinCeiling(tx, () => tx.saveRoute(row));
       await this.audited(tx, actor, {
         action: 'route.saved', organizationId: null, targetKind: 'route', targetId: row.id, reason: row.evidence || 'Route details saved.',
         detail: { before: existing ?? null, after: row },
@@ -1374,7 +1388,7 @@ export class CommercialService {
         v: 1, revision: (current?.revision ?? 0) + 1, tiers: this.resolve(await tx.routes(), parsed.data.tiers),
         kind: 'publish', basedOn: current?.revision ?? 0, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
       };
-      await tx.savePolicy(row);
+      await withinCeiling(tx, () => tx.savePolicy(row));
       await this.audited(tx, actor, {
         action: 'policy.published', organizationId: null, targetKind: 'policy', targetId: String(row.revision), reason: row.note,
         detail: { before: current?.tiers ?? null, after: row.tiers },
@@ -1401,10 +1415,54 @@ export class CommercialService {
         v: 1, revision: (current?.revision ?? 0) + 1, tiers: this.resolve(await tx.routes(), ids),
         kind: 'rollback', basedOn: target.revision, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
       };
-      await tx.savePolicy(row);
+      await withinCeiling(tx, () => tx.savePolicy(row));
       await this.audited(tx, actor, {
         action: 'policy.rolled-back', organizationId: null, targetKind: 'policy', targetId: String(row.revision), reason: row.note,
         detail: { before: current?.tiers ?? null, after: row.tiers, restored: target.revision },
+      });
+      return row;
+    });
+  }
+
+  // --- the credit price table (Model B, migration 018) ------------------------------------------
+
+  /**
+   * The active credit price table and its history, newest first. The table is the company's own
+   * pricing, so only staff who publish routing read it.
+   */
+  async creditPrices(token: string) {
+    await this.staff(token, 'policy.publish');
+    return this.repository.transaction(async (tx) => ({ table: (await tx.priceTable()) ?? null, history: await tx.priceTables(50) }));
+  }
+
+  /**
+   * Publish a new version of the credit price table. It is built on the version the publisher read,
+   * leaves every bound route under its ceiling (refused by name otherwise), and is audited. Versions
+   * are never rewritten: a change is a new version, and every held call keeps the one it was held under.
+   */
+  async publishCreditPrices(token: string, input: unknown) {
+    const parsed = publishCreditPricesInput.safeParse(input);
+    if (!parsed.success)
+      throw new AccountError(422, 'Give each tier a charge in whole units per million tokens, or none; a ceiling; and a note saying why.');
+    const actor = await this.staff(token, 'policy.publish');
+    return this.repository.transaction(async (tx) => {
+      await tx.lockPolicy();
+      actor.operator = await this.staffOperator(tx, actor.person.id, 'policy.publish');
+      const current = await tx.priceTable();
+      if ((current?.version ?? 0) !== parsed.data.baseVersion)
+        throw new AccountError(409, `The credit price table is now version ${current?.version ?? 0}. Review it and publish again.`);
+      const failures = overCeiling(parsed.data, await boundRoutes(tx));
+      if (failures.length) throw new AccountError(422, ceilingRefusal(failures), 'over_cost_ceiling');
+      const row = creditPriceTableSchema.parse({
+        v: 1, version: (current?.version ?? 0) + 1, ceilingMicroUsdPerCredit: parsed.data.ceilingMicroUsdPerCredit,
+        tiers: parsed.data.tiers, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
+      });
+      await tx.savePriceTable(row);
+      await this.audited(tx, actor, {
+        action: 'credit-prices.published', organizationId: null, targetKind: 'credit-prices', targetId: String(row.version), reason: row.note,
+        // The table itself stays out of the audit log, which Support reads: the history endpoint serves
+        // it to the roles that may publish it.
+        detail: { basedOn: current?.version ?? 0, version: row.version },
       });
       return row;
     });

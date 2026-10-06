@@ -18,6 +18,9 @@ import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy 
 import { entitlementFromGrants, individualEntitlement, individualTerms, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
 import type { FundingService } from './funding.js';
 import { effectiveEscalation, escalationControlSchema, type EscalationControl, type EscalationView } from '../../../shared/escalation-controls.js';
+import { chargeAsRoutingPrice, chargeSnapshot, type CreditPriceTable } from '../../../shared/credit-prices.js';
+import type { JobTier } from '../../../shared/managed-usage.js';
+import { withinCeiling } from './credit-prices.js';
 import { decidePayAsYouGo } from '../../../shared/pay-as-you-go.js';
 import { OUT_OF_CREDITS_PERSONAL } from '../../../shared/access.js';
 import type { EntitlementView } from '../../../shared/workspaces.js';
@@ -96,7 +99,15 @@ export async function effectivePolicy(tx: CommercialTransaction, scope: AccountS
   const inherited = !own || own.inherit === true;
   return { global, own, effective: inherited ? global : own, inherited,
     globalRevision: global?.revision ?? 0, scopeRevision: own?.revision ?? 0,
-    preference: await tx.routingPreference(routingScopeKey(scope)) };
+    preference: await tx.routingPreference(routingScopeKey(scope)),
+    // The active credit price table (Model B), read with the routing state it prices.
+    priceTable: (await tx.priceTable()) ?? null };
+}
+
+/** The resolver's ceiling input for one tier under a table, or null when the tier has no charge. */
+export function tierCeiling(table: CreditPriceTable | null | undefined, tier: JobTier) {
+  const charge = chargeSnapshot(table, tier);
+  return charge ? { charge, ceilingMicroUsdPerCredit: charge.ceilingMicroUsdPerCredit } : null;
 }
 
 /** A failed model is cooled down independently; a later funded request is its recovery check. */
@@ -326,18 +337,27 @@ export class RoutingService {
       const state = await effectivePolicy(tx, scope), routes = await routesWithCircuits(tx, this.now());
       const connections = approvedConnections(env).filter(c => connectionCredential(c, env));
       const tiers = {} as ResolvedRoutingSnapshot['tiers'], exclusions = {} as ResolvedRoutingSnapshot['exclusions'];
+      const validUntil = new Date(this.now() + 60_000).toISOString();
       for (const tier of ROUTING_TIERS) {
         const configured = (state.effective?.routing ?? legacyRouting(state.effective))[tier];
         if (!state.effective?.routing || !state.preference) {
           tiers[tier] = null; exclusions[tier] = [{ routeId: configured.primary ?? '', reasons: [{ code: 'routing_setup_required', message: 'A versioned route policy and accepted account privacy profile are required.' }] }]; continue;
         }
+        // A tier the credit price table does not price serves nothing: the gateway refuses it as tier_unpriced.
+        const ceiling = tierCeiling(state.priceTable, tier);
+        if (!ceiling || !state.priceTable) {
+          tiers[tier] = null; exclusions[tier] = [{ routeId: configured.primary ?? '', reasons: [{ code: 'tier_unpriced', message: 'This tier has no credit price right now.' }] }]; continue;
+        }
         const selected = resolveRoutingCandidates({ routes, connections, policy: configured, preference: state.preference,
-          mandatory: state.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions: [], tier, envelope: defaultEnvelope(), now: this.now() });
+          mandatory: state.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS, sourceRestrictions: [], tier, envelope: defaultEnvelope(), now: this.now(),
+          costCeiling: ceiling });
         const entry = selected.candidates[0]?.route, binding = entry?.binding;
         const catalogEntry = entry && routes.find(r => r.id === entry.id);
+        // The desktop's price fields carry the tier's charge, never a provider's price (shared/credit-prices.ts).
+        const charge = chargeAsRoutingPrice(ceiling.charge, state.priceTable.publishedAt);
         tiers[tier] = entry && binding && catalogEntry ? { entryId: entry.id, entryRevision: entry.revision, model: entry.model,
-          label: catalogEntry.label, provider: entry.provider, price: binding.price, capabilities: binding.capabilities,
-          reasoningSummaries: supportsReasoningSummaries(catalogEntry, selected.candidates[0].connection), guardPrices: selected.candidates.map(c => c.route.binding!.price),
+          label: catalogEntry.label, provider: entry.provider, price: charge, capabilities: binding.capabilities,
+          reasoningSummaries: supportsReasoningSummaries(catalogEntry, selected.candidates[0].connection), guardPrices: [charge],
           fallbackEnabled: configured.fallbackEnabled, maxAttempts: configured.maxAttempts } : null;
         exclusions[tier] = selected.excluded;
       }
@@ -345,7 +365,7 @@ export class RoutingService {
         canEditPreferences: actor.role === 'owner' || actor.role === 'admin', scope, revision: state.effective?.revision ?? 0,
         globalRevision: state.globalRevision, scopeRevision: state.scopeRevision, preferenceRevision: state.preference?.revision ?? 0,
         inherited: state.inherited, profile: state.preference?.profile ?? null, checkedAt: this.at(),
-        validUntil: new Date(this.now() + 60_000).toISOString(), tiers, exclusions };
+        validUntil, tiers, exclusions };
     });
   }
   private async previewIn(tx: CommercialTransaction, input: ScopedPublicationInput, env: Readonly<Record<string, unknown>>) {
@@ -355,6 +375,7 @@ export class RoutingService {
       throw new AccountError(409, 'The scope or global policy changed. Refresh and preview again.');
     if (input.scope.kind === 'global' && input.routing === null) throw new AccountError(422, 'Global policy cannot inherit.');
     const routes = await routesWithCircuits(tx, this.now()), connections = approvedConnections(env).filter(c => connectionCredential(c, env));
+    const priceTable = (await tx.priceTable()) ?? null;
     // Route evidence is checked whenever the routing changes, a legacy record becoming versioned included.
     const changed = !keepsOwnRouting(current, input.routing);
     for (const tier of ROUTING_TIERS) for (const id of input.routing && changed ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
@@ -381,7 +402,7 @@ export class RoutingService {
       const preference = await tx.routingPreference(key), routing = input.routing ?? global?.routing;
       const tiers = Object.fromEntries(ROUTING_TIERS.map(tier => [tier, preference && routing
         ? resolveRoutingCandidates({ routes, connections, preference, mandatory: global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS,
-          sourceRestrictions: [], tier, policy: routing[tier], envelope: defaultEnvelope(), now: this.now() })
+          sourceRestrictions: [], tier, policy: routing[tier], envelope: defaultEnvelope(), now: this.now(), costCeiling: tierCeiling(priceTable, tier) })
         : { candidates: [], ranked: [], excluded: [{ routeId: '', reasons: [{ code: 'routing_setup_required', message: 'Accepted customer privacy settings are missing.' }] }] }]));
       affected.push({ scope, paid: access.agent && access.managedInference, profile: preference?.profile ?? null,
         tiers: Object.fromEntries(ROUTING_TIERS.map(t => [t, { eligible: tiers[t].ranked.map(c => c.route.id), excluded: tiers[t].excluded }])) });
@@ -420,7 +441,8 @@ export class RoutingService {
         tiers: Object.fromEntries(ROUTING_TIERS.map(t => { const r = routes.find(r => r.id === input.routing?.[t].primary); return [t, r ? { entryId: r.id, provider: r.provider, model: r.model, label: r.label, entryRevision: r.revision } : null]; })) as TierPolicy['tiers'],
         kind: rollback ? 'rollback' : 'publish', basedOn: restored?.revision ?? input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id,
         ...(preview.escalation ? { escalation: preview.escalation } : {}) };
-      await tx.savePolicy(row);
+      // A routing record may not bind a route over the credit price table's ceiling that was not over it before.
+      await withinCeiling(tx, () => tx.savePolicy(row));
       await tx.audit({ id: `audit_${crypto.randomUUID()}`, at: this.at(), actorPersonId: actor.person.id, actorRole: operator.role,
         action: rollback ? 'policy.rolled-back' : 'policy.published', organizationId: input.scope.kind === 'organization' ? input.scope.id : null,
         targetKind: 'policy', targetId: key, reason: input.note, detail: { scope: input.scope, revision: row.revision, basedOn: row.basedOn, routing: input.routing,

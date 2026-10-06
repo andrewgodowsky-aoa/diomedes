@@ -53,6 +53,7 @@ import {
 import type { OrganizationExportRepository, OrganizationExportTransaction } from '../organization-export/service.js';
 import { StateTransaction } from '../state-transaction.js';
 import { emptyFundingState, StateFundingTransaction, type FundingState } from './funding-state.js';
+import { creditPriceTableSchema, type CreditPriceTable } from '../../../../shared/credit-prices.js';
 import { emptyFauxIdentity, fauxIdentityStateSchema, type FauxIdentityState } from './identity.js';
 
 export interface CommercialState {
@@ -64,6 +65,8 @@ export interface CommercialState {
   accessRevisions: Record<string, { tenantId: string; revision: number }>;
   routes: RouteEntry[];
   policies: TierPolicy[];
+  /** Credit price table versions (migration 018), in publication order. */
+  priceTables: CreditPriceTable[];
   operators: Operator[];
   audit: AuditEvent[];
   admissions: AdmissionRecord[];
@@ -105,6 +108,8 @@ const commercialSchema = z.strictObject({
   accessRevisions: z.record(z.string(), z.strictObject({ tenantId: z.string(), revision: z.number().int().min(0) })),
   routes: z.array(routeEntrySchema).max(500),
   policies: z.array(tierPolicySchema).max(10_000),
+  // Stores written before tier pricing have no table yet.
+  priceTables: z.array(creditPriceTableSchema).max(10_000).default([]),
   operators: z.array(operatorSchema).max(1_000),
   audit: z.array(auditEventSchema).max(LOG_LIMIT),
   admissions: z.array(admissionRecordSchema).max(LOG_LIMIT),
@@ -127,7 +132,7 @@ export function emptyFauxCloudState(now = new Date().toISOString()): FauxCloudSt
     identity: emptyFauxIdentity(),
     commercial: {
       individuals: [], routingPreferences: [], jobRestrictions: {}, circuits: {},
-      grants: [], accessRevisions: {}, routes: [], policies: [], operators: [], audit: [], admissions: [],
+      grants: [], accessRevisions: {}, routes: [], policies: [], priceTables: [], operators: [], audit: [], admissions: [],
       personGrants: [], personAccessRevisions: {}, personalAdmissions: [],
     },
     funding: emptyFundingState(),
@@ -216,6 +221,16 @@ class FauxCommercialTransaction implements CommercialTransaction {
   async savePolicy(row: TierPolicy) {
     if (this.c.policies.some(old => old.revision === row.revision && routingScopeKey(old.scope ?? { kind: 'global' }) === routingScopeKey(row.scope ?? { kind: 'global' }))) throw new Error('Published tier policies are append-only.');
     this.c.policies.push(row);
+  }
+  async priceTable(version?: number) {
+    if (version !== undefined) return this.c.priceTables.find(row => row.version === version);
+    return [...this.c.priceTables].sort((a, b) => b.version - a.version)[0];
+  }
+  async priceTables(limit: number) { return [...this.c.priceTables].sort((a, b) => b.version - a.version).slice(0, limit); }
+  async savePriceTable(row: CreditPriceTable) {
+    // The same rule the Postgres trigger and primary key enforce: a version is written once.
+    if (this.c.priceTables.some(old => old.version === row.version)) throw new Error('Published credit price tables are append-only.');
+    this.c.priceTables.push(row);
   }
   async individual(id: string) { return this.c.individuals.find(r => r.id === id); }
   async individualFor(personId: string) { return this.c.individuals.find(r => r.personId === personId); }
