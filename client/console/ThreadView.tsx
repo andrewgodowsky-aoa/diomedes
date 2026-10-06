@@ -55,6 +55,8 @@ import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
 import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
+import { PinnedChartView } from './InlineVisual';
+import { newestChart, pinnedWhen } from './pinned-chart';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
 import { TurnBody, type Citations } from './TurnBody';
@@ -200,6 +202,11 @@ interface ThreadViewProps {
   onChoose?(change: AskChange): void;
   /** The Agent control, drawn at the end of the ask row. */
   agentControl?: ReactNode;
+  /**
+   * Pins the thread's newest bar, line or area chart above the transcript (round 2 reskin, N2).
+   * The Shell asks for it in the Nectovia view only; the Work view keeps the transcript as it was.
+   */
+  pinChart?: boolean;
 }
 
 /**
@@ -270,10 +277,15 @@ export function ThreadView({
   askLocked = false,
   onChoose,
   agentControl = null,
+  pinChart = false,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
+  // The pinned chart, and whether a step is running now: a reply's tool call or a run's.
+  const pinned = pinChart ? newestChart(thread.turns) : null;
+  const stepRunning =
+    toolRunning(streaming?.activity) || (live !== null && toolRunning(runActivity?.[live.id]));
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const last = ordered.at(-1) ?? null;
   const profiles = useControlProfiles(
@@ -695,6 +707,11 @@ export function ThreadView({
           </span>
         )}
       </div>
+      {pinned && (
+        <div className="col pin">
+          <PinnedChartView chart={pinned} running={stepRunning} caption={pinnedWhen(pinned.at, new Date())} />
+        </div>
+      )}
       <div className="transcript" ref={body}>
         <div className="col">
           <p className="permission-note">

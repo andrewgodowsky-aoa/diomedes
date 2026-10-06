@@ -325,3 +325,64 @@ html[data-motion-preset='none'] .console .iv {
     transition: none;
   }
 }
+
+/* The pinned chart (round 2 reskin, slice 2): the newest bar, line or area chart a reply carried,
+   at the top of its thread and on the home. Quieter than a reply's chart: no value ticks, rounded
+   bars carrying the first and the tallest number, and a baseline that sweeps while a step runs. */
+.console .iv-pinned {
+  margin: 0 0 12px;
+}
+.console .iv-pinned .iv {
+  max-width: 100%;
+  margin: 0;
+}
+.console .iv-pinned .iv-plot {
+  position: relative;
+}
+.console .iv-pinned .iv-bar .iv-mark {
+  fill: color-mix(in oklab, var(--iv-c) 46%, transparent);
+}
+.console .iv-pinned .iv-value {
+  font-size: 11px;
+  fill: var(--t1);
+  font-variant-numeric: tabular-nums;
+}
+.console .iv-pinned .iv-value.top {
+  font-weight: 700;
+}
+.console .iv-pinned .iv-baseline {
+  position: absolute;
+  height: 2px;
+  margin-top: -1px;
+  pointer-events: none;
+}
+.console .iv-pinned .iv-baseline.sweep {
+  background: linear-gradient(90deg, transparent, var(--light), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: iv-sweep 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.console .iv-pinned .iv-pin-when {
+  margin: 4px 0 0;
+  font-size: var(--dm-type-meta);
+  color: var(--t3);
+}
+@keyframes iv-sweep {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+html[data-motion='reduced'] .console .iv-pinned .iv-baseline.sweep,
+html[data-motion-preset='none'] .console .iv-pinned .iv-baseline.sweep {
+  animation: none;
+  background-position: 50% 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .iv-pinned .iv-baseline.sweep {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
