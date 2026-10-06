@@ -24,7 +24,7 @@ const headers = { 'content-type': 'application/json', 'X-Diomedes-Client': '1' }
 const realFetch = globalThis.fetch;
 let root: string, base: string, app: Awaited<ReturnType<typeof createApp>>, server: Server;
 let project: Project, thread: Conversation, host: LocalModelHost;
-type ChatBody = { model: string; messages: { role: string; content: unknown }[]; tools: { function: { name: string } }[]; reasoning_effort: string };
+type ChatBody = { model: string; messages: { role: string; content: unknown; tool_call_id?: string }[]; tools: { function: { name: string } }[]; reasoning_effort: string };
 let calls: ChatBody[], mode: 'answer' | 'tool' | 'hang' | 'proposal', dispatched: boolean;
 let source: FixedLocalModel, longPrompt: boolean, toolPreface: string | null, progressAfterTool: boolean, toolPath: string;
 const store = () => app.locals.store as Store;
@@ -89,9 +89,11 @@ const transport: typeof fetch = async (url, init) => {
     if (signal.aborted) reject(signal.reason);
     else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
-  const toolResult = sent.messages.find(m => m.role === 'tool');
-  const toolCall = mode === 'tool' && !toolResult;
-  // The long prefill is the call that carries the ledger: Work inlines it, a conversation reads it with read_source.
+  // The host reads the attached files before the message; the model's own read is answered as read-1.
+  const ownRead = sent.messages.find(m => m.role === 'tool' && m.tool_call_id === 'read-1');
+  const toolResult = ownRead ?? sent.messages.find(m => m.role === 'tool');
+  const toolCall = mode === 'tool' && !ownRead;
+  // The long prefill is the call that carries the ledger: Work inlines it, a conversation's host reads it before the message.
   const carriesLedger = longPrompt && String(init?.body).includes('ledger ledger ledger');
   return localAnswerStream({ id: `local-${calls.length}`, model: sent.model,
     choices: [{ finish_reason: toolCall ? 'tool_calls' : 'stop', message: toolCall
@@ -101,7 +103,7 @@ const transport: typeof fetch = async (url, init) => {
         : toolResult ? `Read result: ${String(toolResult.content).slice(0, 400)}` : 'The local model answered.' } }],
     usage: { prompt_tokens: longPrompt ? 115_164 : 30, completion_tokens: 10, total_tokens: longPrompt ? 115_174 : 40 } },
     carriesLedger ? { total: 115_164, cache: 0, processed: 512, time_ms: 500 }
-      : progressAfterTool && toolResult ? { total: 4_096, cache: 2_048, processed: 3_072, time_ms: 250 } : undefined);
+      : progressAfterTool && ownRead ? { total: 4_096, cache: 2_048, processed: 3_072, time_ms: 250 } : undefined);
 };
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-route-app-'));
@@ -200,14 +202,15 @@ describe('the local model through the native Nectovia host', () => {
     expect((await request(`${threadPath()}/messages`, 'POST', body('Describe.', sources))).status).toBe(409);
     expect(host.acquire).not.toHaveBeenCalled(); expect(calls).toEqual([]);
   });
-  it('executes read tools under native source scope before asking the model again', async () => {
+  it('reads the attached note before the message, then executes the model\'s own read tools under native source scope before asking it again', async () => {
     await select(); mode = 'tool';
     const sources = await conversationSources(project.id, ['note.md']);
     const answer = await api<{ answerText: string }>(`${threadPath()}/messages`, 'POST', body('Read the note.', sources));
     expect(answer.answerText).toContain('Only the selected note.');
     expect(calls).toHaveLength(2);
     expect(calls[0].tools.some(t => t.function.name === 'read_source')).toBe(true);
-    expect(calls[1].messages.find(m => m.role === 'tool')?.content).toContain('Only the selected note.');
+    expect(calls[0].messages.find(m => m.role === 'tool' && m.tool_call_id === 'host-read-1')?.content).toContain('Only the selected note.');
+    expect(calls[1].messages.find(m => m.role === 'tool' && m.tool_call_id === 'read-1')?.content).toContain('Only the selected note.');
   });
   it('reports memory failure on wake and sends nothing to any provider', async () => {
     vi.mocked(host.acquire).mockRejectedValueOnce(new LocalModelError('insufficient-memory', 'Needs 12288 MiB of free VRAM.'));
@@ -302,17 +305,22 @@ describe('the local model through the native Nectovia host', () => {
   }
 
   it('admits a long local conversation and publishes reading progress under the active attempt', async () => {
-    const { text, sources } = await longSource(); mode = 'tool'; toolPath = 'ledger.txt';
+    const { text, sources } = await longSource();
     const events = await openEvents();
     try {
       await events.next('ready');
       const emitted = vi.spyOn(store(), 'emit');
       const response = await request(`${threadPath()}/messages`, 'POST', body('Reconcile the ledger.', sources));
       expect(response.status, await response.clone().text()).toBe(200);
-      // A conversation lists its files; the ledger arrives whole as the read_source result.
-      expect(calls).toHaveLength(2);
-      expect(JSON.stringify(calls[0])).not.toContain(text);
-      expect(JSON.stringify(calls[1])).toContain(text);
+      // The host reads the ledger whole before the message, so the first call carries it: after the
+      // opener and before the person's message, which lists the file and does not repeat it.
+      expect(calls).toHaveLength(1);
+      const sent = calls[0].messages;
+      expect(sent.map(m => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user']);
+      expect(sent[3]).toMatchObject({ tool_call_id: 'host-read-1' });
+      expect(String(sent[3].content)).toContain(text);
+      expect(String(sent[4].content)).toContain('ledger.txt');
+      expect(String(sent[4].content)).not.toContain(text);
       const frames = emitted.mock.calls.filter(([name]) => name === 'engine-prompt-progress');
       expect(frames).toHaveLength(1);
       expect(frames[0][1]).toMatchObject({ projectId: project.id, threadId: thread.id,

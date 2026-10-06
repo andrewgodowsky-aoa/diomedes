@@ -30,9 +30,25 @@ export interface AdmittedSource {
 
 export const sourceSha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
+/** The most text one read_source call returns on this route. */
+export const sourceTextLimit = (localProfile?: LocalModelProfile) =>
+  localProfile ? localContextBudget(localProfile).sourceChars : MAX_SOURCE_TEXT;
+
+/** What read_source returns for one admitted source, so the host can count a read before it runs. */
+export function sourceRead(source: AdmittedSource, maxSourceText: number): Json {
+  const truncated = source.text.length > maxSourceText;
+  return {
+    found: true,
+    path: source.path,
+    sha256: source.image?.sha ?? sourceSha(source.text),
+    truncated,
+    text: truncated ? source.text.slice(0, maxSourceText) : source.text,
+  };
+}
+
 /** A registry holding only this turn's two read tools, bound to its admitted sources. */
 export function sourceTools(sources: readonly AdmittedSource[], localProfile?: LocalModelProfile): ToolRegistry {
-  const maxSourceText = localProfile ? localContextBudget(localProfile).sourceChars : MAX_SOURCE_TEXT;
+  const maxSourceText = sourceTextLimit(localProfile);
   const byPath = new Map<string, AdmittedSource>();
   for (const source of sources) {
     if (typeof source.path !== 'string' || !source.path || typeof source.text !== 'string')
@@ -90,14 +106,7 @@ export function sourceTools(sources: readonly AdmittedSource[], localProfile?: L
           path: input.path,
           message: 'No attached file has that path. Use list_sources to see what was attached.',
         };
-      const truncated = source.text.length > maxSourceText;
-      return {
-        found: true,
-        path: source.path,
-        sha256: source.image?.sha ?? sourceSha(source.text),
-        truncated,
-        text: truncated ? source.text.slice(0, maxSourceText) : source.text,
-      };
+      return sourceRead(source, maxSourceText);
     },
   });
   return registry;

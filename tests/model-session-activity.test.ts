@@ -66,18 +66,19 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
   seen.push({ url, headers: new Headers(init?.headers), body });
   if (url.startsWith('https://openrouter.ai/')) {
     const messages = (body.messages ?? []) as Item[];
-    const toolResult = messages.find((message) => message.role === 'tool');
-    if (body.tools && !toolResult)
+    // The host read the attached menu before the message; the model checks what was attached once.
+    const listed = messages.some((message) => message.role === 'tool' && message.tool_call_id === 'call_or_1');
+    if (body.tools && !listed)
       return sseResponse(
         chatEvents({
           model: OR_MODEL,
           provider: 'Anthropic',
           text: '',
-          toolCalls: [{ id: 'call_or_1', name: 'read_source', arguments: JSON.stringify({ path: MENU.path }) }],
+          toolCalls: [{ id: 'call_or_1', name: 'list_sources', arguments: JSON.stringify({}) }],
           usage: { prompt_tokens: 600, completion_tokens: 30, total_tokens: 630, is_byok: false },
         }),
       );
-    const observed = String(toolResult?.content ?? '');
+    const observed = messages.filter((message) => message.role === 'tool').map((message) => String(message.content)).join('\n');
     return sseResponse(
       chatEvents({
         model: OR_MODEL,
@@ -290,7 +291,7 @@ describe('setup over HTTP', () => {
 });
 
 describe('an OpenRouter conversation turn streams stamped previews and tool activity', () => {
-  test('text deltas and a read_source round trip arrive as stamped frames; started and finished share the call id', async () => {
+  test('text deltas, the host\'s read and a list_sources round trip arrive as stamped frames; started and finished share the call id', async () => {
     const view = await connectOpenRouter();
     await approve('openrouter');
     const previews: TransientPreview[] = [];
@@ -315,9 +316,11 @@ describe('an OpenRouter conversation turn streams stamped previews and tool acti
       expect(request.body.provider).toEqual({ only: ['anthropic'], allow_fallbacks: false, require_parameters: true, data_collection: 'deny' });
     }
 
+    // The host's read is announced by no model, so it finishes under the host's own call id.
     expect(activity.map((frame) => [frame.phase, frame.callId, frame.tool, frame.summary])).toEqual([
-      ['started', 'call_or_1', 'read_source', 'Reading menu.md'],
-      ['finished', 'call_or_1', 'read_source', 'Read menu.md'],
+      ['finished', 'read_source-1', 'read_source', 'Read menu.md'],
+      ['started', 'call_or_1', 'list_sources', 'Listing the attached files'],
+      ['finished', 'call_or_1', 'list_sources', 'Found 1 attached file'],
     ]);
     expect(previews.map((frame) => frame.text).join('')).toBe('Tomato soup and a grilled cheese (menu.md).');
     expect(previews.map((frame) => frame.seq)).toEqual(previews.map((_frame, index) => index + 1));

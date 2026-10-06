@@ -239,7 +239,8 @@ export function createLocalAdapter(input: {
     respond: async request => {
       const messages = structuredClone(request.messages);
       if (images.length) {
-        const first = messages.find(m => m.role === 'user');
+        // The person's message, which follows the host's reads of the attached text files.
+        const first = request.stableMessages ? messages[request.stableMessages] : messages.find(m => m.role === 'user');
         if (!first || first.role !== 'user') throw refused('This image request has no user message.');
         const content = typeof first.content === 'string' ? [{ type: 'text' as const, text: first.content }] : [...first.content];
         for (const image of images) content.push({ type: 'image', image: await input.loadImage!(image), mediaType: image.mediaType });
