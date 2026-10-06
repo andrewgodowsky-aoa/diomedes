@@ -1420,6 +1420,8 @@ export function createLoopProcedure(deps: {
      */
     close(): void;
     admit: typeof admit;
+    /** The app's local model profile a slug names, or undefined; a loop start checks its sources against it. */
+    localProfile(model: unknown): LocalModelProfile | undefined;
     recoverChild(run: HarnessRun): Promise<void>;
     sweep(projectId: string): Promise<void>;
     sandboxes: SandboxStore;
@@ -1587,6 +1589,7 @@ export function createLoopProcedure(deps: {
       verification = port;
     },
     admit,
+    localProfile: (model) => deps.localProfile?.(model),
     /** Startup only: invalidate a dead child's lease so its parent's replay can drive it again. */
     async recoverChild(run) {
       if (!CHILD_CAPABILITIES.includes(run.capabilityId) || !['reconcile_required', ...ACTIVE].includes(run.state)) return;

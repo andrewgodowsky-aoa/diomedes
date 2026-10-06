@@ -41,7 +41,7 @@ import type { AgentCollaborationHost } from './harness/agent-collaboration.js';
 import type { SpendExposure } from './spend-exposure.js';
 import { REPORT_PATH } from './harness/approval.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_PROVIDERS, NECTOVIA_ROUTE } from '../shared/model-api.js';
-import { LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import { localContextBudget, localSourceRefusal, LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
 import { LOCAL_MODEL_NOT_INSTALLED } from './bonsai/runtime.js';
 import type { EscalationRole, EscalationView } from '../shared/escalation-controls.js';
 import {
@@ -935,6 +935,19 @@ export function mountNativeLoopRoutes(
     if (body.route === LOCAL_MODEL_ROUTE && gates) {
       const refusal = gates.on(LOCAL_MODEL_ROUTE) ? await gates.localRefusal(requestedRoot.model ?? null) : LOCAL_MODEL_NOT_INSTALLED;
       if (refusal) throw new ApiError(409, refusal, { code: 'local_model_not_ready' });
+    }
+    // DIO-251: a local lead's sources fit its profile's reading allowance, checked as Work checks
+    // its selection, before any role is admitted or the model is called. A source that is missing
+    // or that the path guard refuses counts nothing here: the lead's read reports it, as before.
+    const leadProfile = body.route === LOCAL_MODEL_ROUTE ? harness.loop.localProfile(requestedRoot.model) : undefined;
+    if (leadProfile) {
+      const allowance = localContextBudget(leadProfile).sourceBytes;
+      let bytes = 0;
+      for (const source of sources) {
+        const text = await store.current(projectId, source).catch(() => null);
+        bytes += text === null ? 0 : Buffer.byteLength(text);
+        if (bytes > allowance) throw new ApiError(413, localSourceRefusal('Select no more than', allowance));
+      }
     }
     // DIO-216: the default Nectovia roles beside a local lead the person started with no team,
     // delegate or composition. A Retry of a lead that took them asks for them again.
