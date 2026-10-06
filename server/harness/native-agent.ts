@@ -25,10 +25,11 @@ import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { z } from 'zod';
 import { routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import { checkedSourceRules, copy, digest, HarnessError, units } from './policy.js';
-import { RunService, Suspended } from './run-service.js';
+import { RunService, Suspended, type StepContext } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import { commandGate, type AdapterRouteContract } from '../../shared/adapter-contract.js';
 import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
+import type { PromptProgress } from '../engines/model-api-core.js';
 
 export interface ModelAdapter {
   id: string;
@@ -46,7 +47,8 @@ export interface ModelAdapter {
   capabilities(): AdapterCapabilities;
   /**
    * `stream`, when given, receives the answer's text as it is produced (H16
-   * stream-time rules). It observes only: nothing it does changes the answer.
+   * stream-time rules) and, on the local model, its reading counters (DIO-256).
+   * It observes only: nothing it does changes the answer.
    */
   complete(request: ModelRequest, signal: AbortSignal, stream?: ModelStreamSink): Promise<ModelResult>;
   /** Set only by a binding that intersects source rules before external inference. */
@@ -61,8 +63,27 @@ export interface ModelAdapter {
 
 /** Where a model step's streamed text goes while it is produced. */
 export interface ModelStreamSink {
-  onDelta(text: string): void;
+  onDelta?(text: string): void;
+  /** DIO-256: the local model's own counters while it reads this call's prompt. */
+  onPromptProgress?(progress: PromptProgress): void;
 }
+
+/** DIO-256: one model step's reading sink: the counters in, and a flush the step awaits before it closes. */
+export interface ModelReading {
+  onPromptProgress(progress: PromptProgress): void;
+  /** Settles once every counter given so far is published, or dropped because the attempt ended. */
+  finish(): Promise<void>;
+}
+
+/**
+ * DIO-256: the reading sink for one model step, from the step's id and its attempt's context, or
+ * undefined for a call that gets none. Only a call on the local model is given one; every other
+ * call is made exactly as before.
+ */
+export type ModelProgressFor = (
+  stepId: string,
+  step: Pick<StepContext, 'attempt' | 'fence' | 'signal' | 'publishPreview'>,
+) => ModelReading | undefined;
 
 export interface ModelInspection {
   action: 'verified' | 'correct' | 'refuse';
@@ -221,6 +242,8 @@ export class NativeAgent {
        * names the same reads starts with the same bytes.
        */
       hostReads?: readonly { name: string; input: Json }[];
+      /** DIO-256: a sink for the local model's reading counters on each model call. */
+      progress?: ModelProgressFor;
     } = {},
   ): Promise<string> {
     const maxTurns = options.maxTurns ?? 8;
@@ -376,9 +399,18 @@ export class NativeAgent {
                   ...(effective.sourceRestrictions?.length ? { sourceRestrictions: effective.sourceRestrictions } : {}),
                 } as unknown as Json),
           },
-          async ({ signal, reportOrigin }) => {
+          async ({ signal, reportOrigin, attempt, fence, publishPreview }) => {
             await this.adapter.validatePrepared?.(copy(effective));
-            const result = await this.adapter.complete(copy(effective), signal);
+            const reading = options.progress?.(`model:${i}`, { attempt, fence, signal, publishPreview });
+            let result: ModelResult;
+            try {
+              result = reading
+                ? await this.adapter.complete(copy(effective), signal, { onPromptProgress: reading.onPromptProgress })
+                : await this.adapter.complete(copy(effective), signal);
+            } finally {
+              // The read's last counters reach the stream while this attempt is still open.
+              if (reading) await reading.finish();
+            }
             if (!result || !validResponse(result.response))
               throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
             const managed = result.managed === undefined ? null : routingReceiptSchema.safeParse(result.managed);

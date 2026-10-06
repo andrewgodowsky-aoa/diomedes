@@ -20,7 +20,7 @@ import type { ModelMessage } from 'ai';
 import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
-import { hostCallId, ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
+import { hostCallId, ModelApiError, type PromptProgress, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
 import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from './model-transcripts.js';
 import { hostReadCount, type ModelAdapter } from './native-agent.js';
@@ -319,13 +319,18 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
       boundProfile(request);
       const messages = await providerMessages(request);
       const routeDelta = spec.sinks?.onDelta;
+      const streamDelta = stream?.onDelta ? (text: string) => stream.onDelta!(text) : undefined;
       const onDelta =
-        stream && routeDelta
+        streamDelta && routeDelta
           ? (text: string) => {
               routeDelta(text);
-              stream.onDelta(text);
+              streamDelta(text);
             }
-          : (routeDelta ?? (stream ? (text: string) => stream.onDelta(text) : undefined));
+          : (routeDelta ?? streamDelta);
+      // DIO-256: a loop's call on the local model brings its own reading sink, stamped with its step.
+      const streamProgress = stream?.onPromptProgress
+        ? (progress: PromptProgress) => stream.onPromptProgress!(progress)
+        : undefined;
       const attempt = attemptFor(request);
       // The host's reads lead every call of this message, from its transcript or not.
       const stable = hostReadCount(request.messages);
@@ -340,7 +345,7 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         onDelta,
         onToolActivity: spec.sinks?.onToolActivity,
         onReasoningDelta: spec.sinks?.onReasoningDelta,
-        onPromptProgress: spec.sinks?.onPromptProgress,
+        onPromptProgress: spec.sinks?.onPromptProgress ?? streamProgress,
       });
       let response: ModelResult['response'];
       let portable: PortableMessage;

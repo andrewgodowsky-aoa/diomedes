@@ -73,7 +73,7 @@ import {
 import { DELEGATION_LIMITS, SANDBOX_LIMITS, carveBudget } from '../../shared/sandbox.js';
 import { accountContext, reconcileContext } from './context-assembly.js';
 import type { ContextAccount } from '../../shared/context-accounting.js';
-import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter } from './native-agent.js';
+import { isScriptedAdapter, validatePrepared, validResponse, type ModelAdapter, type ModelProgressFor } from './native-agent.js';
 import { isOutOfCreditsRefusal, micro } from '../../shared/managed-usage.js';
 import { UNATTENDED_CHECK_IN_UNKNOWN, isCheckInRefusal, unattendedCheckInLine } from '../../shared/job-caps.js';
 import { canonical, copy, HarnessError, units } from './policy.js';
@@ -239,6 +239,8 @@ export interface NativeLoopOptions {
       end(finalText: string | null): Promise<void>;
     } | null>;
   } | null;
+  /** DIO-256: a sink for the local model's reading counters on each model call. */
+  readonly progress?: ModelProgressFor | null;
 }
 
 export type LoopResult =
@@ -464,18 +466,29 @@ export class NativeLoop {
           ? z.json().parse({ provider: this.adapter.id, request: effective })
           : z.json().parse({ provider: this.adapter.id, messages, tools }),
       },
-      async ({ signal, reportOrigin, attempt }) => {
+      async ({ signal, reportOrigin, attempt, fence, publishPreview }) => {
         await this.options.collaboration?.validate('dispatch');
         signal.throwIfAborted();
         await this.adapter.validatePrepared?.(copy(effective));
         const watch = (await this.options.stream?.watch(runId, `model:${key}`, attempt)) ?? null;
+        const reading = this.options.progress?.(`model:${key}`, { attempt, fence, signal, publishPreview });
         let result: Awaited<ReturnType<ModelAdapter['complete']>>;
         try {
-          result = await this.adapter.complete(
-            copy(effective),
-            signal,
-            watch ? { onDelta: (text) => watch.onDelta(text) } : undefined,
-          );
+          try {
+            result = await this.adapter.complete(
+              copy(effective),
+              signal,
+              watch || reading
+                ? {
+                    ...(watch ? { onDelta: (text: string) => watch.onDelta(text) } : {}),
+                    ...(reading ? { onPromptProgress: reading.onPromptProgress } : {}),
+                  }
+                : undefined,
+            );
+          } finally {
+            // The read's last counters reach the stream while this attempt is still open.
+            if (reading) await reading.finish();
+          }
           signal.throwIfAborted();
           await this.options.collaboration?.validate('result');
         } catch (error) {

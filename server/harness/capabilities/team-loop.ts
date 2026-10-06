@@ -61,7 +61,7 @@ import { reportedModels } from '../../../shared/native-loop.js';
 import { relativeName } from '../../paths.js';
 import { identifier, now, type Store } from '../../store.js';
 import { ADAPTER_CAPABILITIES } from '../adapters.js';
-import { NativeAgent, type ModelAdapter } from '../native-agent.js';
+import { NativeAgent, type ModelAdapter, type ModelProgressFor } from '../native-agent.js';
 import { LOOP_INSTRUCTIONS, type LoopTeamPort, type TeamAssignment, type TeamOpenedAssignment, type TeamOpenedRecord } from '../native-loop.js';
 import { HarnessError } from '../policy.js';
 import { routeContractFor } from '../route-contract.js';
@@ -245,6 +245,8 @@ export interface TeamPortDeps {
   readonly ledger: HandoffLedger;
   /** The app's local model profiles: an advisor on the local model is timed by its profile (DIO-257). */
   localProfile?(model: unknown): LocalModelProfile | undefined;
+  /** DIO-256: the reading sink for a child's calls on the local model, or undefined on any other route. */
+  progress?(lead: HarnessRun, child: HarnessRun, role: 'worker' | 'advisor'): Promise<ModelProgressFor | undefined>;
   admit(
     route: string,
     input: {
@@ -626,6 +628,7 @@ export function createTeamPort(deps: TeamPortDeps) {
           AbortSignal.any([controller.signal, spec.signal]),
           spec.script,
         );
+        const progress = await deps.progress?.(parent, child, spec.role);
         await new NativeAgent(runs, tokenBudgeted(adapter, runs, childId, spec.budget.tokens, stopChild), registry).run(
           childId,
           owner,
@@ -635,7 +638,7 @@ export function createTeamPort(deps: TeamPortDeps) {
               ? `${spec.task}${spec.scope?.length ? `\n\nAttached files: ${spec.scope.join(', ')}.` : ''}`
               : `${spec.task}${spec.scope ? `\n\nFiles you may read: ${spec.scope.join(', ')}.` : ''}`,
           principal,
-          { maxTurns: external ? 1 : spec.budget.turns },
+          { maxTurns: external ? 1 : spec.budget.turns, ...(progress ? { progress } : {}) },
         );
       } catch {
         // The child's own record says how it ended; the lead observes that record.
@@ -951,14 +954,15 @@ export function tokenBudgeted(
 ): ModelAdapter {
   if (tokens === null) return adapter;
   const wrapped = Object.create(adapter) as ModelAdapter;
-  wrapped.complete = async (request, signal) => {
+  wrapped.complete = async (request, signal, stream) => {
     const used = reportedTokens(await runs.get(childRunId)) ?? 0;
     if (used >= tokens) {
       const reason = `budget reached (tokens ${used} of ${tokens})`;
       stop(reason);
       throw new HarnessError('blocked', reason);
     }
-    return adapter.complete(request, signal);
+    // DIO-256: a local child's reading sink goes on with its call; no stream, no third argument, as before.
+    return stream ? adapter.complete(request, signal, stream) : adapter.complete(request, signal);
   };
   return wrapped;
 }

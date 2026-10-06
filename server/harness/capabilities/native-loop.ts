@@ -47,7 +47,8 @@ import { cloudSharing, requireCloudSharing } from '../../cloud-sharing.js';
 import { ADAPTER_CAPABILITIES } from '../adapters.js';
 import { REPORT_PATH } from '../approval.js';
 import type { HarnessProcedure } from '../bridge.js';
-import { NativeAgent, type ModelAdapter, type ModelStreamSink } from '../native-agent.js';
+import { NativeAgent, type ModelAdapter, type ModelProgressFor, type ModelStreamSink } from '../native-agent.js';
+import { localPromptProgressSink, type LocalPromptProgressFrame } from '../../engines/local-progress.js';
 import {
   LOOP_INSTRUCTIONS,
   NativeLoop,
@@ -521,7 +522,7 @@ const text = (value: Json | undefined, key: string): string | null => {
  */
 const FIXTURE_CHUNK = 5;
 function streamed(stream: ModelStreamSink | undefined, result: ModelResult): ModelResult {
-  if (stream && result.response.type === 'final')
+  if (stream?.onDelta && result.response.type === 'final')
     for (let at = 0; at < result.response.text.length; at += FIXTURE_CHUNK)
       stream.onDelta(result.response.text.slice(at, at + FIXTURE_CHUNK));
   return result;
@@ -755,6 +756,18 @@ const ACTIVE = ['queued', 'running', 'waiting'];
 export const CHILD_CAPABILITIES: readonly string[] = [NATIVE_LOOP_DELEGATE_CAPABILITY, TEAM_WORKER_CAPABILITY, TEAM_ADVISOR_CAPABILITY];
 const PARENT_STOPPED = 'the loop that handed it this sub-task was stopped';
 
+/** DIO-256: who in a loop is reading: its lead, or one of its children by role. */
+export type LoopReadingSeat = 'lead' | 'worker' | 'advisor' | 'delegate';
+/**
+ * A loop call's reading counters as `/api/events` carries them (`engine-prompt-progress`). The
+ * request is the loop's session and the run is its root, as a Work run's frames name its session
+ * and run; `childRunId` and `seat` say who reads, and the step, attempt and fence are that call's.
+ */
+export interface LoopPromptProgressFrame extends LocalPromptProgressFrame {
+  childRunId: string | null;
+  seat: LoopReadingSeat;
+}
+
 export function createLoopProcedure(deps: {
   store: Store;
   runs: RunService;
@@ -819,6 +832,29 @@ export function createLoopProcedure(deps: {
       await paidWorkers({ route: lead.route, projectId: root.projectId, rootJobId: lead.rootJobId ?? root.id });
     }
     return admitted;
+  };
+  /**
+   * DIO-256: the local model's reading counters for one of a loop's calls, on the stream the
+   * console reads (`engine-prompt-progress`, which `/api/events` forwards). Each frame names the
+   * loop by its root (`LoopPromptProgressFrame`) and is published, in order, only while that call's
+   * attempt still owns its lease. A call on any other route gets no sink and is made as before.
+   */
+  const readingFor = (root: HarnessRun, route: unknown, seat: LoopReadingSeat, childRunId: string | null): ModelProgressFor | undefined => {
+    if (route !== LOCAL_MODEL_ROUTE) return undefined;
+    const threadId = loopInput(root).threadId ?? `loop-${root.id}`;
+    return (stepId, step) => {
+      let pending = Promise.resolve();
+      const onPromptProgress = localPromptProgressSink({
+        identity: { projectId: root.projectId, threadId, requestId: root.sessionId ?? root.id, runId: root.id,
+          stepId, attempt: step.attempt, fence: step.fence },
+        signal: step.signal,
+        publish: (frame) => {
+          const framed: LoopPromptProgressFrame = { ...frame, childRunId, seat };
+          pending = pending.then(() => step.publishPreview(() => store.emit('engine-prompt-progress', framed))).catch(() => undefined);
+        },
+      });
+      return { onPromptProgress, finish: () => pending };
+    };
   };
   const adapterFor = async (route: string, request: LoopRouteRequest, stop: AbortSignal, script: () => ModelAdapter) => {
     if (route === LOOP_FIXTURE_ROUTE) return script();
@@ -915,6 +951,8 @@ export function createLoopProcedure(deps: {
     runs,
     ledger,
     localProfile: (model) => deps.localProfile?.(model),
+    progress: async (lead, child, role) =>
+      readingFor(await rootOf(lead), (child.input as { route?: unknown } | null)?.route, role, child.id),
     // A child on the person's own engine is admitted by that engine; every other route as before.
     admit: (route, input) => (isExternalWorkerRoute(route) ? admitWorkerChild(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
@@ -1251,7 +1289,10 @@ export function createLoopProcedure(deps: {
           () => delegateFixtureAdapter(input.task, canWrite),
         );
         driven = true;
-        await new NativeAgent(runs, adapter, registry).run(child.id, owner, input.task, principal, { maxTurns: input.maxTurns });
+        const childId = child.id;
+        const progress = await rootOf(child).then((root) => readingFor(root, input.route, 'delegate', childId), () => undefined);
+        await new NativeAgent(runs, adapter, registry).run(child.id, owner, input.task, principal,
+          { maxTurns: input.maxTurns, ...(progress ? { progress } : {}) });
       } catch {
         // The child's own record says how it ended; the parent observes that record. A child
         // claimed but never driven (its route could not open) is failed here with the reason,
@@ -1512,6 +1553,7 @@ export function createLoopProcedure(deps: {
           window: input.route === LOCAL_MODEL_ROUTE ? localModelWindow(deps.localProfile?.(input.model)) : undefined,
           sources: input.sources,
           stream: deps.stream ?? null,
+          progress: readingFor(run, input.route, 'lead', null) ?? null,
           enterPhase: createTaskPhaseGate({ store, runs, run, owner, principal }),
           checkInCap: () => rootScopes.get(runId)?.scopedLedger?.jobScope?.capMicroUsd ?? null,
         }).run(runId, owner, input.goal, principal);
