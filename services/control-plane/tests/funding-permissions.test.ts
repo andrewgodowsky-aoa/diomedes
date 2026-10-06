@@ -501,7 +501,7 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
       expect(FUNDING_SQL).not.toMatch(new RegExp(`GRANT[^;]*control_plane\.${table}`));
     }
     const runtime = parseGrants(RUNTIME_SQL, 'cp_runtime');
-    // The Worker login marks an inbox event's state (017) and nothing else of it; a customer is never rewritten.
+    // The Worker login marks an inbox event's state (016) and nothing else of it; a customer is never rewritten.
     const updates: Record<string, string[]> = { webhook_inbox: ['processed_at', 'state'], billing_customers: [] };
     for (const table of ['webhook_inbox', 'billing_customers'])
       expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])].sort() })
