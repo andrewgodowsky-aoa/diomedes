@@ -24,6 +24,7 @@ import { recordSchemas } from './domain.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
 import { individualAccountSchema, routingPreferenceSchema, hardRestrictionsSchema, routingScopeKey, type IndividualAccount, type RoutingPreference, type AccountScope, type HardRestrictions } from '../../../shared/routing-policy.js';
 import { creditPriceTableSchema, type CreditPriceTable } from '../../../shared/credit-prices.js';
+import { checkInDefaultsSchema, checkInOverrideSchema, type CheckInDefaults, type CheckInOverride } from '../../../shared/job-check-ins.js';
 
 const like = (query: string) => `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 
@@ -91,6 +92,29 @@ class PostgresCommercialTransaction implements CommercialTransaction {
   async savePriceTable(row: CreditPriceTable) {
     await this.client.query('INSERT INTO control_plane.credit_price_tables(version,published_at,published_by,record) VALUES ($1,$2,$3,$4::jsonb)',
       [row.version, row.publishedAt, row.publishedBy, JSON.stringify(row)]);
+  }
+  async checkInDefaults(version?: number): Promise<CheckInDefaults | undefined> {
+    const result = version === undefined
+      ? await this.client.query('SELECT record FROM control_plane.job_check_in_defaults ORDER BY version DESC LIMIT 1')
+      : await this.client.query('SELECT record FROM control_plane.job_check_in_defaults WHERE version=$1', [version]);
+    return result.rows.length ? checkInDefaultsSchema.parse(result.rows[0].record) : undefined;
+  }
+  async checkInDefaultsHistory(limit: number) {
+    const result = await this.client.query('SELECT record FROM control_plane.job_check_in_defaults ORDER BY version DESC LIMIT $1', [limit]);
+    return result.rows.map((row) => checkInDefaultsSchema.parse(row.record));
+  }
+  async saveCheckInDefaults(row: CheckInDefaults) {
+    await this.client.query('INSERT INTO control_plane.job_check_in_defaults(version,published_at,published_by,record) VALUES ($1,$2,$3,$4::jsonb)',
+      [row.version, row.publishedAt, row.publishedBy, JSON.stringify(row)]);
+  }
+  async checkInOverride(tenantId: string, organizationId: string): Promise<CheckInOverride | undefined> {
+    const result = await this.client.query('SELECT record FROM control_plane.job_check_in_overrides WHERE tenant_id=$1 AND organization_id=$2', [tenantId, organizationId]);
+    return result.rows.length ? checkInOverrideSchema.parse(result.rows[0].record) : undefined;
+  }
+  async saveCheckInOverride(row: CheckInOverride) {
+    await this.client.query(`INSERT INTO control_plane.job_check_in_overrides(tenant_id,organization_id,record,updated_by,updated_at) VALUES ($1,$2,$3::jsonb,$4,$5)
+      ON CONFLICT (tenant_id,organization_id) DO UPDATE SET record=EXCLUDED.record,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
+      [row.tenantId, row.organizationId, JSON.stringify(row), row.updatedBy, row.updatedAt]);
   }
   async individual(id: string) {
     const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND id=$1", [id]);

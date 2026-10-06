@@ -344,8 +344,9 @@ protocol is reserve, mark dispatched, provider call with no transaction open,
 then settle, mark uncertain or cancel. Unsent holds release; sent holds settle
 only from a complete provider usage report or stay uncertain; nothing is
 retried by the service. Children and retries spend inside the root cap; a
-higher cap needs a request and an owner decision. There is no built-in default
-cap: the 20-credit figure is a proposal and must be configured once approved.
+higher cap needs a request and an owner decision, or one Keep going (see
+"Job check-ins" below). A root job's cap starts at the amount its tier checks
+in at: 100, 250 or 500 credits unless the business or staff set another.
 
 The Worker exposes `GET /account/organizations/:id/usage`, which verifies
 membership and then reads the projection, `GET /account/usage`, the signed-in
@@ -662,6 +663,45 @@ written in this repository: the faux cloud and the tests use synthetic values
 
 After deploy, no managed call is served until staff publish the first table.
 Migration 018 applies after 016 and 017: the runner refuses a gap.
+
+## Job check-ins (DIO-221, migration 020, 2026-10-05)
+
+A job is never cut off mid-call or mid-write. A tier's amount (Efficient 100,
+Focused 250, Thorough 500 credits, `JOB_CHECK_IN_CREDITS` in
+`shared/managed-usage.ts`) is how far one job runs before it checks in. The
+cap stays a stop before dispatch: when the next reservation would cross the
+job's current check-in amount the gateway refuses it, with the hold released,
+as `cap_request_required`. The app finishes the step in progress, saves, and
+asks whether to keep going. This replaces the 20, 50 and 100 credit caps.
+
+- The amount a job checks in at is the business's own amount for the tier, else
+  the staff default, else the code default (`resolveCheckIns`,
+  `shared/job-check-ins.ts`). The job opens with that amount and its tier
+  (`funded_jobs.tier`, `capMicroUsd`); a later change moves only jobs opened
+  after it.
+- Staff (`policy.publish`): `GET /ops/job-check-ins` answers `{ defaults,
+  history }`; `POST /ops/job-check-ins/publish` with `{ baseVersion, amounts,
+  note }` publishes version `baseVersion + 1` (201, 409 when stale). Each
+  publish writes one `job-check-ins.published` audit row. Versions are
+  append-only.
+- A business's owners and admins, on the Worker login:
+  `GET` and `POST /account/organizations/:id/job-check-ins` read and set the
+  business's own amounts (a tier set to null uses the default). Each whole
+  number of credits is 1 to 100,000.
+- Keep going: `POST /account/routing/(organization|individual)/:id/check-ins/keep-going`
+  with `{ jobId, atCapMicroUsd }`. It raises that one job's cap by exactly one
+  amount of its own tier, from the cap the person saw, only while the job still
+  has that cap (compare and set), and answers the new cap. A repeat of a raise
+  already made answers the same cap and adds nothing. A request names no amount;
+  a job opened before this migration has no tier and is refused. The raise is
+  finite and recorded, and the pool, the member's monthly limit and the
+  organization funds still apply to every hold after it. Reading the amounts
+  for the desktop is `GET /account/routing/(organization|individual)/:id/check-ins`.
+- The ledger writes only `funded_jobs` cap and generation for a Keep going, so
+  the gateway's grants are unchanged.
+- Migration 020 has no runner number to add: numbers are assigned at merge. The
+  gateway reads the new tables and `funded_jobs.tier`, so apply the migration
+  before deploying the Worker that reads them.
 
 ## Runtime evidence and release
 
