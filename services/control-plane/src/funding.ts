@@ -269,8 +269,8 @@ export interface FundingTransaction {
   /** Insert a request, or record its decision. A request's terms are never rewritten. */
   saveLimitRequest(row: LimitRequestRow): Promise<void>;
   limitRequests(tenantId: string, organizationId: string, filter: { personId?: string; state?: LimitRequestRow['state'] }): Promise<LimitRequestRow[]>;
-  /** The approved requests that add room for this person now: the month's, and the one for this root job. */
-  approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string): Promise<LimitRequestRow[]>;
+  /** The approved requests that add room for this person now: the month's, and the one for this root job when there is one. */
+  approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string | null): Promise<LimitRequestRow[]>;
   /** Which person an attempt was reserved for. Written once, in the reserving transaction. */
   saveAttemptPerson(row: AttemptPersonRow): Promise<void>;
   /**
@@ -279,7 +279,7 @@ export interface FundingTransaction {
    * ceiling, settled work at cost, released and written-off work not at all. A purchased hold counts as
    * held only while its lease runs past `at`, and a settled one counts its recorded debit, never what was absorbed.
    */
-  memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]>;
+  memberUsage(tenantId: string, organizationId: string, period: Pick<CreditPeriodRow, 'periodId' | 'startsAt' | 'endsAt'>, personId: string | null, at: string): Promise<MemberUsageRow[]>;
   periodTotals(tenantId: string, organizationId: string, periodId: string): Promise<PeriodTotals>;
   /**
    * Purchased credits, and what is held or settled against them: funded attempts' top-up holds
@@ -737,13 +737,18 @@ export class FundingService {
   /**
    * Hold some of the credits a business bought outright, for a person who asked.
    *
-   * Top-up only: this never reads the month, never takes a period or a job, and never draws on the
-   * included grant. The balance it decides on is the recorded top-ups less what is already held or
-   * settled against them, read under the organization lock; no figure in the request is a balance.
+   * Top-up only: this never takes a period or a job, and never draws on the included grant. The
+   * balance it decides on is the recorded top-ups less what is already held or settled against them,
+   * read under the organization lock; no figure in the request is a balance. The month is read only for
+   * the member's own limit: with `role`, a hold is held to it under the same lock, exactly as a funded
+   * step is, so past the limit it needs an approval that lets the member use bought credits.
    * Idempotent by hold id: a retry with the same terms finds the hold, a different one is refused.
    */
-  async holdPurchased(input: { tenantId: string; organizationId: string; holdId: string; personId: string; amountMicroUsd: MicroUsd; requestDigest: string }):
-    Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
+  async holdPurchased(input: {
+    tenantId: string; organizationId: string; holdId: string; personId: string; amountMicroUsd: MicroUsd; requestDigest: string;
+    /** The person's role in the business, from the membership just verified; never from a request. */
+    role?: MemberRole;
+  }): Promise<{ hold: TopUpHoldRow; balance: PurchasedBalance }> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
     const holdId = requireId(input.holdId, 'hold');
@@ -752,6 +757,8 @@ export class FundingService {
     const digest = typeof input.requestDigest === 'string' ? input.requestDigest : '';
     if (!digest || digest.length > 200) throw new FundingError(422, 'A hold names the request it is for.', 'invalid_request');
     if (amount > MAX_MONEY_MICRO_USD) throw new FundingError(422, 'That amount is too large to hold.', 'invalid_amount');
+    const role = input.role ?? null;
+    if (role !== null && !MEMBER_ROLES.includes(role)) throw new FundingError(422, 'A member has an owner, admin or member role.', 'invalid_request');
     const at = this.at();
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
@@ -770,6 +777,11 @@ export class FundingService {
         throw new FundingError(402, 'No bought usage is free to hold. Included usage can’t be reserved.', 'no_purchased_usage');
       if (amount > available)
         throw new FundingError(402, `This needs ${formatCredits(amount)} credits and ${formatCredits(available)} bought credits are free to hold.`, 'insufficient_purchased_usage');
+      if (role !== null) {
+        const periodId = periodIdFor(at);
+        const month = (await tx.period(tenantId, organizationId, periodId)) ?? { periodId, ...monthBounds(periodId), planId: null, grantedMicroUsd: null };
+        await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId: null, month, member: { personId, role }, at, maxMicroUsd: amount, purchasedMicroUsd: amount });
+      }
       const hold: TopUpHoldRow = { tenantId, organizationId, holdId, personId, requestDigest: digest, amountMicroUsd: amount, debitMicroUsd: micro(0), absorbedMicroUsd: micro(0), state: 'held', createdAt: at, resolvedAt: null, leaseUntil: leaseFrom(at), releasedBy: null };
       await tx.saveTopUpHold(hold);
       return { hold, balance: balanceOf({ ...totals, heldMicroUsd: sumMoney([totals.heldMicroUsd, amount]) }) };
@@ -1020,7 +1032,7 @@ export class FundingService {
       // The shared pool has the funds and the job has the room. Now the member's own monthly limit,
       // read in the same transaction that holds the credits, so two steps by one member cannot both
       // slip under it. A refusal throws and rolls everything back: nothing is held and nothing is sent.
-      if (limitedMember) await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId, period, member: limitedMember, at, maxMicroUsd: input.maxMicroUsd, purchasedMicroUsd: decision.topUpHoldMicroUsd });
+      if (limitedMember) await this.enforceMemberLimit(tx, { tenantId, organizationId, rootJobId, month: period, member: limitedMember, at, maxMicroUsd: input.maxMicroUsd, purchasedMicroUsd: decision.topUpHoldMicroUsd });
       if (companyCeiling !== null) {
         await tx.lockCompany();
         if (sumMoney([await tx.companySpend(), input.maxMicroUsd]) > companyCeiling)
@@ -1039,25 +1051,30 @@ export class FundingService {
   }
 
   /**
-   * A member's monthly limit, checked for one reservation. The limit is the member's own setting, else
-   * their role's, else the plan default (`shared/credit-allotments.ts`); an owner or admin has none
-   * unless an owner set one. The member's usage is everything they hold or have settled this period, from
-   * included and bought credits, and the purchased holds they asked for count too. Approvals add room
-   * for this month and for this one job, and a step that would draw bought credits past the limit needs
-   * an approval that allows them.
+   * A member's monthly limit, checked for one reservation or one hold of bought credits. The limit is the
+   * member's own setting, else their role's, else the plan default (`shared/credit-allotments.ts`); an
+   * owner or admin has none unless an owner set one. The member's usage is everything they hold or have
+   * settled this period, from included and bought credits, and the purchased holds they asked for count
+   * too. Approvals add room for this month and for this one job, and a step that would draw bought
+   * credits past the limit needs an approval that allows them.
+   *
+   * `month` is the period's recorded grant. A hold of bought credits can come before anything has
+   * recorded this month's grant (the gateway records it on the month's first funded call); then the plan
+   * default, which is that grant, is not known, and only a limit set for the person or their role applies.
    */
   private async enforceMemberLimit(tx: FundingTransaction, input: {
-    tenantId: string; organizationId: string; rootJobId: string; period: CreditPeriodRow; at: string;
+    tenantId: string; organizationId: string; rootJobId: string | null; at: string;
+    month: Pick<CreditPeriodRow, 'periodId' | 'startsAt' | 'endsAt'> & { planId: string | null; grantedMicroUsd: MicroUsd | null };
     member: { personId: string; role: MemberRole }; maxMicroUsd: MicroUsd; purchasedMicroUsd: MicroUsd;
   }): Promise<void> {
-    const { tenantId, organizationId, period, member, at } = input;
+    const { tenantId, organizationId, month, member, at } = input;
     const limit = effectiveLimit({
       role: member.role, personId: member.personId, settings: await tx.memberLimits(tenantId, organizationId),
-      planId: period.planId, monthlyGrantMicroUsd: period.grantedMicroUsd,
+      planId: month.planId ?? '', monthlyGrantMicroUsd: month.grantedMicroUsd ?? micro(0),
     });
-    if (limit.limitMicroUsd === null) return;
-    const usage = (await tx.memberUsage(tenantId, organizationId, period, member.personId, at))[0];
-    const approved = await tx.approvedAllowances(tenantId, organizationId, member.personId, period.periodId, input.rootJobId);
+    if (limit.limitMicroUsd === null || (month.grantedMicroUsd === null && limit.source === 'default')) return;
+    const usage = (await tx.memberUsage(tenantId, organizationId, month, member.personId, at))[0];
+    const approved = await tx.approvedAllowances(tenantId, organizationId, member.personId, month.periodId, input.rootJobId);
     const allowance: Allowance = {
       extraMicroUsd: sumMoney(approved.map((row) => row.extraMicroUsd ?? micro(0))),
       allowPurchased: approved.some((row) => row.allowPurchased),
@@ -1472,7 +1489,7 @@ export class PurchasedUsageService {
     const snapshot = await this.accounts.membership(token, organizationId);
     return holdAnswer(await this.funding.holdPurchased({
       tenantId: snapshot.organization.tenantId, organizationId: snapshot.organization.id, personId: snapshot.person.id,
-      holdId: input.holdId, amountMicroUsd: micro(input.amountMicroUsd), requestDigest: input.requestDigest,
+      role: snapshot.membership.role, holdId: input.holdId, amountMicroUsd: micro(input.amountMicroUsd), requestDigest: input.requestDigest,
     }));
   }
 

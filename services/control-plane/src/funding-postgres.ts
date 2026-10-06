@@ -315,7 +315,7 @@ export class PostgresFundingTransaction implements FundingTransaction {
       [tenantId, organizationId, filter.personId ?? null, filter.state ?? null]);
     return result.rows.map(limitRequestFrom);
   }
-  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string): Promise<LimitRequestRow[]> {
+  async approvedAllowances(tenantId: string, organizationId: string, personId: string, periodId: string, rootJobId: string | null): Promise<LimitRequestRow[]> {
     const result = await this.client.query(`SELECT * FROM control_plane.credit_limit_requests WHERE tenant_id=$1 AND organization_id=$2 AND scope_kind='person' AND person_id=$3 AND state='approved'
       AND ((kind='month' AND period_id=$4) OR (kind='job' AND root_job_id=$5))`, [tenantId, organizationId, personId, periodId, rootJobId]);
     return result.rows.map(limitRequestFrom);
@@ -324,7 +324,7 @@ export class PostgresFundingTransaction implements FundingTransaction {
     await this.client.query('INSERT INTO control_plane.credit_attempt_people(tenant_id,reservation_id,organization_id,person_id) VALUES ($1,$2,$3,$4)',
       [row.tenantId, row.attemptId, row.organizationId, row.personId]);
   }
-  async memberUsage(tenantId: string, organizationId: string, period: CreditPeriodRow, personId: string | null, at: string): Promise<MemberUsageRow[]> {
+  async memberUsage(tenantId: string, organizationId: string, period: Pick<CreditPeriodRow, 'periodId' | 'startsAt' | 'endsAt'>, personId: string | null, at: string): Promise<MemberUsageRow[]> {
     const result = await this.client.query(`SELECT person_id,
         COALESCE(SUM(included),0) AS included, COALESCE(SUM(purchased),0) AS purchased, COALESCE(SUM(held),0) AS held
       FROM (

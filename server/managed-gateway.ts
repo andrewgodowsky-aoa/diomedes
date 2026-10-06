@@ -37,6 +37,7 @@ import {
   type Reservation,
 } from '../shared/managed-usage.js';
 import type { StaffRole } from '../shared/access.js';
+import { MEMBER_LIMIT_REACHED } from '../shared/credit-allotments.js';
 import { NO_ENTITLEMENT_REASON, type EntitlementView } from '../shared/workspaces.js';
 import { ApiError } from './paths.js';
 import type { PurchasedBalanceAnswer, PurchasedHoldAnswer } from './accounts/client.js';
@@ -108,6 +109,8 @@ export interface PurchasedUsage {
 export const PURCHASED_REFUSAL_STATUS: Readonly<Record<string, number>> = Object.freeze({
   no_purchased_usage: 403,
   insufficient_purchased_usage: 409,
+  // The member's own monthly limit, which bought usage counts toward like any other.
+  [MEMBER_LIMIT_REACHED]: 409,
   hold_conflict: 409,
   hold_closed: 409,
   purchased_hold_invalid: 400,

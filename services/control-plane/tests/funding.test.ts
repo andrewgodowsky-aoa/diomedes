@@ -390,6 +390,35 @@ describe('top-up', () => {
     expect(after.topUp.availableMicroUsd).toBe(c(46));
   });
 
+  it('carries bought credits into the next months, while a month’s unused included credits end with it', async () => {
+    const h = harness();
+    await h.allocate('2026-09');
+    await h.service.recordTopUp({ tenantId: T, organizationId: O, topUpId: 'topup_1', amountMicroUsd: c(50), provider: 'stripe', sourceEventId: 'evt_topup_1' });
+    await h.open();
+    await h.reserve('september', 10);
+    await h.service.markDispatched(h.ref('september'));
+    await h.settle('september', 10);
+
+    h.setClock('2026-10-05T12:00:00.000Z');
+    await h.allocate('2026-10');
+    const october = await h.usage();
+    // September's 990 unused included credits are gone; the 50 bought in September are all still there.
+    expect(october).toMatchObject({ periodId: '2026-10', availableMicroUsd: c(1000), usedPercent: 0 });
+    expect(october.topUp.availableMicroUsd).toBe(c(50));
+    // With October's month down to 5, a 12-credit step takes 5 from the month and 7 from what was bought.
+    await h.service.recordCorrection({ tenantId: T, organizationId: O, adjustmentId: 'adj_1', periodId: '2026-10', direction: 'withdraw', amountMicroUsd: c(995), attemptRef: null, note: 'Test.' });
+    await h.open('job_october');
+    expect(await h.reserve('october', 12, { rootJobId: 'job_october' })).toMatchObject({ periodId: '2026-10', monthlyHoldMicroUsd: c(5), topUpHoldMicroUsd: c(7) });
+    await h.service.markDispatched(h.ref('october'));
+    await h.settle('october', 12);
+
+    h.setClock('2026-11-03T12:00:00.000Z');
+    await h.allocate('2026-11');
+    const november = await h.usage();
+    expect(november).toMatchObject({ periodId: '2026-11', availableMicroUsd: c(1000) });
+    expect(november.topUp.availableMicroUsd).toBe(c(43));
+  });
+
   it('a duplicate top-up event records once', async () => {
     const h = harness();
     await h.allocate('2026-09');

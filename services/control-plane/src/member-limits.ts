@@ -1,11 +1,11 @@
 /**
  * Per-member monthly credit limits, raise requests and who used what (migration 014).
  *
- * The control plane is the one authority. `FundingService.reserve` enforces a member's limit under
- * the organization lock, in the same transaction that holds the credits, so no desktop can skip it
- * and no two concurrent steps can both slip under it. This module holds everything else a limit
- * needs: the settings an owner or admin changes, the member's ask for more, an owner's or admin's
- * answer, and the usage reads. The pure rules are the shared contract in
+ * The control plane is the one authority. `FundingService.reserve` and `FundingService.holdPurchased`
+ * enforce a member's limit under the organization lock, in the same transaction that holds the credits,
+ * so no desktop can skip it and no two concurrent steps can both slip under it. This module holds
+ * everything else a limit needs: the settings an owner or admin changes, the member's ask for more, an
+ * owner's or admin's answer, and the usage reads. The pure rules are the shared contract in
  * `shared/credit-allotments.ts`.
  *
  * Two classes. `MemberLimits` takes verified ids and a verified role and runs the funding

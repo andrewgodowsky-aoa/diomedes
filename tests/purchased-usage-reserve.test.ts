@@ -205,6 +205,26 @@ describe('a subscriber reserving at the allowance routes', () => {
     expect(local().pendingMicroUsd).toBe(0);
   });
 
+  test('a member is held to their own monthly limit on bought usage, refused in the service’s words, and nothing is held', async () => {
+    await buy(100);
+    const owner = await tokenFor(DEMO_ACCOUNTS.owner.email);
+    const limited = await cloud.handle(new Request(`http://faux.local/account/organizations/${ORG}/credit-limits`, {
+      method: 'POST', headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: { kind: 'role', role: 'member' }, mode: 'limit', limitMicroUsd: creditAmount(10) }),
+    }));
+    expect(limited.status).toBe(200);
+    await mount(await signedIn(DEMO_ACCOUNTS.employee.email));
+    const answer = await post('admit', ask({ maxMicroUsd: creditAmount(40) }));
+    expect(answer.status).toBe(409);
+    expect(answer.data.code).toBe('member_limit_reached');
+    expect(answer.data.error).toMatch(/An owner or admin can approve more\.$/);
+    expect(cloudHolds()).toEqual([]);
+    expect(local().pendingMicroUsd).toBe(0);
+    // What fits under the limit is held as before.
+    expect((await post('admit', ask({ reservationId: 'res_2', maxMicroUsd: creditAmount(10) }))).status).toBe(200);
+    expect(cloudHolds()).toHaveLength(1);
+  });
+
   test('flags in the body are only words: they cannot make a person staff, widen the balance or skip the check', async () => {
     await buy(30);
     await mount(await signedIn(DEMO_ACCOUNTS.employee.email));
