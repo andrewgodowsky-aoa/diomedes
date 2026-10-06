@@ -3,10 +3,12 @@ import type { CapWarningCopy } from '../../shared/job-caps';
 import { Button, Modal } from '../components';
 
 /**
- * The job-cap decision, before a send or after a job stopped at its cap. It is
- * an alert dialog: the modal top layer keeps focus inside it, Escape is Cancel,
- * and nothing is sent until one of the three is chosen. Cancel takes focus
- * first because it is the choice that spends nothing.
+ * The job-cap decision, before a send or at a job's check-in. It is an alert
+ * dialog: the modal top layer keeps focus inside it, Escape is the choice that
+ * spends nothing, and nothing is sent until one is chosen. That choice takes
+ * focus first. Before a send it reads Cancel, Go over this once and, where a
+ * higher tier exists, Use that tier. At a check-in it reads Stop here and
+ * Keep going, with no tier to switch to: the job has run and is asking.
  */
 export function JobCapWarning({
   copy,
@@ -27,16 +29,18 @@ export function JobCapWarning({
   const bodyId = useId();
   return (
     <Modal title={copy.title} role="alertdialog" describedBy={bodyId} inline={inline} onClose={onCancel}>
-      <p id={bodyId} className="prose">
-        {copy.body}
-      </p>
-      <p className="caption">{copy.raise}</p>
+      {copy.body && (
+        <p id={bodyId} className="prose">
+          {copy.body}
+        </p>
+      )}
+      <p id={copy.body ? undefined : bodyId} className="caption">{copy.raise}</p>
       <div className="dialog-actions">
         <Button autoFocus disabled={busy} onClick={onCancel}>
-          Cancel
+          {copy.actions?.cancel ?? 'Cancel'}
         </Button>
         <Button disabled={busy} onClick={onGoOver}>
-          Go over this once
+          {copy.actions?.goOver ?? 'Go over this once'}
         </Button>
         {copy.upgrade && (
           <Button tone="primary" disabled={busy} onClick={onUpgrade}>

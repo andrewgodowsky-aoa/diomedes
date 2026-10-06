@@ -1,20 +1,19 @@
 /**
- * The job-cap routes: the pre-send estimate, the one-job cap raise a person
- * agrees to, and the status a stopped job reports.
+ * The job check-in routes: the pre-send estimate, the one-job raise a person agrees
+ * to (Keep going), and the status a job that stopped to check in reports.
  *
  * Every number here is the host's. The estimate is computed from what the host
  * would send (its own route, model, declared prices, limits and step cap), the
- * tier is read from the thread, and a raise is sized by `oneJobRaise` from the
- * host's own estimate or the recorded stop. A request body names a job and a
- * message, never a cap or an amount.
+ * tier is read from the thread, the check-in amount is the one the account service
+ * resolved for the business, and a raise is exactly one more amount (`oneJobRaise`).
+ * A request body names a job and a message, never a cap or an amount.
  */
 import type { Express, Request, Response } from 'express';
 import {
-  approvedJobCap,
   capWarningCopy,
+  checkInCopy,
   estimateJob,
   oneJobRaise,
-  overrunCopy,
   worstCaseNote,
   type JobEstimate,
   type JobEstimateView,
@@ -23,7 +22,7 @@ import {
   type JobStatusView,
   type JobTier,
 } from '../shared/job-caps.js';
-import type { MicroUsd } from '../shared/managed-usage.js';
+import { defaultCheckIn, type MicroUsd } from '../shared/managed-usage.js';
 export type { JobEstimateView, JobStatusView } from '../shared/job-caps.js';
 import type { Mode } from '../shared/types.js';
 import { modeOf } from './modes.js';
@@ -58,6 +57,13 @@ export interface JobCapRouteDeps {
   teamWakePlan(projectId: string, slotId: string): Promise<JobPlan & { threadId: string }>;
   /** Wake the member exactly as the team wake route does. */
   wake(projectId: string, slotId: string): Promise<unknown>;
+  /**
+   * Tell the account service the person chose Keep going on a job that stopped at its check-in, so its
+   * own cap for that job rises by one more amount. The account service is the authority on holds: a
+   * raise it never heard of would be refused at the next hold. Absent where no account service meters
+   * the work; a job it does not know is skipped, never an error.
+   */
+  keepGoing?(projectId: string, jobId: string, stop: { capMicroUsd: MicroUsd }): Promise<void>;
 }
 
 /** A route's declared prices as the estimate reads them: the dearer band of each, never a discount. */
@@ -71,15 +77,16 @@ export function jobRatesOf(card: ModelRateCard | null): JobRates | null {
 const neededOf = (estimate: JobEstimate): MicroUsd | null =>
   estimate.kind === 'estimate' ? estimate.likelyMicroUsd : null;
 
-export function estimateView(tier: JobTier, plan: JobPlan): JobEstimateView {
+export function estimateView(tier: JobTier, plan: JobPlan, checkInMicroUsd: MicroUsd = defaultCheckIn(tier)): JobEstimateView {
   const estimate = estimateJob({
     tier,
+    capMicroUsd: checkInMicroUsd,
     metering: plan.metering,
     rates: plan.rates,
     shape: plan.shape,
     ...(plan.reason ? { reason: plan.reason } : {}),
   });
-  const raisedToMicroUsd = oneJobRaise({ tier, capMicroUsd: approvedJobCap(tier), neededMicroUsd: neededOf(estimate) });
+  const raisedToMicroUsd = oneJobRaise({ capMicroUsd: checkInMicroUsd, checkInMicroUsd });
   return {
     estimate,
     warning: estimate.warn ? capWarningCopy(estimate, raisedToMicroUsd) : null,
@@ -88,12 +95,13 @@ export function estimateView(tier: JobTier, plan: JobPlan): JobEstimateView {
   };
 }
 
-export function statusView(record: JobRecord): JobStatusView {
+export function statusView(record: JobRecord, checkInMicroUsd: MicroUsd = defaultCheckIn(record.tier)): JobStatusView {
   const stop = record.stop;
   return {
     jobId: record.jobId,
     tier: record.tier,
     capMicroUsd: capOf(record),
+    checkInMicroUsd,
     raised: record.raise !== null,
     stop: stop
       ? {
@@ -103,15 +111,7 @@ export function statusView(record: JobRecord): JobStatusView {
           consumed: stop.consumedBy !== null,
         }
       : null,
-    overrun:
-      stop && stop.consumedBy === null
-        ? overrunCopy({
-            tier: record.tier,
-            capMicroUsd: stop.capMicroUsd,
-            usedMicroUsd: stop.usedMicroUsd,
-            raisedToMicroUsd: oneJobRaise({ tier: record.tier, capMicroUsd: stop.capMicroUsd, neededMicroUsd: stop.neededMicroUsd }),
-          })
-        : null,
+    overrun: stop && stop.consumedBy === null ? checkInCopy({ capMicroUsd: stop.capMicroUsd, checkInMicroUsd }) : null,
   };
 }
 
@@ -171,7 +171,8 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
       const projectId = String(req.params.id);
       const threadId = String(req.params.threadId);
       const plan = await deps.messagePlan(projectId, threadId, parseDraft(body));
-      return estimateView(caps.tierFor(projectId, plan.threadId), plan);
+      const tier = caps.tierFor(projectId, plan.threadId);
+      return estimateView(tier, plan, await caps.checkInFor(projectId, tier));
     }),
   );
 
@@ -190,11 +191,16 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
       const jobId = String(req.params.jobId);
       if (body.fromJobId !== undefined) {
         if (typeof body.fromJobId !== 'string') throw new ApiError(400, 'Name the job that stopped.');
+        const stopped = caps.get(projectId, body.fromJobId);
+        // The account service raises its own cap for the job first: it decides every hold, so a raise
+        // only this computer knew of would be refused at the next step. A repeat is the same raise.
+        if (stopped?.stop && deps.keepGoing) await deps.keepGoing(projectId, body.fromJobId, { capMicroUsd: stopped.stop.capMicroUsd });
         const record = await caps.raiseAfterStop({ projectId, jobId, fromJobId: body.fromJobId, threadId, by: LOCAL_AGREEMENT });
-        return statusView(record);
+        return statusView(record, await caps.checkInFor(projectId, record.tier));
       }
       const plan = await deps.messagePlan(projectId, threadId, parseDraft(body));
-      const view = estimateView(caps.tierFor(projectId, plan.threadId), plan);
+      const tier = caps.tierFor(projectId, plan.threadId);
+      const view = estimateView(tier, plan, await caps.checkInFor(projectId, tier));
       if (!view.estimate.warn)
         throw new ApiError(409, 'This job is not expected to pass its cap, so there is nothing to go over.', {
           code: 'no_warning',
@@ -206,7 +212,7 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
         neededMicroUsd: neededOf(view.estimate),
         by: LOCAL_AGREEMENT,
       });
-      return statusView(record);
+      return statusView(record, await caps.checkInFor(projectId, record.tier));
     }),
   );
 
@@ -216,7 +222,7 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
     route(async (req) => {
       const record = caps.get(String(req.params.id), String(req.params.jobId));
       if (!record) throw new ApiError(404, 'This job has not started.', { code: 'unknown_job' });
-      return statusView(record);
+      return statusView(record, await caps.checkInFor(String(req.params.id), record.tier));
     }),
   );
 
@@ -227,7 +233,8 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
       refuseClientAmounts(plain(req.body ?? {}));
       const projectId = String(req.params.id);
       const plan = await deps.teamWakePlan(projectId, String(req.params.slot));
-      return estimateView(caps.tierFor(projectId, plan.threadId), plan);
+      const tier = caps.tierFor(projectId, plan.threadId);
+      return estimateView(tier, plan, await caps.checkInFor(projectId, tier));
     }),
   );
 
@@ -243,12 +250,13 @@ export function mountJobCapRoutes(app: Express, deps: JobCapRouteDeps) {
       const projectId = String(req.params.id);
       const slotId = String(req.params.slot);
       const plan = await deps.teamWakePlan(projectId, slotId);
-      const view = estimateView(caps.tierFor(projectId, plan.threadId), plan);
+      const tier = caps.tierFor(projectId, plan.threadId);
+      const view = estimateView(tier, plan, await caps.checkInFor(projectId, tier));
       if (!view.estimate.warn)
         throw new ApiError(409, 'This wake is not expected to pass its cap, so there is nothing to go over.', {
           code: 'no_warning',
         });
-      const ticket = caps.arm({ projectId, threadId: plan.threadId, neededMicroUsd: neededOf(view.estimate), by: LOCAL_AGREEMENT });
+      const ticket = await caps.arm({ projectId, threadId: plan.threadId, neededMicroUsd: neededOf(view.estimate), by: LOCAL_AGREEMENT });
       try {
         return await deps.wake(projectId, slotId);
       } catch (error) {
