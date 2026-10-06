@@ -124,8 +124,10 @@ describe('a model-API conversation: code fixes, then one rewrite of the flagged 
   type Item = Record<string, unknown>;
   let seen: { input: Item[] }[];
   let reply: (developer: string, user: string) => string;
+  // The last item with the role: the host reads a message's attached files first, after an
+  // opening user line (DIO-247.N4), so the person's message is the last user item.
   const text = (body: { input: Item[] }, role: string) => {
-    const content = body.input.find((item) => item.role === role)?.content;
+    const content = body.input.filter((item) => item.role === role).at(-1)?.content;
     return typeof content === 'string'
       ? content
       : Array.isArray(content)
