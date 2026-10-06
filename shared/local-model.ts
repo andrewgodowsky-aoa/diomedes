@@ -282,6 +282,10 @@ export const localKilobytes = (bytes: number) => `${Math.floor(bytes / 1_000).to
 export const localSourceRefusal = (verb: 'Select no more than' | 'Choose less than', bytes: number) =>
   `${verb} ${localKilobytes(bytes)} of source text for this local model profile.`;
 
+/** What a reader on the local model is told when a file read was cut short, with both sizes. */
+export const localReadCutNote = (shown: number, total: number) =>
+  `This read stopped at ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} characters. The rest of the file wasn’t read.`;
+
 /** Rates affect time only; they do not qualify other tasks or widen their input room. */
 export function localCallCeiling(profile: Pick<LocalModelProfile, 'measuredRates' | 'callTimeoutMs'>,
   promptTokens: number, outputTokens: number): number {

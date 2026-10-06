@@ -75,7 +75,7 @@ import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWork
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
 import type { EscalationRole } from '../../../shared/escalation-controls.js';
 import type { RoleTier } from '../../../shared/escalation-roles.js';
-import { LOCAL_MODEL_ROUTE, localContextBudget, type LocalModelProfile } from '../../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localContextBudget, localReadCutNote, type LocalModelProfile } from '../../../shared/local-model.js';
 import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
@@ -181,6 +181,8 @@ const READ_OUTPUT = z.union([
     bytes: z.number().int().nonnegative(),
     text: z.string(),
     truncated: z.boolean(),
+    /** A reader on the local model is told when a read was cut, with both sizes (DIO-255). */
+    note: z.string().optional(),
   }),
 ]) as unknown as z.ZodType<Json>;
 
@@ -225,13 +227,16 @@ export async function readFor(
     return { path, refused: error instanceof Error ? error.message : 'The path guard refused this file.' };
   }
   if (text === null) return { path, found: false };
+  const cut = text.length > maxReadChars;
   return {
     path,
     found: true,
     sha: hash(text),
     bytes: Buffer.byteLength(text),
-    text: text.length > maxReadChars ? text.slice(0, maxReadChars) : text,
-    truncated: text.length > maxReadChars,
+    text: cut ? text.slice(0, maxReadChars) : text,
+    truncated: cut,
+    // DIO-255: a reader on the local model is told a cut read was cut. Any other reader's is as before.
+    ...(cut && localProfile ? { note: localReadCutNote(maxReadChars, text.length) } : {}),
   };
 }
 
@@ -443,6 +448,8 @@ export function delegateRegistry(
   projectId: string,
   route: string | readonly string[],
   scope: readonly string[] | null = null,
+  /** The child's own local profile, when it runs on the local model: its reads follow that allowance. */
+  localProfile?: LocalModelProfile,
 ): ToolRegistry {
   const registry = new ToolRegistry();
   const read = {
@@ -466,10 +473,12 @@ export function delegateRegistry(
   registry.register({
     ...read,
     name: 'read_project_file',
+    // A local child's read may be as long as its profile allows, past the default serialization limit.
+    ...(localProfile ? { limits: { maxOutputBytes: 8 * 1024 * 1024 } } : {}),
     outputSchema: READ_OUTPUT,
     description: 'Read one project file as text, by its path.',
     schema: z.strictObject({ path: z.string().trim().min(1).max(400) }),
-    execute: ({ input }) => readFor(store, projectId, route, input.path, scope),
+    execute: ({ input }) => readFor(store, projectId, route, input.path, scope, localProfile),
   });
   return registry;
 }
@@ -886,6 +895,21 @@ export function createLoopProcedure(deps: {
   const changeSets = new ChangeSetService(store, sandboxes);
   // H14: a lead's workers and advisor, and the append-only record of every handoff.
   const ledger = new HandoffLedger(store.dataDir);
+  /** A child's own local profile, when its role runs on the local model; any other child reads as before. */
+  const localReader = (child: { route: string; model: unknown }) =>
+    child.route === LOCAL_MODEL_ROUTE ? deps.localProfile?.(child.model) : undefined;
+  /**
+   * DIO-255: how a child on the local model reads in its sandbox. With every route its reads reach on
+   * the local model, up to its profile's allowance; reading for a cloud lead, the sandbox's fixed cap.
+   * Either way a cut read says so. Undefined for any other child: its reads are as before.
+   */
+  const sandboxRead = (child: { route: string; model: unknown }, routes: readonly string[]) => {
+    const profile = localReader(child);
+    if (!profile) return undefined;
+    return routes.every((route) => route === LOCAL_MODEL_ROUTE)
+      ? { maxChars: localContextBudget(profile).sourceChars, note: true }
+      : { note: true };
+  };
   const team = createTeamPort({
     store,
     runs,
@@ -894,9 +918,9 @@ export function createLoopProcedure(deps: {
     admit: (route, input) => (isExternalWorkerRoute(route) ? admitWorkerChild(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
     heartbeat: (runId, owner) => heartbeat(runId, owner),
-    registry: (projectId, routes, scope) => delegateRegistry(store, projectId, routes, scope),
+    registry: (projectId, routes, scope, child) => delegateRegistry(store, projectId, routes, scope, localReader(child)),
     // Decision 2026-09-24: a worker works in its own sandbox and hands back a change set.
-    sandbox: async ({ lead, childRunId, routes, scope, canWrite, create }) => {
+    sandbox: async ({ lead, childRunId, routes, scope, canWrite, create, child }) => {
       let manifest = await sandboxes.read(lead.projectId, childRunId);
       if (!manifest || manifest.state === 'creating') {
         if (!create && !manifest) return { refusal: 'Its sandbox is no longer there, so it was stopped.' };
@@ -917,7 +941,8 @@ export function createLoopProcedure(deps: {
         }
       }
       if (manifest.state !== 'open') return { refusal: 'Its sandbox was already collected.' };
-      return { registry: sandboxes.registry(manifest, { readable: readableFor(lead.projectId, routes), write: canWrite }) };
+      return { registry: sandboxes.registry(manifest, { readable: readableFor(lead.projectId, routes), write: canWrite,
+        read: sandboxRead(child, routes) }) };
     },
     settle: async ({ lead, child, handoffId }) => {
       const manifest = await sandboxes.read(lead.projectId, child.id);
@@ -1264,7 +1289,8 @@ export function createLoopProcedure(deps: {
    * this delegate's own copy.
    */
   const childRegistry = (manifest: SandboxManifest, routes: readonly string[], canWrite: boolean, spec: DelegateSpec): ToolRegistry => {
-    const registry = sandboxes.registry(manifest, { readable: readableFor(manifest.projectId, routes), write: canWrite });
+    const registry = sandboxes.registry(manifest, { readable: readableFor(manifest.projectId, routes), write: canWrite,
+      read: sandboxRead(spec.target, routes) });
     if (spec.depth >= LOOP_LIMITS.delegationDepth) return registry;
     const units = NESTED_UNITS;
     registry.register({

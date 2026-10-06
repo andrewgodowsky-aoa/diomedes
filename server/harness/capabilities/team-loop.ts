@@ -231,6 +231,12 @@ export interface TeamRouteRequest {
   readonly accountDigest?: string | null;
 }
 
+/** The route and model a child's role runs on, as the team was admitted. */
+export interface TeamChildRoute {
+  readonly route: string;
+  readonly model: string | null;
+}
+
 export interface TeamPortDeps {
   readonly store: Store;
   readonly runs: RunService;
@@ -249,8 +255,11 @@ export interface TeamPortDeps {
   ): Promise<{ model: string | null; accountRoute: string | null; accountDigest?: string | null }>;
   adapterFor(route: string, request: TeamRouteRequest, stop: AbortSignal, script: () => ModelAdapter): Promise<ModelAdapter>;
   heartbeat(runId: string, owner: string): () => void;
-  /** Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer. */
-  registry(projectId: string, routes: readonly string[], scope: readonly string[] | null): ToolRegistry;
+  /**
+   * Bound to every route the child's reads can reach: its own, and its lead's, which receives its answer.
+   * `child` is the route and model the child's role runs on: a child on the local model reads by its profile.
+   */
+  registry(projectId: string, routes: readonly string[], scope: readonly string[] | null, child: TeamChildRoute): ToolRegistry;
   /**
    * A worker's sandbox (decision 2026-09-24): its copy of its scope and the tools rooted at it,
    * made once per child id and found again after a restart. Absent: workers read the project.
@@ -262,6 +271,7 @@ export interface TeamPortDeps {
     scope: readonly string[] | null;
     canWrite: boolean;
     create: boolean;
+    child: TeamChildRoute;
   }): Promise<{ registry: ToolRegistry } | { refusal: string }>;
   /** Record a finished worker's copy as a change set and settle it into the project. */
   settle?(spec: { lead: HarnessRun; child: HarnessRun; handoffId: string }): Promise<ChangeSetSummary | null>;
@@ -460,12 +470,13 @@ export function createTeamPort(deps: TeamPortDeps) {
     const external = externalRole(spec.role, spec.config);
     // A worker works in its own sandbox; the advisor only ever reads the project (decision 2026-09-24).
     const canWrite = principal.capabilities.includes('write-project-file');
-    let registry = external ? new ChildRegistry() : deps.registry(parent.projectId, routes, spec.scope);
+    const reader: TeamChildRoute = { route: spec.config.route, model: spec.config.model };
+    let registry = external ? new ChildRegistry() : deps.registry(parent.projectId, routes, spec.scope, reader);
     if (spec.role === 'advisor') assertReadOnly(registry);
     let child = await get(spec.childRunId);
     const sandboxed = spec.role === 'worker' && !external && deps.sandbox;
     if (sandboxed && (!child || ACTIVE.includes(child.state))) {
-      const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child });
+      const made = await deps.sandbox!({ lead: parent, childRunId: spec.childRunId, routes, scope: spec.scope, canWrite, create: !child, child: reader });
       if ('refusal' in made) {
         if (child) await runs.cancel(child.id, made.refusal, principal).catch(() => undefined);
         else {
