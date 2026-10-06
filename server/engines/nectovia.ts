@@ -161,7 +161,11 @@ export async function ensureNectoviaGuard(
 }
 
 /**
- * The local rate card for a model the gateway serves, from the provider registry's own numbers.
+ * The local rate card for a model the gateway serves. From an authenticated account snapshot it is
+ * the tier's credit charge (Model B): the account service sends the charge, in ledger units, in the
+ * snapshot's `price` and `guardPrices` fields and never a provider's price, so this card, the local
+ * guard and the job estimate (`jobRatesOf`) all count credits. The legacy card below is a published
+ * list price kept for accounts on the legacy routing record.
  * One band: the gateway refuses input past 272,000 tokens rather than guess a long-context price,
  * so no call on this route can settle in a long band.
  */
