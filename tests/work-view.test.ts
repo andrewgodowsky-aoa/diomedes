@@ -12,7 +12,12 @@ import {
   workBoard,
 } from '../client/console/work-view';
 import { Ledger } from '../client/console/Ledger';
+import { ViewSwitch } from '../client/console/ViewSwitch';
+import { TeamView } from '../client/console/TeamView';
+import { NECTOVIA_LOCKED } from '../client/console/ask-row';
 import { PAID_ABILITIES } from '../shared/access';
+import { AGENT_NAME } from '../shared/agent-name';
+import type { AccountPlanView } from '../shared/accounts';
 
 /**
  * The Work view (round 2 reskin, slice 3, boards BD1 to BD3): the two views' names, the free
@@ -150,5 +155,71 @@ describe('the board beside a thread', () => {
     expect(html).toContain('Open full board');
     for (const heading of ['Needs your input', 'Working', 'Up next', 'Finished today']) expect(html).toContain(heading);
     expect(html).toContain('Kestrel, 3 open');
+  });
+});
+
+describe('the free version', () => {
+  const free: AccountPlanView = { agent: 'free', plansUrl: 'https://example.test/plans', notice: true };
+  const project = { id: 'p1', name: 'Kestrel', folder: 'x', createdAt: earlier, lastOpenedAt: earlier, plans: [] } as unknown as Project;
+  const state = { project, documents: [], history: [], conversations: [], tasks: [], sessions: [], needs: [], changes: [] } as unknown as ProjectState;
+
+  it('locks the Nectovia tab, keeps Work pressed and opens the paid plan notice', () => {
+    const html = renderToStaticMarkup(
+      createElement(ViewSwitch, { view: 'architect', free, notice: true, onChoose: () => undefined, onCloseNotice: () => undefined }),
+    );
+    expect(html).toContain('aria-label="View"');
+    expect(html).toMatch(/class="view-tab locked"[^>]*aria-pressed="false"[^>]*>Nectovia<svg/);
+    expect(html).toMatch(/class="view-tab on"[^>]*aria-pressed="true"[^>]*>Work</);
+    expect(html).toContain(NECTOVIA_PAID_TITLE);
+    expect(html).toContain(NECTOVIA_PAID_LINE.replace("'", '&#x27;'));
+    for (const choice of ['Sign up for a plan', 'Remind me later', 'Don&#x27;t remind me again']) expect(html).toContain(choice);
+    expect(html).toContain('href="https://example.test/plans"');
+  });
+
+  it('draws no lock and no notice on a plan', () => {
+    const html = renderToStaticMarkup(
+      createElement(ViewSwitch, { view: 'conversation', free: null, notice: true, onChoose: () => undefined, onCloseNotice: () => undefined }),
+    );
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain(NECTOVIA_PAID_TITLE);
+    expect(html).toMatch(/class="view-tab on"[^>]*aria-pressed="true"[^>]*>Nectovia</);
+  });
+
+  const team = (plan: AccountPlanView | null) =>
+    renderToStaticMarkup(
+      createElement(TeamView, {
+        project,
+        state,
+        members: [],
+        mail: [],
+        runs: [],
+        usage: [],
+        busy: false,
+        onMessage: async () => undefined,
+        onStop: async () => undefined,
+        onWake: async () => undefined,
+        onOpenThread: () => undefined,
+        free: plan,
+      }),
+    );
+
+  it('puts the person in the lead seat and locks Nectovia\'s, with the one line while the notice is due', () => {
+    const html = team(free);
+    expect(html).toContain('aria-label="Who leads"');
+    expect(html).toMatch(/You<span class="seat-role">Lead<\/span>/);
+    expect(html).toContain(`<span class="seat-name">${AGENT_NAME}</span>`);
+    expect(html).toContain('Can lead this team');
+    expect(html).toContain(TEAM_PAID_LINE);
+    expect(team({ ...free, notice: false })).not.toContain(TEAM_PAID_LINE);
+  });
+
+  it('shows a paid team as before', () => {
+    const html = team(null);
+    expect(html).not.toContain('Who leads');
+    expect(html).not.toContain(TEAM_PAID_LINE);
+  });
+
+  it('reuses the ask row line for the locked engine, unchanged', () => {
+    expect(NECTOVIA_LOCKED).toBe('Buy credits or upgrade your plan to use Nectovia');
   });
 });
