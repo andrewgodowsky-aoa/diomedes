@@ -52,7 +52,7 @@ function gateway(options: {
     jobCapFor: (_organizationId, jobId) => {
       options.jobCapCalls?.push(jobId);
       // These tests are about where the cap comes from and what counts against it, so they hold one fixed
-      // cap of 20 credits ($2) whatever a tier's check-in amount is.
+      // cap of 20 credits whatever a tier's check-in amount is.
       return options.jobCap ?? creditAmount(20);
     },
     entitlementFor: () => options.entitlement ?? entitled,

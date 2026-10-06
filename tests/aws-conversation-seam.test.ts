@@ -21,6 +21,7 @@ import type { ModelSessionRuns } from '../server/harness/model-session-run';
 import type { Store } from '../server/store';
 import { conversationCommandIds } from '../server/interaction-admission';
 import type { MessageResult } from '../server/interaction-service';
+import { defaultCheckIn } from '../shared/managed-usage';
 import type { AwsConnectionView } from '../shared/model-api';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
@@ -432,19 +433,19 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     ])).toEqual(asked);
     expect(seen).toHaveLength(2);
 
-    // Job caps (owner decision 2026-09-23): the message is one job, named by its command id and
-    // pinned under the host's tier; with no style set, the placeholder default of 20 credits.
+    // Job check-ins (owner decision 2026-10-05): the message is one job, named by its command id and
+    // pinned under the host's tier; with no style set, it checks in at the Efficient amount.
     const job = await api<{ jobId: string; tier: string; capMicroUsd: number; stop: unknown }>(
       `/projects/${project.id}/jobs/m-linen`,
     );
-    expect(job).toMatchObject({ jobId: 'm-linen', tier: 'efficient', capMicroUsd: 2_000_000, stop: null });
+    expect(job).toMatchObject({ jobId: 'm-linen', tier: 'efficient', capMicroUsd: defaultCheckIn('efficient'), stop: null });
     // The pre-send estimate for the next message prices it from the route's declared card.
     const estimate = await api<{ estimate: { kind: string; capMicroUsd: number; warn: boolean } }>(
       `/projects/${project.id}/threads/${thread.id}/job-estimate`,
       'POST',
       { text: 'And the tablecloths?', mode: 'auto', sources: [] },
     );
-    expect(estimate.estimate).toMatchObject({ kind: 'estimate', capMicroUsd: 2_000_000 });
+    expect(estimate.estimate).toMatchObject({ kind: 'estimate', capMicroUsd: defaultCheckIn('efficient') });
 
     // A route with no model chosen cannot spend: the estimate does not warn, so the send's own
     // refusal ("Connect AWS Bedrock and choose its model") is what the person sees.
