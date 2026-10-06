@@ -21,7 +21,8 @@ import { routeDisplayName } from '../shared/engines';
 // The name contract (contract §1, A2, A3). The product a person reads about is
 // Nectovia; the company is still Diomedes Systems; every machine identifier
 // still says Diomedes. Since 2026-09-24 the desktop shell's window, dialogs and
-// icon say Nectovia too (contract A3 moved).
+// icon say Nectovia too (contract A3 moved), and since 2026-10-06 the macOS app
+// is Nectovia.app with the Nectovia icon and menu.
 //
 // The scan reads every string a client or desktop source file can put on
 // screen (JSX text, attribute values, string and template literals) with the
@@ -65,11 +66,6 @@ const SHELL_ALLOWED: Allowed[] = [
     file: 'desktop/app-updates.mjs',
     text: 'Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001',
     why: "the installer's ownership marker, which an update checks",
-  },
-  {
-    file: 'desktop/app-updates.mjs',
-    text: 'Diomedes',
-    why: "the macOS application menu, which macOS titles with the bundle's name whatever the label says",
   },
   {
     file: 'desktop/update-helper.mjs',
@@ -337,7 +333,7 @@ describe('the desktop shell (contract A3)', () => {
       ).toBe(true);
   });
 
-  it('keeps the data identity while naming the Windows executable nectovia', () => {
+  it('keeps the data identity while naming nectovia.exe and Nectovia.app', () => {
     expect(read('desktop/main.mjs')).toContain("app.setName('Diomedes');");
     // Executable naming is independent of the existing app and data identity.
     const packaging = read('scripts/package-desktop.mjs');
@@ -346,6 +342,13 @@ describe('the desktop shell (contract A3)', () => {
     expect(packaging).toContain("executableName: 'nectovia',");
     expect(packaging).toContain("ProductName: 'Nectovia',");
     expect(packaging).toContain("FileDescription: 'Nectovia desktop',");
+    // The macOS bundle is named Nectovia and keeps the bundle id existing installs carry.
+    const darwin = packaging.slice(
+      packaging.indexOf("...(platform === 'darwin'"),
+      packaging.indexOf("...(platform === 'win32'"),
+    );
+    expect(darwin).toContain("name: 'Nectovia',");
+    expect(darwin).toContain("appBundleId: 'com.electron.diomedes',");
   });
 
   it('keeps the machine identifiers the scan allows', () => {

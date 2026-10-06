@@ -97,6 +97,20 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     const other = await accounts.createOrganization('alice', 'Other tenant');
     await expect(query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', 'cus_other', other.id, org.tenantId])).rejects.toMatchObject({ code: '23503' });
   });
+  it('records many concurrent identical verified events once without a unique violation', async () => {
+    // webhook_inbox has two unique keys. A racing insert used to trip the one
+    // its ON CONFLICT clause did not name and surface SQLSTATE 23505.
+    const org = await accounts.createOrganization('alice', 'Webhook race');
+    await query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', 'cus_race', org.id, org.tenantId]);
+    for (let round = 0; round < 8; round++) {
+      const event = { provider: 'stripe' as const, eventId: `evt_race_${round}`, customerId: 'cus_race', payloadHash: 'd'.repeat(64), eventType: 'fixture.event', payload: { round } };
+      const results = await Promise.all(Array.from({ length: 12 }, () => repository.recordVerifiedWebhook(event)));
+      expect(results.filter((value) => value.inserted)).toHaveLength(1);
+      expect(results.every((value) => value.tenantId === org.tenantId)).toBe(true);
+      expect((await query('SELECT count(*)::int AS count FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2', ['stripe', event.eventId])).rows[0].count).toBe(1);
+      await expect(repository.recordVerifiedWebhook({ ...event, payloadHash: 'e'.repeat(64) })).rejects.toMatchObject({ status: 409 });
+    }
+  });
   async function fundedOrganization(label: string) {
     const org = await accounts.createOrganization('alice', label);
     const customer = `cus_${label.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;

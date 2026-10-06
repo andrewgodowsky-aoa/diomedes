@@ -3,10 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { expect, it } from 'vitest';
 
-// nectovia.exe and its installer carry the Nectovia mark as their icon: scripts/app-icon.mjs
-// draws it, desktop/diomedes.ico holds the drawing, scripts/package-desktop.mjs embeds it in
-// the executable and scripts/build-windows-installer.mjs in the installer and its uninstaller.
-// Entries are compared as decoded pixels, so a different zlib cannot fail the check.
+// nectovia.exe, its installer and Nectovia.app carry the Nectovia mark as their icon:
+// scripts/app-icon.mjs draws it, desktop/diomedes.ico and desktop/nectovia.icns hold the
+// drawing, scripts/package-desktop.mjs embeds them in the executable and the macOS bundle, and
+// scripts/build-windows-installer.mjs in the installer and its uninstaller. Entries are
+// compared as decoded pixels, so a different zlib cannot fail the check.
 const appIcon = await import(new URL('../scripts/app-icon.mjs', import.meta.url).href);
 const installer = await import(
   new URL('../scripts/build-windows-installer.mjs', import.meta.url).href
@@ -113,9 +114,47 @@ it('keeps the committed icon identical to the drawing at every size', async () =
   expect(sizes).toEqual(appIcon.ICON_SIZES);
 });
 
-it('embeds the icon when packaging nectovia.exe', async () => {
+it('draws the macOS icon on the Apple icon grid', () => {
+  // 824 px of 1024 is the tile, in a 100 px margin, and every margin is whole pixels.
+  expect(appIcon.macIconLayout(1024)).toEqual({ margin: 100, tile: 824, radius: (185.4 * 24) / 824 });
+  for (const size of appIcon.MAC_ICON_SIZES as number[]) {
+    const { margin, tile } = appIcon.macIconLayout(size);
+    expect(Number.isInteger(margin) && margin + tile + margin === size, `${size} px`).toBe(true);
+  }
+  const size = 1024;
+  const rgba: Buffer = appIcon.renderMacIcon(size);
+  const at = (x: number, y: number) => [...rgba.subarray((y * size + x) * 4, (y * size + x) * 4 + 4)];
+  // The margin and the tile's rounded corner are clear; above the plates the tile is ink.
+  expect(at(50, 512)[3]).toBe(0);
+  expect(at(110, 110)[3]).toBe(0);
+  expect(at(512, 140)).toEqual([8, 8, 12, 255]);
+});
+
+it('keeps the committed macOS icon identical to the drawing at every size', async () => {
+  const icns = await fs.readFile(new URL('../desktop/nectovia.icns', import.meta.url));
+  expect(icns.toString('ascii', 0, 4)).toBe('icns');
+  expect(icns.readUInt32BE(4)).toBe(icns.length);
+  const entries: [string, Buffer][] = [];
+  for (let offset = 8; offset < icns.length; offset += icns.readUInt32BE(offset + 4))
+    entries.push([
+      icns.toString('ascii', offset, offset + 4),
+      icns.subarray(offset + 8, offset + icns.readUInt32BE(offset + 4)),
+    ]);
+  const types = appIcon.ICNS_TYPES as [string, number][];
+  expect(entries.map(([type]) => type)).toEqual(types.map(([type]) => type));
+  const drawn = new Map<number, Buffer>();
+  for (const [type, data] of entries) {
+    const size = new Map(types).get(type)!;
+    if (!drawn.has(size)) drawn.set(size, appIcon.renderMacIcon(size));
+    expect(data.subarray(0, 8).equals(PNG_SIGNATURE), `${type} format`).toBe(true);
+    expect(decodeEntry(data, size).equals(drawn.get(size)!), `${type} ${size} px pixels`).toBe(true);
+  }
+}, 60_000);
+
+it('embeds the icon when packaging nectovia.exe and Nectovia.app', async () => {
   const script = await readText('scripts/package-desktop.mjs');
   expect(script).toContain("path.join(root, 'desktop/diomedes.ico')");
+  expect(script).toContain("path.join(root, 'desktop/nectovia.icns')");
   // The packager is called through an injectable name so tests can substitute it.
   expect(script).toMatch(/packageApp\(\{[^}]*\bicon\b/);
 });

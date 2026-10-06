@@ -59,8 +59,8 @@ export function signatureFacts({ verifyStatus, assessStatus, display, verify, sp
     bundleSignatureVerifies: verifyStatus === 0,
     gatekeeperAccepts: assessStatus === 0,
     codesignDisplay: display.trim().replace(/^Executable=.*\n/gm, ''),
-    codesignVerify: verify.trim().replace(/^[^:]*Diomedes\.app: /gm, 'Diomedes.app: '),
-    spctl: spctl.trim().replace(/^[^:]*Diomedes\.app: /gm, 'Diomedes.app: '),
+    codesignVerify: verify.trim().replace(/^[^:]*Nectovia\.app: /gm, 'Nectovia.app: '),
+    spctl: spctl.trim().replace(/^[^:]*Nectovia\.app: /gm, 'Nectovia.app: '),
   };
 }
 
@@ -112,7 +112,8 @@ async function main() {
   const tmp = path.join(work, 'tmp');
   fs.mkdirSync(tmp);
   const zips = path.join(work, 'electron-zips');
-  const app = path.join(root, 'release', 'Diomedes-darwin-arm64', 'Diomedes.app');
+  // The bundle is named for the product; the disk image keeps the name the update check reads.
+  const app = path.join(root, 'release', 'Nectovia-darwin-arm64', 'Nectovia.app');
   const dmgName = `Diomedes-Experimental-${version}-mac-arm64.dmg`;
   const dmg = path.join(root, 'release', dmgName);
   const proofPath = path.join(root, 'release', 'mac-release-proof.json');
@@ -136,7 +137,7 @@ async function main() {
 
   const stage = path.join(work, 'dmg-stage');
   fs.mkdirSync(stage);
-  run('ditto', [app, path.join(stage, 'Diomedes.app')]);
+  run('ditto', [app, path.join(stage, 'Nectovia.app')]);
   fs.symlinkSync('/Applications', path.join(stage, 'Applications'));
   run('hdiutil', ['create', '-volname', `Nectovia ${version}`, '-srcfolder', stage, '-fs', 'HFS+', '-format', 'UDZO', '-ov', dmg]);
   run('hdiutil', ['verify', dmg]);
@@ -166,7 +167,7 @@ async function main() {
     console.log('\n> node scripts/packaged-launch-smoke.mjs (from the mounted image)');
     smoke = spawnSync(
       process.execPath,
-      ['scripts/packaged-launch-smoke.mjs', path.join(mount, 'Diomedes.app', 'Contents', 'MacOS', 'Diomedes'), path.join(results, 'launch')],
+      ['scripts/packaged-launch-smoke.mjs', path.join(mount, 'Nectovia.app', 'Contents', 'MacOS', 'Nectovia'), path.join(results, 'launch')],
       { cwd: root, stdio: 'inherit', env: { ...process.env, TMPDIR: tmp } },
     );
   } finally {

@@ -32,6 +32,8 @@ describe('durable inbox repository protocol', () => {
     expect(results.every((row) => row.tenantId === 'tenant_one')).toBe(true);
     const insert = queries.find((row) => row.text.startsWith('INSERT INTO control_plane.webhook_inbox'))!;
     expect(insert.text).not.toContain('evt_offline');
+    // Every unique key must arbitrate, or a racing duplicate raises 23505.
+    expect(insert.text).toContain('ON CONFLICT DO NOTHING');
     expect(insert.values).toContain('evt_offline');
   });
   it('refuses conflicting duplicate payload or customer provenance', async () => {
