@@ -28,19 +28,29 @@ GRANT SELECT, INSERT ON control_plane.organization_setups TO cp_runtime;
 -- PostgresRepository.ensureCustomer: under the business's advisory lock (a function any
 -- role may call, so it needs no grant) it reads the stored customer and, when there is
 -- none, stores the one Stripe made. The receiver stores each verified paid Stripe event
--- through PostgresRepository.recordVerifiedPayment, under the same lock. All of these are
--- plain SELECT and INSERT statements, with no row lock, UPDATE or DELETE: an event or a
--- customer is written once and never rewritten. The funding login (cp_funding) is not
--- granted these tables, so it cannot make a top-up (which references a stored event) on
--- its own. tests/payment-ledger-permissions.test.ts replays all of them and fails when
--- this line and those statements differ either way. recordVerifiedWebhook, the older seam with no caller, takes
--- a FOR KEY SHARE row lock on billing_customers, which needs UPDATE on one column; it is
--- not granted here and stays with a separately reviewed receiver role.
+-- through PostgresRepository.recordVerifiedPayment, under the same lock, and stores an
+-- event of a type nothing handles, marked ignored, through recordIgnoredEvent (016 lets an
+-- inbox row carry no business). All of these are plain SELECT and INSERT statements, with no
+-- row lock or DELETE: an event or a customer is written once and never rewritten. The one
+-- thing that moves afterwards is an inbox event's state: markEvent (016) takes a pending
+-- event to processed or quarantined with one UPDATE of state and processed_at, which is
+-- why this login holds UPDATE on those two columns of webhook_inbox and nothing else of it.
+-- The funding login (cp_funding) is not granted these tables, so it cannot make a top-up
+-- (which references a stored event) on its own. tests/payment-ledger-permissions.test.ts
+-- replays all of them and fails when these lines and those statements differ either way.
+-- recordVerifiedWebhook, the older seam with no caller, takes a FOR KEY SHARE row lock on
+-- billing_customers, which needs UPDATE on one column; it is not granted here and stays
+-- with a separately reviewed receiver role.
 GRANT SELECT, INSERT ON control_plane.billing_customers, control_plane.webhook_inbox TO cp_runtime;
+GRANT UPDATE (state, processed_at) ON control_plane.webhook_inbox TO cp_runtime;
 -- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.
 GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations,
   control_plane.funding_settlements, control_plane.credit_adjustments,
   control_plane.credit_topups, control_plane.credit_topup_holds TO cp_runtime;
+-- 017 pay as you go (DIO-219): admission and a person's own access view read whether their bought credits
+-- are above zero (FundingService.boughtState) with these same SELECTs, and nothing else. A person's Individual
+-- billing scope is made with the billing_scopes INSERT below, and their one Stripe customer stored with the
+-- billing_customers INSERT above; billing_customers.person_id is generated, so no writer names it. No grant changes.
 -- Funding writes (reserve, dispatch, settle, grants, top-ups, cap decisions)
 -- belong to a separately reviewed runtime role, never to the Worker login.
 -- 005 customer access (2026-09-25): what the Worker's customer-access, Agent

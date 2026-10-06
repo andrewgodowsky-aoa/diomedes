@@ -40,7 +40,7 @@ import { bootstrapFirstAdmin, CommercialService } from '../commercial.js';
 import { RoutingService } from '../routing.js';
 import { AccountError } from '../errors.js';
 import { FundingService, PurchasedUsageService, UsageService } from '../funding.js';
-import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
+import { CommercialPersonScopes, CreditPurchaseService, GrantPlanLookup, StripeWebhookService, readBillingSettings } from '../credit-purchases.js';
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxCheckoutPage, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from './stripe.js';
 import { StatePaymentLedger } from './payment-ledger.js';
 import type { PaymentLedger } from '../credit-purchases.js';
@@ -79,10 +79,12 @@ import { createWorkOSStandIn, WORKOS_ISSUER, type WorkOSStandIn } from './workos
 export const FAUX_BACKEND_LABEL = 'Test account service (local, faux data)';
 
 /**
- * The price the faux cloud reads as CREDIT_PRICE_CENTS_PER_100 when nothing says otherwise: the test price Andrew
- * gave for 100 credits, so the desktop can quote and buy offline. The Worker has no default; only this stand-in does.
+ * The rates the faux cloud reads as CREDIT_RATE_PLAN and CREDIT_RATE_FREE when nothing says otherwise, each "cents:credits" for one step:
+ * $10.00 buys 110 credits on a plan and $13.00 buys 100 without one, so the desktop can quote and buy offline. The Worker has no default;
+ * only this stand-in does.
  */
-export const FAUX_CREDIT_PRICE_CENTS_PER_100 = 1200;
+export const FAUX_CREDIT_RATE_PLAN = '1000:110';
+export const FAUX_CREDIT_RATE_FREE = '1300:100';
 
 export interface FauxCloudOptions {
   /** The JSON store. Null keeps everything in memory. */
@@ -121,11 +123,11 @@ export interface FauxCloudOptions {
     routeChecksTransport?: typeof globalThis.fetch;
   };
   /**
-   * Buying credits without Stripe: the Worker's CREDIT_PRICE_CENTS_PER_100 as a stand-in, a local checkout page and
-   * a test helper that pays it (FauxCloud.completeCheckout). Omitted: the faux test price. Null: unset, so quotes and
-   * purchases answer 503 as the Worker's do.
+   * Buying credits without Stripe: the Worker's CREDIT_RATE_PLAN and CREDIT_RATE_FREE as stand-ins ("cents:credits"), a local checkout page and
+   * a test helper that pays it (FauxCloud.completeCheckout). Omitted: the faux rates. Null: unset, so quotes and
+   * purchases at that rate answer 503 as the Worker's do.
    */
-  billing?: { creditPriceCentsPer100?: string | number | null };
+  billing?: { creditRatePlan?: string | null; creditRateFree?: string | null };
   /** INDIVIDUAL_MAX_ACTIVE_MEMBERS, read as the Worker reads it. Unset or blank: 1. */
   individualMaxActiveMembers?: string | number;
   /** An owner-approved live test only: the gateway calls Bedrock for real with this key. */
@@ -245,7 +247,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     staffIdentity: null,
     individual: coverage,
   };
-  const creditPrice = options.billing?.creditPriceCentsPer100 === undefined ? FAUX_CREDIT_PRICE_CENTS_PER_100 : options.billing.creditPriceCentsPer100;
+  const creditRatePlan = options.billing?.creditRatePlan === undefined ? FAUX_CREDIT_RATE_PLAN : options.billing.creditRatePlan;
+  const creditRateFree = options.billing?.creditRateFree === undefined ? FAUX_CREDIT_RATE_FREE : options.billing.creditRateFree;
   const credential = live ? options.liveBedrockApiKey! : options.managed?.credential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.credential;
   const evaluationCredential = liveEvaluations ? options.liveOpenRouterApiKey!
     : options.managed?.evaluationCredential === undefined ? FAUX_SCRIPTED_CREDENTIAL : options.managed.evaluationCredential;
@@ -256,7 +259,8 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     ...(credential === null ? {} : { BEDROCK_API_KEY: credential }),
     ...(evaluationCredential === null ? {} : { OPENROUTER_API_KEY: evaluationCredential }),
     // Buying credits: the Worker's own setting names, filled with the faux stand-ins.
-    ...(creditPrice === null ? {} : { CREDIT_PRICE_CENTS_PER_100: String(creditPrice) }),
+    ...(creditRatePlan === null ? {} : { CREDIT_RATE_PLAN: creditRatePlan }),
+    ...(creditRateFree === null ? {} : { CREDIT_RATE_FREE: creditRateFree }),
     STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET,
   };
@@ -297,10 +301,10 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
       createCommercial: () => commercial,
       createPurchased: () => new PurchasedUsageService(accounts, funding),
       createCreditPurchases: (_config, _accounts, env) => new CreditPurchaseService(accounts, funding, { settings: readBillingSettings(env), fetch: fauxStripe, now,
-        localCheckout: true, ledger: paymentLedger }),
+        localCheckout: true, ledger: paymentLedger, plans: new GrantPlanLookup(store.commercial), persons: new CommercialPersonScopes(store.commercial, now) }),
       createStripeWebhook: (_config, env) => new StripeWebhookService(funding, { settings: readBillingSettings(env), now, ledger: paymentLedger }),
       createLimits: () => new MemberLimitsService(accounts, new MemberLimits(store.funding, { now })),
-      createRouting: () => new RoutingService(accounts, store.commercial, now, funding),
+      createRouting: () => new RoutingService(accounts, store.commercial, now, funding, funding),
       createCheckIns: () => new JobCheckInService(accounts, store.commercial, funding, now),
       createManaged: () => managed,
       createRelay: () => relay,
@@ -361,7 +365,7 @@ export async function createFauxCloud(options: FauxCloudOptions): Promise<FauxCl
     const row = await purchaseForSession(sessionId);
     // A session made before this process started is not remembered: it pays as the business's stored customer, or a new one.
     const customerId = fauxStripe.customerOf(sessionId)
-      ?? await paymentLedger.storedCustomer({ tenantId: row.tenantId, organizationId: row.organizationId })
+      ?? await paymentLedger.storedCustomer({ tenantId: row.tenantId, organizationId: row.organizationId, environment: row.environment })
       ?? `cus_faux_${sessionId.slice(3)}`;
     const body = fauxPaidEvent({ sessionId, purchaseId: row.purchaseId, organizationId: row.organizationId, tenantId: row.tenantId, amountCents: row.amountCents, customerId }, now());
     const response = await worker(new Request('http://faux.local/billing/stripe/webhook', {

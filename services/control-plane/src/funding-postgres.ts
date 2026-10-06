@@ -82,7 +82,7 @@ function periodFrom(row: Row): CreditPeriodRow {
   return {
     tenantId: text(row.tenant_id), organizationId: text(row.organization_id), periodId: text(row.period_id), planId: text(row.plan_id),
     rateCardVersion: text(row.rate_card_version), grantedMicroUsd: money(row.granted_micro_usd), startsAt: iso(row.starts_at),
-    endsAt: iso(row.ends_at), sourceGrantId: text(row.source_person_grant_id ?? row.source_grant_id), allocatedAt: iso(row.allocated_at),
+    endsAt: iso(row.ends_at), sourceGrantId: row.plan_id === 'bought-credits' ? '' : text(row.source_person_grant_id ?? row.source_grant_id), allocatedAt: iso(row.allocated_at),
   };
 }
 
@@ -108,9 +108,12 @@ function creditPurchaseFrom(row: Row): CreditPurchaseRow {
   const state = text(row.state);
   if (state !== 'pending' && state !== 'paid' && state !== 'expired' && state !== 'failed') throw new Error('Stored purchase state is not a known value.');
   if (text(row.currency) !== 'usd') throw new Error('Stored purchase currency is not a known value.');
+  const environment = text(row.environment);
+  if (environment !== 'test' && environment !== 'live') throw new Error('Stored purchase environment is not a known value.');
   return {
     tenantId: text(row.tenant_id), organizationId: text(row.organization_id), purchaseId: text(row.purchase_id), personId: text(row.person_id),
-    credits: whole(row.credits), amountCents: whole(row.amount_cents), currency: 'usd', checkoutSessionId: textOrNull(row.stripe_checkout_session_id),
+    credits: whole(row.credits), amountCents: whole(row.amount_cents), rateCents: whole(row.rate_cents), rateCredits: whole(row.rate_credits), environment,
+    currency: 'usd', checkoutSessionId: textOrNull(row.stripe_checkout_session_id),
     state, createdAt: iso(row.created_at), resolvedAt: isoOrNull(row.resolved_at), stripeEventId: textOrNull(row.stripe_event_id),
   };
 }
@@ -148,7 +151,7 @@ export class PostgresFundingTransaction implements FundingTransaction {
   async savePeriod(row: CreditPeriodRow) {
     await this.client.query('INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at,source_person_grant_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
       [row.tenantId, row.organizationId, row.periodId, row.planId, row.rateCardVersion, row.grantedMicroUsd, row.startsAt, row.endsAt,
-        row.planId === 'individual' ? null : row.sourceGrantId, row.allocatedAt, row.planId === 'individual' ? row.sourceGrantId : null]);
+        row.planId === 'individual' || row.planId === 'bought-credits' ? null : row.sourceGrantId, row.allocatedAt, row.planId === 'individual' ? row.sourceGrantId : null]);
   }
 
   async job(tenantId: string, rootJobId: string): Promise<FundedJobRow | undefined> {
@@ -263,10 +266,11 @@ export class PostgresFundingTransaction implements FundingTransaction {
     return row && creditPurchaseFrom(row);
   }
   async saveCreditPurchase(row: CreditPurchaseRow) {
-    await this.client.query(`INSERT INTO control_plane.credit_purchases(tenant_id,purchase_id,organization_id,person_id,credits,amount_cents,currency,stripe_checkout_session_id,state,created_at,resolved_at,stripe_event_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    await this.client.query(`INSERT INTO control_plane.credit_purchases(tenant_id,purchase_id,organization_id,person_id,credits,amount_cents,currency,stripe_checkout_session_id,state,created_at,resolved_at,stripe_event_id,rate_cents,rate_credits,environment)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT (tenant_id,purchase_id) DO UPDATE SET stripe_checkout_session_id=EXCLUDED.stripe_checkout_session_id,state=EXCLUDED.state,resolved_at=EXCLUDED.resolved_at,stripe_event_id=EXCLUDED.stripe_event_id`,
-      [row.tenantId, row.purchaseId, row.organizationId, row.personId, row.credits, row.amountCents, row.currency, row.checkoutSessionId, row.state, row.createdAt, row.resolvedAt, row.stripeEventId]);
+      [row.tenantId, row.purchaseId, row.organizationId, row.personId, row.credits, row.amountCents, row.currency, row.checkoutSessionId, row.state, row.createdAt, row.resolvedAt, row.stripeEventId,
+        row.rateCents, row.rateCredits, row.environment]);
   }
 
   async capRequest(tenantId: string, requestId: string): Promise<CapRequestRow | undefined> {

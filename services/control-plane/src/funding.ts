@@ -201,10 +201,18 @@ export interface CreditPurchaseRow {
   purchaseId: string;
   /** The verified person who bought. */
   personId: string;
-  /** A whole number of credits, in steps of 100. */
+  /** A whole number of credits: whole steps of the rate below. */
   credits: number;
-  /** What Stripe is asked to charge, in cents. */
+  /** What Stripe is asked to charge, in cents: the same whole steps at the rate below. */
   amountCents: number;
+  /**
+   * The rate the server chose when the purchase was made, from the paying business's plan at that moment: `rateCredits` credits for
+   * `rateCents` cents per step. The paid event credits this row's credits and never works a rate out again.
+   */
+  rateCents: number;
+  rateCredits: number;
+  /** The Stripe environment the purchase was made in. Only an event from the same one can pay it. */
+  environment: 'test' | 'live';
   currency: 'usd';
   /** Null until Stripe has made the Checkout Session. */
   checkoutSessionId: string | null;
@@ -446,6 +454,17 @@ function balanceOf(totals: TopUpTotals): PurchasedBalance {
 
 const leaseFrom = (at: string) => new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
 
+/**
+ * Pay as you go (DIO-219, migration 017). A person with no plan has no billing period, so a reservation for their own
+ * Individual billing scope draws on the credits they bought and binds to the scope's one bought-credits row: no grant,
+ * no source, and no end inside the life of the product. It never funds anything itself; only the scope's bought balance does.
+ */
+export const BOUGHT_CREDITS_PLAN = 'bought-credits';
+export const BOUGHT_CREDITS_PERIOD = 'bought-credits';
+const BOUGHT_CREDITS_ENDS_AT = '9999-12-31T00:00:00.000Z';
+/** A person's own Individual billing scope (010: ids `individual_...`). Only such a scope may hold a bought-credits row. */
+export const isIndividualScopeId = (id: string): boolean => id.startsWith('individual_');
+
 export interface FundingOptions {
   now?: () => number;
 }
@@ -603,6 +622,31 @@ export class FundingService {
     return row;
   }
 
+  /**
+   * What a billing scope's bought credits leave free right now, read with SELECT only: no lock and no sweep, so it runs on the
+   * Worker login, which may only read funding rows. A hold whose lease has lapsed is not counted (topUpTotals reads it so), so
+   * this is never less than the locked read would give. Admission asks it; the reservation decides under the lock.
+   */
+  async boughtAvailable(tenantId: string, organizationId: string): Promise<MicroUsd> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'organization');
+    const at = this.at();
+    return this.repository.transaction(async (tx) => topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)));
+  }
+
+  /**
+   * Whether a billing scope's bought credits are above zero now, all spent or held, or were never bought: the same SELECT-only
+   * read, saying no figure. Admission and the person's own access view ask it.
+   */
+  async boughtState(tenantId: string, organizationId: string): Promise<'available' | 'spent' | 'none'> {
+    requireId(tenantId, 'tenant');
+    requireId(organizationId, 'organization');
+    const at = this.at();
+    const totals = await this.repository.transaction((tx) => tx.topUpTotals(tenantId, organizationId, at));
+    if (topUpAvailable(totals) > 0) return 'available';
+    return totals.purchasedMicroUsd > 0 ? 'spent' : 'none';
+  }
+
   /** What a business bought outright and what of it is held or spent. Read-only; money only from recorded top-ups. */
   async purchasedBalance(tenantId: string, organizationId: string): Promise<PurchasedBalance> {
     requireId(tenantId, 'tenant');
@@ -618,27 +662,35 @@ export class FundingService {
   /**
    * Start a credit purchase (migration 015): the pending row, before Stripe is asked for a Checkout
    * Session. Idempotent by purchase id; the same terms find the row, different terms are a 409.
-   * Server-only: the amount comes from the Worker's price setting, never from a request.
+   * Server-only: the credits, the price and the rate come from the Worker's own settings and the business's plan, never from a request.
+   * The credits are whole steps of the rate and the price is those steps at its price, in integers, so a row cannot say it bought credits
+   * at a rate it was not charged.
    */
-  async startCreditPurchase(input: { tenantId: string; organizationId: string; purchaseId: string; personId: string; credits: number; amountCents: number }): Promise<CreditPurchaseRow> {
+  async startCreditPurchase(input: { tenantId: string; organizationId: string; purchaseId: string; personId: string; credits: number; amountCents: number;
+    rateCents: number; rateCredits: number; environment: 'test' | 'live' }): Promise<CreditPurchaseRow> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
     const purchaseId = requireId(input.purchaseId, 'purchase');
     const personId = requireId(input.personId, 'person');
-    const { credits, amountCents } = input;
-    if (!Number.isSafeInteger(credits) || credits < 100 || credits > 1_000_000 || credits % 100 !== 0)
-      throw new FundingError(422, 'Credits are bought in whole steps of 100.', 'invalid_request');
-    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999)
-      throw new FundingError(422, 'A purchase needs a price in whole cents.', 'invalid_amount');
+    const { credits, amountCents, rateCents, rateCredits, environment } = input;
+    if (environment !== 'test' && environment !== 'live')
+      throw new FundingError(422, 'A purchase is made in the test or the live environment.', 'invalid_request');
+    if (!Number.isSafeInteger(rateCents) || rateCents < 1 || rateCents > 99_999_999 || !Number.isSafeInteger(rateCredits) || rateCredits < 1 || rateCredits > 1_000_000)
+      throw new FundingError(422, 'A purchase needs a rate in whole cents and whole credits.', 'invalid_amount');
+    if (!Number.isSafeInteger(credits) || credits < rateCredits || credits > 1_000_000 || credits % rateCredits !== 0)
+      throw new FundingError(422, 'Credits are bought in whole steps.', 'invalid_request');
+    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999 || amountCents !== (credits / rateCredits) * rateCents)
+      throw new FundingError(422, 'A purchase needs a price in whole cents that is its steps at the rate.', 'invalid_amount');
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
       const existing = await tx.creditPurchase(tenantId, purchaseId);
       if (existing) {
-        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.credits !== credits || existing.amountCents !== amountCents)
+        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.credits !== credits || existing.amountCents !== amountCents
+          || existing.rateCents !== rateCents || existing.rateCredits !== rateCredits || existing.environment !== environment)
           throw new FundingError(409, 'That purchase already exists with different terms.', 'purchase_conflict');
         return existing;
       }
-      const row: CreditPurchaseRow = { tenantId, organizationId, purchaseId, personId, credits, amountCents, currency: 'usd',
+      const row: CreditPurchaseRow = { tenantId, organizationId, purchaseId, personId, credits, amountCents, rateCents, rateCredits, environment, currency: 'usd',
         checkoutSessionId: null, state: 'pending', createdAt: this.at(), resolvedAt: null, stripeEventId: null };
       await tx.saveCreditPurchase(row);
       return row;
@@ -703,12 +755,13 @@ export class FundingService {
    * Replays, mismatches and unknown sessions come back ignored, with the reason, and change nothing.
    */
   async previewCreditPurchase(input: { sessionId: string; purchaseId: string | null; tenantId: string | null; organizationId: string | null;
-    amountTotal: number | null; currency: string | null }):
+    amountTotal: number | null; currency: string | null; environment: 'test' | 'live' }):
     Promise<{ outcome: 'payable'; tenantId: string; organizationId: string; purchaseId: string } | { outcome: 'ignored'; reason: string; purchaseId: string | null }> {
     const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
     return this.repository.transaction(async (tx) => {
       const found = await tx.creditPurchaseBySession(input.sessionId);
       if (!found) return ignored('unknown_session');
+      if (found.environment !== input.environment) return ignored('environment_mismatch', found.purchaseId);
       if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
       if (found.state !== 'pending') return ignored(`already_${found.state}`, found.purchaseId);
       if (paysAnotherAmount(found, input)) return ignored('amount_mismatch', found.purchaseId);
@@ -725,13 +778,14 @@ export class FundingService {
    * the signature has been verified.
    */
   async resolveCreditPurchase(input: { kind: 'paid' | 'expired' | 'failed'; sessionId: string; purchaseId: string | null; tenantId: string | null;
-    organizationId: string | null; amountTotal: number | null; currency: string | null; eventId: string }):
+    organizationId: string | null; amountTotal: number | null; currency: string | null; eventId: string; environment: 'test' | 'live' }):
     Promise<{ outcome: 'paid' | 'expired' | 'failed' | 'ignored'; reason: string | null; purchaseId: string | null }> {
     const eventId = requireId(input.eventId, 'billing event');
     const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
     return this.repository.transaction(async (tx) => {
       const found = await tx.creditPurchaseBySession(input.sessionId);
       if (!found) return ignored('unknown_session');
+      if (found.environment !== input.environment) return ignored('environment_mismatch', found.purchaseId);
       if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
       await tx.lockOrganization(found.tenantId, found.organizationId);
       const purchase = await tx.creditPurchase(found.tenantId, found.purchaseId);
@@ -988,6 +1042,12 @@ export class FundingService {
      * and legacy Individual grants).
      */
     individualCycle?: IndividualBillingCycle;
+    /**
+     * Pay as you go (DIO-219): the gateway sets it for a person's own Individual billing scope when no plan funds the work.
+     * Never a client value. When the scope has no billing period, the reservation draws on its bought credits only and binds
+     * to the scope's bought-credits row instead of failing `no_period`. A business scope never takes this path.
+     */
+    boughtOnly?: boolean;
   }): Promise<FundedAttempt> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
@@ -1010,8 +1070,9 @@ export class FundingService {
     if (member && !MEMBER_ROLES.includes(member.role)) throw new FundingError(422, 'A member has an owner, admin or member role.', 'invalid_request');
     const cycle = input.individualCycle === undefined ? null : verifiedIndividualCycle(input.individualCycle);
     if (input.individualCycle !== undefined && !cycle) throw new FundingError(422, 'That is not a verified Individual billing period.', 'invalid_period');
+    const boughtOnly = input.boughtOnly === true && !cycle && isIndividualScopeId(organizationId);
     // A personal Individual billing scope has no members: nothing there is limited or attributed to a person.
-    const limitedMember = cycle ? null : member;
+    const limitedMember = cycle || boughtOnly ? null : member;
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
       // Read after the lock, so a reservation that waited past a period's end is judged at its end.
@@ -1038,7 +1099,9 @@ export class FundingService {
       if (cycle && !cycleContains(cycle, at))
         throw new FundingError(409, 'This billing period has ended, so its credits fund nothing new. Nothing was reserved.', 'period_ended');
       const periodId = cycle ? individualCycleId(cycle) : periodIdFor(at);
-      const period = await tx.period(tenantId, organizationId, periodId);
+      let period = await tx.period(tenantId, organizationId, periodId);
+      // No billing period, and the person pays as they go: bought credits only, on the scope's bought-credits row.
+      if (!period && boughtOnly) period = await this.boughtCreditsRow(tx, tenantId, organizationId, at);
       if (!period)
         throw new FundingError(409, 'This billing period has no credit grant recorded yet, so nothing can be reserved.', 'no_period');
       if (cycle && (period.planId !== 'individual' || period.startsAt !== cycle.startsAt || period.endsAt !== cycle.endsAt))
@@ -1049,7 +1112,7 @@ export class FundingService {
         throw new FundingError(409, 'A monthly Individual term now funds this account; earlier funding is kept for settlement only.', 'period_superseded');
       const decision = decideReserve({
         maxMicroUsd: input.maxMicroUsd,
-        monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, periodId)),
+        monthlyAvailableMicroUsd: monthlyAvailable(period, await tx.periodTotals(tenantId, organizationId, period.periodId)),
         topUpAvailableMicroUsd: topUpAvailable(await tx.topUpTotals(tenantId, organizationId, at)),
         job: { capMicroUsd: job.capMicroUsd, usedMicroUsd: await tx.jobUsed(tenantId, rootJobId) },
       });
@@ -1065,7 +1128,7 @@ export class FundingService {
           throw new FundingError(503, 'This hold would take the company’s provider spend past its ceiling.', 'company_ceiling');
       }
       const attempt: FundedAttempt = {
-        id: attemptId, organizationId, periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
+        id: attemptId, organizationId, periodId: period.periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,
         resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate,
         ...(charge ? { chargeSnapshot: charge } : {}), usageClass,
@@ -1075,6 +1138,19 @@ export class FundingService {
       if (limitedMember) await tx.saveAttemptPerson({ tenantId, attemptId, organizationId, personId: limitedMember.personId });
       return attempt;
     });
+  }
+
+  /**
+   * The person's own bought-credits row (migration 017), written once, on their first reservation with no billing period,
+   * inside the reserving transaction and under its lock. It grants nothing: a reservation bound to it draws on bought credits only.
+   */
+  private async boughtCreditsRow(tx: FundingTransaction, tenantId: string, organizationId: string, at: string): Promise<CreditPeriodRow> {
+    const existing = await tx.period(tenantId, organizationId, BOUGHT_CREDITS_PERIOD);
+    if (existing) return existing;
+    const row: CreditPeriodRow = { tenantId, organizationId, periodId: BOUGHT_CREDITS_PERIOD, planId: BOUGHT_CREDITS_PLAN, rateCardVersion: RATE_CARD_V1.version,
+      grantedMicroUsd: micro(0), startsAt: at, endsAt: BOUGHT_CREDITS_ENDS_AT, sourceGrantId: '', allocatedAt: at };
+    await tx.savePeriod(row);
+    return row;
   }
 
   /**

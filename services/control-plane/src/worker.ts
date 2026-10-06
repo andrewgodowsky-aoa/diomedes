@@ -7,7 +7,7 @@ import { WorkOSIdentityVerifier, signingKeyCache, type SigningKeyCache } from '.
 import { StaffKeyVerifier, postgresStaffKeys } from './identity-staff-key.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import { FundingService, PurchasedUsageService, UsageService, purchasedHoldInput, purchasedReleaseInput, purchasedRenewInput, purchasedSettleInput } from './funding.js';
-import { CREDIT_PURCHASES_UNAVAILABLE, CreditPurchaseService, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
+import { CREDIT_PURCHASES_UNAVAILABLE, CommercialPersonScopes, CreditPurchaseService, GrantPlanLookup, StripeWebhookService, creditPurchaseInput, readBillingSettings, returnPage } from './credit-purchases.js';
 import { PostgresFundingRepository } from './funding-postgres.js';
 import { MemberLimits, MemberLimitsService, askRaiseInput, decideRaiseInput, setLimitInput, setSettingsInput } from './member-limits.js';
 import { PostgresCommercialRepository } from './commercial-postgres.js';
@@ -89,6 +89,8 @@ const QUERY_RULES: { path: RegExp; keys: Record<string, (value: string) => boole
   { path: /^\/ops\/audit$/, keys: { organizationId: (value) => accountId.safeParse(value).success, limit: (value) => /^[1-9][0-9]{0,2}$/.test(value) } },
   // The amount is checked by the quote itself, which answers a plain 422 for anything that is not a step of 100.
   { path: /^\/account\/organizations\/[^/]+\/credit-purchases\/quote$/, keys: { credits: (value) => value.length <= 40 } },
+  // The same quote, for a person's own Personal work (DIO-219).
+  { path: /^\/account\/credit-purchases\/quote$/, keys: { credits: (value) => value.length <= 40 } },
 ];
 
 function checkQuery(url: URL, method: string) {
@@ -106,7 +108,7 @@ export interface HandlerOptions {
   /** Test and faux-cloud seam for purchased-usage holds. The Worker entry always uses the funding login. */
   createPurchased?: (config: Configuration, accounts: AccountService) => Pick<PurchasedUsageService, 'balance' | 'hold' | 'settle' | 'release' | 'renew'>;
   /** Test and faux-cloud seam for buying credits: the faux Stripe and the faux store. The Worker entry always uses the funding login and Stripe. */
-  createCreditPurchases?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => Pick<CreditPurchaseService, 'quote' | 'create' | 'read'>;
+  createCreditPurchases?: (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => Pick<CreditPurchaseService, 'quote' | 'create' | 'read' | 'personalQuote' | 'personalCreate' | 'personalRead' | 'personalBalance'>;
   /** Test and faux-cloud seam for Stripe's events, over the same store. */
   createStripeWebhook?: (config: Configuration, env: Record<string, unknown>) => Pick<StripeWebhookService, 'handle'>;
   /** Test and faux-cloud seam for per-member credit limits. The Worker entry always uses the funding login. */
@@ -193,7 +195,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   // so the funding login alone cannot make bought credits.
   const ledgerFor = (config: Configuration) => new PostgresRepository(neonClientFactory(config.databaseUrl));
   const createCreditPurchases = options.createCreditPurchases ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
-    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
+    new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config),
+      plans: new GrantPlanLookup(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))),
+      persons: new CommercialPersonScopes(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))) }));
   const createStripeWebhook = options.createStripeWebhook ?? ((config: Configuration, env: Record<string, unknown>) =>
     new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
 
@@ -212,7 +216,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
   const createRouting = options.createRouting ?? ((config: Configuration, accounts: AccountService) =>
     new RoutingService(accounts, new PostgresCommercialRepository(neonClientFactory(config.databaseUrl)), Date.now,
-      config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null));
+      config.fundingDatabaseUrl ? new FundingService(new PostgresFundingRepository(neonClientFactory(config.fundingDatabaseUrl))) : null,
+      // A person's bought balance, read with SELECT only on the Worker login (pay as you go, DIO-219).
+      new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl)))));
   const createManaged = options.createManaged ?? ((config: Configuration, accounts: AccountService) => {
     // Every funding read and write the gateway makes runs as cp_funding
     // (FUNDING_DATABASE_URL), never as the Worker login, which may only read
@@ -413,6 +419,15 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         return json(await createCreditPurchases(config, accounts, env).create(token, match[1], await body(request, creditPurchaseInput), url.origin), 201);
       if ((match = route('/account/organizations/:id/credit-purchases/:id').exec(pathname)) && method === 'GET')
         return json(await createCreditPurchases(config, accounts, env).read(token, match[1], match[2]));
+      // --- a person buying credits for their own Personal work (DIO-219): no request names a person, a scope or a business ---
+      if (pathname === '/account/credit-purchases/quote' && method === 'GET')
+        return json(await createCreditPurchases(config, accounts, env).personalQuote(token, url.searchParams.get('credits')));
+      if (pathname === '/account/credit-purchases' && method === 'POST')
+        return json(await createCreditPurchases(config, accounts, env).personalCreate(token, await body(request, creditPurchaseInput), url.origin), 201);
+      if ((match = route('/account/credit-purchases/:id').exec(pathname)) && method === 'GET')
+        return json(await createCreditPurchases(config, accounts, env).personalRead(token, match[1]));
+      if (pathname === '/account/purchased-usage' && method === 'GET')
+        return json(await createCreditPurchases(config, accounts, env).personalBalance(token));
       if ((match = route('/account/organizations/:id/invitations').exec(pathname)) && method === 'POST')
         return json(await accounts.invite(token, match[1], await body(request, invitationInput)), 201);
       if ((match = route('/account/organizations/:id/invitations/accept').exec(pathname)) && method === 'POST')
@@ -604,11 +619,20 @@ export type GatewayEnv = WorkerEnv & {
   BEDROCK_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   FUNDING_DATABASE_URL?: string;
-  /** Whole cents for 100 credits. A setting, never a default: unset, every quote and purchase answers 503. */
-  CREDIT_PRICE_CENTS_PER_100?: string | number;
+  /**
+   * What one step of credits costs, written "cents:credits" (1000:110 is $10.00 for 110 credits), for a business with an active plan grant and for one
+   * without. Settings, never defaults: unset, a quote or purchase at that rate answers 503. The server picks the rate from the paying business's plan
+   * and stores it on the purchase.
+   */
+  CREDIT_RATE_PLAN?: string;
+  CREDIT_RATE_FREE?: string;
+  /** "1" lets a live key and live events through. Anything else, or unset, is test mode: a key that is not sk_test_ or rk_test_ is not used, and a livemode event is refused. */
+  STRIPE_LIVE?: string;
   /** Stripe secret key, and the endpoint secret for /billing/stripe/webhook. Both Worker secrets. */
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  /** The endpoint secret before a rotation. A signature valid under it or STRIPE_WEBHOOK_SECRET is accepted. */
+  STRIPE_WEBHOOK_SECRET_PREVIOUS?: string;
   STAFF_WORKOS_API_KEY?: string;
   MANAGED_SPEND_CEILING_MICRO_USD?: string | number;
   MANAGED_MAX_OUTPUT_TOKENS?: string | number;

@@ -25,7 +25,7 @@ import { createFauxCloud } from '../src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../src/faux/seed.js';
 import { micro } from '../../../shared/managed-usage.js';
 import { FundingService, PurchasedUsageService, type FundingRepository } from '../src/funding.js';
-import { CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../src/credit-purchases.js';
+import { CommercialPersonScopes, CreditPurchaseService, StripeWebhookService, readBillingSettings } from '../src/credit-purchases.js';
 import { FAUX_STRIPE_SECRET_KEY, FAUX_STRIPE_WEBHOOK_SECRET, fauxPaidEvent, fauxStripeFetch, signFauxEvent } from '../src/faux/stripe.js';
 import { PostgresFundingTransaction } from '../src/funding-postgres.js';
 import { ManagedError, ManagedInferenceService } from '../src/managed-inference.js';
@@ -316,6 +316,27 @@ async function runGatewayPaths() {
         { kind: 'generation', route: LUNA.model, requestDigest: 'b'.repeat(64), rate: LUNA.rate, maxMicroUsd: 1000, ceilingMicroUsd: 100000000 });
       return cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === account.id).map((row) => row.periodId);
     })(),
+    payAsYouGo: await (async () => {
+      // DIO-219: a person with no plan, on credits they bought. The gateway reads the bought balance on every call (admitted),
+      // then holds on bought credits only, on the scope's bought-credits row.
+      const freeSignIn = await cloud.handle(new Request('http://faux/auth/sign-in', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: DEMO_ACCOUNTS.free.email, password: FAUX_DEMO_PASSWORD }),
+      }));
+      const freeToken = (await freeSignIn.json()).accessToken as string;
+      const person = (await cloud.accounts.signIn(freeToken)).person;
+      const scope = await new CommercialPersonScopes(cloud.store.commercial, now).ensure(person);
+      await cloud.store.funding.transaction((tx) => tx.saveTopUp({ tenantId: person.id, organizationId: scope.id, topUpId: 'topup-payg',
+        amountMicroUsd: micro(10_000_000), provider: 'stripe', sourceEventId: 'evt-payg', recordedAt: new Date(now()).toISOString() }));
+      expect(await funding.boughtAvailable(person.id, scope.id)).toBe(10_000_000);
+      const holdAndDispatch = Reflect.get(gateway, 'holdAndDispatch') as (...args: unknown[]) => Promise<unknown>;
+      await holdAndDispatch.call(gateway,
+        { token: freeToken, organizationId: scope.id, admissionId: 'unused', jobId: 'payg-1', attemptId: 'payg-1:1',
+          parentAttemptId: null, tier: 'efficient', usageClass: 'metered-work', scope: { kind: 'individual', id: scope.id } },
+        person.id, [],
+        { kind: 'generation', route: LUNA.model, requestDigest: 'c'.repeat(64), rate: LUNA.rate, maxMicroUsd: 1000, ceilingMicroUsd: 100000000, boughtOnly: true });
+      return cloud.store.snapshot().funding.periods.filter((row) => row.organizationId === scope.id).map((row) => row.periodId);
+    })(),
     read: (await gateway.attempt(new Request('http://127.0.0.1:8791/managed/v1/attempts/run-1:1', {
       headers: { authorization: `Bearer ${token}`, 'x-nectovia-organization': organizationId },
     }), 'run-1:1')).status,
@@ -341,12 +362,14 @@ async function runGatewayPaths() {
     body: JSON.stringify({ email: DEMO_ACCOUNTS.owner.email, password: FAUX_DEMO_PASSWORD }),
   }));
   const ownerToken = (await ownerSignIn.json()).accessToken as string;
-  const billing = { CREDIT_PRICE_CENTS_PER_100: '1200', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
+  const billing = { CREDIT_RATE_PLAN: '1000:110', CREDIT_RATE_FREE: '1200:100', STRIPE_SECRET_KEY: FAUX_STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET: FAUX_STRIPE_WEBHOOK_SECRET };
+  // The business buys without a plan here, at the free rate, in steps of 100.
+  const plans = { hasActivePlan: async () => false, hasActivePersonPlan: async () => false };
   const settings = readBillingSettings(billing);
   const ledger = cloud.paymentLedger;
   const faux = fauxStripeFetch();
-  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger });
-  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger });
+  const buying = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: faux, now, localCheckout: true, ledger, plans });
+  const refusing = new CreditPurchaseService(cloud.accounts, funding, { settings, fetch: (async () => new Response('no', { status: 500 })) as typeof fetch, now, ledger, plans });
   const receiving = new StripeWebhookService(funding, { settings, now, ledger });
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const paid = await buying.create(ownerToken, organizationId, { credits: 300 }, 'http://127.0.0.1:8795');
@@ -426,9 +449,9 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
     const run = await runGatewayPaths();
     // The scenarios did what they are for.
     expect(run.outcomes).toEqual({ first: 200, retry: 200, busy: 429, failed: 503, preDispatchRelease: true, replayed: 409, read: 200,
-      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], limited: 402 });
+      personalFirstUse: ['individual:2026-10-02T09:00:00.000Z'], payAsYouGo: ['bought-credits'], limited: 402 });
     expect(run.states).toEqual({ 'run-1:1': 'settled', 'run-1:2': 'settled', 'run-1:3': 'released', 'run-1:4': 'uncertain', 'run-1:5': 'released',
-      'personal-1:1': 'pending' });
+      'personal-1:1': 'pending', 'payg-1:1': 'pending' });
     expect(run.periods).toEqual(['2026-09', '2026-10']);
     expect(run.providerCalls).toBe(4);
     expect(run.holds).toEqual({ 'hold-1': 'settled', 'hold-2': 'released', 'hold-3': 'held' });
@@ -478,9 +501,11 @@ describe('cp_funding (scripts/funding-permissions.sql)', () => {
       expect(FUNDING_SQL).not.toMatch(new RegExp(`GRANT[^;]*control_plane\.${table}`));
     }
     const runtime = parseGrants(RUNTIME_SQL, 'cp_runtime');
+    // The Worker login marks an inbox event's state (016) and nothing else of it; a customer is never rewritten.
+    const updates: Record<string, string[]> = { webhook_inbox: ['processed_at', 'state'], billing_customers: [] };
     for (const table of ['webhook_inbox', 'billing_customers'])
-      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])] })
-        .toEqual({ table, insert: true, select: true, update: [] });
+      expect({ table, insert: runtime.tables.get(table)?.insert, select: runtime.tables.get(table)?.select, update: [...(runtime.tables.get(table)?.update ?? [])].sort() })
+        .toEqual({ table, insert: true, select: true, update: updates[table] });
     // And it does not write funding rows or credit purchases.
     expect(runtime.tables.get('credit_purchases')).toBeUndefined();
   });
