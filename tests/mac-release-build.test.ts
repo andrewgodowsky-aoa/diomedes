@@ -26,7 +26,7 @@ const assets = (await import(new URL('../scripts/write-release-assets.mjs', impo
 
 const VERSION = '0.2.3';
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
-const APP = '/Users/someone/dev/diomedes-mac/release/Diomedes-darwin-arm64/Diomedes.app';
+const APP = '/Users/someone/dev/diomedes-mac/release/Nectovia-darwin-arm64/Nectovia.app';
 const launch = {
   startedAt: '2026-10-03T12:00:00.000Z',
   passed: true,
@@ -48,7 +48,7 @@ const facts = (verifyStatus: number) =>
   build.signatureFacts({
     verifyStatus,
     assessStatus: 3,
-    display: `Executable=${APP}/Contents/MacOS/Diomedes\nIdentifier=com.electron.diomedes\nSignature=adhoc\n`,
+    display: `Executable=${APP}/Contents/MacOS/Nectovia\nIdentifier=com.electron.diomedes\nSignature=adhoc\n`,
     verify: verifyStatus === 0 ? `${APP}: valid on disk\n${APP}: satisfies its Designated Requirement\n` : `${APP}: code has no resources but signature indicates they must be present\n`,
     spctl: `${APP}: rejected\nsource=no usable signature\n`,
   });
@@ -95,7 +95,7 @@ describe('the Mac release build', () => {
     const signature = facts(0);
     expect(signature.bundleSignatureVerifies).toBe(true);
     expect(signature.codesignDisplay).not.toContain('Executable=');
-    expect(signature.codesignVerify.startsWith('Diomedes.app: valid on disk')).toBe(true);
+    expect(signature.codesignVerify.startsWith('Nectovia.app: valid on disk')).toBe(true);
     expect(JSON.stringify(signature)).not.toContain('/Users/');
   });
 

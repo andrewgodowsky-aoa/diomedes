@@ -414,17 +414,19 @@ export function applicationMenuTemplate(platform, actions = {}) {
   if (platform === 'darwin')
     return [
       {
-        label: 'Diomedes',
+        // macOS titles this menu with the bundle's name, Nectovia. About, Hide and Quit would
+        // take Electron's app name, which stays Diomedes for the data folder, so they say it here.
+        label: 'Nectovia',
         submenu: [
-          { role: 'about' },
+          { role: 'about', label: 'About Nectovia' },
           { type: 'separator' },
           { role: 'services' },
           { type: 'separator' },
-          { role: 'hide' },
+          { role: 'hide', label: 'Hide Nectovia' },
           { role: 'hideOthers' },
           { role: 'unhide' },
           { type: 'separator' },
-          { role: 'quit' },
+          { role: 'quit', label: 'Quit Nectovia' },
         ],
       },
       edit,

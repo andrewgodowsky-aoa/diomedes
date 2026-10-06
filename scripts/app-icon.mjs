@@ -1,7 +1,8 @@
-// Draws the Nectovia mark as the Windows app icon, desktop/diomedes.ico. The file keeps its
-// old name because scripts/package-desktop.mjs embeds it in nectovia.exe by that name, and
-// the installer that scripts/build-windows-installer.mjs writes shows it for itself and its
-// uninstaller.
+// Draws the Nectovia mark as the app icon: desktop/diomedes.ico for Windows and
+// desktop/nectovia.icns for macOS. The Windows file keeps its old name because
+// scripts/package-desktop.mjs embeds it in nectovia.exe by that name, and the installer that
+// scripts/build-windows-installer.mjs writes shows it for itself and its uninstaller. The
+// packager copies the macOS file into Nectovia.app as the bundle's icon.
 //
 // The drawing is the site's 24-unit favicon (diomedes-site public/favicon.svg): an ink tile
 // under NectoviaMark.tsx's three plates and cyan lead seam, with the violet trail seam added
@@ -12,7 +13,7 @@
 // No dependencies: every size is drawn from that geometry with supersampled coverage, so 16
 // and 24 px stay legible instead of being shrunk from one large bitmap. Run
 // `node scripts/app-icon.mjs` after changing the mark or the palette; tests/app-icon.test.ts
-// fails while the committed icon differs from this drawing.
+// fails while either committed icon differs from this drawing.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -69,6 +70,31 @@ export const PALETTE = {
 /** Sizes the Windows shell asks for across display scales, up to Explorer's 256 px. */
 export const ICON_SIZES = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256];
 
+/**
+ * Apple's macOS icon grid: on a 1024 px canvas the icon is an 824 px rounded square with a
+ * 185.4 px corner in a 100 px margin, so the Dock and Finder show it at the size and shape of
+ * every other app. The tile takes that square and corner; the plates and seams keep their
+ * places on it.
+ */
+export const MAC_GRID = { canvas: 1024, body: 824, radius: 185.4 };
+
+/** The pixel sizes an .icns carries: 16 to 512 points at 1x and 2x. */
+export const MAC_ICON_SIZES = [16, 32, 64, 128, 256, 512, 1024];
+
+/** The .icns types that hold PNG data, each with the pixel size it carries. */
+export const ICNS_TYPES = [
+  ['icp4', 16],
+  ['ic11', 32],
+  ['icp5', 32],
+  ['ic12', 64],
+  ['ic07', 128],
+  ['ic13', 256],
+  ['ic08', 256],
+  ['ic14', 512],
+  ['ic09', 512],
+  ['ic10', 1024],
+];
+
 /** A seam's width in pixels where the 24-unit mark is drawn `size` px wide. */
 export const seamPixels = (size) => Math.min(3, Math.max(1.2, size * 0.022));
 
@@ -119,21 +145,24 @@ function seamShape([x1, y1, x2, y2], width, color) {
   );
 }
 
-/** The rounded square tile, as an exact signed distance. */
-function tileShape(size, radius, color) {
+/** The rounded square tile `offset` px in from the canvas corner, as an exact signed distance. */
+function tileShape(size, radius, color, offset = 0) {
   const half = size / 2;
   return {
     color,
     distance: (x, y) => {
-      const qx = Math.abs(x - half) - half + radius;
-      const qy = Math.abs(y - half) - half + radius;
+      const qx = Math.abs(x - offset - half) - half + radius;
+      const qy = Math.abs(y - offset - half) - half + radius;
       return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
     },
   };
 }
 
-/** Where every shape lands on a `size` px canvas, in paint order. */
-function iconShapes(size) {
+/**
+ * Where every shape lands, in paint order, when the 24-unit mark is drawn `size` px wide
+ * `offset` px in from the canvas corner, with a tile corner of `radius` units.
+ */
+function iconShapes(size, { offset = 0, radius = MARK.tile.radius } = {}) {
   // Units times size over 24, in that order, so a half-pixel lands exactly on .5.
   const pixels = (units) => (units * size) / MARK.tile.size;
   // At 48 px and below the plates' outer left and top edges sit on whole pixels, rounding a
@@ -143,11 +172,11 @@ function iconShapes(size) {
     const edge = pixels(MARK.plates[0].points[0][0]);
     shift = Math.ceil(edge - 0.5) - edge;
   }
-  const at = ([x, y]) => [pixels(x) + shift, pixels(y) + shift];
+  const at = ([x, y]) => [offset + pixels(x) + shift, offset + pixels(y) + shift];
   const seam = ([x1, y1, x2, y2], color) =>
     seamShape([...at([x1, y1]), ...at([x2, y2])], seamPixels(size), hex(color));
   const shapes = [
-    tileShape(size, pixels(MARK.tile.radius), hex(PALETTE.ink)),
+    tileShape(size, pixels(radius), hex(PALETTE.ink), offset),
     ...MARK.plates.map(({ tone, points }) => convexShape(points.map(at), hex(PALETTE[tone]))),
     seam(MARK.lead, PALETTE.lead),
   ];
@@ -170,9 +199,29 @@ function coverage(shape, x, y) {
   return inside / (SAMPLES * SAMPLES);
 }
 
-/** Straight-alpha RGBA pixels of the icon at `size` px, row by row from the top. */
+/** Straight-alpha RGBA pixels of the Windows icon at `size` px, row by row from the top. */
 export function renderIcon(size) {
-  const shapes = iconShapes(size);
+  return rasterize(size, iconShapes(size));
+}
+
+/** Where the tile sits on a `canvas` px macOS icon: a whole-pixel margin, the rest is tile. */
+export function macIconLayout(canvas) {
+  const margin = Math.round(
+    (canvas * (MAC_GRID.canvas - MAC_GRID.body)) / (2 * MAC_GRID.canvas),
+  );
+  // The grid's corner in mark units, so it scales with the tile like every other part.
+  const radius = (MAC_GRID.radius * MARK.tile.size) / MAC_GRID.body;
+  return { margin, tile: canvas - 2 * margin, radius };
+}
+
+/** Straight-alpha RGBA pixels of the macOS icon on a `canvas` px square, transparent margin. */
+export function renderMacIcon(canvas) {
+  const { margin, tile, radius } = macIconLayout(canvas);
+  return rasterize(canvas, iconShapes(tile, { offset: margin, radius }));
+}
+
+/** Paints `shapes` on a transparent `size` px square, row by row from the top. */
+function rasterize(size, shapes) {
   const rgba = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -291,8 +340,27 @@ export function buildIco() {
   return Buffer.concat([directory, ...images.map(({ data }) => data)]);
 }
 
+/** Every type in ICNS_TYPES, each a PNG drawn at its own pixel size on the macOS grid. */
+export function buildIcns() {
+  const pngs = new Map(MAC_ICON_SIZES.map((size) => [size, encodePng(renderMacIcon(size), size)]));
+  const entries = ICNS_TYPES.map(([type, size]) => {
+    const data = pngs.get(size);
+    const header = Buffer.alloc(8);
+    header.write(type, 0, 'ascii');
+    header.writeUInt32BE(8 + data.length, 4);
+    return Buffer.concat([header, data]);
+  });
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 'ascii');
+  header.writeUInt32BE(8 + entries.reduce((total, entry) => total + entry.length, 0), 4);
+  return Buffer.concat([header, ...entries]);
+}
+
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  const out = fileURLToPath(new URL('../desktop/diomedes.ico', import.meta.url));
-  await fs.writeFile(out, buildIco());
-  console.log(`Wrote ${out}`);
+  const ico = fileURLToPath(new URL('../desktop/diomedes.ico', import.meta.url));
+  await fs.writeFile(ico, buildIco());
+  console.log(`Wrote ${ico}`);
+  const icns = fileURLToPath(new URL('../desktop/nectovia.icns', import.meta.url));
+  await fs.writeFile(icns, buildIcns());
+  console.log(`Wrote ${icns}`);
 }

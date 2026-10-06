@@ -33,6 +33,19 @@ The proof records `hostedRunner: false` and names the Mac, so the release README
 runner's reads "no Mac computer has run it". The script's steps are the release
 workflow's `macos` job; a change to one belongs in both.
 
+The image holds `Nectovia.app`; through 0.2.3 it held `Diomedes.app`. The bundle id
+(`com.electron.diomedes`), the data folder, the Keychain item and the image's file name
+are unchanged (docs/implementation/2026-10-06-mac-app-name-and-icon.md).
+
+On a Mac that has run an earlier build, the launch smoke stops at a Keychain prompt: the
+app reads the login-keychain item `Diomedes Safe Storage` before its first window, and
+each ad-hoc build has a new signature hash that is not on that item's access list. Answer
+it (Always Allow) inside the smoke's 90 seconds, or the script fails with
+`electronApplication.firstWindow: Timeout 90000ms exceeded` and writes no proof, as the
+first 0.2.3 run did on 2026-10-06. Never delete the item to avoid the prompt: it holds the
+key the installed app's saved sign-in and credentials are sealed with. A hosted runner
+has a fresh keychain and never prompts.
+
 ## First Mac session - 2026-09-21
 
 Run on the MacBook Air itself. It supersedes the **[?]** marks and the *Known
