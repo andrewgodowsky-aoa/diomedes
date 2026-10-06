@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "work_item": "DIO-244",
+  "base_commit": "9f14078eef3d864f4c2569ac61ce791577cf8b2c",
+  "candidate": {
+    "shared/skill-import.ts": "8e7c00cd5264f6ced3081bc66a32d0c8869bff1bb3bd1c7b34bb661a5d3f1a65",
+    "tests/skill-import.test.ts": "25cef01070b32763bc5ed83189a6be3925626023a5de0eac1fc11d29be7fcd0f"
+  },
+  "initial_red": { "failed_suites": 1, "executed_tests": 0, "reason": "implementation module absent" },
+  "initial_green": { "passed": 57, "failed": 0, "skipped": 0 },
+  "review": {
+    "model": "gpt-6-astra",
+    "effort": "high",
+    "initial_p2_findings": 3,
+    "regression_red": { "passed": 58, "failed": 13, "skipped": 0 },
+    "final_verdict": "scoped_pass",
+    "remaining_actionable_findings": 0,
+    "independent_inline_assertions": { "passed": 10, "failed": 0, "skipped": 0 },
+    "candidate_hashes_verified_before_and_after": true
+  },
+  "final_targeted_suite": {
+    "command": "vitest run tests/skill-import.test.ts --maxWorkers=1",
+    "passed": 71,
+    "failed": 0,
+    "skipped": 0,
+    "unrun_in_target_file": 0
+  },
+  "focused_strict_typescript_exit_code": 0,
+  "prettier_check": "passed_both_typescript_files",
+  "unrun_gates": ["full_project_typecheck", "full_unit_suite", "vite_build", "browser_suite"],
+  "unverified_acceptance": ["product_import_integration", "packaged_desktop", "installed_desktop", "live_provider"],
+  "commit_reference": "containing_git_commit",
+  "commit_authorized_on": "2026-10-06",
+  "pushed": false,
+  "merged": false,
+  "deployed": false
+}

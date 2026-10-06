@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source_key": "NC-TPP-2026-10-06.1",
+  "checked_on": "2026-10-06",
+  "base_commit": "9f14078eef3d864f4c2569ac61ce791577cf8b2c",
+  "drive_folder": "https://drive.google.com/drive/folders/1L13ul5xDAzr1ndu8_1mZ1QPPjb7TFgdo",
+  "sources": [
+    {
+      "kind": "architecture_markdown",
+      "sha256": "e5477c2276a5b57793f3104d07e37168c431322ea9cede9a7a8704485a9df3a1",
+      "input_copy_count": 2,
+      "unique_content_count": 1,
+      "bytes": 52725,
+      "drive_id": "1wb9fpWB3wgTl5NlexU4Cvaib_uU_IG0v",
+      "notion_id": "3f192213-bac9-812d-bc60-fbfc286c4411"
+    },
+    {
+      "kind": "caching_harness_pdf",
+      "sha256": "285fde23aa057a50ad08b87b898485c5c5ec401ba19074836265bf47965d6a33",
+      "pages_reviewed": 14,
+      "bytes": 208918,
+      "drive_id": "1Z8v4O0k4fNToDZtBg7kd-zbOhneTNqL1",
+      "notion_id": "3f192213-bac9-81db-9abb-f1198e90ea5e"
+    }
+  ],
+  "notion_map_id": "3f192213-bac9-81dd-98aa-e93e713f4176",
+  "linear_issue": "DIO-244",
+  "linear_document_id": "07f24be6-b804-4de6-936e-996c10735bcf",
+  "related_issues_updated": ["DIO-30", "DIO-35", "DIO-215", "DIO-233"],
+  "verification": {
+    "drive_folder_readback": true,
+    "notion_source_and_map_readbacks": true,
+    "linear_document_readback": true,
+    "related_issue_readbacks": true,
+    "existing_issue_state_priority_assignee_preserved": true
+  },
+  "global_manifest_changed": false,
+  "notes": "Lane-local publication record preserves the unrelated dirty workspace and global manifest. Source publication does not imply code merge, release or runtime acceptance."
+}
