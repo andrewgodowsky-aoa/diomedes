@@ -23,6 +23,7 @@ import {
 import { recordSchemas } from './domain.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
 import { individualAccountSchema, routingPreferenceSchema, hardRestrictionsSchema, routingScopeKey, type IndividualAccount, type RoutingPreference, type AccountScope, type HardRestrictions } from '../../../shared/routing-policy.js';
+import { creditPriceTableSchema, type CreditPriceTable } from '../../../shared/credit-prices.js';
 
 const like = (query: string) => `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 
@@ -76,6 +77,20 @@ class PostgresCommercialTransaction implements CommercialTransaction {
   }
   async savePolicy(row: TierPolicy) {
     await this.client.query('INSERT INTO control_plane.tier_policies(scope_key,revision,record) VALUES ($1,$2,$3::jsonb)', [routingScopeKey(row.scope ?? { kind: 'global' }), row.revision, JSON.stringify(row)]);
+  }
+  async priceTable(version?: number): Promise<CreditPriceTable | undefined> {
+    const result = version === undefined
+      ? await this.client.query('SELECT record FROM control_plane.credit_price_tables ORDER BY version DESC LIMIT 1')
+      : await this.client.query('SELECT record FROM control_plane.credit_price_tables WHERE version=$1', [version]);
+    return result.rows.length ? creditPriceTableSchema.parse(result.rows[0].record) : undefined;
+  }
+  async priceTables(limit: number) {
+    const result = await this.client.query('SELECT record FROM control_plane.credit_price_tables ORDER BY version DESC LIMIT $1', [limit]);
+    return result.rows.map((row) => creditPriceTableSchema.parse(row.record));
+  }
+  async savePriceTable(row: CreditPriceTable) {
+    await this.client.query('INSERT INTO control_plane.credit_price_tables(version,published_at,published_by,record) VALUES ($1,$2,$3,$4::jsonb)',
+      [row.version, row.publishedAt, row.publishedBy, JSON.stringify(row)]);
   }
   async individual(id: string) {
     const result = await this.client.query("SELECT record FROM control_plane.billing_scopes WHERE kind='individual' AND id=$1", [id]);

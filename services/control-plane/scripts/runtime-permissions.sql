@@ -79,3 +79,9 @@ GRANT UPDATE (until_at, reason) ON control_plane.managed_route_circuits TO cp_ru
 -- Personal admissions are append-only, like agent_admissions.
 GRANT SELECT, INSERT, UPDATE ON control_plane.person_feature_grants, control_plane.person_access TO cp_runtime;
 GRANT SELECT, INSERT ON control_plane.personal_agent_admissions TO cp_runtime;
+-- 018 credit price tables (Model B, 2026-10-05): the gateway reads the active version with the
+-- routing state, and staff publish a version through /ops/credit-prices. Append-only, like
+-- tier_policies: INSERT without UPDATE, and its trigger refuses rewrites anyway. The funding
+-- login's grants are unchanged: its table-level INSERT on funding_reservations covers the new
+-- charge_snapshot column, which is not in its UPDATE list.
+GRANT SELECT, INSERT ON control_plane.credit_price_tables TO cp_runtime;

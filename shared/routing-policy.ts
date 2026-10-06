@@ -6,6 +6,7 @@
  */
 import { z } from 'zod';
 import { micro, type MicroUsd } from './managed-usage.js';
+import { ceilingFailures, type TierCharge } from './credit-prices.js';
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
 const instant = z.iso.datetime();
@@ -443,6 +444,13 @@ export function resolveRoutingCandidates(input: {
   tier: typeof ROUTING_TIERS[number]; envelope: RequestEnvelope; now: number;
   /** Pin the approved primary price for the entire request, including its backups. */
   referencePrice?: ModelBinding['price'] | null;
+  /**
+   * The tier's credit charge and the ceiling from the active credit price table (Model B,
+   * `shared/credit-prices.ts`). A route whose provider price passes the ceiling times the charge, in
+   * any token class, band or request fee, is excluded as `over_cost_ceiling`, like any other
+   * ineligible route. Omitted, no route is judged against a ceiling.
+   */
+  costCeiling?: { charge: TierCharge; ceilingMicroUsdPerCredit: number } | null;
 }): {
   /** The attempts, in order, capped at the policy's maximum. */
   candidates: EligibleCandidate[];
@@ -469,6 +477,9 @@ export function resolveRoutingCandidates(input: {
     if ((input.policy.cost.sameOrLower || input.preference.profile === 'lowest-cost') &&
         (referenceCost === null || (estimate !== null && estimate > referenceCost)))
       reasons.push({ code: 'reference_price_limit', message: 'The bounded request cannot be priced at or below the original approved reference.' });
+    if (route.binding && input.costCeiling && ceilingFailures({ tier: input.tier, routeId, price: route.binding.price,
+        charge: input.costCeiling.charge, ceilingMicroUsdPerCredit: input.costCeiling.ceilingMicroUsdPerCredit }).length)
+      reasons.push({ code: 'over_cost_ceiling', message: 'This route costs more than this tier’s credit price allows.' });
     if (reasons.length || estimate === null || !connection) excluded.push({ routeId, reasons });
     else candidates.push({ route, connection, estimateMicroUsd: estimate });
   }

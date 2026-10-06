@@ -668,7 +668,12 @@ export function periodIdFor(at: string): string {
 // only money. Nothing below activates billing, a plan or a checkout.
 
 /**
- * One credit is the website's internal $0.10 eligible-inference conversion.
+ * The ledger's scale: 100,000 units are one credit. The ledger counts credits.
+ *
+ * Under tier pricing (Model B, `shared/credit-prices.ts`) a unit is no longer a micro-USD of
+ * provider cost: a call debits its tier's charge, and the provider's cost is recorded beside
+ * the settlement, never debited. The `MicroUsd` names on ledger amounts are kept, not renamed.
+ * Attempts held before tier pricing settle as they always did, at provider cost.
  *
  * A credit is fractional cumulative usage. It is not a call, a request or a
  * task: one task can use a fraction of a credit or many credits, depending on
@@ -897,6 +902,12 @@ export interface FundedAttempt extends Reservation {
   readonly parentAttemptId: string | null;
   readonly requestDigest: string;
   readonly rateSnapshot: RateSnapshot;
+  /**
+   * The tier charge the attempt was held under (`shared/credit-prices.ts`): the hold and the debit
+   * are priced from it, and `rateSnapshot` prices only the provider's cost. Absent on attempts held
+   * before tier pricing, which hold and debit at provider cost as they always did.
+   */
+  readonly chargeSnapshot?: import('./credit-prices.js').ChargeSnapshot;
   readonly usageClass: UsageClass;
   /** The hold split: the month pays first, then the top-up balance. */
   readonly monthlyHoldMicroUsd: MicroUsd;

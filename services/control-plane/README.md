@@ -89,6 +89,9 @@ unset, anything unreadable refusing every managed call with 503
   call that would pass it is refused before any hold with 503
   `route_unavailable`, "Nothing was charged." Here it counts this store's
   ledger only, never the Worker's database, so the two do not share a total.
+  Under tier pricing a hold is in credit ledger units, not provider cost; the
+  sum stays an upper bound because a published ceiling is never more than
+  100,000 micro-USD a credit, so no call can cost the provider more than it holds.
 - `MANAGED_MAX_OUTPUT_TOKENS`: lowers the registry's output cap (16,000),
   never raises it. A larger request is clamped silently, and the response
   names the clamp in `X-Nectovia-Max-Output`.
@@ -703,6 +706,63 @@ Session call, a local checkout page at
 `/faux/checkout/:sessionId`, and `FauxCloud.completeCheckout(sessionId)`, which
 posts the same signed event to the Worker's own webhook. The page's button does
 the same.
+
+## Credit prices by tier (Model B, migration 018, 2026-10-05)
+
+A credit is priced by tier, never by route (`shared/credit-prices.ts`). Staff
+publish a versioned credit price table: for each of Efficient, Focused and
+Thorough, a charge in ledger units per million tokens for fresh input, output,
+cache reads and cache writes, with an optional reasoning price (output's
+otherwise), an optional per-request price and optional long-context bands; and
+one ceiling, in micro-USD of provider cost per credit charged, at most 100,000.
+The ledger keeps its scale (100,000 units are one credit) and its `MicroUsd`
+names; the units stop meaning provider cost. No price, ceiling or target is
+written in this repository: the faux cloud and the tests use synthetic values
+(`src/faux/seed.ts`, `FAUX_CREDIT_PRICES`).
+
+- Staff (`policy.publish`, so Routing and Admin): `GET /ops/credit-prices`
+  answers `{ table, history }`, the active version (or null) and up to 50
+  versions, newest first. `POST /ops/credit-prices/publish` with
+  `{ baseVersion, ceilingMicroUsdPerCredit, tiers: { efficient, focused, thorough }, note }`
+  publishes version `baseVersion + 1` and answers it with 201; a tier is a
+  charge or null. A stale `baseVersion` is 409. A table that leaves any bound
+  route over its ceiling is refused with 422 `over_cost_ceiling`, naming the
+  route, the tier and the token class. Each publish writes one
+  `credit-prices.published` audit row. Versions are append-only, in the
+  database and the faux store.
+- A route is bound when a current routing record would send a tier's call to
+  it: the global legacy tier map (priced by its provider registry row), the
+  global and every account scope's own versioned routing (backups only while
+  fallback is on), and the typed-evaluation route for every tier. Saving a route
+  and publishing or rolling back routing are refused with 422 `over_cost_ceiling`
+  when they put a bound route over the active table's ceiling that was not over
+  it before.
+- The ceiling check compares, in whole numbers, `provider × 100,000 ≤ ceiling ×
+  charge` for every token class, the request fee and every band region from
+  both band lists.
+- The gateway reads the active table with the routing state. A tier with no
+  charge is refused with 409 `tier_unpriced` before any hold or send. On
+  versioned routing a route over the ceiling is excluded as `over_cost_ceiling`,
+  like any other ineligible route, and the next eligible one serves; on the
+  legacy route and for typed evaluations, where there is one route, the call is
+  refused with 409 `over_cost_ceiling`. The hold is the tier's charge for the
+  input and output bounds, plus its request fee. The attempt stores the
+  provider's rate snapshot and the tier's charge snapshot. A table published
+  between the first read and dispatch is 409 `policy_changed`, and the hold is
+  released unsent.
+- Settlement debits `usageCost(charge, usage)`, month first then bought credits,
+  and records `usageCost(rate, usage)` as the settlement's provider cost, never
+  debited. An attempt reserved before tier pricing has no charge and settles
+  exactly as before. Customers read the debit; an attempt held under a charge
+  answers `providerCostMicroUsd: null` on `/managed/v1/attempts/:id` and in
+  routing receipts.
+- The routing snapshot the desktop reads carries the tier's charge, in ledger
+  units, in its existing `price` and `guardPrices` fields, never a provider
+  price, so the desktop's local guard and job estimate count credits and a
+  desktop already installed reads it unchanged.
+
+After deploy, no managed call is served until staff publish the first table.
+Migration 018 applies after 016 and 017: the runner refuses a gap.
 
 ## Runtime evidence and release
 
