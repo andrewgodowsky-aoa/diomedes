@@ -98,7 +98,8 @@ export function Setup({
             <h1>Your workspace is ready</h1>
             <p className="prose intro">
               You&apos;ll start in the{' '}
-              {VIEW_LABELS[shownView(settings.view, account?.state.plan.agent === 'free')]} view, with{' '}
+              {VIEW_LABELS[shownView(settings.view, account?.state.plan.agent === 'free' && account.state.plan.payAsYouGo !== true)]}{' '}
+              view, with{' '}
               {titleCase(settings.detail)} detail: {detailDescriptions[settings.detail].toLowerCase()}{' '}
               File proposals require review before Nectovia applies them. Your other approval
               preferences are in Settings. The switch at the top moves between Nectovia and Work.

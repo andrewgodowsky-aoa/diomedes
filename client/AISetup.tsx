@@ -3,7 +3,7 @@ import type { Settings } from '../shared/types';
 import type { ExternalEngine } from '../shared/types';
 import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../shared/engines';
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS, isConversationRoute } from '../shared/engines';
-import { useFreePlan } from './console/FreePlanNotice';
+import { useFreePlan, useNectoviaLocked } from './console/FreePlanNotice';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
 import { AwsBedrockSetup } from './AwsBedrockSetup';
 import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
@@ -1200,7 +1200,8 @@ export function AIConnections({
 }
 
 export default function AISetup({ settings, save, busy, onContinue, onBack }: AISetupProps) {
-  const freePlan = useFreePlan();
+  // The line below says the Agent isn't included, which credits bought without a plan make untrue (DIO-245).
+  const freePlan = useNectoviaLocked();
   const [skipBusy, setSkipBusy] = useState(false);
   const [skipError, setSkipError] = useState<string | null>(null);
   const [connections, setConnections] = useState<EngineConnection[]>([]);

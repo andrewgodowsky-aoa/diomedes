@@ -266,6 +266,11 @@ interface Current {
   access: Map<string, AccessView | null>;
   /** The person's own Individual access. Null: not read yet, or the read failed. */
   personAccess: PersonAccessView | null;
+  /**
+   * Pay as you go (DIO-245): the credits this person bought for their own Personal work are above zero. Read only while the
+   * plan reads free; absent until then, and false when the read failed.
+   */
+  boughtOpen?: boolean;
   /** Businesses whose access read the service refused because the person is not a member. */
   notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
@@ -996,6 +1001,8 @@ export class AccountSessionService {
     current.access = new Map(answers);
     current.personAccess = await person;
     current.notMember = notMember;
+    // Pay as you go (DIO-245): asked only of a person the plan reads as free, so a plan holder costs no extra read.
+    current.boughtOpen = this.planOf(current) === 'free' ? await this.readBoughtOpen(current) : false;
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
     await this.resetNoticeWhilePaid(current);
   }
@@ -1046,6 +1053,24 @@ export class AccountSessionService {
       await this.resetNoticeWhilePaid(current);
     } catch {
       // The cache stays as it was.
+    }
+  }
+
+  /**
+   * Whether the credits this person bought for their own Personal work are above zero now (`GET /account/purchased-usage`).
+   * The balance is the ledger admission reads (purchased less held and settled), so the Nectovia this opens and the admission
+   * that runs it agree. Bought credits land in the person's own Individual billing scope, which the first purchase makes, and
+   * the balance read makes that scope when it's missing. So the usage read (`GET /account/usage`, which only reads) goes
+   * first: a person without a scope has bought nothing and is never given one just to look. A failed read, or an older
+   * service without the routes, keeps Nectovia closed: nothing is guessed open.
+   */
+  private async readBoughtOpen(current: Current): Promise<boolean> {
+    try {
+      const usage = personalUsageAnswer(await this.backend.client.personUsage(current.accessToken), current.personId, this.now());
+      if (!usage?.accountId) return false;
+      return (await this.backend.client.personalPurchasedBalance(current.accessToken)).availableMicroUsd > 0;
+    } catch {
+      return false;
     }
   }
 
@@ -1497,6 +1522,7 @@ export class AccountSessionService {
       agent,
       plansUrl: this.plansUrl,
       notice: agent === 'free' && answer?.choice !== 'never' && !snoozed,
+      ...(agent === 'free' && this.current?.boughtOpen === true ? { payAsYouGo: true as const } : {}),
     };
   }
 

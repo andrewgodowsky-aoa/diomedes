@@ -10,6 +10,7 @@ import {
 import type { Membership, WorkspaceView } from '../../shared/workspaces';
 import { HEADLINE_STEPS } from '../../shared/credit-purchases';
 import { BOUGHT_CREDITS_LAST, BUSINESS_CREDITS_NEED_PLAN } from '../../shared/access';
+import { useAccount } from '../AccountGate';
 import { api } from '../api';
 import { Button } from '../components';
 import { PurchasedCreditsView, canSeePurchasedCredits, loadPersonalPurchasedUsage, loadPurchasedUsage } from './PurchasedCredits';
@@ -413,7 +414,13 @@ function PersonalUsagePanel({ report }: { report(error: unknown): void }) {
       live = false;
     };
   }, [reads]);
-  const paid = useCallback(() => setReads((count) => count + 1), []);
+  // Credits bought without a plan open Nectovia (pay as you go, DIO-245), so a paid purchase reads the account again too:
+  // the switch and the ask row follow it without a restart. A failed read leaves them as they were.
+  const refreshAccount = useAccount()?.refresh;
+  const paid = useCallback(() => {
+    setReads((count) => count + 1);
+    void refreshAccount?.().catch(() => undefined);
+  }, [refreshAccount]);
   const { flow, state } = useCreditPurchase(null, paid);
   return (
     <PersonalUsageView

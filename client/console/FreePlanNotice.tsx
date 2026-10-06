@@ -21,6 +21,21 @@ export function useFreePlan(): AccountPlanView | null {
 }
 
 /**
+ * The free version's plan while Nectovia itself is closed to this person, and null when it's open. Credits bought without a
+ * plan open Nectovia's view, its ask row and Home's conversation for their own Personal work (pay as you go, DIO-245), so
+ * those places read this. Routines, leading a team and the rest of a plan stay closed until a plan, so they keep
+ * `useFreePlan`.
+ */
+export function useNectoviaLocked(): AccountPlanView | null {
+  return nectoviaLockedBy(useAccount()?.state.plan);
+}
+
+/** The rule `useNectoviaLocked` reads: the free version's plan, unless credits it bought have opened Nectovia. */
+export function nectoviaLockedBy(plan: AccountPlanView | null | undefined): AccountPlanView | null {
+  return plan?.agent === 'free' && plan.payAsYouGo !== true ? plan : null;
+}
+
+/**
  * Opens the plans page in the system browser. In the desktop app the window-open handler hands the
  * address to the shell (desktop/main.mjs); in a browser it's a new tab.
  */
