@@ -77,8 +77,9 @@ const answer = (text: string): Item => ({
   status: 'completed',
   content: [{ type: 'output_text', text, annotations: [] }],
 });
+/** The person's message: the last user item, after the host's reads of the attached files. */
 const userText = (body: Seen['body']) => {
-  const user = body.input.find((item) => item.role === 'user');
+  const user = [...body.input].reverse().find((item) => item.role === 'user');
   const content = user?.content;
   if (typeof content === 'string') return content;
   return Array.isArray(content) ? content.map((part) => String((part as Item).text ?? '')).join('') : '';
@@ -126,8 +127,9 @@ function respond(body: Seen['body']): Item[] | 'hang' {
   if (said.startsWith('ACT') && issued)
     return [answer(`I can draft that checklist from the linen records.\n\n${decisionBlock(issued, 'Draft a linen delivery checklist')}`)];
   if (said.includes('napkins')) {
-    const result = body.input.find((item) => item.type === 'function_call_output');
-    if (!result)
+    // The host read the attached files before the message; a model asks only when nothing was read.
+    const results = body.input.filter((item) => item.type === 'function_call_output');
+    if (!results.length)
       return [
         {
           type: 'function_call',
@@ -138,7 +140,7 @@ function respond(body: Seen['body']): Item[] | 'hang' {
           status: 'completed',
         },
       ];
-    const observed = String(result.output);
+    const observed = results.map((item) => JSON.stringify(item.output)).join('\n');
     return [
       answer(
         observed.includes('6 napkins short')
@@ -381,29 +383,40 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect(asked.outcome).toEqual({ status: 'answered' });
     expect(asked.runId.startsWith('model-')).toBe(true);
 
-    // Two provider exchanges: the model asked for the file, the harness read it, the model answered.
-    expect(seen).toHaveLength(2);
+    // One provider exchange: the host read the three files before the message, and the model
+    // answered from them. Their calls carry the host's ids, by path order.
+    expect(seen).toHaveLength(1);
     for (const call of seen) {
       expect(call.url).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses');
       expect(call.authorization).toBe(`Bearer ${SECRET}`);
       expect(call.body.store).toBe(false);
       expect(call.body.model).toBe(AWS_LUNA_MODEL);
     }
-    const toolOutput = seen[1].body.input.find((item) => item.type === 'function_call_output');
-    expect(toolOutput?.call_id).toBe('call_linen_1');
+    const reads = seen[0].body.input.filter((item) => item.type === 'function_call');
+    expect(reads.map((item) => [item.call_id, item.name, JSON.parse(String(item.arguments)).path])).toEqual([
+      ['host-read-1', 'read_source', DOCS.delivery.path],
+      ['host-read-2', 'read_source', DOCS.invoice.path],
+      ['host-read-3', 'read_source', DOCS.order.path],
+    ]);
+    const toolOutput = seen[0].body.input.find((item) => item.type === 'function_call_output');
+    expect(toolOutput?.call_id).toBe('host-read-1');
     expect(String(toolOutput?.output)).toContain('The driver noted 6 napkins short.');
+    // The reads come before the person's message, which still lists every file.
+    expect(seen[0].body.input.findIndex((item) => item.type === 'function_call')).toBeLessThan(
+      seen[0].body.input.map((item) => item.role).lastIndexOf('user'),
+    );
     expect(userText(seen[0].body)).toContain(DOCS.invoice.path);
     expect(userText(seen[0].body)).not.toContain('Bills 100 napkins');
 
     // The turn's own run records the tool step through the Runtime.
     const child = await modelSessions().turnRun(project.id, asked.runId, 'm-linen');
     expect(child?.state).toBe('completed');
-    expect(child?.steps.map((step) => `${step.intent.kind}:${step.intent.name}`)).toEqual([
-      'transform:prepare_model_context',
-      'model:aws-bedrock',
-      'tool:read_source',
-      'transform:prepare_model_context',
-      'model:aws-bedrock',
+    expect(child?.steps.map((step) => `${step.intent.stepId}:${step.intent.kind}:${step.intent.name}`)).toEqual([
+      'host:0:tool:read_source',
+      'host:1:tool:read_source',
+      'host:2:tool:read_source',
+      'context:0:transform:prepare_model_context',
+      'model:0:model:aws-bedrock',
     ]);
 
     // The Console's record: who answered, requested and reported model, account route; no secret.
@@ -419,9 +432,9 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect(turn.helper).toMatchObject({ engine: 'aws-bedrock', verified: true });
     expect(JSON.stringify(store().state(project.id))).not.toContain(SECRET);
 
-    // Usage: two settled holds, priced from the usage AWS reported.
+    // Usage: one settled hold, priced from the usage AWS reported.
     const usageView = await view();
-    expect(usageView.spend!.recent.map((hold) => hold.state)).toEqual(['settled', 'settled']);
+    expect(usageView.spend!.recent.map((hold) => hold.state)).toEqual(['settled']);
     expect(usageView.spend!.settledMicroUsd).toBeGreaterThan(0);
     expect(usageView.spend!.recent[0].usage).toMatchObject({ inputTokens: 1_400, outputTokens: 220, reasoningTokens: 80 });
 
@@ -431,7 +444,7 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       DOCS.delivery.path,
       DOCS.invoice.path,
     ])).toEqual(asked);
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(1);
 
     // Job check-ins (owner decision 2026-10-05): the message is one job, named by its command id and
     // pinned under the host's tier; with no style set, it checks in at the Efficient amount.
@@ -470,12 +483,16 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     const context = turn.context!;
     expect(context).toMatchObject({ v: 1, route: 'aws-bedrock', model: AWS_LUNA_MODEL, estimator: 'utf8-bytes/4' });
     expect(context.window).toEqual({ tokens: null, source: 'not declared' });
-    // Two calls, each reported by AWS: the first is reconciled against the estimate.
-    expect(context.provider).toMatchObject({ calls: 2, reportedCalls: 2, inputTokens: 2_800, cacheReadTokens: 0, outputTokens: 440, firstCallInputTokens: 1_400 });
+    // One call, reported by AWS and reconciled against the estimate. The host's read went on it,
+    // so the file's bytes count with the project files and no tool result came back later.
+    expect(context.provider).toMatchObject({ calls: 1, reportedCalls: 1, inputTokens: 1_400, cacheReadTokens: 0, outputTokens: 220, firstCallInputTokens: 1_400 });
     expect(context.reconciliation).toEqual({ estimated: context.estimatedTokens, reported: 1_400, difference: 1_400 - context.estimatedTokens });
     const files = context.sections.find((section) => section.id === 'project-files')!;
-    expect(files.detail).toBe('1 attached, read through tools');
-    expect(context.sections.find((section) => section.id === 'tool-results')!.detail).toBe('1 tool call, sent back on later calls');
+    expect(files.detail).toBe('1 attached, read before the message');
+    expect(files.bytes).toBeGreaterThan(Buffer.byteLength(DOCS.delivery.text));
+    const results = context.sections.find((section) => section.id === 'tool-results')!;
+    expect(results).toMatchObject({ bytes: 0 });
+    expect(results.detail).toBeUndefined();
     expect(context.cache.support).toBe('automatic-prefix');
     // Names and numbers only: no file body and no secret rides in the record.
     expect(JSON.stringify(context)).not.toContain('napkins short');

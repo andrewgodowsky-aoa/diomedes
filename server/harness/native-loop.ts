@@ -36,6 +36,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
 import type {
   HarnessBudget,
   HarnessPrincipal,
@@ -424,6 +425,7 @@ export class NativeLoop {
       transcript: copy(transcript),
     };
     const prepare = this.adapter.prepare?.bind(this.adapter);
+    const maxBytes = this.adapter.contract.routeId === LOCAL_MODEL_ROUTE ? this.adapter.preparedRequestMaxBytes : undefined;
     const effective = prepare
       ? validatePrepared(
           original,
@@ -440,9 +442,10 @@ export class NativeLoop {
               cost: 0,
               origin: applicationOrigin(),
             },
-            async ({ signal }) => validatePrepared(original, await prepare(copy(original), signal)),
+            async ({ signal }) => validatePrepared(original, await prepare(copy(original), signal), maxBytes),
             principal,
           ),
+          maxBytes,
         )
       : original;
     await this.adapter.validatePrepared?.(copy(effective));

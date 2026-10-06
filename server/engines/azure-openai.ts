@@ -302,6 +302,8 @@ export async function respondAzure(
     stablePrefix?: string | null;
     /** The owner's cache setting for this call; absent sends the request as before. */
     cache?: CacheRequest | null;
+    /** How many leading `messages` are the host's reads of the attached files (`respondStream`). */
+    stableMessages?: number;
   } & StreamSinks,
 ): Promise<RespondResult> {
   const connection = azureConnectionSchema.parse(input.connection);

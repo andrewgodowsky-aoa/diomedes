@@ -5,7 +5,7 @@ import { localModelWindow } from '../server/harness/context-assembly.js';
 import { inspectModelImage } from '../server/bonsai/images.js';
 import { sourceTools } from '../server/harness/capabilities/conversation-sources.js';
 import type { LocalModelStatus } from '../shared/local-model.js';
-import { BONSAI_MODEL, FixedLocalModel, MEADOW_FOLDER, MEADOW_MODEL, meadowDescriptor } from './fixtures/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel, MEADOW_FOLDER, MEADOW_MODEL, meadowDescriptor, localAnswerStream } from './fixtures/local-model.js';
 
 // The server the copied descriptor names. The transport below answers it; nothing reaches it.
 const BASE = 'http://127.0.0.1:18082';
@@ -26,7 +26,7 @@ function fixture(answer: unknown = reply(), tokens = 10, source = new FixedLocal
     calls.push({ url: String(url), body: JSON.parse(String(init?.body)), init: init! });
     if (String(url).endsWith('/apply-template')) return Response.json({ prompt: 'Complete template' });
     if (String(url).endsWith('/tokenize')) return Response.json({ tokens: Array.from({ length: tokens }, () => 7) });
-    return answer instanceof Response ? answer : Response.json(answer);
+    return answer instanceof Response ? answer : localAnswerStream(answer as Parameters<typeof localAnswerStream>[0]);
   };
   const runtime = new LocalModelRuntime(source, host);
   const input = { runtime, model: 'local:gaming', instructions: 'Use the selected files.',
@@ -50,7 +50,8 @@ describe('the local provider', () => {
     const result = await respondLocal({ ...f.input, model, effort: 'xhigh', onDelta: deltas, onReasoningDelta: thoughts });
     expect(f.calls.map(c => c.url)).toEqual(['/apply-template', '/tokenize', '/v1/chat/completions'].map(p => BASE + p));
     expect(f.calls.at(-1)!.body).toMatchObject({ model: BONSAI_MODEL, reasoning_effort: 'xhigh',
-      chat_template_kwargs: { reasoning_effort: 'xhigh' }, parallel_tool_calls: false, stream: false,
+      chat_template_kwargs: { reasoning_effort: 'xhigh' }, parallel_tool_calls: false, stream: true,
+      stream_options: { include_usage: true }, return_progress: true, cache_prompt: true,
       max_tokens: full ? 32768 : 4096 });
     expect(f.calls.every(c => c.init.redirect === 'error')).toBe(true);
     expect(f.calls.at(-1)!.init.headers).toEqual({ 'content-type': 'application/json' });

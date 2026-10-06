@@ -95,7 +95,12 @@ export const LOOP_LIMITS = Object.freeze({
   maxTurns: 16,
   planItems: 8,
   planItemChars: 240,
-  claimChars: 4000,
+  /**
+   * The lead's final answer, kept whole up to this many characters and cut and marked past it.
+   * Andrew, 2026-10-06: allow longer answers (it was 4,000). A model's own output limit reaches it
+   * only on the longest answers; the bound keeps the run record bounded.
+   */
+  claimChars: 64_000,
   excerptChars: 600,
   /**
    * Andrew, 2026-09-24: depth at most 2 (a delegate may hand one sub-task on; its own

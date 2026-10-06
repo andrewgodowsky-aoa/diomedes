@@ -28,7 +28,7 @@ import { MODEL_API_REASONING } from '../server/harness/model-api-adapter.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
 import { createLocalAdapter } from '../server/engines/bonsai.js';
 import { LocalModelRuntime } from '../server/bonsai/runtime.js';
-import { BONSAI_MODEL, FixedLocalModel } from './fixtures/local-model.js';
+import { BONSAI_MODEL, FixedLocalModel, localAnswerStream } from './fixtures/local-model.js';
 import type { ModelAdapter } from '../server/harness/native-agent.js';
 import { createNectoviaModelAdapter } from '../server/harness/nectovia-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../server/harness/openrouter-model-adapter.js';
@@ -183,7 +183,8 @@ const ROWS: Record<ModelApiRoute, Row> = {
       }),
       model: 'local:gaming', instructions: INSTRUCTIONS, transcripts: transcripts('bonsai'), transport: fetch, sinks,
     }),
-    answer: (thinking, text) => Response.json({ id: 'local-1', model: BONSAI_MODEL,
+    // The local route reads a stream (DIO-247), in llama.cpp's final-chunk order.
+    answer: (thinking, text) => localAnswerStream({ id: 'local-1', model: BONSAI_MODEL,
       choices: [{ finish_reason: 'stop', message: { content: text, reasoning_content: thinking } }],
       usage: { prompt_tokens: 80, completion_tokens: 12, total_tokens: 92 } }),
     asked: () => null,

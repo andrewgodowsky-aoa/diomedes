@@ -33,6 +33,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { localContextBudget, type LocalModelProfile } from '../../../shared/local-model.js';
 import type { Json } from '../../../shared/harness.js';
 import { displayPath, readAccessOf, readScopeDigest, readSummary, type ReadScope } from '../../engines/read-scope.js';
 import { readAllowed } from '../../engines/turn-scope.js';
@@ -195,10 +196,13 @@ export interface ReadScopeTools {
  * only on a whole-project turn; `fetch_page` only when the scope allows the
  * web; `connector_read` only when the owner approved at least one connector.
  */
-export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; deps?: ReadToolDeps }): ReadScopeTools {
+export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; deps?: ReadToolDeps; localProfile?: LocalModelProfile }): ReadScopeTools {
+  const budget = options.localProfile ? localContextBudget(options.localProfile) : undefined;
+  const maxToolChars = budget?.toolChars ?? MAX_TOOL_CHARS;
+  const maxTurnChars = budget?.turnChars ?? MAX_TURN_CHARS;
   const root = scope.root;
   const deps = options.deps ?? {};
-  const connectors = scope.mcp?.length ? new McpReadClients(scope, deps.mcpTransport, MAX_TOOL_CHARS) : null;
+  const connectors = scope.mcp?.length ? new McpReadClients(scope, deps.mcpTransport, maxToolChars) : null;
   let gathered = 0;
   // Entries are judged by their own names under the folder's resolved spelling. The folder
   // itself already passed the path funnel, and a Windows 8.3 alias in its spelling (a
@@ -209,16 +213,17 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
   /** Counts an answer against the turn's allowance; an answer past it is not returned. */
   const spend = (answer: Json): Json => {
     const size = JSON.stringify(answer).length;
-    if (gathered + size > MAX_TURN_CHARS)
+    if (gathered + size > maxTurnChars)
       return refused('The reading allowance for this message is used up. Answer from what has already been read.');
     gathered += size;
     return answer;
   };
   const allowance = () =>
-    gathered >= MAX_TURN_CHARS
+    gathered >= maxTurnChars
       ? refused('The reading allowance for this message is used up. Answer from what has already been read.')
       : null;
   const base = {
+    ...(budget ? { limits: { maxOutputBytes: Math.min(8 * 1024 * 1024, budget.requestBytes) } } : {}),
     version: '1',
     effect: 'read' as const,
     effectClass: 'read' as const,
@@ -297,7 +302,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         const offset = Math.min(input.offset ?? 0, stat.size);
         const head = await readSlice(found.absolute, 0, Math.min(8_192, stat.size), stop);
         if (looksBinary(head)) return refused('That file is not text, so it was not read.');
-        const bytes = await readSlice(found.absolute, offset, Math.min(MAX_TOOL_CHARS, stat.size - offset), stop);
+        const bytes = await readSlice(found.absolute, offset, Math.min(maxToolChars, stat.size - offset), stop);
         const end = offset + bytes.byteLength;
         return spend({
           path: found.relative,
@@ -408,7 +413,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
           signal: stop,
           resolve: deps.resolve,
           request: deps.request,
-          maxChars: MAX_TOOL_CHARS,
+          maxChars: maxToolChars,
         });
         if (!page.ok) return refused(page.reason);
         return spend({

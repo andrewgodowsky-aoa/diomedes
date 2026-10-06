@@ -1,6 +1,7 @@
 import { parseApprovalCommand } from './approval-admission.js';
 import { fileURLToPath } from 'node:url';
-import { localSlug, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import { localSlug, localContextBudget, localSourceRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE } from '../shared/local-model.js';
+import type { LocalPromptProgressFrame } from './engines/local-progress.js';
 import { imageMediaType, MODEL_IMAGE_COUNT } from '../shared/model-images.js';
 import { LocalModelRuntime, LOCAL_MODEL_NOT_INSTALLED, type LocalModelHost } from './bonsai/runtime.js';
 import { FolderLocalModelSource, isFullLocalPath, type LocalModelSource } from './bonsai/descriptor.js';
@@ -1202,6 +1203,9 @@ export async function createApp(options: AppOptions) {
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
             onActivity: (frame) => store.emit('engine-activity', frame),
+            ...(input.engine === LOCAL_MODEL_ROUTE ? {
+              onPromptProgress: (frame: LocalPromptProgressFrame) => store.emit('engine-prompt-progress', frame),
+            } : {}),
           });
         }
         if (!isExternalEngine(input.engine)) {
@@ -1245,7 +1249,8 @@ export async function createApp(options: AppOptions) {
     agents,
     changeReview,
     agentProfiles,
-    route => route === LOCAL_MODEL_ROUTE && localRuntime.configured() ? { accountRoute: LOCAL_MODEL_ACCOUNT } : null,
+    route => route === LOCAL_MODEL_ROUTE && localRuntime.configured()
+      ? { accountRoute: LOCAL_MODEL_ACCOUNT, profile: model => localRuntime.profile(model) } : null,
   );
   // Only the protected desktop main process supplies this fresh loopback secret.
   // The unprotected development/browser host cannot promote a workspace fixture.
@@ -5285,11 +5290,12 @@ export async function createApp(options: AppOptions) {
             throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
           documents.push({ path: name, text: document.text });
         }
-        if (
-          documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
-          128_000
-        )
-          throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        const localProfile = conversationRoute === LOCAL_MODEL_ROUTE ? localRuntime.profile(selection.model) : undefined;
+        const localBudget = localProfile ? localContextBudget(localProfile) : undefined;
+        if (documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
+          (localBudget?.sourceBytes ?? 128_000))
+          throw new ApiError(413, localBudget ? localSourceRefusal('Choose less than', localBudget.sourceBytes)
+            : 'Choose less than 128 KB of source text for this request.');
         const modelRoute = isModelApiRoute(conversationRoute);
         // Ask and Plan get the read-only tools on every conversation route, bound to this
         // message's chosen documents. On a model-API route the host runs them itself
@@ -5312,6 +5318,7 @@ export async function createApp(options: AppOptions) {
         const rules = await messageRules({
           state,
           routeId: conversationRoute,
+          requestLimitBytes: localBudget?.requestBytes,
           sourceBytes: documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0),
           workPaths: documents.map((document) => document.path),
           allowedDocuments: cloudSharing(state).documents,
@@ -5560,6 +5567,9 @@ export async function createApp(options: AppOptions) {
             onActivity: (frame: ToolActivity) => store.emit('engine-activity', frame),
             // Thinking is narration too: shown while it runs, saved only on the finished reply.
             onReasoning: (frame: ReasoningPreview) => store.emit('engine-reasoning', frame),
+            ...(conversationRoute === LOCAL_MODEL_ROUTE ? {
+              onPromptProgress: (frame: LocalPromptProgressFrame) => store.emit('engine-prompt-progress', frame),
+            } : {}),
           },
         };
       });
@@ -6761,12 +6771,15 @@ export async function createApp(options: AppOptions) {
     const activityListener = (data: unknown) => send('engine-activity', data);
     // Thinking frames ride the same stream: shown while the reply runs, never persisted as frames.
     const reasoningListener = (data: unknown) => send('engine-reasoning', data);
+    // Local reading progress rides the same stream: counters and one fixed line, never persisted.
+    const promptProgressListener = (data: unknown) => send('engine-prompt-progress', data);
     const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
     store.on('engine-text', textListener);
     store.on('engine-activity', activityListener);
     store.on('engine-reasoning', reasoningListener);
+    store.on('engine-prompt-progress', promptProgressListener);
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
@@ -6777,6 +6790,7 @@ export async function createApp(options: AppOptions) {
       store.off('engine-text', textListener);
       store.off('engine-activity', activityListener);
       store.off('engine-reasoning', reasoningListener);
+      store.off('engine-prompt-progress', promptProgressListener);
       offUsage();
     });
   });
