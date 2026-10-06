@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "issue": "DIO-228",
+  "status": "AUTHORED_UNRUN",
+  "base": "063035ed9feee446352dbf445208577d021c71d4",
+  "mainAtStart": "710a8c1f3b86cb6cbf82996ba9ad46869c03a1fb",
+  "mainAtHandoffInspection": "6a0ec1cedc66d1163f4dc5e21974971c3ae19c2b",
+  "upstreamDriftIntegrated": false,
+  "worktree": "F:/Diomedes/diomedes-wt/memory-ledger",
+  "branch": "feature/memory-ledger",
+  "w01ImplementationCommitted": false,
+  "authoredCaseInventory": {
+    "method": "static source inventory, not test discovery",
+    "ledger": 53,
+    "recovery": 32,
+    "total": 85
+  },
+  "execution": {
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "authoredCasesUnrun": 85,
+    "red": "DID_NOT_RUN",
+    "green": "DID_NOT_RUN",
+    "typecheck": "DID_NOT_RUN",
+    "fullUnitSuite": "DID_NOT_RUN",
+    "build": "DID_NOT_RUN",
+    "browser": "DID_NOT_RUN",
+    "databaseOpenOrMigration": "DID_NOT_RUN",
+    "runtimeProbe": "DID_NOT_RUN",
+    "packagedWindows": "DID_NOT_RUN",
+    "packagedMacOS": "DID_NOT_RUN",
+    "provider": "DID_NOT_RUN"
+  },
+  "acceptanceCases": {
+    "M03": "AUTHORED_UNRUN", "M04": "AUTHORED_UNRUN",
+    "M05": "AUTHORED_UNRUN", "M06": "AUTHORED_UNRUN",
+    "M08": "AUTHORED_UNRUN", "M09": "AUTHORED_UNRUN",
+    "M28": "AUTHORED_UNRUN", "M29": "AUTHORED_UNRUN",
+    "M30": "AUTHORED_UNRUN", "M41": "AUTHORED_UNRUN",
+    "M42": "AUTHORED_UNRUN"
+  },
+  "localAcceptance": false,
+  "mergedCompletion": false,
+  "productionActivation": false,
+  "published": false,
+  "deployed": false,
+  "sha256": {
+    "shared/memory-ledger.ts": "12354312c52c379c1fd8246c4cddb54ea84a1e1b7fcec7a64492c2dafb96ae08",
+    "server/memory/store.ts": "99fa0ff194a2ccc7a1776a73840ab1f2248dad49d7b4f3862ba315559b3d0129",
+    "server/memory/service.ts": "24c21b696a9145a901411aacf17429428e74f205e4d856d3cfc82dee0b809316",
+    "server/memory/local-store.ts": "b59e9b17b29da56f096d7a7ead5c280f44bd4968175260dde95647da2cc50ada",
+    "server/memory/schema.ts": "b35dbce7decab39acd786033845c9d9ebf0a97ad46fc60726168826bc19f3827",
+    "server/migrations/registry.ts": "43732de6c628b19161d3199c11cf144eed3be4189cec9980053d10936aefc781",
+    "tests/memory-ledger.test.ts": "17fd7c7ec253740273a8c28dae3fa39cb663ed3bab9dcec469f8339c18d1abea",
+    "tests/memory-store-recovery.test.ts": "05715f4da09af79b223751c42014c121cd56cbd9fc59a4fe4d6a68c3d83cfa60",
+    "tests/fixtures/memory-ledger/fixture.ts": "887f5b323a00a566dc82a90426eb8eb33e2a420fc87e59cf52bdc9de1c605de9",
+    "tests/fixtures/memory-ledger/crash-child.ts": "35d11ee407f86bb34bb15ba5a3d2427da0d8e79e239594d065808cde1a6ff2f9"
+  }
+}
