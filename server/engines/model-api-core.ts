@@ -25,6 +25,7 @@ import type { Json, ToolDescriptor } from '../../shared/harness.js';
 import {
   cacheRequest,
   systemParts,
+  withFilesMarked,
   type CacheMark,
   type CacheNamespace,
   type CacheRequest,
@@ -658,6 +659,14 @@ export const CREDENTIAL_PLACEHOLDER = 'diomedes-guarded-credential';
 // --- the owner's cache setting on the wire ----------------------------------------------
 
 const CACHE_FIELD_NAMES = ['prompt_cache_key', 'prompt_cache_options', 'prompt_cache_breakpoint'] as const;
+
+/**
+ * The call id of the host's read whose call or result sits at this position among a conversation
+ * message's leading messages (`hostReadCount`). The host, not a provider, issued the call, so the
+ * id is fixed by position: the same files read for the next message give the same bytes.
+ */
+export const hostCallId = (index: number) => `host-read-${Math.ceil(index / 2)}`;
+const HOST_CALL_ID = /^host-read-[1-9][0-9]*$/;
 type CacheFieldName = (typeof CACHE_FIELD_NAMES)[number];
 type BodyPath = readonly (string | number)[];
 
@@ -685,8 +694,11 @@ function cacheFieldsOf(body: unknown): { name: CacheFieldName; path: BodyPath; v
  * - off: the explicit mode alone at the top level, no key and no breakpoint.
  * - explicit-prefix: the derived key and the explicit mode with its lifetime at the top level, and
  *   exactly one breakpoint, on the first part of the first message, which is a system message.
+ *   With `files`, exactly one more, on the result of the host's last read of an attached file: a
+ *   tool message's first content part on Chat Completions, a function_call_output's first output
+ *   part on Responses, under a host call id (`hostCallId`) that no later host read follows.
  */
-export function cacheFieldsMatch(text: string, request: CacheRequest): boolean {
+export function cacheFieldsMatch(text: string, request: CacheRequest, files = false): boolean {
   let body: unknown;
   try {
     body = JSON.parse(text);
@@ -708,20 +720,67 @@ export function cacheFieldsMatch(text: string, request: CacheRequest): boolean {
   if (promptCacheOptions === undefined ? options.length > 0 : !topLevel('prompt_cache_options', promptCacheOptions))
     return false;
   if (!request.breakpoint) return breakpoints.length === 0;
-  if (breakpoints.length !== 1 || !isDeepStrictEqual(breakpoints[0].value, request.breakpoint)) return false;
+  if (
+    breakpoints.length !== (files ? 2 : 1) ||
+    breakpoints.some((breakpoint) => !isDeepStrictEqual(breakpoint.value, request.breakpoint))
+  )
+    return false;
   // Chat Completions lists messages under `messages`, Responses under `input`.
-  const [list, message, content, part] = breakpoints[0].path;
   const record = body as Record<string, unknown>;
-  const first = Array.isArray(record[list as string]) ? (record[list as string] as unknown[])[0] : null;
-  const role = first && typeof first === 'object' ? (first as Record<string, unknown>).role : null;
-  return (
-    breakpoints[0].path.length === 4 &&
-    (list === 'messages' || list === 'input') &&
-    message === 0 &&
-    content === 'content' &&
-    part === 0 &&
-    (role === 'system' || role === 'developer')
-  );
+  const itemsOf = (list: unknown): Record<string, unknown>[] =>
+    (list === 'messages' || list === 'input') && Array.isArray(record[list])
+      ? (record[list] as unknown[]).map((item) => (item && typeof item === 'object' ? (item as Record<string, unknown>) : {}))
+      : [];
+  const onSystem = (path: BodyPath) => {
+    const [list, message, content, part] = path;
+    const role = itemsOf(list)[0]?.role;
+    return path.length === 4 && message === 0 && content === 'content' && part === 0 && (role === 'system' || role === 'developer');
+  };
+  const onLastHostRead = (path: BodyPath) => {
+    const [list, at, field, part] = path;
+    const items = itemsOf(list);
+    const hostId = (item: Record<string, unknown> | undefined) => {
+      const id = list === 'messages' ? (item?.role === 'tool' ? item.tool_call_id : null) : item?.type === 'function_call_output' ? item.call_id : null;
+      return typeof id === 'string' && HOST_CALL_ID.test(id);
+    };
+    return (
+      path.length === 4 &&
+      typeof at === 'number' &&
+      field === (list === 'messages' ? 'content' : 'output') &&
+      part === 0 &&
+      hostId(items[at]) &&
+      !items.slice(at + 1).some((item) => hostId(item))
+    );
+  };
+  return onSystem(breakpoints[0].path) && (!files || onLastHostRead(breakpoints[1].path));
+}
+
+/**
+ * The messages with an explicit breakpoint on the result of the host's last read: the message at
+ * `stable - 1`, the end of the reads that lead a conversation message (`hostReadCount`). Null when
+ * that message is not one host read's result, so nothing but the instructions is marked.
+ */
+function markHostReads(
+  messages: ModelMessage[],
+  stable: number,
+  namespace: CacheNamespace,
+  breakpoint: NonNullable<CacheRequest['breakpoint']>,
+): ModelMessage[] | null {
+  const last = messages[stable - 1];
+  if (last?.role !== 'tool' || last.content.length !== 1) return null;
+  const [part] = last.content;
+  if (part.type !== 'tool-result' || !HOST_CALL_ID.test(part.toolCallId)) return null;
+  const marked = [...messages];
+  marked[stable - 1] = {
+    ...last,
+    content: [
+      {
+        ...part,
+        providerOptions: { ...part.providerOptions, [namespace]: { ...part.providerOptions?.[namespace], promptCacheBreakpoint: breakpoint } },
+      },
+    ],
+  };
+  return marked;
 }
 
 /**
@@ -733,7 +792,7 @@ export function cacheFieldsMatch(text: string, request: CacheRequest): boolean {
  * provider's name contains "azure" and `openai` otherwise. The check catches that too. With no
  * options the provider options are the binding's own, unchanged. Apply it once per call.
  */
-export function withCacheOptions(binding: RouteBinding, namespace: CacheNamespace, request: CacheRequest): RouteBinding {
+export function withCacheOptions(binding: RouteBinding, namespace: CacheNamespace, request: CacheRequest, files = false): RouteBinding {
   const own = binding.guard.inspectBody;
   return {
     ...binding,
@@ -741,7 +800,7 @@ export function withCacheOptions(binding: RouteBinding, namespace: CacheNamespac
       ...binding.guard,
       inspectBody: (text) => {
         own?.(text);
-        if (!cacheFieldsMatch(text, request))
+        if (!cacheFieldsMatch(text, request, files))
           throw new ModelApiError(
             `${binding.prefix}_cache_refused`,
             'The request’s cache fields differ from the cache setting this call was given.',
@@ -865,6 +924,12 @@ export type RespondStreamInput = {
    * the request exactly as before any cache setting existed, and reports no `marked`.
    */
   cache?: CacheRequest | null;
+  /**
+   * How many leading `messages` are the host's reads of the files attached to a conversation
+   * message (`hostReadCount`). An explicit prefix marks the last of them too, so a follow-up that
+   * attaches the same files reuses them.
+   */
+  stableMessages?: number;
 } & StreamSinks;
 
 /** What one exchange has seen so far, filled in as it goes so an observer can be told once. */
@@ -962,13 +1027,24 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
   const cache = input.cache ?? null;
   let binding = input.binding;
   let system: string | SystemPart[] = input.instructions;
+  let messages = input.messages;
   let marked: CacheMark = null;
   if (cache) {
     const refusal = cacheRefusal(binding, cache);
     if (refusal) throw refusal;
     if (binding.cacheNamespace) {
       ({ system, marked } = systemParts(input.instructions, input.stablePrefix ?? null, cache, binding.cacheNamespace));
-      binding = withCacheOptions(binding, binding.cacheNamespace, cache);
+      // The host's reads of the attached files follow the instructions; a breakpoint at their end
+      // lets the next message that attaches the same files reuse them as well.
+      const files =
+        cache.breakpoint && input.stableMessages
+          ? markHostReads(input.messages, input.stableMessages, binding.cacheNamespace, cache.breakpoint)
+          : null;
+      if (files) {
+        messages = files;
+        marked = withFilesMarked(marked);
+      }
+      binding = withCacheOptions(binding, binding.cacheNamespace, cache, Boolean(files));
     }
   }
   const tools = descriptorTools(prefix, input.tools);
@@ -1129,7 +1205,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
       model: binding.model(fetch),
       // A string exactly as before, or the SDK's system messages when a breakpoint marks a part.
       system: typeof system === 'string' ? system : (system as never),
-      messages: input.messages,
+      messages,
       tools,
       toolChoice: 'auto',
       maxOutputTokens: input.limits.maxOutputTokens,

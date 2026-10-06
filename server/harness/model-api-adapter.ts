@@ -20,7 +20,7 @@ import type { ModelMessage } from 'ai';
 import { mergeSourceRestrictions, routingReceiptSchema, type HardRestrictions } from '../../shared/routing-policy.js';
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
 import type { Json, ModelRequest, ModelResult, PortableMessage, ToolDescriptor } from '../../shared/harness.js';
-import { ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
+import { hostCallId, ModelApiError, type RespondResult, type StreamSinks } from '../engines/model-api-core.js';
 import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from './model-transcripts.js';
 import { hostReadCount, type ModelAdapter } from './native-agent.js';
@@ -170,13 +170,6 @@ export function toolResultMessage(callId: string, toolName: string, output: unkn
     content: [{ type: 'tool-result', toolCallId: callId, toolName, output: { type: 'json', value: output as never } }],
   };
 }
-
-/**
- * The call id of the host's read whose call or result sits at this position. The host, not a
- * provider, issued the call, so the id is fixed by position: the same files read on the next
- * message give the same bytes.
- */
-export const hostCallId = (index: number) => `host-read-${Math.ceil(index / 2)}`;
 
 /** One of the host's reads (`hostReadCount`) in provider format: its call, or its result. */
 function hostReadMessage(message: PortableMessage, index: number): ModelMessage {

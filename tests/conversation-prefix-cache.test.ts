@@ -13,16 +13,20 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
-import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { AWS_LUNA_MODEL, awsQualificationIdentity } from '../server/engines/aws-bedrock';
+import { routeCapability } from '../server/engines/route-cache';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { baselineRedact } from '../server/secrets';
+import { accountContext, withCacheSetting, type TurnCacheReport } from '../server/harness/context-assembly';
 import { HOST_READ_OPENER, hostReadCount } from '../server/harness/native-agent';
 import type { ModelSessionRuns } from '../server/harness/model-session-run';
 import type { MessageResult } from '../server/interaction-service';
 import type { Store } from '../server/store';
 import type { PortableMessage } from '../shared/harness';
+import { cacheAccount, withFilesMarked, type CacheMark } from '../shared/route-capabilities';
 import type { Conversation, Project } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { K3_CONNECTION, SCENARIO_NOW } from './fixtures/cache-body-scenarios.js';
 import { BONSAI_MODEL, FixedLocalModel, fakeLocalHost, localAnswerStream } from './fixtures/local-model.js';
 
 type Item = Record<string, unknown>;
@@ -246,6 +250,28 @@ describe('a follow-up on AWS sends the same request up to the person\'s message'
     expect(child.steps.filter((step) => step.intent.name === 'list_sources')).toHaveLength(7);
   });
 
+  test('under the owner\'s explicit prefix the files are marked too, at the same place on every message', async () => {
+    await app.api('/ai/model-api/aws-bedrock/cache-policy', 'PUT', { policy: 'explicit-prefix' });
+    const attached = ['Orders.md', 'Deliveries.md', 'Invoices.md'];
+    await app.send('m-1', 'Which deliveries came up short?', attached);
+    await app.send('m-2', 'And did the invoices bill for them?', attached);
+    expect(seen).toHaveLength(2);
+    for (const { body } of seen) {
+      // Two breakpoints: the stable start of the instructions, and the result of the last read.
+      expect(JSON.stringify(body).split('"prompt_cache_breakpoint"')).toHaveLength(3);
+      const outputs = body.input.filter((item) => item.type === 'function_call_output');
+      expect(outputs.map((item) => [item.call_id, Array.isArray(item.output)])).toEqual([
+        ['host-read-1', false],
+        ['host-read-2', false],
+        ['host-read-3', true],
+      ]);
+    }
+    expect(JSON.stringify(lead(seen[1].body))).toBe(JSON.stringify(lead(seen[0].body)));
+    const cache = app.assistantTurns()[1].context!.cache;
+    expect(cache).toMatchObject({ policy: 'explicit-prefix', marked: 'stable-prefix-and-files' });
+    expect(cache.note).toContain('the attached files read before the message are marked for caching for 30 minutes');
+  });
+
   test('a message at the admission limits still goes: eight files, 128 KB of text and a full history', async () => {
     const long = 'The spring menu needs the linen order checked against every delivery slip. '.repeat(420).trim();
     expect(long.length).toBeLessThanOrEqual(32_000);
@@ -325,5 +351,53 @@ describe('a follow-up on the local route sends the same chat messages up to the 
     expect(sent[1].content).toBe(HOST_READ_OPENER);
     expect((sent[4].content as { type: string }[]).map((part) => part.type)).toEqual(['text', 'image_url']);
     expect(JSON.stringify(sent.slice(0, 4))).not.toContain('image_url');
+  });
+});
+
+describe('the record says the files were marked, and counts them toward the marked start', () => {
+  const k3 = routeCapability({ identity: awsQualificationIdentity(K3_CONNECTION), endpoint: K3_CONNECTION.baseUrl, receipt: null, now: SCENARIO_NOW.getTime() });
+  const prefix = 'p'.repeat(2_000);
+  const instructions = `${prefix}\n\nThis message may read the delivery notes.`;
+  const account = (reads?: { count: number; bytes: number }) =>
+    accountContext({
+      route: 'aws-bedrock',
+      model: K3_CONNECTION.modelId,
+      system: instructions,
+      guidance: [],
+      tools: [],
+      parts: { history: '', files: reads ? '- Deliveries.md' : '', message: 'Which deliveries arrived short?' },
+      separatorBytes: 0,
+      documents: reads?.count ?? 0,
+      ...(reads ? { reads } : {}),
+      requestLimitBytes: 200_000,
+      prefix: { sha: 'a'.repeat(64), bytes: prefix.length },
+      previousPrefixSha: null,
+      history: null,
+      compaction: null,
+    });
+  const report = (marked: CacheMark): TurnCacheReport => ({ policy: 'explicit-prefix', record: k3, marked });
+
+  test('each mark with the files has its own sentence', () => {
+    expect(withFilesMarked('stable-prefix')).toBe('stable-prefix-and-files');
+    expect(withFilesMarked('whole-instructions')).toBe('whole-instructions-and-files');
+    expect(withFilesMarked(null)).toBeNull();
+    expect(cacheAccount('explicit-prefix', null, 'stable-prefix-and-files').note).toBe(
+      'The stable start of the instructions and the attached files read before the message are marked for caching for 30 minutes, under a key kept to this business and route.',
+    );
+    expect(cacheAccount('explicit-prefix', null, 'whole-instructions-and-files').note).toBe(
+      'The whole instructions and the attached files read before the message are marked for caching for 30 minutes, so reuse holds only while the instructions stay the same.',
+    );
+  });
+
+  test('the marked start runs to the end of the reads, so files long enough are not called too short', () => {
+    // About 500 tokens of instructions alone: under the declared minimum of 1,024.
+    expect(withCacheSetting(account(), report('stable-prefix'), { prefix, instructions }).cache.note).toContain('too short to be cached');
+    // The same instructions and 8,000 bytes of files read before the message: about 2,500 tokens.
+    const long = withCacheSetting(account({ count: 1, bytes: 8_000 }), report('stable-prefix-and-files'), { prefix, instructions }).cache;
+    expect(long).toMatchObject({ policy: 'explicit-prefix', marked: 'stable-prefix-and-files' });
+    expect(long.note).toBe(cacheAccount('explicit-prefix', k3, 'stable-prefix-and-files').note);
+    // Files too small to reach the minimum still say so, counting them in.
+    const short = withCacheSetting(account({ count: 1, bytes: 400 }), report('stable-prefix-and-files'), { prefix, instructions }).cache;
+    expect(short.note).toContain('The marked start is about 604 tokens, under this model’s minimum of 1,024 tokens');
   });
 });
