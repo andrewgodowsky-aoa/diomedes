@@ -430,7 +430,7 @@ function balanceOf(totals: TopUpTotals): PurchasedBalance {
 const leaseFrom = (at: string) => new Date(Date.parse(at) + PURCHASED_HOLD_LEASE_MINUTES * 60_000).toISOString();
 
 /**
- * Pay as you go (DIO-219, migration 019). A person with no plan has no billing period, so a reservation for their own
+ * Pay as you go (DIO-219, migration 017). A person with no plan has no billing period, so a reservation for their own
  * Individual billing scope draws on the credits they bought and binds to the scope's one bought-credits row: no grant,
  * no source, and no end inside the life of the product. It never funds anything itself; only the scope's bought balance does.
  */
@@ -1102,7 +1102,7 @@ export class FundingService {
   }
 
   /**
-   * The person's own bought-credits row (migration 019), written once, on their first reservation with no billing period,
+   * The person's own bought-credits row (migration 017), written once, on their first reservation with no billing period,
    * inside the reserving transaction and under its lock. It grants nothing: a reservation bound to it draws on bought credits only.
    */
   private async boughtCreditsRow(tx: FundingTransaction, tenantId: string, organizationId: string, at: string): Promise<CreditPeriodRow> {

@@ -693,7 +693,7 @@ grants and for the audit rows of work the billing system does itself, with the r
 `billing`. It is not a person: it cannot be added as staff, and it never holds a
 session.
 
-### Pay as you go: a person as the payer (migration 019, 2026-10-05, DIO-219)
+### Pay as you go: a person as the payer (migration 017, 2026-10-05, DIO-219)
 
 A person with no plan buys credits for their own Personal work, and while their
 own bought balance is above zero the Nectovia Agent works for them there, funded
@@ -731,15 +731,14 @@ only from it. Bought credits grant no feature.
 - A business without a plan keeps slice 1's path: it buys at `CREDIT_RATE_FREE`
   and its quote says `onPlan: false`; its Agent stays refused.
 
-Migration 019 (`019_personal_pay_as_you_go.sql`) points `credit_purchases` at
+Migration 017 (`017_personal_pay_as_you_go.sql`) points `credit_purchases` at
 `billing_scopes` (015 still pointed it at `organizations`) and requires a
 purchase for an Individual scope to be its own person's; adds a generated
 `billing_customers.person_id` with a unique index per provider, environment and
 person, proved against the scope by a composite reference; and allows the
 bought-credits `credit_periods` row (`plan_id` and `period_id` `bought-credits`,
-granted 0, no source, Individual scopes only). No grant changes. Like 017 it is not
-listed in `scripts/migrate.ts`: numbers are assigned at merge, in merge order, and
-it applies after 017.
+granted 0, no source, Individual scopes only). No grant changes. It took its number
+at merge, in merge order (2026-10-06), and applies after 016.
 
 The faux cloud buys without Stripe: `CREDIT_RATE_PLAN` and `CREDIT_RATE_FREE` from
 the environment (or the faux test rates, `1000:110` and `1300:100`, when they are

@@ -400,8 +400,8 @@ describe('the Nectovia bot', () => {
     // Nothing tells someone with no business to link or switch to one; it names what they can do.
     expect(body.code).toBe('AGENT_NOT_INCLUDED');
     expect(body.error).toMatch(FREE_VERSION);
-    // With no AI of their own chosen, the only suggestion is a plan; no engine is named (Andrew, 2026-09-27).
-    expect(body.error).toContain('Sign up for a plan to talk here.');
+    // With no AI of their own chosen, it suggests credits or a plan; no engine is named (Andrew, 2026-09-27; pay as you go 2026-10-06).
+    expect(body.error).toContain('Buy credits to use it on your own conversations and tasks, or sign up for a plan.');
     expect(body.error).not.toMatch(/Claude|ChatGPT|Codex|OpenCode|Cursor|Devin|oh-my-pi|install|AI setup/i);
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);

@@ -2,9 +2,8 @@
 -- Nectovia Agent works for them there while their own bought balance is above zero. Code and tests only: no production migration
 -- is authorized by this file, and it is applied to accounts_staging with main's runner before the code that needs it merges.
 --
--- NUMBERING. Reserved as 019 (016 is draft #196, 017 is slice 1, 018 is lane B). The runner refuses a gap in its list and a history
--- that is not a prefix of it, so scripts/migrate.ts does not list this file yet; numbers are assigned at merge, in merge order.
--- Apply after 017.
+-- NUMBERING. Numbered 017 at merge (2026-10-06), in merge order, after slice 1's 016. The runner refuses a gap in its list and a
+-- history that is not a prefix of it, so this file applies after 016 and before anything numbered after it.
 --
 -- 1. A PERSON AS THE PAYER. A person's own billing scope is their Individual billing scope (010: kind 'individual', id
 -- 'individual_...', tenant_id = person_id). 015 still points credit_purchases at organizations, from before 010 moved the other

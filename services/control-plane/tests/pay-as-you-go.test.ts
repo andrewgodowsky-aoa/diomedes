@@ -408,13 +408,13 @@ describe('the bought-only reservation', () => {
   });
 });
 
-describe('migration 019', () => {
-  const sql = readFileSync(new URL('../migrations/019_personal_pay_as_you_go.sql', import.meta.url), 'utf8');
+describe('migration 017', () => {
+  const sql = readFileSync(new URL('../migrations/017_personal_pay_as_you_go.sql', import.meta.url), 'utf8');
   const runner = readFileSync(new URL('../scripts/migrate.ts', import.meta.url), 'utf8');
 
-  it('is LF only and is not listed in the runner: numbers are assigned at merge', () => {
+  it('is LF only and is listed in the runner directly after 016', () => {
     expect(sql).not.toContain('\r');
-    expect(runner).not.toContain('019_personal_pay_as_you_go');
+    expect(runner).toContain("'016_stripe_billing_foundation.sql','017_personal_pay_as_you_go.sql'");
   });
 
   it('maps a Stripe customer to one person per environment, and a person’s purchase to their own scope', () => {

@@ -4084,7 +4084,9 @@ export async function createApp(options: AppOptions) {
     isConversationRoute(route) && !isModelApiRoute(route);
   /**
    * What a person on the free version is told when a conversation is refused. It never suggests
-   * installing or choosing an engine; the only thing it suggests is a plan (Andrew, 2026-09-27).
+   * installing or choosing an engine; it suggests a plan (Andrew, 2026-09-27) and, where their own
+   * bought credits would run it, buying credits (pay as you go, 2026-10-06). Only Personal work and
+   * projects no business owns reach it, so the credits line never reaches a business workspace.
    * It may still name the engine the person already chose, to say what that engine can't do.
    */
   const freeHint = (): string => {
@@ -4093,7 +4095,7 @@ export async function createApp(options: AppOptions) {
       return 'A model key of your own also runs through the Nectovia Agent, so it needs a plan too. Sign up for a plan to talk here.';
     if (isRoute(own) && own !== 'sample' && !isFreeConversationRoute(own))
       return `${routeDisplayName(own)} can't hold a conversation yet, but it can still do Build and Fix work. Sign up for a plan to talk here.`;
-    return 'Sign up for a plan to talk here.';
+    return 'Buy credits to use it on your own conversations and tasks, or sign up for a plan.';
   };
   const tierFor = (
     projectId: string,
