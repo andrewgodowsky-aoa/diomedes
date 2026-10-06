@@ -22,7 +22,7 @@
  * local figure as what the business has left.
  */
 import { createOpenAI } from '@ai-sdk/openai';
-import { creditAmount, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
+import { creditAmount, MAX_MONEY_MICRO_USD, micro, publishedMonthlyGrant, type JobTier, type UsageClass } from '../../shared/managed-usage.js';
 import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import { OUT_OF_CREDITS_PERSONAL, PAY_AS_YOU_GO_PLAN_ONLY_REASON } from '../../shared/access.js';
 import { ESCALATION_HEADER, escalationAllows, type EscalationRole } from '../../shared/escalation-controls.js';
@@ -147,12 +147,31 @@ export function nectoviaConnectionId(organizationId: string, at: Date): string {
  * plan's published monthly grant (a plan without a published figure is guarded at the Business
  * grant). The gateway decides what the business can actually spend; this only stops this computer
  * sending past what the plan could fund. Every Nectovia call and every managed preflight holds on it.
+ *
+ * Pay as you go (DIO-223) is the one exception: work admitted with no plan, for a person's own scope,
+ * carries the bought balance the account service reported (`boughtAvailable`, ledger units). The month's
+ * cap is then what this connection has already settled or holds this month plus that balance, so a
+ * person who bought more than the default can spend it on this computer, and it is approved again as a
+ * new revision whenever that figure differs from the approved cap. The cap is never above what the
+ * connection is already out plus the balance the service reported. Without the amount (an older
+ * service, or work a plan holds) nothing changes: the default above is set once and never guessed at.
  */
 export async function ensureNectoviaGuard(
   exposure: Pick<SpendExposure, 'allowance' | 'setCap' | 'summary'>,
   connectionId: string,
   planId: string | null,
+  boughtAvailable?: number | null,
 ): Promise<ExposureSummary> {
+  if (planId === null && boughtAvailable !== undefined && boughtAvailable !== null) {
+    // Out so far: settled, or held (pending and uncertain), or written off. The balance is what the service says is left on top.
+    const cap = micro(Math.min(exposure.summary(connectionId).exposureMicroUsd + boughtAvailable, MAX_MONEY_MICRO_USD));
+    if (exposure.allowance(connectionId)?.capMicroUsd !== cap)
+      await exposure.setCap(connectionId, cap, {
+        approvedBy: "the person's bought balance, by this computer's host",
+        note: "Nectovia's local guard for this person's own work this month: what this connection has already used or holds, plus the bought balance the account service reported. The account service's ledger is the authority.",
+      });
+    return exposure.summary(connectionId);
+  }
   if (!exposure.allowance(connectionId))
     await exposure.setCap(connectionId, publishedMonthlyGrant(planId ?? '') ?? creditAmount(1_000), {
       approvedBy: `the ${planId ?? 'Nectovia'} plan, by this computer's host`,

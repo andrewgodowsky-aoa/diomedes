@@ -135,7 +135,7 @@ export class RoutingService {
    * from `funding`, which writes agreement periods and may be absent. Without it no person is admitted on bought credits.
    */
   constructor(private readonly accounts: AccountService, private readonly repository: CommercialRepository, private readonly now = Date.now, private readonly funding: FundingService | null = null,
-    private readonly bought: Pick<FundingService, 'boughtState'> | null = null) {}
+    private readonly bought: Pick<FundingService, 'boughtState' | 'boughtAvailable'> | null = null) {}
   private at() { return new Date(this.now()).toISOString(); }
   /**
    * Whether a person's own bought credits are above zero now. Undefined when there is no reader or the read failed: unknown, so
@@ -145,6 +145,19 @@ export class RoutingService {
     if (!this.bought) return undefined;
     try {
       return await this.bought.boughtState(tenantId, scopeId);
+    } catch {
+      return undefined;
+    }
+  }
+  /**
+   * A person's own bought balance in ledger units, for the desktop's local guard (DIO-223). Undefined on the same terms as
+   * `boughtCredits`: no reader, or the read failed. Unknown is never guessed as zero.
+   */
+  private async boughtBalance(tenantId: string, scopeId: string): Promise<number | undefined> {
+    if (!this.bought) return undefined;
+    try {
+      const units = Number(await this.bought.boughtAvailable(tenantId, scopeId));
+      return Number.isSafeInteger(units) && units >= 0 ? units : undefined;
     } catch {
       return undefined;
     }
@@ -186,7 +199,9 @@ export class RoutingService {
     if (scope.kind !== 'individual') return view;
     // The person's own bought balance, above zero or not (never the figure): what pays as they go when no plan holds the Agent.
     const bought = await this.boughtCredits(actor.tenantId, scope.id);
-    return bought === undefined ? view : { ...view, boughtCredits: bought };
+    // And how much, so the desktop's local guard can follow what they bought instead of a fixed monthly figure (DIO-223).
+    const available = await this.boughtBalance(actor.tenantId, scope.id);
+    return { ...view, ...(bought === undefined ? {} : { boughtCredits: bought }), ...(available === undefined ? {} : { boughtAvailable: available }) };
   }
   /** `GET /account/routing/{kind}/{id}/escalation`: any member of the scope, as for its policy and access. */
   async escalation(token: string, scope: AccountScope): Promise<EscalationView> {

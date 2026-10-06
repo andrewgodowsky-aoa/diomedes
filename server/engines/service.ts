@@ -2462,9 +2462,10 @@ export class EngineService {
     } catch (error) {
       throw new EngineError('ROUTE_REFUSED', error instanceof Error ? error.message : NECTOVIA_UNAVAILABLE, true);
     }
-    // The plan's published monthly grant, set once for the month; the gateway decides what the
+    // The plan's published monthly grant, set once for the month (pay as you go: this month's use plus the bought
+    // balance the account service reported, approved again when it changes); the gateway decides what the
     // business can actually spend.
-    if ((await ensureNectoviaGuard(api.exposure, handle.connectionId, admitted.planId)).availableMicroUsd <= 0)
+    if ((await ensureNectoviaGuard(api.exposure, handle.connectionId, admitted.planId, admitted.boughtAvailable)).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
         "Nectovia's safety limit on this computer for this business's month has been reached, so nothing was sent.",
