@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { defaults } from '../server/store';
 import {
+  CONVERSATION_ENGINES,
   LOCAL_MODEL,
   LOCAL_OTHER,
   LOCAL_OTHER_FREE,
@@ -473,5 +474,40 @@ describe('the row as drawn', () => {
     const boxes = html.match(/class="ask-pick"[^>]*>/g) ?? [];
     expect(boxes.length).toBeGreaterThan(0);
     for (const box of boxes) expect(box).toContain('disabled=""');
+  });
+});
+
+// Slice 2 of the round 2 reskin: the Nectovia conversation gets the ask row, and its engine list
+// is the conversation routes, not the project engines.
+describe('the ask row on the Nectovia conversation', () => {
+  const on = { 'claude-code': true, codex: true, 'oh-my-pi': true } as const;
+  const input = {
+    integrations: [integration({ id: 'codex', name: 'Codex' })],
+    settings: settings(on),
+    connections: {
+      'claude-code': found('claude-code', [model('opus')]),
+      'oh-my-pi': found('oh-my-pi', [model('pi')]),
+    },
+    free: false,
+    route: NECTOVIA_ROUTE as Route,
+    local: null,
+  };
+
+  it('lists the conversation routes this computer offers, after Nectovia', () => {
+    const ids = engineEntries({ ...input, engines: CONVERSATION_ENGINES }).map((entry) => entry.id);
+    expect(ids[0]).toBe(NECTOVIA_ROUTE);
+    expect(ids).toContain('claude-code');
+    expect(ids).toContain('codex');
+    // oh-my-pi works on projects but holds no conversation, so the conversation never lists it.
+    expect(ids).not.toContain('oh-my-pi');
+  });
+
+  it('never lists Nectovia or the local model twice, since each has its own place in the row', () => {
+    expect(CONVERSATION_ENGINES).not.toContain(NECTOVIA_ROUTE);
+    expect(CONVERSATION_ENGINES).not.toContain('bonsai');
+  });
+
+  it('leaves the project row as it was', () => {
+    expect(engineEntries(input).map((entry) => entry.id)).toContain('oh-my-pi');
   });
 });

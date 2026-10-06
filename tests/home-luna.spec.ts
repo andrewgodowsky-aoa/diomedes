@@ -93,7 +93,10 @@ const answers = (page: Page) => page.locator('.turn.dio .body');
 // There is no Route control: a customer chooses a tier, never a route (owner decision
 // 2026-09-23). The locator stays so each test can say it is absent.
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
-const styleControl = (page: Page) => page.getByRole('combobox', { name: 'Style' });
+/** The ask row's tier box (round 2 reskin, slice 2): the conversation's one model control on Nectovia. */
+const tierControl = (page: Page) =>
+  page.getByRole('group', { name: 'Engine, model and agent' }).locator('.ask-tier .ask-pick');
+const tierMenu = (page: Page) => page.getByRole('menu', { name: 'How much care' });
 /** What the caption names a Nectovia conversation by: the route and the model its policy publishes. */
 const NECTOVIA_CAPTION = 'Nectovia (GPT-5.6 Luna)';
 /** The person routes the Home conversation: a choice the provisioner keeps. */
@@ -278,7 +281,9 @@ test('the home conversation opens on Nectovia (GPT-5.6 Luna) and answers with no
 
   // Now that the thread exists, the only model control offers the tiers, never a route.
   await expect(routeControl(page)).toHaveCount(0);
-  await expect(styleControl(page).locator('option')).toHaveText(['Default', 'Efficient', 'Focused', 'Thorough']);
+  await tierControl(page).click();
+  await expect(tierMenu(page).getByRole('menuitemradio')).toHaveText([/^Efficient/, /^Focused/, /^Thorough/]);
+  await page.keyboard.press('Escape');
 });
 
 test('a project scope conversation is provisioned on Nectovia too', async ({ page }) => {
@@ -401,7 +406,7 @@ test('Stop names only this message\'s command, and the record says what it came 
   // starts, so the wait is deterministic.
   await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
   // The delivery that is on its way is the only one the choice and the Stop can name.
-  await expect(styleControl(page)).toBeDisabled();
+  await expect(tierControl(page)).toBeDisabled();
   // The claim was issued before the dispatch: it is the one command this Stop may name.
   const commandId = await claimedCommand(page);
   expect(commandId).not.toBeNull();
@@ -818,7 +823,8 @@ test('a tier change that starts the conversation fresh says so in the thread', a
     (response) =>
       response.request().method() === 'PUT' && /\/threads\/[^/]+$/.test(new URL(response.url()).pathname),
   );
-  await styleControl(page).selectOption({ label: 'Focused' });
+  await tierControl(page).click();
+  await tierMenu(page).getByRole('menuitemradio', { name: /^Focused/ }).click();
   expect((await saved).ok()).toBe(true);
   await say(page, 'And the invoice?');
   await expect(answers(page).last()).toHaveText('You said: And the invoice?');

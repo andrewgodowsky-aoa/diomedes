@@ -30,6 +30,8 @@ const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' }
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let project: Project;
+/** A second project, so the home draws its scope control. Never talked in. */
+let second: Project;
 let pageErrors: string[] = [];
 /** Calls that went to a provider directly rather than through Nectovia's gateway. */
 let direct = 0;
@@ -140,7 +142,7 @@ test.beforeAll(async () => {
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
   // A second project: the home's scope control is drawn only for a business with more than one
   // (round 2 reskin, slice 2, decision 4). It is never talked in.
-  await api<Project>('/projects', 'POST', { name: 'Second shop' });
+  second = await api<Project>('/projects', 'POST', { name: 'Second shop' });
   // Linked, not chosen as where the business writes: Automations still has nowhere to open.
   await linkToBusiness(api, project.id);
   // The project's own work runs on the scripted sample worker, so starting Work needs no
@@ -209,7 +211,7 @@ test('a greeting is answered and starts nothing', async ({ page }) => {
   // and no task or work exists anywhere.
   const bound = await home();
   expect(bound).toEqual(linked);
-  expect((await listed()).map((item) => item.id)).toEqual([project.id]);
+  expect((await listed()).map((item) => item.id).sort()).toEqual([project.id, second.id].sort());
   const before = await state();
   expect([before.tasks.length, before.sessions.length]).toEqual([0, 0]);
 

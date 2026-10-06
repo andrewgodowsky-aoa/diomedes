@@ -48,9 +48,11 @@ import { conversationSources, readThreadRoute } from './thread-send';
 import { LocalImageAttachments, LocalModelControls, PrepareLocalModels } from './LocalModelControls';
 import type {
   Conversation,
+  IntegrationStatus,
   Project,
   ProjectState,
   Route,
+  Settings,
   Turn,
   WaitingItem,
 } from '../../shared/types';
@@ -80,6 +82,8 @@ import { newestChart, pinnedWhen } from './pinned-chart';
 import { toolRunning } from './engine-activity';
 import { railGroups, railProject, suggestions as proposalsOf, type RailTarget, type Suggestion } from './home-rail';
 import { Suggestions } from './Suggestions';
+import { AskRow, type AskChange } from './AskRow';
+import { CONVERSATION_ENGINES } from './ask-row';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -126,6 +130,10 @@ export interface DiomedesHomeProps {
    * showing and exists, and null otherwise, so the strip never shows a control that opens nothing.
    */
   onSharingControl?(open: (() => void) | null): void;
+  /** The integrations the host reports, for the ask row's engines. */
+  integrations?: IntegrationStatus[];
+  /** Settings, for the ask row's engines and tier. Without them the row is not drawn. */
+  settings?: Settings | null;
 }
 
 const words = (error: unknown) =>
@@ -862,6 +870,37 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     );
   };
 
+  /**
+   * One choice from the ask row, written to the conversation in one update. The tier, an engine
+   * of the person's own and its model are choices; the Mode is not touched. A refused write says
+   * why and changes nothing on screen.
+   */
+  const chooseAsk = (change: AskChange) => {
+    const found = binding;
+    if (!found || pending) return;
+    const visit = turn.current;
+    const body: { engine?: Route; requested?: Conversation['requested']; workStyle?: WorkStyle | null } = {};
+    if (change.engine !== undefined) body.engine = change.engine;
+    if (change.workStyle !== undefined) body.workStyle = change.workStyle;
+    if (change.requested !== undefined) body.requested = change.requested;
+    void api<Conversation>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
+      'PUT',
+      body,
+    ).then(
+      (conversation) => {
+        if (turn.current !== visit) return;
+        setModelThread(conversation);
+        setRoute(conversation.engine ?? null);
+        setWorkStyle(conversation.workStyle ?? null);
+        setPinnedModel(conversation.requested?.model ?? null);
+      },
+      (error) => {
+        if (turn.current === visit) setNotice(words(error));
+      },
+    );
+  };
+
   const card = outcomeCard(last?.outcome ?? null, projects);
   const act = async () => {
     const shown = last;
@@ -1067,6 +1106,25 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
         workers={scopeId !== null ? <WorkerRows projectId={scopeId} compact /> : undefined}
+        askRow={
+          // The conversation's row: its engines are the conversation routes. While the thread is on
+          // the local model, the home's own local model controls hold that choice instead.
+          binding && modelThread && props.settings && effective !== localRoute ? (
+            <AskRow
+              thread={modelThread}
+              mode={modeFor(restriction)}
+              route={route ?? CONVERSATION_DEFAULT_ROUTE}
+              integrations={(props.integrations ?? []).filter((item) => item.kind !== 'local')}
+              settings={props.settings}
+              styleView={null}
+              free={planAgent === 'free'}
+              names={planAgent !== 'free'}
+              locked={pending}
+              onChoose={chooseAsk}
+              engines={CONVERSATION_ENGINES}
+            />
+          ) : null
+        }
         sections={groups}
         onOpenRow={openRow}
         chart={

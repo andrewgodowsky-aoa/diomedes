@@ -136,6 +136,11 @@ export interface DiomedesPageProps {
   chart?: ReactNode;
   /** "Nectovia suggests" (Suggestions.tsx), beside the conversation, when a run proposed something. */
   suggestions?: ReactNode;
+  /**
+   * The ask box's row (AskRow.tsx) under the message line: engine, then model or tier. It takes
+   * the Style box's place, so the tier is chosen once.
+   */
+  askRow?: ReactNode;
 }
 
 /** The one control the history line and a refusal for want of history both carry. */
@@ -239,6 +244,7 @@ export function Diomedes({
   onOpenRow,
   chart = null,
   suggestions = null,
+  askRow = null,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // The home shows the newest exchange under the ask box; Earlier opens the whole conversation.
@@ -426,6 +432,7 @@ export function Diomedes({
                           }
                         }}
                       />
+                      {askRow}
                       <div className="bar">
                         <label className="dio-field">
                           <span>Mode</span>
@@ -441,7 +448,7 @@ export function Diomedes({
                             ))}
                           </select>
                         </label>
-                        {workStyle !== undefined && onWorkStyle && (
+                        {!askRow && workStyle !== undefined && onWorkStyle && (
                           <label className="dio-field">
                             <span>Style</span>
                             <select

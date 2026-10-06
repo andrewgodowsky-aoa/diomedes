@@ -56,8 +56,8 @@ async function savedThread(): Promise<Conversation> {
 async function open(page: Page) {
   await page.goto(baseURL);
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
-  // A tier, never a route, is the conversation's model control (owner decision 2026-09-23).
-  await expect(page.getByRole('combobox', { name: 'Style' })).toBeVisible();
+  // The ask row is the conversation's model control (round 2 reskin, slice 2), and no Route box.
+  await expect(page.getByRole('group', { name: 'Engine, model and agent' })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Route' })).toHaveCount(0);
 }
 
