@@ -60,6 +60,7 @@ import {
   type UsageState,
 } from '../../../shared/managed-usage.js';
 import { sameUsageCounts } from '../../../shared/usage-contract.js';
+import { ceilingSchema, type ChargeSnapshot } from '../../../shared/credit-prices.js';
 import {
   cycleContains,
   individualCycleId,
@@ -378,6 +379,25 @@ function requireRate(rate: RateSnapshot): RateSnapshot {
     ...(longContext === undefined ? {} : { longContext }),
     ...(rate.routing === undefined ? {} : { routing: { ...rate.routing } }),
   };
+}
+
+/**
+ * The tier charge an attempt is held under, checked like a rate snapshot: whole ledger units, a
+ * named table version and tier, and a ceiling inside its bounds. Its price fields are exactly a rate
+ * snapshot's, so `usageCost` prices the debit from it.
+ */
+function requireCharge(charge: ChargeSnapshot): ChargeSnapshot {
+  if (!charge || !isJobTier(charge.tier) || !Number.isSafeInteger(charge.tableVersion) || charge.tableVersion < 1 ||
+      !ceilingSchema.safeParse(charge.ceilingMicroUsdPerCredit).success)
+    throw new FundingError(422, 'A reservation needs the exact tier charge it is held under.', 'invalid_charge');
+  let prices: RateSnapshot;
+  try {
+    prices = requireRate({ ...charge, routing: undefined });
+  } catch {
+    throw new FundingError(422, 'A reservation needs the exact tier charge it is held under.', 'invalid_charge');
+  }
+  const { routing: _routing, ...fields } = prices;
+  return { ...fields, tier: charge.tier, tableVersion: charge.tableVersion, ceilingMicroUsdPerCredit: charge.ceilingMicroUsdPerCredit };
 }
 
 /** A UTC calendar month, from its id. */
@@ -938,6 +958,12 @@ export class FundingService {
     kind: ChargeKind; route: string; requestDigest: string; rateSnapshot: RateSnapshot; maxMicroUsd: MicroUsd;
     usageClass: UsageClass; companyCeilingMicroUsd?: MicroUsd | null;
     /**
+     * The tier charge this attempt is held and debited under (Model B). The hold (`maxMicroUsd`) is
+     * in its units, and `rateSnapshot` then prices only the provider's cost. Left out, the attempt
+     * holds and debits at provider cost, as every attempt before tier pricing did.
+     */
+    chargeSnapshot?: ChargeSnapshot;
+    /**
      * The verified member this work is for, and their role. Given by the gateway from the membership it
      * has just checked, never from a request. When present, the member's monthly limit is enforced here,
      * under the organization lock, and the attempt is recorded against them. Left out, as for a personal
@@ -961,6 +987,7 @@ export class FundingService {
     const requestDigest = requireId(input.requestDigest, 'request digest');
     const parentAttemptId = input.parentAttemptId === null ? null : requireId(input.parentAttemptId, 'parent attempt');
     const rate = requireRate(input.rateSnapshot);
+    const charge = input.chargeSnapshot === undefined ? undefined : requireCharge(input.chargeSnapshot);
     if (!isUsageClass(input.usageClass))
       throw new FundingError(422, 'Say what this attempt is for: included-chat, metered-work, worker or automation.', 'invalid_usage_class');
     const usageClass = input.usageClass;
@@ -984,6 +1011,7 @@ export class FundingService {
         const same = existing.organizationId === organizationId && existing.rootJobId === rootJobId && existing.parentAttemptId === parentAttemptId &&
           existing.kind === input.kind && existing.route === route && existing.requestDigest === requestDigest &&
           existing.maxMicroUsd === input.maxMicroUsd && JSON.stringify(existing.rateSnapshot) === JSON.stringify(rate) &&
+          JSON.stringify(existing.chargeSnapshot ?? null) === JSON.stringify(charge ?? null) &&
           existing.usageClass === usageClass;
         if (!same) throw new FundingError(409, 'That attempt id is already used for a different hold.', 'attempt_conflict');
         return existing;
@@ -1029,7 +1057,8 @@ export class FundingService {
       const attempt: FundedAttempt = {
         id: attemptId, organizationId, periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,
-        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate, usageClass,
+        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate,
+        ...(charge ? { chargeSnapshot: charge } : {}), usageClass,
         monthlyHoldMicroUsd: decision.monthlyHoldMicroUsd, topUpHoldMicroUsd: decision.topUpHoldMicroUsd, dispatchedAt: null,
       };
       await tx.saveAttempt(attempt);
@@ -1205,14 +1234,17 @@ export class FundingService {
         return { outcome: 'held', attempt: parked, reason };
       };
       if (!checked.valid) return hold(`${checked.reason} The hold stays until the provider's accounting is known.`);
-      const cost = usageCost(attempt.rateSnapshot, checked.usage);
+      // Model B: the debit is the tier's charge and the provider's cost is recorded beside it, never
+      // debited. An attempt held before tier pricing has no charge and debits its provider cost, as before.
+      const providerCost = usageCost(attempt.rateSnapshot, checked.usage);
+      const cost = attempt.chargeSnapshot ? usageCost(attempt.chargeSnapshot, checked.usage) : providerCost;
       if (cost > attempt.maxMicroUsd)
         return hold('The provider reported more than was reserved. The hold stays for reconciliation; it is not clamped.');
       const monthly = Math.min(cost, attempt.monthlyHoldMicroUsd);
       const settledAttempt = { ...this.move(attempt, attempt.state === 'uncertain' ? 'reconcile' : 'settle'), resolvedAt: at };
       const settlement: AttemptSettlement = {
         reservationId: attempt.id, organizationId: attempt.organizationId, periodId: attempt.periodId,
-        providerCostMicroUsd: cost, allowanceDebitMicroUsd: cost, rateCardVersion: attempt.rateCardVersion,
+        providerCostMicroUsd: providerCost, allowanceDebitMicroUsd: cost, rateCardVersion: attempt.rateCardVersion,
         eligibility: 'included', settledAt: at, reconciledFrom, tenantId: attempt.tenantId, receiptRef,
         monthlyDebitMicroUsd: micro(monthly), topUpDebitMicroUsd: micro(cost - monthly), usage: checked.usage,
       };
