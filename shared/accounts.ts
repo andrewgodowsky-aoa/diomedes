@@ -68,6 +68,12 @@ export interface AccountPlanView {
   plansUrl: string;
   /** Show the free-version notice now: on the free version, and not put off or turned off. */
   notice: boolean;
+  /**
+   * Pay as you go (DIO-245): on the free version, the credits this person bought for their own Personal work are above zero,
+   * so Nectovia opens for that work. Absent otherwise. It opens nothing a plan keeps: Routines, leading a team and business
+   * work still need one, and the account service still decides every admission.
+   */
+  payAsYouGo?: true;
 }
 
 export interface AccountStateView {

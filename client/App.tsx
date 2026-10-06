@@ -24,7 +24,7 @@ import { Shell } from './console/Shell';
 import { leaveEditor } from './console/editor-guard';
 import { Home, type HomeDestination } from './console/Home';
 import { DiomedesHome } from './console/DiomedesHome';
-import { PlansLink, useFreePlan } from './console/FreePlanNotice';
+import { PlansLink, useFreePlan, useNectoviaLocked } from './console/FreePlanNotice';
 import type { EverythingItem } from './console/Everything';
 import type { ShellView } from './console/types';
 import type { WorkspaceView } from '../shared/workspaces';
@@ -76,6 +76,8 @@ const AUTOMATIONS_FREE_VERSION = ROUTINES_FREE_VERSION;
 
 export function App() {
   const freePlan = useFreePlan();
+  // Pay as you go opens Nectovia without a plan (DIO-245), so the view reads this, not the plan.
+  const nectoviaLocked = useNectoviaLocked() !== null;
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   // Newest first, once per projects change; the landing ask and its picker all read this.
@@ -389,8 +391,8 @@ export function App() {
     // setting unreachable for anybody working there; with one surface left that
     // would have retired Detail altogether.
     root.dataset.detail = settings.detail;
-    // The view the Console shows: the free version keeps Work (round 2 board BD1).
-    root.dataset.view = shownView(settings.view, freePlan !== null);
+    // The view the Console shows: the free version keeps Work (round 2 board BD1) until credits it bought open Nectovia.
+    root.dataset.view = shownView(settings.view, nectoviaLocked);
     // One owner for the appearance. With no custom theme this is the code that
     // has always run, unchanged, so the ten built-in schemes behave exactly as
     // before; with one, the resolver decides and the runtime writes, and the
@@ -440,7 +442,7 @@ export function App() {
     // Surface changes never resize the interface. Explicit size preferences win.
     for (const [name, value] of Object.entries(scales))
       root.style.setProperty(`--dm-${name}`, String(value));
-  }, [settings, activeTheme, freePlan !== null]);
+  }, [settings, activeTheme, nectoviaLocked]);
   useEffect(() => {
     const change = (command: ScaleCommand) => {
       // Serialize held/repeated shortcuts and read the current preference each time.

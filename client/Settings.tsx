@@ -32,7 +32,7 @@ import { JobCheckIns } from './console/JobCheckIns';
 import { useWorkspace } from './console/Workspaces';
 import { isExternalEngine } from '../shared/engines';
 import { modifierName } from './keyboard';
-import { useFreePlan } from './console/FreePlanNotice';
+import { useNectoviaLocked } from './console/FreePlanNotice';
 import { NECTOVIA_LOCKED } from './console/ask-row';
 import { VIEW_LABELS, shownView } from './console/work-view';
 import { AGENT_NAME } from '../shared/agent-name';
@@ -142,8 +142,9 @@ export function SettingsPage({
   themeApplies?: boolean;
 }) {
   // The free version keeps Work (round 2 board BD1): Nectovia is listed, and not chosen here.
-  const freePlan = useFreePlan();
-  const shown = shownView(settings.view, freePlan !== null);
+  // Only the view reads the plan here, and credits bought without one open Nectovia (DIO-245).
+  const nectoviaLocked = useNectoviaLocked();
+  const shown = shownView(settings.view, nectoviaLocked !== null);
   // Failures on the Appearance and Design Center screens, which share nothing
   // with the connection check above and must not borrow its message line.
   const [appearanceError, setAppearanceError] = useState('');
@@ -665,7 +666,7 @@ export function SettingsPage({
                 <div className="radio-list">
                   {(
                     [
-                      ['conversation', VIEW_LABELS.conversation, freePlan ? NECTOVIA_LOCKED : `Ask ${AGENT_NAME}, and keep your threads.`],
+                      ['conversation', VIEW_LABELS.conversation, nectoviaLocked ? NECTOVIA_LOCKED : `Ask ${AGENT_NAME}, and keep your threads.`],
                       ['architect', VIEW_LABELS.architect, 'Your threads beside the board, with Team, Routines and Files.'],
                     ] as const
                   ).map(([id, label, description]) => (
@@ -677,7 +678,7 @@ export function SettingsPage({
                         type="radio"
                         name="settings-view"
                         checked={shown === id}
-                        disabled={id === 'conversation' && freePlan !== null}
+                        disabled={id === 'conversation' && nectoviaLocked !== null}
                         onChange={() => void save({ ...settings, view: id })}
                       />
                       <span>

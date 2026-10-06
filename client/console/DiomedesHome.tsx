@@ -256,7 +256,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // The route the host says a thread's next request runs on, kept with the thread it was read for:
   // an answer about a thread no longer on screen is never used.
   const [hostRoute, setHostRoute] = useState<{ key: string; route: string } | null>(null);
-  const planAgent = useAccount()?.state.plan?.agent ?? null;
+  const plan = useAccount()?.state.plan;
+  const planAgent = plan?.agent ?? null;
+  // Nectovia is closed on the free version until credits the person bought open it for their own work (DIO-245).
+  const nectoviaLocked = planAgent === 'free' && plan?.payAsYouGo !== true;
   // The records the rail reads: the scoped project's, or the one project's under All projects.
   // Read on their own request (`?view=rail`), so the conversation's own reads stay exactly
   // what they were, and read again after each delivery and whenever the project's status moves.
@@ -280,7 +283,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         ? hostRoute?.key === `${binding.projectId}|${binding.threadId}`
           ? hostRoute.route
           : null
-        : planAgent === 'free' && isExternalEngine(ownTool) && isConversationRoute(ownTool)
+        : nectoviaLocked && isExternalEngine(ownTool) && isConversationRoute(ownTool)
           ? ownTool
           : null;
   const substitute = answering !== NECTOVIA_ROUTE && isRoute(answering) ? answering : null;
@@ -366,7 +369,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       () => undefined,
     );
     return () => request.abort();
-  }, [boundProject, boundThread, route, workStyle, pinnedModel, planAgent]);
+  }, [boundProject, boundThread, route, workStyle, pinnedModel, planAgent, nectoviaLocked]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     // The binding is read when the frame arrives: a frame that lands after the page has moved
@@ -1117,8 +1120,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
               integrations={(props.integrations ?? []).filter((item) => item.kind !== 'local')}
               settings={props.settings}
               styleView={null}
-              free={planAgent === 'free'}
-              names={planAgent !== 'free'}
+              free={nectoviaLocked}
+              names={!nectoviaLocked}
               locked={pending}
               onChoose={chooseAsk}
               engines={CONVERSATION_ENGINES}

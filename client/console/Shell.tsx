@@ -92,7 +92,7 @@ import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import type { AskChange } from './AskRow';
 import { localModel } from './ask-row';
-import { useFreePlan } from './FreePlanNotice';
+import { useFreePlan, useNectoviaLocked } from './FreePlanNotice';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
 import { Repository } from './Repository';
@@ -259,6 +259,9 @@ export function Shell({
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   // The free version lists Nectovia grayed in the ask row; null when accounts are off.
   const freePlan = useFreePlan();
+  // Credits bought without a plan open Nectovia, not the rest of a plan (pay as you go, DIO-245): the view and the ask
+  // row read this, while Routines and the team lead keep `freePlan`.
+  const nectoviaLocked = useNectoviaLocked();
   // The free version's notice behind the locked Nectovia tab, open only when the person asks.
   const [viewNotice, setViewNotice] = useState(false);
   const closeViewNotice = useCallback(() => setViewNotice(false), []);
@@ -1922,7 +1925,7 @@ export function Shell({
     currentThread: selected,
     policy,
     view,
-    consoleView: shownView(settings.view, freePlan !== null),
+    consoleView: shownView(settings.view, nectoviaLocked !== null),
     focusTaskId: selectedTask?.id,
     focusTaskName: selectedTask?.name,
     pendingTaskId,
@@ -1965,7 +1968,7 @@ export function Shell({
         setView('Thread');
       }),
       setView: leavingEditor((v: ShellView) => setView(v)),
-      setConsoleView: freePlan ? undefined : (v) => void saveSettings({ ...settings, view: v }),
+      setConsoleView: nectoviaLocked ? undefined : (v) => void saveSettings({ ...settings, view: v }),
       openProject: (p) => onOpenProject(p),
       openDocument,
       launchSkill: leavingEditor((skill: PackSkill) => void launchSkill(skill)),
@@ -1978,15 +1981,15 @@ export function Shell({
   // The two views (shared/types.ts ConsoleView). Conversation hides the Ledger,
   // the pinned rail destinations and the worker picker; everything stays
   // reachable from Everything, Ctrl K and the ··· menu.
-  const consoleView = shownView(settings.view, freePlan !== null);
+  const consoleView = shownView(settings.view, nectoviaLocked !== null);
   const conversation = consoleView === 'conversation';
   const elsewhere = conversation
     ? waiting.filter((n) => !(selected && view === 'Thread' && threadOwnsNeed(selected, n, state)))
     : [];
   const chooseView = (next: ConsoleView) => {
     setMenuOpen(false);
-    // The free version keeps Work: the Nectovia tab opens its notice instead (board BD1).
-    if (next === 'conversation' && freePlan) {
+    // The free version keeps Work: the Nectovia tab opens its notice instead (board BD1), until bought credits open it.
+    if (next === 'conversation' && nectoviaLocked) {
       setViewNotice(true);
       return;
     }
@@ -2018,7 +2021,7 @@ export function Shell({
           <NectoviaMark word={false} />
           <ViewSwitch
             view={consoleView}
-            free={freePlan}
+            free={nectoviaLocked}
             notice={viewNotice}
             onChoose={chooseView}
             onCloseNotice={closeViewNotice}
@@ -2286,7 +2289,7 @@ export function Shell({
               busy={busy}
               online={online}
               integrations={integrations}
-              free={freePlan !== null}
+              free={nectoviaLocked !== null}
               askLocked={selectedLive}
               onChoose={chooseAsk}
               pinChart={conversation}
