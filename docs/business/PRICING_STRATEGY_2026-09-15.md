@@ -128,15 +128,15 @@ Credits measure cumulative eligible AI usage, not a task or model-call count. A 
 
 Accounting follows the usage contract `nectovia-usage/1` below. Production accounting uses integer micro-USD and a versioned rate card. Cloud promotional credits lower company cash expenditure, not the customer's published grant or the gross provider cost record. Do not discount the funded-usage portion under the existing 30% founding discount; only its eligible non-usage component is discounted.
 
-**Approved 2026-09-23: each parent job has a finite credit cap set by its tier.**
+**Approved 2026-10-05: each parent job checks in at a finite amount set by its tier (replacing the 20, 50 and 100 credit caps approved 2026-09-23, which were stops).**
 
-| Tier | Parent-job cap |
+| Tier | Check-in amount |
 |---|---:|
-| Efficient | 20 credits |
-| Focused | 50 credits |
-| Thorough | 100 credits |
+| Efficient | 100 credits |
+| Focused | 250 credits |
+| Thorough | 500 credits |
 
-The cap is an approval/safety limit, not a flat fee or monthly request quota. Before sending, when likely use exceeds it, offer a higher tier or an explicitly approved finite cap for that one job. The change does not alter the next job's cap, authorize organization overage or increase remaining funds. Nothing overruns a cap without that pre-send choice.
+The amount is an approval/safety point, not a flat fee or monthly request quota. A job is never cut off mid-call or mid-write: when the next reservation would cross the amount, the job finishes the step in progress, saves, and asks whether to keep going. Keep going raises that one job by exactly one more amount; Stop here ends it with the work kept. Unattended work pauses into Needs you instead, and Keep going there resumes it with one more amount. The pre-send warning names the amount. The change does not alter the next job's amount, authorize organization overage or increase remaining funds, and balance and member monthly limits still apply. Nothing passes an amount without that choice. A business may set its own amounts and staff set the defaults; the code default is the table above. (Cloud copy sync pending.)
 
 Reserve conservatively before each paid child operation against both the job budget and organization funds. Delegation, retries, forks, resumed messages and billing reset cannot reset the cap or refund uncertain spend.
 
