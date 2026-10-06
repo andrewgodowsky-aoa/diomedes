@@ -76,6 +76,8 @@ test.beforeAll(async () => {
     'client/console/FilesPane.tsx',
     'client/console/FilePreview.tsx',
     'client/console/Composer.tsx',
+    'client/console/Shell.tsx',
+    'client/console/thread-attachments.ts',
     'client/console/ThreadView.tsx',
     'client/console/files.css',
     'client/console/attachments.css',
@@ -218,7 +220,8 @@ test('drop, paste, previews, the attach-to-thread chip and an older version, in 
   );
   const reference = chip.getByRole('button', { name: /^brief\.md v\d{4} · [0-9a-f]{8}$/ });
   await expect(reference).toBeVisible();
-  await expect(attached).toHaveCount(0);
+  // The attached file stays on the composer for the thread's next messages (Andrew, 2026-10-06).
+  await expect(attached.getByRole('button', { name: 'brief.md', exact: true })).toBeVisible();
 
   // The file changes after the message was sent.
   const current = await api<{ sha: string }>(
@@ -244,4 +247,95 @@ test('drop, paste, previews, the attach-to-thread chip and an older version, in 
   await page.screenshot({ path: 'test-results/p05-files-attachments.png' });
   expect(external).toEqual([]);
   expect(violations).toEqual([]);
+});
+
+// Andrew's decision of 2026-10-06: a thread's attached files stay on its composer until the
+// person removes one, every message carries all of them in path order, and they survive a send,
+// a thread switch and a reload. Another thread, and a new one, start with none.
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Threads and views', exact: true });
+async function openThread(page: Page, name: string) {
+  await rail(page).locator('.console-thread', { hasText: name }).click();
+  await expect(rail(page).locator('.console-thread.on', { hasText: name })).toBeVisible();
+}
+const chips = (page: Page) => page.getByLabel('Attached files').locator('.attach-open');
+const messageBox = (page: Page) => page.getByRole('textbox', { name: 'Message this thread', exact: true });
+async function attachFile(page: Page, file: string) {
+  await page.getByRole('button', { name: 'Attach', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Attach a project file' }).selectOption(file);
+}
+/** Sends one message, waits for its answer, and returns the files its request carried, in order. */
+async function sendMessage(page: Page, text: string): Promise<string[]> {
+  const asked = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/ask'),
+  );
+  await messageBox(page).fill(text);
+  await messageBox(page).press('Enter');
+  const response = await asked;
+  expect(response.ok(), `ask: ${response.status()}`).toBe(true);
+  await expect(page.locator('.composer.busy')).toHaveCount(0);
+  await expect(page.getByText(text, { exact: true }).last()).toBeVisible();
+  await expect(messageBox(page)).toHaveValue('');
+  return (JSON.parse(response.request().postData() ?? '{}') as { sources?: string[] }).sources ?? [];
+}
+
+test('a thread keeps its attached files on every message until the person removes one', async ({ page }) => {
+  test.setTimeout(120_000);
+  const own = await api<Project>('/projects', 'POST', { name: 'Thread files' });
+  await fs.writeFile(path.join(own.folder, 'b-notes.md'), '# Notes\n\nThe linen came short twice.\n');
+  await fs.writeFile(path.join(own.folder, 'a-brief.md'), '# Brief\n\nCount the napkins against the slips.\n');
+  for (const name of ['Linen thread', 'Menu thread']) {
+    const made = await api<Conversation>(`/projects/${own.id}/threads`, 'POST', { mode: 'ask' });
+    await api(`/projects/${own.id}/threads/${made.id}`, 'PUT', { name, engine: 'sample', mode: 'ask' });
+  }
+  const external: string[] = [];
+  await page.route('**/*', async (route) => {
+    const requested = new URL(route.request().url());
+    if (requested.protocol.startsWith('http') && requested.hostname !== '127.0.0.1') {
+      external.push(requested.href);
+      await route.abort();
+    } else await route.continue();
+  });
+  await page.goto(url);
+  await page.getByRole('button', { name: 'Thread files', exact: true }).click();
+  await openThread(page, 'Linen thread');
+
+  // Picked out of order, shown and sent in path order.
+  await attachFile(page, 'b-notes.md');
+  await attachFile(page, 'a-brief.md');
+  await expect(chips(page)).toHaveText(['a-brief.md', 'b-notes.md']);
+  expect(await sendMessage(page, 'Which week came up short?')).toEqual(['a-brief.md', 'b-notes.md']);
+
+  // The send leaves them on the composer, and the follow-up carries the same files in the same order.
+  await expect(chips(page)).toHaveText(['a-brief.md', 'b-notes.md']);
+  expect(await sendMessage(page, 'And by how many napkins?')).toEqual(['a-brief.md', 'b-notes.md']);
+
+  // Another thread has none of them; coming back finds them again.
+  await openThread(page, 'Menu thread');
+  await expect(chips(page)).toHaveCount(0);
+  await openThread(page, 'Linen thread');
+  await expect(chips(page)).toHaveText(['a-brief.md', 'b-notes.md']);
+
+  // A reload keeps them. The window keeps its project across a reload.
+  await page.reload();
+  await openThread(page, 'Linen thread');
+  await expect(chips(page)).toHaveText(['a-brief.md', 'b-notes.md']);
+
+  // Removing one changes the next messages only: the earlier ones keep their record.
+  await page.getByLabel('Attached files').getByRole('button', { name: 'Remove b-notes.md', exact: true }).click();
+  await expect(chips(page)).toHaveText(['a-brief.md']);
+  expect(await sendMessage(page, 'What do the slips say?')).toEqual(['a-brief.md']);
+  const sentWith = page.getByLabel('Files sent with this message');
+  await expect(sentWith).toHaveCount(3);
+  await expect(sentWith.first().getByRole('button', { name: /^b-notes\.md v\d{4} · [0-9a-f]{8}$/ })).toBeVisible();
+  await expect(sentWith.last().getByRole('button', { name: /^b-notes\.md / })).toHaveCount(0);
+  await page.reload();
+  await openThread(page, 'Linen thread');
+  await expect(chips(page)).toHaveText(['a-brief.md']);
+
+  // A new thread starts with none.
+  await rail(page).getByRole('button', { name: 'New', exact: true }).click();
+  await expect(rail(page).locator('.console-thread.on', { hasText: 'New thread' })).toBeVisible();
+  await expect(page.getByText('A new thread.', { exact: true })).toBeVisible();
+  await expect(chips(page)).toHaveCount(0);
+  expect(external).toEqual([]);
 });

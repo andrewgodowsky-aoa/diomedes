@@ -79,9 +79,9 @@ interface ComposerProps {
    */
   insert?: { text: string; n: number } | null;
   /**
-   * Project files attached to the next message as references into this Thread.
-   * They are sent as the message's selected sources, shown before sending, and
-   * recorded on the turn; nothing else is read because of them.
+   * Project files attached to this Thread's messages, kept until the person removes
+   * one. Each message sends them as its selected sources, shown before sending, and
+   * records them on its turn; nothing else is read because of them.
    */
   attachments?: readonly DocumentInfo[];
   onAttachments?(files: DocumentInfo[]): void;
@@ -334,7 +334,7 @@ export function Composer({
     preparingRef.current = false;
     setPending(null);
     send();
-    onAttachments?.([]);
+    // The attached files stay for the thread's next messages until the person removes one.
     setText('');
     setFailingDocument('');
     setFailingText('');
