@@ -179,6 +179,8 @@ export const emptyAzureDeployment = (): AzureDeploymentInput => ({
 
 export interface AzureConnectInput {
   resourceName: string;
+  /** `foundry` for an Azure AI Foundry resource, `openai` for a classic Azure OpenAI one. */
+  host: 'foundry' | 'openai';
   deployments: AzureDeploymentInput[];
   apiKey: string;
   expiresLocal: string;
@@ -188,7 +190,7 @@ export interface AzureConnectInput {
 /** The Azure connect body, or the one sentence that says what is missing. The key is never echoed. */
 export function azureConnectBody(input: AzureConnectInput, nowMs = Date.now()): Parsed<Record<string, unknown>> {
   const resourceName = input.resourceName.trim();
-  if (!resourceName) return { ok: false, message: 'Enter the Azure OpenAI resource name.' };
+  if (!resourceName) return { ok: false, message: 'Enter the Azure resource name.' };
   if (input.deployments.length === 0) return { ok: false, message: 'Add at least one deployment.' };
   const deployments: Record<string, unknown>[] = [];
   for (const [index, entry] of input.deployments.entries()) {
@@ -210,15 +212,17 @@ export function azureConnectBody(input: AzureConnectInput, nowMs = Date.now()): 
   if (!expiry.ok) return expiry;
   if (!input.consent)
     return { ok: false, message: 'Confirm that conversations and chosen files may be sent to this Azure OpenAI resource.' };
-  return { ok: true, body: { resourceName, deployments, apiKey, expiresAt: expiry.body, consent: true } };
+  return { ok: true, body: { resourceName, host: input.host, deployments, apiKey, expiresAt: expiry.body, consent: true } };
 }
 
 /** The saved Azure connection back into the form, without the key. */
-export function azureInputFrom(view: AzureConnectionView | null): Pick<AzureConnectInput, 'resourceName' | 'deployments'> {
+export function azureInputFrom(view: AzureConnectionView | null): Pick<AzureConnectInput, 'resourceName' | 'host' | 'deployments'> {
   const c = view?.connection;
-  if (!c) return { resourceName: '', deployments: [emptyAzureDeployment()] };
+  // A new connection starts on Azure AI Foundry, where the company's deployments live.
+  if (!c) return { resourceName: '', host: 'foundry', deployments: [emptyAzureDeployment()] };
   return {
     resourceName: c.resource,
+    host: c.host,
     deployments: c.deployments.map((entry) => ({
       model: entry.model,
       deployment: entry.deployment,

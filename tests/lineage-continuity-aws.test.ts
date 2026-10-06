@@ -203,6 +203,8 @@ beforeEach(async () => {
     consent: true,
   });
   await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 5, consent: true });
+  // The tier defaults moved off AWS Luna; this AWS case maps the earlier defaults back.
+  await mapTiersToAws();
 });
 afterEach(async () => {
   composedFor.clear();
@@ -469,3 +471,12 @@ describe('a message that was sent and never answered', () => {
       expect(notes()).toEqual([]);
     });
 });
+
+/** The tier map before 2026-10-02: Efficient on AWS Luna, Focused on Gemini Flash, Thorough on AWS with no model. */
+async function mapTiersToAws() {
+  const saved = (await (await request('/settings')).json()) as { services?: Record<string, unknown> };
+  const put = await request('/settings', 'PUT', {
+    services: { ...saved.services, efficientRoute: 'aws-bedrock', efficientModel: AWS_LUNA_MODEL, focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash', thoroughRoute: 'aws-bedrock' },
+  });
+  expect(put.ok, await put.clone().text()).toBe(true);
+}

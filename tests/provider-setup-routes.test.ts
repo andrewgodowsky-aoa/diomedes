@@ -90,6 +90,7 @@ afterEach(async () => {
 const azureBody = () => {
   const parsed = azureConnectBody({
     resourceName: 'contoso-ai',
+    host: 'openai',
     deployments: [
       { model: 'gpt-5.6-luna', deployment: 'luna-prod-eastus2', reasoning: true, rates: prices },
       { model: 'gpt-4.1-mini', deployment: 'mini-chat', reasoning: false, rates: { ...prices, cacheRead: '' } },
@@ -217,6 +218,7 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
   test('Focused and Efficient each run the deployment the owner mapped, with a level, whatever route the thread was on', async () => {
     const parsed = azureConnectBody({
       resourceName: 'contoso-ai',
+      host: 'openai',
       deployments: [
         { model: 'gpt-6-luna', deployment: 'luna-prod', reasoning: true, rates: prices },
         { model: 'gpt-6-sol', deployment: 'sol-prod', reasoning: true, rates: prices },

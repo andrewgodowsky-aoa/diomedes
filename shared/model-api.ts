@@ -223,6 +223,8 @@ export interface AzureConnectionView {
   connection: {
     id: string;
     resource: string;
+    /** `foundry` for an Azure AI Foundry resource, `openai` for a classic Azure OpenAI one. */
+    host: 'foundry' | 'openai';
     endpoint: string;
     apiVersion: string;
     /** Each logical model and the deployment that serves it. */

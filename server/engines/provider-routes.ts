@@ -51,6 +51,7 @@ import {
   azureAccountRoute,
   azureConnectionSchema,
   azureEndpoint,
+  azureHostSchema,
   azureRateCard,
   type AzureConnection,
 } from './azure-openai.js';
@@ -111,7 +112,9 @@ const credentialBody = {
   consent: z.literal(true),
 };
 const azureBody = z.strictObject({
-  resourceName: z.string().regex(AZURE_RESOURCE, 'Enter the Azure OpenAI resource name (lowercase letters, digits and hyphens).'),
+  resourceName: z.string().regex(AZURE_RESOURCE, 'Enter the Azure resource name (lowercase letters, digits and hyphens).'),
+  /** Which of the resource's two v1 hosts to call. A body that names none is a classic Azure OpenAI resource. */
+  host: azureHostSchema.default('openai'),
   deployments: z
     .array(
       z.strictObject({
@@ -413,6 +416,7 @@ export function mountProviderRoutes(
         ? {
             id: connection.id,
             resource: connection.resourceName,
+            host: connection.host ?? 'openai',
             endpoint: connection.baseUrl,
             apiVersion: connection.apiVersion,
             deployments: connection.deployments.map((entry) => ({
@@ -435,7 +439,8 @@ export function mountProviderRoutes(
         v: 1,
         id: AZURE_CONNECTION_ID,
         resourceName: body.resourceName,
-        baseUrl: azureEndpoint(body.resourceName),
+        host: body.host,
+        baseUrl: azureEndpoint(body.resourceName, body.host),
         apiVersion: AZURE_API_VERSION,
         deployments: body.deployments.map((entry) => ({
           model: entry.model,

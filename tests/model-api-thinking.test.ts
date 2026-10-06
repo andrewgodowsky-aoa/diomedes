@@ -112,6 +112,7 @@ const AZURE_CONNECTION: AzureConnection = {
   v: 1,
   id: 'azure-openai-1',
   resourceName: 'contoso-ai',
+  host: 'openai',
   baseUrl: azureEndpoint('contoso-ai'),
   apiVersion: 'v1',
   deployments: [{ model: 'gpt-5.6-luna', deployment: 'luna-prod-eastus2', reasoning: true, rates: RATES }],

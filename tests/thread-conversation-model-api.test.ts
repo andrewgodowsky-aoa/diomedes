@@ -200,6 +200,8 @@ const connectAws = async () => {
     consent: true,
   });
   await api<AwsConnectionView>('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
+  // The tier defaults moved off AWS Luna; this AWS case maps the earlier defaults back.
+  await mapTiersToAws();
   // What the tier map needs to call AWS ready: turned on, with an account route saved.
   const settings = await api<{ services?: Record<string, unknown> }>('/settings');
   expect(settings.services?.['aws-bedrock']).toBe(true);
@@ -440,11 +442,12 @@ describe('a project thread on AWS through its tier', () => {
   });
 
   test('a thread whose tier route is not connected is refused by name before anything is sent', async () => {
+    // Efficient maps to Azure by default, and no Azure connection exists here.
     await tier('efficient');
     const view = await readThreadRoute(project.id, thread.id);
-    expect(view.route).toBe('aws-bedrock');
+    expect(view.route).toBe('azure-openai');
     expect(view.refusal).toBe(
-      'AWS Bedrock is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
+      'Azure OpenAI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
     );
     for (const mode of ['ask', 'plan', 'build', 'fix'] as const)
       expect(planThreadSend(view, mode)).toEqual({ kind: 'refuse', reason: view.refusal });
@@ -463,10 +466,10 @@ describe('a project thread on AWS through its tier', () => {
     expect(seen).toHaveLength(0);
     expect(current().turns).toEqual([]);
 
-    // Focused maps to Google Vertex AI, which this build does not have yet: refused by that name.
+    // Focused maps to Kimi K3 on AWS Bedrock, which is not connected here either: refused by that name.
     await tier('focused');
     const focused = await readThreadRoute(project.id, thread.id);
-    expect(focused.refusal).toMatch(/^Google Vertex AI is unavailable right now\./);
+    expect(focused.refusal).toMatch(/^AWS Bedrock is unavailable right now\./);
     expect(planThreadSend(focused, 'ask')).toMatchObject({ kind: 'refuse' });
   });
 });
@@ -494,3 +497,12 @@ describe('threads that are not on a model-API route keep their path', () => {
     expect(clientCalls.some((call) => call.includes('/messages'))).toBe(false);
   });
 });
+
+/** The tier map before 2026-10-02: Efficient on AWS Luna, Focused on Gemini Flash, Thorough on AWS with no model. */
+async function mapTiersToAws() {
+  const saved = (await (await request('/settings')).json()) as { services?: Record<string, unknown> };
+  const put = await request('/settings', 'PUT', {
+    services: { ...saved.services, efficientRoute: 'aws-bedrock', efficientModel: AWS_LUNA_MODEL, focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash', thoroughRoute: 'aws-bedrock' },
+  });
+  expect(put.ok, await put.clone().text()).toBe(true);
+}

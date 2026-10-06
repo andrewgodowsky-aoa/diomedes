@@ -19,6 +19,7 @@ import {
   providerIsDefault,
   providerStateRows,
   readinessLines,
+  type AzureConnectInput,
   type AzureDeploymentInput,
   type OpenRouterModelInput,
   type ProviderView,
@@ -386,7 +387,7 @@ function KeyFields({
 }
 
 /**
- * AI setup's card for the Azure OpenAI route: the company's own Azure OpenAI resource, the
+ * AI setup's card for the Azure OpenAI route: the company's own Azure AI Foundry or Azure OpenAI resource, the
  * deployments it may call and what each costs, an approved spend limit, and each paid call.
  * The key goes one way, into the desktop app's protected storage; nothing here reads it back.
  */
@@ -394,6 +395,7 @@ export function AzureOpenAISetup(props: CardProps) {
   const card = useProviderCard<AzureConnectionView>('azure-openai');
   const [editing, setEditing] = useState(false);
   const [resourceName, setResourceName] = useState('');
+  const [host, setHost] = useState<AzureConnectInput['host']>('foundry');
   const [deployments, setDeployments] = useState<AzureDeploymentInput[]>([emptyAzureDeployment()]);
   const [apiKey, setApiKey] = useState('');
   const [expiresLocal, setExpiresLocal] = useState('');
@@ -404,6 +406,7 @@ export function AzureOpenAISetup(props: CardProps) {
   useEffect(() => {
     const saved = azureInputFrom(card.view);
     setResourceName(saved.resourceName);
+    setHost(saved.host);
     setDeployments(saved.deployments);
     // Only a new saved generation refills the form; a spend-limit save must not wipe edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -412,7 +415,7 @@ export function AzureOpenAISetup(props: CardProps) {
   const change = (index: number, next: Partial<AzureDeploymentInput>) =>
     setDeployments(deployments.map((entry, i) => (i === index ? { ...entry, ...next } : entry)));
   const connect = () => {
-    const parsed = azureConnectBody({ resourceName, deployments, apiKey, expiresLocal, consent });
+    const parsed = azureConnectBody({ resourceName, host, deployments, apiKey, expiresLocal, consent });
     if (!parsed.ok) {
       card.setError(parsed.message);
       return;
@@ -435,7 +438,7 @@ export function AzureOpenAISetup(props: CardProps) {
       shortName="Azure"
       editing={editing}
       setEditing={setEditing}
-      caption="Your company’s own Azure OpenAI resource. Only the deployments you list are called, and every call is billed to that Azure subscription."
+      caption="Your company’s own Azure AI Foundry or Azure OpenAI resource. Only the deployments you list are called, and every call is billed to that Azure subscription."
       facts={connection && <p className="caption">{connection.endpoint}</p>}
       checks={
         connection && (
@@ -464,7 +467,14 @@ export function AzureOpenAISetup(props: CardProps) {
           }}
         >
           <label>
-            Azure OpenAI resource name
+            Resource type
+            <select value={host} onChange={(event) => setHost(event.target.value as AzureConnectInput['host'])}>
+              <option value="foundry">Azure AI Foundry (services.ai.azure.com)</option>
+              <option value="openai">Azure OpenAI (openai.azure.com)</option>
+            </select>
+          </label>
+          <label>
+            Resource name
             <input
               autoComplete="off"
               spellCheck={false}

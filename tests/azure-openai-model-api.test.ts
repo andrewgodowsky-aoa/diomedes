@@ -40,6 +40,7 @@ const CONNECTION: AzureConnection = {
   v: 1,
   id: 'azure-openai-1',
   resourceName: 'contoso-ai',
+  host: 'openai',
   baseUrl: BASE,
   apiVersion: 'v1',
   deployments: [
@@ -191,6 +192,16 @@ async function failure(promise: Promise<unknown>): Promise<ModelApiError> {
 }
 
 describe('the request the real SDK sends to Azure', () => {
+  test('an Azure AI Foundry resource is called on its own services.ai.azure.com v1 endpoint', async () => {
+    const foundry: AzureConnection = { ...CONNECTION, host: 'foundry', baseUrl: azureEndpoint('contoso-ai', 'foundry') };
+    const net = transport([() => stream(envelope([message('Soup.')]))]);
+    const result = await call(net.fetch, { connection: foundry });
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Soup.' });
+    expect(net.sent.map((sent) => sent.url)).toEqual(['https://contoso-ai.services.ai.azure.com/openai/v1/responses']);
+    expect(net.sent[0].headers.get('api-key')).toBe(SECRET);
+    expect(net.sent[0].body.model).toBe('luna-prod-eastus2');
+  });
+
   test('a streamed final answer: the resource’s v1 endpoint, the deployment as model, api-key only, no retry', async () => {
     const net = transport([() => stream(envelope([reasoning(), message('Soup and a sandwich.')]))]);
     const deltas: string[] = [];
@@ -353,6 +364,13 @@ describe('refusals before anything is sent', () => {
     ])
       expect(azureConnectionSchema.safeParse({ ...CONNECTION, baseUrl }).success).toBe(false);
     expect(azureConnectionSchema.safeParse({ ...CONNECTION, resourceName: 'Contoso_AI' }).success).toBe(false);
+    // The host is part of the record: a Foundry URL on a classic record, or the reverse, is refused.
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, baseUrl: azureEndpoint('contoso-ai', 'foundry') }).success).toBe(false);
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, host: 'foundry' }).success).toBe(false);
+    expect(azureConnectionSchema.safeParse({ ...CONNECTION, host: 'foundry', baseUrl: azureEndpoint('contoso-ai', 'foundry') }).success).toBe(true);
+    // A record saved before Foundry support reads as classic Azure OpenAI.
+    const { host: _host, ...older } = CONNECTION;
+    expect(azureConnectionSchema.parse(older).baseUrl).toBe('https://contoso-ai.openai.azure.com/openai/v1');
   });
 
   test('the guarded fetch refuses any other destination, query or body before the key is attached', async () => {

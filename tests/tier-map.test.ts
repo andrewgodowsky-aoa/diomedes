@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock.js';
+import { AWS_KIMI_K3 } from '../shared/model-api.js';
 import { routeUnavailable } from '../shared/route-unavailable.js';
 import { resolveTeamMemberModel, type TeamRouteCandidate } from '../shared/team-routes.js';
 import {
@@ -14,6 +15,7 @@ import {
   OWNER_PIN_ROUTE_KEY,
   ownerPinFrom,
   resolveTier,
+  TIER_AWS_KIMI_MODEL,
   TIER_AWS_LUNA_MODEL,
   TIER_GEMINI_FLASH_MODEL,
   TIER_SETTING_KEYS,
@@ -44,12 +46,13 @@ const connected =
   });
 
 describe('the owner’s defaults', () => {
-  test('Efficient is the AWS Luna the code pins, Focused is Gemini 3.8 Flash on Google Vertex AI, Thorough has no model', () => {
+  test('Efficient and Thorough are GPT-6.1 Sol on Azure, Focused is Kimi K3 on AWS Bedrock', () => {
     expect(TIER_AWS_LUNA_MODEL).toBe(AWS_LUNA_MODEL);
+    expect(TIER_AWS_KIMI_MODEL).toBe(AWS_KIMI_K3.model);
     expect(DEFAULT_TIER_MAP).toEqual({
-      efficient: { route: 'aws-bedrock', model: AWS_LUNA_MODEL },
-      focused: { route: 'google-vertex', model: 'gemini-3.8-flash' },
-      thorough: { route: 'aws-bedrock', model: null },
+      efficient: { route: 'azure-openai', model: 'gpt-6.1-sol' },
+      focused: { route: 'aws-bedrock', model: 'us.moonshotai.kimi-k3' },
+      thorough: { route: 'azure-openai', model: 'gpt-6.1-sol' },
     });
     expect(TIER_VERTEX_ROUTE).toBe('google-vertex');
     expect(TIER_GEMINI_FLASH_MODEL).toBe('gemini-3.8-flash');
@@ -93,12 +96,12 @@ describe('what the host accepts as a tier setting', () => {
   test('a saved route replaces the default model unless one is saved with it', () => {
     const map = tierMapFrom({
       focusedRoute: 'azure-openai',
-      efficientModel: 'us.openai.gpt-6-luna-when-qualified',
+      efficientModel: 'gpt-6-luna-next',
       thoroughRoute: 'openrouter',
       thoroughModel: 'vendor/model-a',
     });
     expect(map.focused).toEqual({ route: 'azure-openai', model: null });
-    expect(map.efficient).toEqual({ route: 'aws-bedrock', model: 'us.openai.gpt-6-luna-when-qualified' });
+    expect(map.efficient).toEqual({ route: 'azure-openai', model: 'gpt-6-luna-next' });
     expect(map.thorough).toEqual({ route: 'openrouter', model: 'vendor/model-a' });
     // A saved route that is not a company-account route is ignored, never trusted.
     expect(tierMapFrom({ focusedRoute: 'codex' }).focused).toEqual(DEFAULT_TIER_MAP.focused);
@@ -117,7 +120,14 @@ describe('what the host accepts as a tier setting', () => {
 });
 
 describe('each tier resolves to its mapped route and model', () => {
-  const map = tierMapFrom({ thoroughModel: 'us.openai.gpt-6-sol-when-qualified' });
+  const map = tierMapFrom({
+    efficientRoute: 'aws-bedrock',
+    efficientModel: AWS_LUNA_MODEL,
+    focusedRoute: 'google-vertex',
+    focusedModel: 'gemini-3.8-flash',
+    thoroughRoute: 'aws-bedrock',
+    thoroughModel: 'us.openai.gpt-6-sol-when-qualified',
+  });
   const lists = {
     'aws-bedrock': [model(AWS_LUNA_MODEL), model('us.openai.gpt-6-sol-when-qualified')],
     'google-vertex': [model('gemini-3.8-flash')],
@@ -151,7 +161,8 @@ describe('a tier that cannot run is refused by name, never moved', () => {
   test('a mapped route that is not connected names its provider and support, and offers no other route', () => {
     // AWS and OpenRouter are ready; Focused's Google Vertex AI is not.
     const state = connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)], openrouter: [model('vendor/model-a')] });
-    const refused = resolveTier({ style: 'focused', mode: 'ask', map: DEFAULT_TIER_MAP, state });
+    const vertex = tierMapFrom({ focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash' });
+    const refused = resolveTier({ style: 'focused', mode: 'ask', map: vertex, state });
     expect(refused).toMatchObject({ outcome: 'refuse', route: 'google-vertex', model: 'gemini-3.8-flash' });
     expect(refused.reason).toBe(
       'Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
@@ -163,23 +174,37 @@ describe('a tier that cannot run is refused by name, never moved', () => {
       style: 'efficient',
       mode: 'ask',
       map: DEFAULT_TIER_MAP,
-      state: connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)] }, []),
+      state: connected({ 'azure-openai': [model('gpt-6-luna')] }, []),
     });
-    expect(offline).toMatchObject({ outcome: 'refuse', route: 'aws-bedrock' });
-    expect(offline.reason).toBe(routeUnavailable('AWS Bedrock'));
-    expect(offline.reason).not.toContain(AWS_LUNA_MODEL);
+    expect(offline).toMatchObject({ outcome: 'refuse', route: 'azure-openai' });
+    expect(offline.reason).toBe(routeUnavailable('Azure OpenAI'));
+    expect(offline.reason).not.toContain('gpt-6-luna');
   });
 
-  test('Thorough, meant for GPT-6 Sol, has no model until the owner chooses one', () => {
-    const refused = resolveTier({
-      style: 'thorough',
-      mode: 'ask',
-      map: DEFAULT_TIER_MAP,
-      state: connected({ 'aws-bedrock': [model(AWS_LUNA_MODEL)] }),
+  test('by default Efficient and Thorough run GPT-6.1 Sol on Azure at their own levels, and Focused Kimi K3 on AWS', () => {
+    const state = connected({
+      'azure-openai': [model('gpt-6.1-sol', ['low', 'medium', 'high', 'xhigh'].map((id) => ({ id, description: '' })))],
+      'aws-bedrock': [model(AWS_KIMI_K3.model)],
     });
-    expect(refused).toMatchObject({ outcome: 'refuse', model: null });
-    expect(refused.reason).toBe(routeUnavailable('AWS Bedrock'));
-    expect(refused.reason).not.toContain(AWS_LUNA_MODEL);
+    expect(resolveTier({ style: 'efficient', mode: 'ask', map: DEFAULT_TIER_MAP, state })).toMatchObject({
+      outcome: 'run',
+      route: 'azure-openai',
+      model: 'gpt-6.1-sol',
+      effort: 'low',
+    });
+    expect(resolveTier({ style: 'focused', mode: 'ask', map: DEFAULT_TIER_MAP, state })).toMatchObject({
+      outcome: 'run',
+      route: 'aws-bedrock',
+      model: AWS_KIMI_K3.model,
+    });
+    expect(resolveTier({ style: 'thorough', mode: 'ask', map: DEFAULT_TIER_MAP, state })).toMatchObject({
+      outcome: 'run',
+      route: 'azure-openai',
+      model: 'gpt-6.1-sol',
+      effort: 'high',
+    });
+    // Planning on Thorough asks one level more, where the route offers it.
+    expect(resolveTier({ style: 'thorough', mode: 'plan', map: DEFAULT_TIER_MAP, state })).toMatchObject({ effort: 'xhigh' });
   });
 
   test('a model the mapped route does not list is refused, not replaced', () => {
@@ -238,7 +263,12 @@ describe('team “Nectovia chooses” follows the tier map', () => {
     savedModel: 'vendor/gpt-6-sol',
     routeDefaultAllowed: false,
   };
-  const map = tierMapFrom({ focusedRoute: 'openrouter', focusedModel: 'vendor/gpt-6-sol' });
+  const map = tierMapFrom({
+    efficientRoute: 'aws-bedrock',
+    efficientModel: AWS_LUNA_MODEL,
+    focusedRoute: 'openrouter',
+    focusedModel: 'vendor/gpt-6-sol',
+  });
 
   test('a member runs its tier’s mapped route and model, whichever candidate comes first', () => {
     const member = resolveTeamMemberModel({ role: 'member', style: 'efficient', candidates: [openrouter, aws], tiers: { map } });
@@ -255,7 +285,8 @@ describe('team “Nectovia chooses” follows the tier map', () => {
   });
 
   test('a tier whose route is not among the connected candidates is a question naming the route', () => {
-    const refused = resolveTeamMemberModel({ role: 'member', style: 'focused', candidates: [aws], tiers: { map: DEFAULT_TIER_MAP } });
+    const vertex = tierMapFrom({ focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash' });
+    const refused = resolveTeamMemberModel({ role: 'member', style: 'focused', candidates: [aws], tiers: { map: vertex } });
     expect(refused).toEqual({
       outcome: 'ask',
       reason: routeUnavailable('Google Vertex AI'),

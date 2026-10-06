@@ -47,6 +47,7 @@ function azure(patch: Partial<AzureConnectionView> = {}): AzureConnectionView {
     connection: {
       id: 'azure-openai-1',
       resource: 'contoso-ai',
+      host: 'openai',
       endpoint: 'https://contoso-ai.openai.azure.com/openai/v1',
       apiVersion: 'v1',
       deployments: [{ model: 'gpt-5.6-luna', deployment: 'luna-prod', reasoning: true, rates: RATES }],
@@ -122,6 +123,7 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
   test('Azure connect builds exactly the route body and never echoes the key in a refusal', () => {
     const input = {
       resourceName: ' contoso-ai ',
+      host: 'foundry' as const,
       deployments: [{ model: 'gpt-5.6-luna', deployment: 'luna-prod', reasoning: true, rates: prices }],
       apiKey: ` ${KEY} `,
       expiresLocal: '',
@@ -132,6 +134,7 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
       ok: true,
       body: {
         resourceName: 'contoso-ai',
+        host: 'foundry',
         deployments: [
           {
             model: 'gpt-5.6-luna',
@@ -207,6 +210,9 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
     expect(JSON.stringify(azureForm)).not.toContain('fingerprint');
     expect(openRouterInputFrom(openrouter()).models[0].upstreams).toBe('upstream-one');
     expect(azureInputFrom(null).deployments).toHaveLength(1);
+    // A saved connection keeps its host; a new one starts on Azure AI Foundry.
+    expect(azureForm.host).toBe('openai');
+    expect(azureInputFrom(null).host).toBe('foundry');
   });
 
   test('the setup check lists failed checks first and carries only the host’s words', () => {

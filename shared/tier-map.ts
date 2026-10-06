@@ -45,6 +45,13 @@ export type TierMap = Record<WorkStyle, TierAssignment>;
  */
 export const TIER_AWS_LUNA_MODEL = 'us.openai.gpt-5.6-luna';
 /**
+ * GPT-6.1 Sol, as the owner's Azure AI Foundry connection names it. On Azure a tier names
+ * the logical model; the connection maps it to its deployment.
+ */
+export const TIER_AZURE_SOL_MODEL = 'gpt-6.1-sol';
+/** Kimi K3's US profile on the AWS Bedrock route (`AWS_KIMI_K3` in shared/model-api.ts; a test asserts they agree). */
+export const TIER_AWS_KIMI_MODEL = 'us.moonshotai.kimi-k3';
+/**
  * The Google Vertex AI route's id, as the Vertex branch names it. Not yet in
  * `MODEL_API_ROUTES` on every build, so it is a plain string here.
  */
@@ -56,17 +63,17 @@ export const TIER_VERTEX_ROUTE = 'google-vertex';
 export const TIER_GEMINI_FLASH_MODEL = 'gemini-3.8-flash';
 
 /**
- * The defaults the owner set on 2026-09-23, with Efficient returned to GPT-5.6 Luna
- * on 2026-09-27 while GPT-6 Luna's AWS access is investigated. GPT-6 Sol on AWS
- * Bedrock is not qualified yet, so Thorough has no model: it is refused by name
- * until the owner chooses one. GPT-6 Sol is named in the copy and never sent.
+ * The defaults the owner set on 2026-10-06: GPT-6.1 Sol on Azure AI Foundry for Efficient,
+ * Kimi K3 on AWS Bedrock for Focused, and GPT-6.1 Sol again for Thorough, where the tier's
+ * own level asks for high reasoning (and xhigh where a route offers it). GPT-6 Luna is no
+ * longer a default; AWS Luna and Gemini 3.8 Flash stay available to map by hand.
  * This map routes the owner's own routes; a Nectovia conversation's tier is
  * answered by the account service's published policy instead.
  */
 export const DEFAULT_TIER_MAP: TierMap = {
-  efficient: { route: 'aws-bedrock', model: TIER_AWS_LUNA_MODEL },
-  focused: { route: TIER_VERTEX_ROUTE, model: TIER_GEMINI_FLASH_MODEL },
-  thorough: { route: 'aws-bedrock', model: null },
+  efficient: { route: 'azure-openai', model: TIER_AZURE_SOL_MODEL },
+  focused: { route: 'aws-bedrock', model: TIER_AWS_KIMI_MODEL },
+  thorough: { route: 'azure-openai', model: TIER_AZURE_SOL_MODEL },
 };
 
 /** Names for tier routes this build may not know yet, so a refusal still names them. */
@@ -82,15 +89,15 @@ export function tierRouteName(route: string): string {
  * sent is the map's model id, and a tier without one is refused.
  */
 export const TIER_INTENT: Record<WorkStyle, string> = {
-  efficient: 'GPT-5.6 Luna',
-  focused: 'Gemini 3.8 Flash',
-  thorough: 'GPT-6 Sol',
+  efficient: 'GPT-6.1 Sol',
+  focused: 'Kimi K3',
+  thorough: 'GPT-6.1 Sol',
 };
 /** One line per tier default for AI setup, saying what runs today and what is intended. */
 export const TIER_DEFAULT_NOTES: Record<WorkStyle, string> = {
-  efficient: 'GPT-5.6 Luna on AWS Bedrock.',
-  focused: 'Gemini 3.8 Flash on Google Vertex AI.',
-  thorough: 'Meant for GPT-6 Sol on AWS Bedrock, which is not qualified yet. No model is sent until you choose one.',
+  efficient: 'GPT-6.1 Sol on Azure AI Foundry.',
+  focused: 'Kimi K3 on AWS Bedrock.',
+  thorough: 'GPT-6.1 Sol on Azure AI Foundry, at high reasoning.',
 };
 
 /** A model id as a route lists it: a slug, a Bedrock profile id or a vendor/model path. */

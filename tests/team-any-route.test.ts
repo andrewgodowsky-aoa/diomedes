@@ -509,8 +509,19 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
     const ready = (routes.data.routes as { route: string; ready: boolean }[]).filter((item) => item.ready).map((item) => item.route);
     expect(ready.sort()).toEqual(['aws-bedrock', 'openrouter']);
 
-    // Efficient is GPT-5.6 Luna on AWS Bedrock by the owner's default map. OpenRouter is
-    // connected too, and is not chosen: the map decides, not whichever route is ready.
+    // The owner maps Efficient to GPT-5.6 Luna on AWS Bedrock and Focused to Gemini 3.8 Flash
+    // on Google Vertex AI. OpenRouter is connected too,
+    // and is not chosen: the map decides, not whichever route is ready.
+    const saved = await request('/settings');
+    expect((await request('/settings', 'PUT', {
+      services: {
+        ...saved.data.services,
+        efficientRoute: 'aws-bedrock',
+        efficientModel: AWS_LUNA_MODEL,
+        focusedRoute: 'google-vertex',
+        focusedModel: 'gemini-3.8-flash',
+      },
+    })).status).toBe(200);
     const member = await request(`/projects/${projectId}/team/members`, 'POST', {
       name: 'Pip',
       role: 'member',

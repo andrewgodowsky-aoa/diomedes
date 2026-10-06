@@ -178,6 +178,8 @@ beforeEach(async () => {
     consent: true,
   });
   await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 5, consent: true });
+  // The tier defaults moved off AWS Luna; this AWS case maps the earlier defaults back.
+  await mapTiersToAws();
   await api('/ai/model-api/google-vertex', 'PUT', { projectId: GCP, location: 'global', model: 'gemini-3.8-flash', consent: true });
   await api('/ai/model-api/google-vertex/spend-limit', 'PUT', { capUsd: 5, consent: true });
 });
@@ -293,3 +295,11 @@ describe('the confirmation, the note, the record and the next send agree', () =>
     expect(lineages(at)[1]).not.toHaveProperty('carriedFrom');
   });
 });
+
+/** The tier map before 2026-10-02: Efficient on AWS Luna, Focused on Gemini Flash, Thorough on AWS with no model. */
+async function mapTiersToAws() {
+  const saved = await api<{ services?: Record<string, unknown> }>('/settings');
+  await api('/settings', 'PUT', {
+    services: { ...saved.services, efficientRoute: 'aws-bedrock', efficientModel: AWS_LUNA_MODEL, focusedRoute: 'google-vertex', focusedModel: 'gemini-3.8-flash', thoroughRoute: 'aws-bedrock' },
+  });
+}
