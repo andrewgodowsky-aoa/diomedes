@@ -53,6 +53,8 @@ import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
+import { readingDetail, type ReadingProgress } from './engine-prompt-progress';
+import { SegmentBar } from './SegmentBar';
 import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
 import { PinnedChartView } from './InlineVisual';
@@ -145,6 +147,8 @@ interface ThreadViewProps {
     engine: string;
     activity?: ToolLine[];
     thinking?: LiveThinking | null;
+    /** A local model's read before the answer, shown while it moves. */
+    reading?: ReadingProgress | null;
   };
   /** Live tool calls for a work run, by the run's session id. Ephemeral, never saved. */
   runActivity?: Readonly<Record<string, ToolLine[]>>;
@@ -365,6 +369,8 @@ export function ThreadView({
   const streamWaiting = Boolean(
     streaming && !streaming.text && !toolRunning(streaming.activity) && !streaming.thinking?.text,
   );
+  // A long local read says so in that place, with its counts, until answer text follows it.
+  const reading = streaming?.reading?.open ? streaming.reading : null;
   // The engine's thinking on the answer on its way; a lost stream shows none.
   const liveThinking =
     streaming?.thinking && streaming.thinking.position !== 'lost' && streaming.thinking.text ? streaming.thinking : null;
@@ -823,7 +829,16 @@ export function ThreadView({
                   {streaming.text ? (
                     <TurnBody text={streaming.text} preview session={live} />
                   ) : (
-                    streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
+                    streamWaiting && !reading && <p className="caption">{workingLine(streamWord)}</p>
+                  )}
+                  {reading && (
+                    <SegmentBar
+                      className="read-progress"
+                      label={reading.text}
+                      fraction={reading.processed / reading.total}
+                      detail={readingDetail(reading, technical)}
+                      caption={`${reading.text} ${readingDetail(reading, technical)}`}
+                    />
                   )}
                 </div>
                 {onCancelText && (
