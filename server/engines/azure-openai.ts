@@ -82,9 +82,19 @@ export const azureDeploymentSchema = z.strictObject({
   deployment: z.string().regex(AZURE_DEPLOYMENT),
   /** Whether the deployed model is a reasoning model: decides the system role and reasoning options. */
   reasoning: z.boolean(),
+  /**
+   * Whether this reasoning deployment accepts the extra-high level. The owner declares it, as with
+   * `reasoning`; absent, the deployment is offered low to high and xhigh is never sent.
+   */
+  xhigh: z.boolean().optional(),
   rates: declaredRatesSchema,
 });
 export type AzureDeployment = z.infer<typeof azureDeploymentSchema>;
+/** The reasoning levels the Azure route sends. `xhigh` only to a deployment declared to take it. */
+export type AzureEffort = 'low' | 'medium' | 'high' | 'xhigh';
+/** The levels one deployment offers, in order. */
+export const azureEfforts = (entry: Pick<AzureDeployment, 'reasoning' | 'xhigh'>): AzureEffort[] =>
+  !entry.reasoning ? [] : entry.xhigh ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
 
 export const azureConnectionSchema = z
   .strictObject({
@@ -196,10 +206,12 @@ function inspectAzureBody(deployment: string) {
 export function azureBinding(
   connection: AzureConnection,
   entry: AzureDeployment,
-  effort: 'low' | 'medium' | 'high',
+  requested: AzureEffort,
   /** Whether a thinking sink is listening: summaries are asked for only then. */
   summaries: boolean,
 ): RouteBinding {
+  // A deployment not declared to take xhigh is asked for high, its own top level.
+  const effort = requested === 'xhigh' && !entry.xhigh ? 'high' : requested;
   return {
     route: AZURE_OPENAI_ROUTE,
     prefix: 'azure',
@@ -306,7 +318,7 @@ export async function respondAzure(
     instructions: string;
     messages: ModelMessage[];
     tools: readonly ToolDescriptor[];
-    effort: 'low' | 'medium' | 'high';
+    effort: AzureEffort;
     limits: RespondLimits;
     signal: AbortSignal;
     transport?: typeof globalThis.fetch;

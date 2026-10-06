@@ -121,6 +121,7 @@ const azureBody = z.strictObject({
         model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-6-luna.'),
         deployment: z.string().regex(AZURE_DEPLOYMENT, 'Enter the deployment name exactly as Azure shows it.'),
         reasoning: z.boolean(),
+        xhigh: z.boolean().optional(),
         rates: ratesBody,
       }),
     )
@@ -423,6 +424,7 @@ export function mountProviderRoutes(
               model: entry.model,
               deployment: entry.deployment,
               reasoning: entry.reasoning,
+              ...(entry.xhigh ? { xhigh: true } : {}),
               rates: ratesView(entry.rates),
             })),
             credential: { ...connection.credential, expired: expiredAt(connection.credential.expiresAt) },
@@ -446,6 +448,8 @@ export function mountProviderRoutes(
           model: entry.model,
           deployment: entry.deployment,
           reasoning: entry.reasoning,
+          // Only a reasoning deployment can take a reasoning level, so only one keeps the flag.
+          ...(entry.reasoning && entry.xhigh ? { xhigh: true } : {}),
           rates: declared(entry.rates, at),
         })),
         credential: { kind: 'azure-api-key', fingerprint, savedAt: at, expiresAt: body.expiresAt },

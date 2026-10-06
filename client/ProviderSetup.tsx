@@ -516,6 +516,16 @@ export function AzureOpenAISetup(props: CardProps) {
                   />
                   This is a reasoning model
                 </label>
+                {entry.reasoning && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={entry.xhigh === true}
+                      onChange={(event) => change(index, { xhigh: event.target.checked })}
+                    />
+                    It takes the extra-high reasoning level
+                  </label>
+                )}
                 <RatesFields label={label} rates={entry.rates} onChange={(rates) => change(index, { rates })} />
                 {deployments.length > 1 && (
                   <Button

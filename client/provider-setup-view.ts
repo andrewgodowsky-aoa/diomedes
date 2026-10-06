@@ -167,6 +167,8 @@ export interface AzureDeploymentInput {
   model: string;
   deployment: string;
   reasoning: boolean;
+  /** Whether the reasoning deployment takes the extra-high level. */
+  xhigh?: boolean;
   rates: RatesInput;
 }
 
@@ -203,6 +205,7 @@ export function azureConnectBody(input: AzureConnectInput, nowMs = Date.now()): 
       model: entry.model.trim(),
       deployment: entry.deployment.trim(),
       reasoning: entry.reasoning,
+      ...(entry.reasoning && entry.xhigh ? { xhigh: true } : {}),
       rates: rates.body,
     });
   }
@@ -227,6 +230,7 @@ export function azureInputFrom(view: AzureConnectionView | null): Pick<AzureConn
       model: entry.model,
       deployment: entry.deployment,
       reasoning: entry.reasoning,
+      xhigh: entry.xhigh === true,
       rates: ratesInputFrom(entry.rates),
     })),
   };

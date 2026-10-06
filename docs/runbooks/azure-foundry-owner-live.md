@@ -35,7 +35,9 @@ In the Azure AI Foundry portal, on `diomedes-foundry-dev-rg`:
 AI setup › Azure OpenAI:
 
 1. Resource type **Azure AI Foundry (services.ai.azure.com)**, resource name `diomedes-foundry-dev-rg`.
-2. Deployment 1: model `gpt-6.1-sol`, the Sol deployment name, reasoning ticked, its prices.
+2. Deployment 1: model `gpt-6.1-sol`, the Sol deployment name, reasoning ticked, *It takes the
+   extra-high reasoning level* ticked, its prices. Thorough then asks for xhigh on planning and
+   demanding work; without the tick it stays at high.
 3. Paste the key, tick consent, **Connect**. The card should show
    `https://diomedes-foundry-dev-rg.services.ai.azure.com/openai/v1`.
 4. **APPROVAL: spend limit.** Enter `10.00` and save.
@@ -53,7 +55,7 @@ AI setup › Azure OpenAI:
 ## 4. What this proves and what it does not
 
 It proves the owner route reaches Sol on the Foundry host. It does not prove reasoning summaries on
-Azure, xhigh on Azure (the desktop model-API routes send low, medium or high today), customer-managed
+Azure, that Sol accepts xhigh until a Thorough planning call has answered, customer-managed
 inference, or any packaged release.
 
 ## 5. Managed gateway (customers)

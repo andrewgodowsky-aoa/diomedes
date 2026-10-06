@@ -304,7 +304,7 @@ import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
 import { RouteQualifications } from './engines/route-qualification-store.js';
 import { CACHE_POLICY_ROUTES, LOCAL_CACHE_TENANT } from './engines/route-cache.js';
 import { cachePolicyKey, readCachePolicy } from '../shared/route-capabilities.js';
-import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
+import { AZURE_OPENAI_ROUTE, AzureConnections, azureEfforts } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
 import { mountReadConnectorRoutes } from './engines/read-connector-routes.js';
@@ -3976,7 +3976,7 @@ export async function createApp(options: AppOptions) {
     if (engine === AZURE_OPENAI_ROUTE)
       return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
         slug:entry.model,name:entry.model,description:'',defaultEffort:entry.reasoning ? 'low' : null,
-        efforts:entry.reasoning ? levels : [],
+        efforts:azureEfforts(entry).map((id) => ({id,description:''})),
       }));
     if (engine === OPENROUTER_ROUTE)
       return (engines.modelApi?.openrouter?.connections.peek()?.models ?? []).map((entry) => ({

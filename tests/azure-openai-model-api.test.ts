@@ -16,6 +16,7 @@ import {
   AZURE_OPENAI_ROUTE,
   azureBinding,
   azureConnectionSchema,
+  azureEfforts,
   azureEndpoint,
   azureRateCard,
   respondAzure,
@@ -192,6 +193,23 @@ async function failure(promise: Promise<unknown>): Promise<ModelApiError> {
 }
 
 describe('the request the real SDK sends to Azure', () => {
+  test('xhigh reaches only a deployment declared to take it; any other is asked for high', async () => {
+    const declared: AzureConnection = {
+      ...CONNECTION,
+      deployments: [{ ...CONNECTION.deployments[0], xhigh: true }, CONNECTION.deployments[1]],
+    };
+    const net = transport([() => stream(envelope([message('Deep.')])), () => stream(envelope([message('Capped.')]))]);
+    await call(net.fetch, { connection: declared, effort: 'xhigh' });
+    await call(net.fetch, { effort: 'xhigh', messages: [{ role: 'user', content: 'And the dinner menu?' }] });
+    expect(net.sent.map((sent) => sent.body.reasoning)).toEqual([
+      expect.objectContaining({ effort: 'xhigh' }),
+      expect.objectContaining({ effort: 'high' }),
+    ]);
+    expect(azureEfforts(declared.deployments[0])).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(azureEfforts(CONNECTION.deployments[0])).toEqual(['low', 'medium', 'high']);
+    expect(azureEfforts({ reasoning: false, xhigh: true })).toEqual([]);
+  });
+
   test('an Azure AI Foundry resource is called on its own services.ai.azure.com v1 endpoint', async () => {
     const foundry: AzureConnection = { ...CONNECTION, host: 'foundry', baseUrl: azureEndpoint('contoso-ai', 'foundry') };
     const net = transport([() => stream(envelope([message('Soup.')]))]);

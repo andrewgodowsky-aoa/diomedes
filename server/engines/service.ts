@@ -104,6 +104,7 @@ import {
   respondAzure,
   type AzureConnection,
   type AzureConnections,
+  type AzureEffort,
 } from './azure-openai.js';
 import {
   cacheNamespace,
@@ -3289,7 +3290,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             exposure: localCallLedger(options.exposure),
             transcripts: services.transcripts,
             instructions: options.instructions,
-            effort: effortOf(options.effort),
+            effort: azureEffortOf(options.effort),
             transport: options.transport,
             limits: options.limits,
             cache: options.cache,
@@ -3298,7 +3299,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
             ...options.sinks,
           }),
         respond: ({ sinks, onCacheMarked: _marked, ...options }) =>
-          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: effortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
+          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, effort: azureEffortOf(options.effort), exposure: localCallLedger(options.exposure), ...sinks }),
         cache: (model, projectId) =>
           routeCachePlan(
             api,
@@ -3589,6 +3590,9 @@ function fencedSinks(
 
 const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
   effort === 'medium' || effort === 'high' ? effort : 'low';
+
+/** Azure also takes xhigh; the binding sends it only to a deployment declared to accept it. */
+const azureEffortOf = (effort: string | undefined): AzureEffort => (effort === 'xhigh' ? 'xhigh' : effortOf(effort));
 
 /** OpenRouter requests reasoning only when the caller selected a supported effort. */
 const selectedEffortOf = (effort: string | undefined): 'low' | 'medium' | 'high' | undefined =>

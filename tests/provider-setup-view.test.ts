@@ -120,6 +120,18 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
     expect(ratesBody({ ...prices, source: '  ' }, 'x').ok).toBe(false);
   });
 
+  test('Azure connect sends the extra-high flag only for a reasoning deployment that has it', () => {
+    const base = { resourceName: 'contoso-ai', host: 'foundry' as const, apiKey: KEY, expiresLocal: '', consent: true };
+    const deployment = { model: 'gpt-6.1-sol', deployment: 'sol-prod', reasoning: true, rates: prices };
+    const body = (entry: typeof deployment & { xhigh?: boolean }) => {
+      const parsed = azureConnectBody({ ...base, deployments: [entry] }, NOW);
+      return parsed.ok ? (parsed.body.deployments as Record<string, unknown>[])[0] : null;
+    };
+    expect(body({ ...deployment, xhigh: true })).toMatchObject({ xhigh: true });
+    expect(body(deployment)).not.toHaveProperty('xhigh');
+    expect(body({ ...deployment, reasoning: false, xhigh: true })).not.toHaveProperty('xhigh');
+  });
+
   test('Azure connect builds exactly the route body and never echoes the key in a refusal', () => {
     const input = {
       resourceName: ' contoso-ai ',
