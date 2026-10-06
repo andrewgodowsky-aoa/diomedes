@@ -47,6 +47,10 @@ GRANT UPDATE (state, processed_at) ON control_plane.webhook_inbox TO cp_runtime;
 GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations,
   control_plane.funding_settlements, control_plane.credit_adjustments,
   control_plane.credit_topups, control_plane.credit_topup_holds TO cp_runtime;
+-- 017 pay as you go (DIO-219): admission and a person's own access view read whether their bought credits
+-- are above zero (FundingService.boughtState) with these same SELECTs, and nothing else. A person's Individual
+-- billing scope is made with the billing_scopes INSERT below, and their one Stripe customer stored with the
+-- billing_customers INSERT above; billing_customers.person_id is generated, so no writer names it. No grant changes.
 -- Funding writes (reserve, dispatch, settle, grants, top-ups, cap decisions)
 -- belong to a separately reviewed runtime role, never to the Worker login.
 -- 005 customer access (2026-09-25): what the Worker's customer-access, Agent

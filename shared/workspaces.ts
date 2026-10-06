@@ -129,6 +129,12 @@ export interface EntitlementView {
   revision: number;
   source: 'none' | 'account-service';
   reason: string;
+  /**
+   * A person's own Individual billing scope only (DIO-219, pay as you go): whether the credits they bought are above zero now,
+   * all spent or held, or were never bought. Never the figure.
+   * It grants no feature and changes no field above; a gate reads it only when no plan includes the Agent. Absent elsewhere.
+   */
+  boughtCredits?: 'available' | 'spent' | 'none';
 }
 
 // People see this under Workspaces, so it names no product: the control plane's own sentence

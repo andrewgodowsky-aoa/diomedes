@@ -1181,6 +1181,19 @@ export class AccountSessionService {
   readCreditPurchase(organizationId: string, purchaseId: string) {
     return this.call((token) => this.backend.client.readCreditPurchase(token, organizationId, purchaseId));
   }
+  /** The same, for the person's own Personal work (pay as you go, DIO-219). The service names no one but the signed-in person. */
+  quotePersonalCredits(credits: number | null) {
+    return this.call((token) => this.backend.client.quotePersonalCredits(token, credits));
+  }
+  startPersonalCreditPurchase(credits: number) {
+    return this.call((token) => this.backend.client.startPersonalCreditPurchase(token, credits));
+  }
+  readPersonalCreditPurchase(purchaseId: string) {
+    return this.call((token) => this.backend.client.readPersonalCreditPurchase(token, purchaseId));
+  }
+  personalPurchasedBalance() {
+    return this.call((token) => this.backend.client.personalPurchasedBalance(token));
+  }
   /**
    * The origin of the test service's own checkout page, when the account service is the local test one, so
    * that page may be opened too. Null for the deployed service, whose only payment page is Stripe's.

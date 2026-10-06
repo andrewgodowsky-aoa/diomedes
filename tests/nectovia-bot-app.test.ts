@@ -24,11 +24,10 @@ import { NECTOVIA_SIGN_IN, NECTOVIA_UNAVAILABLE } from '../server/engines/nectov
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { ControlPlaneClient } from '../server/accounts/client';
 import type { AccountBackend } from '../server/accounts/backend';
-import { AGENT_PERSONAL_INDIVIDUAL_REASON } from '../shared/individual-plan';
-import { PLANS_URL } from '../shared/access';
+import { AGENT_PERSONAL_REASON, PLANS_URL } from '../shared/access';
 
 /** The free-version refusal, whatever it goes on to suggest. */
-const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\. .*Nothing was sent\.$/;
+const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\.(?: (?!.*Nothing was sent).+)?$/;
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
 import type { AccountStateView } from '../shared/accounts';
@@ -222,8 +221,8 @@ describe('the Nectovia bot', () => {
     const refused = await say(binding, 'm-unlinked', 'How many loaves are on order?');
     expect(refused.status).toBe(403);
     // Selecting Business cannot change the payer of an unowned project. This
-    // person has no Individual plan, so Personal admission refuses the work.
-    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_INDIVIDUAL_REASON });
+    // person has no plan for Personal work and no credits of their own, so Personal admission refuses the work and names both ways in.
+    expect(await refused.json()).toMatchObject({ code: 'AGENT_NOT_INCLUDED', error: AGENT_PERSONAL_REASON });
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);
 
@@ -401,8 +400,8 @@ describe('the Nectovia bot', () => {
     // Nothing tells someone with no business to link or switch to one; it names what they can do.
     expect(body.code).toBe('AGENT_NOT_INCLUDED');
     expect(body.error).toMatch(FREE_VERSION);
-    // With no AI of their own chosen, the only suggestion is a plan; no engine is named (Andrew, 2026-09-27).
-    expect(body.error).toContain('Sign up for a plan to talk here.');
+    // With no AI of their own chosen, it suggests credits or a plan; no engine is named (Andrew, 2026-09-27; pay as you go 2026-10-06).
+    expect(body.error).toContain('Buy credits to use it on your own conversations and tasks, or sign up for a plan.');
     expect(body.error).not.toMatch(/Claude|ChatGPT|Codex|OpenCode|Cursor|Devin|oh-my-pi|install|AI setup/i);
     expect(gateway).toHaveLength(0);
     expect(awsCalls).toBe(0);

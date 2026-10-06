@@ -324,8 +324,29 @@ export interface AccessView {
 /** The sentence a person reads when the Agent is not part of their workspace. */
 export const AGENT_NOT_INCLUDED_REASON =
   'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.';
+/** Personal work, for a person with no plan and no credits of their own (DIO-219, pay as you go). */
 export const AGENT_PERSONAL_REASON =
-  'The Nectovia Agent works for a business. Switch to a business workspace that includes it, or use your own AI tools directly.';
+  'Buy credits or get a plan to use the Nectovia Agent here. Your own AI tools work without either.';
+
+// --- pay as you go (DIO-219, Model B section 4) ----------------------------------
+
+/*
+ * A person with no plan may buy credits for their own Personal work. While their own bought balance is above zero the
+ * Nectovia Agent works for them there, on Nectovia's company route only, funded only from that balance. Bought credits grant
+ * no feature: routines and automations, phone access, business rules and the team lead stay on a plan.
+ */
+/** Personal work stopped because the person's own bought credits ran out. */
+export const OUT_OF_CREDITS_PERSONAL = "You're out of credits for the Nectovia Agent. Buy more, or get a plan for a better price.";
+/** What a person paying as they go reads when they start something only a plan includes. */
+export const PAY_AS_YOU_GO_PLAN_ONLY_REASON = "That's part of a plan. Credits you buy run the Nectovia Agent on your own conversations and tasks.";
+/** A business workspace with no plan, as its owner or admin reads it. */
+export const BUSINESS_PLAN_NEEDED_BUYER = 'This business needs a plan to use the Nectovia Agent.';
+/** A business workspace with no plan, as anyone else in it reads it. */
+export const BUSINESS_PLAN_NEEDED_MEMBER = 'Ask an owner or admin about a plan for this business.';
+/** Under the buy box of a business with no plan: what it buys waits for a plan. Buying stays open (Model B section 9, lane C item 2). */
+export const BUSINESS_CREDITS_NEED_PLAN = 'This business can use these credits once it has a plan.';
+/** Under every buy box (Model B section 5). */
+export const BOUGHT_CREDITS_LAST = 'Credits you buy last 12 months.';
 
 // --- the free version ----------------------------------------------------------
 
@@ -341,12 +362,10 @@ export const AGENT_PERSONAL_REASON =
  * stays paid (Pillar 12 amendment 2026-09-25.1: a customer-funded route never unlocks it).
  */
 export const AGENT_FREE_VERSION_REASON =
-  "You're on the free version of Nectovia, so the Nectovia Agent isn't available here. Nothing was sent.";
+  "You're on the free version of Nectovia, so the Nectovia Agent isn't available here.";
 /** The free-version refusal with what the person can do about it, when the host knows. */
 export function freeVersionRefusal(hint: string | null): string {
-  return hint
-    ? `You're on the free version of Nectovia, so the Nectovia Agent isn't available here. ${hint} Nothing was sent.`
-    : AGENT_FREE_VERSION_REASON;
+  return hint ? `${AGENT_FREE_VERSION_REASON} ${hint}` : AGENT_FREE_VERSION_REASON;
 }
 /** Where "Sign up for a plan" opens until a checkout exists. `NECTOVIA_PLANS_URL` replaces it. */
 export const PLANS_URL = 'https://diomedes.net/pricing';
@@ -364,10 +383,12 @@ export const FREE_ABILITIES: readonly string[] = Object.freeze([
   'The task board',
   'Conversations and work on your own AI tools',
   "Your projects' own instruction files",
+  'The Nectovia Agent for your own work, with credits you buy',
 ]);
 export const PAID_ABILITIES: readonly string[] = Object.freeze([
   'The Nectovia Agent',
-  'Included AI usage, with nothing to connect',
+  'Included AI usage every month',
+  'A better price on extra credits',
   'Business rules and trigger rules',
   'Automations',
   'Phone access',

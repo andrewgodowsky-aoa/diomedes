@@ -47,7 +47,17 @@ export interface CreditQuote {
   /** One step: `stepCredits` credits for `stepCents` cents. The amount is a whole number of these, and the next amount up is one more. */
   stepCredits: number;
   stepCents: number;
+  /** Whether the payer buys at the plan rate: a business on a plan, or a person with an Individual plan of their own. */
+  onPlan: boolean;
+  /**
+   * For a payer without a plan, one step at the plan rate, a public price, so a screen can say what the same money buys on a
+   * plan. Null on a plan, and when the service has no usable plan rate.
+   */
+  planStep: { credits: number; cents: number } | null;
 }
+
+/** The buy box's headline is this many steps: at the published rates, "$130 buys 1,000 credits" and "$100 buys 1,100 credits". */
+export const HEADLINE_STEPS = 10;
 
 /** A purchase just started: where to pay, which the client opens, and what it is for. */
 export interface CreditPurchaseStarted {

@@ -3991,9 +3991,14 @@ export async function createApp(options: AppOptions) {
     const organizationId = nectoviaAccount!.organizationFor(projectId)!;
     const scope = accountRouting?.scopeFor(projectId);
     const entitlement = scope?.kind === 'organization' ? accountSession?.entitlement(organizationId) : null;
-    if (!scope || !accountRouting?.includes(scope, 'nectovia-agent'))
-      throw new EngineError(AGENT_NOT_INCLUDED, entitlement?.reason || 'This account does not include the Nectovia Agent.', false);
-    if (!accountRouting.includes(scope, 'managed-inference'))
+    // Pay as you go (DIO-219): Personal work with no plan runs on the person's own bought credits, on this route only.
+    const payg = Boolean(scope && accountRouting?.paysAsYouGo(scope));
+    if (!scope || !(accountRouting?.includes(scope, 'nectovia-agent') || payg)) {
+      // A business with no plan says so in the words for this person's role there (Model B section 7).
+      const reason = scope?.kind === 'organization' && entitlement?.state === 'none' ? accountRouting?.businessPlanReason(scope.id) : entitlement?.reason;
+      throw new EngineError(AGENT_NOT_INCLUDED, reason || 'This account does not include the Nectovia Agent.', false);
+    }
+    if (!payg && !accountRouting!.includes(scope, 'managed-inference'))
       throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
     const tier = nectoviaTier({
       style: style(),
@@ -4079,7 +4084,9 @@ export async function createApp(options: AppOptions) {
     isConversationRoute(route) && !isModelApiRoute(route);
   /**
    * What a person on the free version is told when a conversation is refused. It never suggests
-   * installing or choosing an engine; the only thing it suggests is a plan (Andrew, 2026-09-27).
+   * installing or choosing an engine; it suggests a plan (Andrew, 2026-09-27) and, where their own
+   * bought credits would run it, buying credits (pay as you go, 2026-10-06). Only Personal work and
+   * projects no business owns reach it, so the credits line never reaches a business workspace.
    * It may still name the engine the person already chose, to say what that engine can't do.
    */
   const freeHint = (): string => {
@@ -4088,7 +4095,7 @@ export async function createApp(options: AppOptions) {
       return 'A model key of your own also runs through the Nectovia Agent, so it needs a plan too. Sign up for a plan to talk here.';
     if (isRoute(own) && own !== 'sample' && !isFreeConversationRoute(own))
       return `${routeDisplayName(own)} can't hold a conversation yet, but it can still do Build and Fix work. Sign up for a plan to talk here.`;
-    return 'Sign up for a plan to talk here.';
+    return 'Buy credits to use it on your own conversations and tasks, or sign up for a plan.';
   };
   const tierFor = (
     projectId: string,

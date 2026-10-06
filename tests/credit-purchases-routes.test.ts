@@ -134,14 +134,14 @@ describe('the quote', () => {
   test('answers what an amount of credits costs and the step it is bought in, and nothing else', async () => {
     await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
     const answer = await get(`${base()}/quote?credits=1100`);
-    expect(answer).toEqual({ status: 200, data: { credits: 1100, amountCents: 10000, currency: 'usd', steps: 10, stepCredits: 110, stepCents: 1000 } });
+    expect(answer).toEqual({ status: 200, data: { credits: 1100, amountCents: 10000, currency: 'usd', steps: 10, stepCredits: 110, stepCents: 1000, onPlan: true, planStep: null } });
     expect(cloudCalls()).toEqual([`GET /account/organizations/${ORG}/credit-purchases/quote`]);
     expect(JSON.stringify(answer.data)).not.toMatch(/mark-?up|percent|rate|price/i);
   });
 
   test('with no amount, quotes one step: how the screen learns the step before it asks for more', async () => {
     await mount(await signedIn(DEMO_ACCOUNTS.owner.email));
-    expect(await get(`${base()}/quote`)).toEqual({ status: 200, data: { credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000 } });
+    expect(await get(`${base()}/quote`)).toEqual({ status: 200, data: { credits: 110, amountCents: 1000, currency: 'usd', steps: 1, stepCredits: 110, stepCents: 1000, onPlan: true, planStep: null } });
   });
 
   test('refuses an amount that is not a whole number inside the cap before asking the service', async () => {
