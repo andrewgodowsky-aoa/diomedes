@@ -10,6 +10,7 @@ import type {
 import type { EngineConnection } from '../../shared/engines';
 import { CONVERSATION_ROUTES, isExternalEngine, isRoute, routeDisplayName } from '../../shared/engines';
 import { NECTOVIA_ROUTE } from '../../shared/model-api';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model';
 import { isFoundEngine } from '../../shared/conversation-engines';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import {
@@ -41,7 +42,7 @@ export const ROW_ENGINES = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cur
  * model has its own place, so neither is in this list.
  */
 export const CONVERSATION_ENGINES: readonly Route[] = CONVERSATION_ROUTES.filter(
-  (id) => id !== NECTOVIA_ROUTE && id !== 'bonsai',
+  (id) => id !== NECTOVIA_ROUTE && id !== LOCAL_MODEL_ROUTE,
 );
 
 export const LOCAL_MODEL = 'Local model';
