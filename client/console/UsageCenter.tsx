@@ -8,12 +8,14 @@ import {
   type UsageState,
 } from '../../shared/managed-usage';
 import type { Membership, WorkspaceView } from '../../shared/workspaces';
+import { HEADLINE_STEPS } from '../../shared/credit-purchases';
+import { BOUGHT_CREDITS_LAST, BUSINESS_CREDITS_NEED_PLAN } from '../../shared/access';
 import { api } from '../api';
 import { Button } from '../components';
-import { PurchasedCreditsView, canSeePurchasedCredits, loadPurchasedUsage } from './PurchasedCredits';
+import { PurchasedCreditsView, canSeePurchasedCredits, loadPersonalPurchasedUsage, loadPurchasedUsage } from './PurchasedCredits';
 import { useNectoviaUsage } from './NectoviaUsage';
 import { usageBarModel, type UsageTone } from './nectovia-usage-model';
-import { START_CREDITS, createPurchaseFlow, formatUsd, maxCreditsFor, type FlowState, type PurchaseFlow } from './credit-purchase-flow';
+import { INITIAL_FLOW, createPurchaseFlow, formatPrice, formatUsd, maxCreditsFor, type CreditStep, type FlowState, type PurchaseFlow } from './credit-purchase-flow';
 import './usage-center.css';
 
 /**
@@ -122,18 +124,30 @@ export function UsageCenterBar({ state, now }: { state: UsageState; now: number 
 
 const credits = (value: number) => `${value.toLocaleString('en-US')} ${value === 1 ? 'credit' : 'credits'}`;
 
+/** "$130 buys 1,000 credits.": ten of the quoted steps, the way prices are published. Both figures are the service's. */
+export const headlineText = (step: CreditStep) =>
+  `${formatPrice(step.cents * HEADLINE_STEPS)} buys ${credits(step.credits * HEADLINE_STEPS)}.`;
+
+/** Who a buy box buys for: a business, or the signed-in person's own Personal work. */
+export type BuyPayer = 'business' | 'person';
+
 export function BuyCreditsView({
   state,
   onInput,
   onBuy,
   onReset,
+  payer = 'business',
 }: {
   state: FlowState;
   onInput(text: string): void;
   onBuy(): void;
   onReset(): void;
+  payer?: BuyPayer;
 }) {
   const { quote, purchase } = state;
+  const noPlan = state.onPlan === false;
+  // The published price sits with a quote that has answered, before anything is bought: the one time dollars show here.
+  const priced = purchase.phase === 'idle' && quote.state === 'ready';
   // The step is the one the account service quoted for this business; until it has, the field takes any whole number.
   const step = state.step?.credits ?? 1;
   const held = purchase.phase === 'starting' || purchase.phase === 'waiting';
@@ -141,6 +155,10 @@ export function BuyCreditsView({
   return (
     <section className="uc-section uc-buy" aria-label="Buy credits">
       <h2>Buy credits</h2>
+      {priced && state.step && <p className="uc-line uc-price">{headlineText(state.step)}</p>}
+      {priced && noPlan && state.planStep && <p className="caption uc-plan-price">On a plan, {headlineText(state.planStep)}</p>}
+      {noPlan && payer === 'business' && <p className="caption uc-needs-plan">{BUSINESS_CREDITS_NEED_PLAN}</p>}
+      <p className="caption uc-lasts">{BOUGHT_CREDITS_LAST}</p>
       {form && (
         <label className="uc-field">
           <span>Credits to buy</span>
@@ -270,8 +288,8 @@ function openPaymentPage(url: string) {
   }
 }
 
-/** One buy flow for one business. A new business gets a new flow; leaving the screen ends it. */
-function useCreditPurchase(organizationId: string, onPaid: () => void) {
+/** One buy flow for one payer: a business, or (null) the person's own Personal work. A new payer gets a new flow; leaving the screen ends it. */
+function useCreditPurchase(organizationId: string | null, onPaid: () => void) {
   const [flow, setFlow] = useState<PurchaseFlow | null>(null);
   const [state, setState] = useState<FlowState | null>(null);
   const paid = useRef(onPaid);
@@ -337,12 +355,77 @@ function UsageCenterPanel({
       usage={usage}
       now={now}
       purchased={purchased}
-      buy={state ?? { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' }, step: null }}
+      buy={state ?? INITIAL_FLOW}
       onInput={(text) => flow?.setInput(text)}
       onBuy={() => void flow?.buy()}
       onReset={() => flow?.reset()}
     />
   );
+}
+
+/**
+ * Settings, Usage in Personal (pay as you go, DIO-219): the credits the signed-in person bought for their own work, and a
+ * way to buy more. The account service resolves who is buying and prices it from their own plan, if they have one; nothing
+ * here names a person or a business. While the balance can't be read there is one plain line and nothing to buy.
+ */
+export function PersonalUsageView({
+  purchased,
+  buy,
+  onInput,
+  onBuy,
+  onReset,
+}: {
+  purchased: PurchasedUsageState | null;
+  buy: FlowState;
+  onInput(text: string): void;
+  onBuy(): void;
+  onReset(): void;
+}) {
+  return (
+    <div className="usage-center">
+      {purchased === null ? (
+        <p className="uc-line" role="status">
+          Checking your credits.
+        </p>
+      ) : (
+        <PurchasedCreditsView state={purchased} caption={null} />
+      )}
+      {purchased?.state === 'ready' && <BuyCreditsView state={buy} onInput={onInput} onBuy={onBuy} onReset={onReset} payer="person" />}
+    </div>
+  );
+}
+
+function PersonalUsagePanel({ report }: { report(error: unknown): void }) {
+  const [purchased, setPurchased] = useState<PurchasedUsageState | null>(null);
+  const [reads, setReads] = useState(0);
+  const reportRef = useRef(report);
+  reportRef.current = report;
+  useEffect(() => {
+    let live = true;
+    loadPersonalPurchasedUsage()
+      .then((next) => {
+        if (live) setPurchased(next);
+      })
+      .catch((error) => reportRef.current(error));
+    return () => {
+      live = false;
+    };
+  }, [reads]);
+  const paid = useCallback(() => setReads((count) => count + 1), []);
+  const { flow, state } = useCreditPurchase(null, paid);
+  return (
+    <PersonalUsageView
+      purchased={purchased}
+      buy={state ?? INITIAL_FLOW}
+      onInput={(text) => flow?.setInput(text)}
+      onBuy={() => void flow?.buy()}
+      onReset={() => flow?.reset()}
+    />
+  );
+}
+
+export function PersonalUsage({ report }: { report(error: unknown): void }) {
+  return <PersonalUsagePanel report={report} />;
 }
 
 export function UsageCenter({

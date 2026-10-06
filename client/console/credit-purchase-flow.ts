@@ -37,6 +37,16 @@ export interface CreditStep {
   cents: number;
 }
 
+/** Where Personal work's purchases are made: the signed-in person's own, never a business's. */
+export const PERSONAL_PURCHASES = '/workspace/personal/allowance/credit-purchases';
+
+/** The flow before any quote has answered. */
+export const INITIAL_FLOW: FlowState = { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' }, step: null, onPlan: null, planStep: null };
+
+const isStep = (value: unknown): value is CreditStep =>
+  typeof value === 'object' && value !== null &&
+  [(value as CreditStep).credits, (value as CreditStep).cents].every((part) => Number.isSafeInteger(part) && part > 0);
+
 /** The starting amount at a step: about START_CREDITS, in whole steps, and at least one. */
 export const startCreditsFor = (step: number): number => Math.max(1, Math.floor(Number(START_CREDITS) / step)) * step;
 
@@ -65,10 +75,15 @@ export interface FlowState {
   purchase: PurchaseView;
   /** The step credits are bought in, from the last quote the service answered. Null until there is one. */
   step: CreditStep | null;
+  /** Whether the payer buys at the plan rate, from the last quote. Null until there is one. */
+  onPlan: boolean | null;
+  /** For a payer without a plan, one step at the plan rate (a public price), from the last quote. */
+  planStep: CreditStep | null;
 }
 
 export interface PurchaseFlowDeps {
-  organizationId: string;
+  /** The business that pays, or null for the signed-in person's own Personal work (pay as you go, DIO-219). */
+  organizationId: string | null;
   /** The app's own `api` call: a path under `/api`, a method and a body. */
   read<T>(path: string, method?: string, body?: unknown): Promise<T>;
   /** Opens a payment page the flow has already checked. */
@@ -103,6 +118,12 @@ export function parseCredits(text: string, step: number | null = null): number |
 /** A total in cents, shown as dollars. Display only: the amount in cents is always the service's. */
 export function formatUsd(cents: number): string {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+/** A price in cents as a headline shows it: "$130" for whole dollars, "$12.50" otherwise. Display only, as above. */
+export function formatPrice(cents: number): string {
+  const whole = cents % 100 === 0;
+  return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 });
 }
 
 /**
@@ -156,8 +177,9 @@ const isStarted = (value: unknown): value is CreditPurchaseStarted =>
   Number.isSafeInteger((value as CreditPurchaseStarted).amountCents);
 
 export function createPurchaseFlow(deps: PurchaseFlowDeps) {
-  const base = `/workspace/organizations/${encodeURIComponent(deps.organizationId)}/allowance/credit-purchases`;
-  let state: FlowState = { input: START_CREDITS, quote: { state: 'loading' }, purchase: { phase: 'idle' }, step: null };
+  const base = deps.organizationId === null ? PERSONAL_PURCHASES
+    : `/workspace/organizations/${encodeURIComponent(deps.organizationId)}/allowance/credit-purchases`;
+  let state: FlowState = INITIAL_FLOW;
   const listeners = new Set<(next: FlowState) => void>();
   let disposed = false;
   let quoteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -184,17 +206,20 @@ export function createPurchaseFlow(deps: PurchaseFlowDeps) {
         return;
       }
       const step = { credits: answer.stepCredits, cents: answer.stepCents };
+      // A service from before plans changed the rate says neither: it reads as on a plan, with nothing to compare.
+      const onPlan = typeof answer.onPlan === 'boolean' ? answer.onPlan : true;
+      const planStep = isStep(answer.planStep) ? answer.planStep : null;
       if (credits === null) {
         // The step is known: start at about 1,000 credits, in whole steps.
         const start = startCreditsFor(step.credits);
-        if (start === answer.credits) set({ step, input: String(start), quote: { state: 'ready', credits: start, amountCents: answer.amountCents } });
+        if (start === answer.credits) set({ step, onPlan, planStep, input: String(start), quote: { state: 'ready', credits: start, amountCents: answer.amountCents } });
         else {
-          set({ step, input: String(start), quote: { state: 'loading' } });
+          set({ step, onPlan, planStep, input: String(start), quote: { state: 'loading' } });
           void askForQuote(start);
         }
         return;
       }
-      set({ step, quote: { state: 'ready', credits, amountCents: answer.amountCents } });
+      set({ step, onPlan, planStep, quote: { state: 'ready', credits, amountCents: answer.amountCents } });
     } catch (error) {
       if (disposed || seq !== quoteSeq) return;
       set({ quote: { state: 'unavailable', message: plain(error, QUOTE_UNAVAILABLE) } });
