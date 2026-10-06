@@ -95,13 +95,20 @@ describe.skipIf(!ownerUrl)('Independent real Neon runtime role qualification', (
     ['commercial mutation', 'DELETE FROM control_plane.billing_customers WHERE false'],
     // The credit purchase receiver stores customers and verified events on this login (SELECT, INSERT), never rewrites or removes one.
     ['customer rewrite', 'UPDATE control_plane.billing_customers SET customer_id=customer_id WHERE false'],
-    ['inbox rewrite', 'UPDATE control_plane.webhook_inbox SET state=state WHERE false'],
+    // The one thing it may move on an inbox row is its state and processed_at (017's markEvent); the rest of the row is written once.
+    ['inbox payload rewrite', 'UPDATE control_plane.webhook_inbox SET payload=payload WHERE false'],
+    ['inbox customer rewrite', 'UPDATE control_plane.webhook_inbox SET customer_id=customer_id WHERE false'],
+    ['inbox environment rewrite', 'UPDATE control_plane.webhook_inbox SET environment=environment WHERE false'],
     ['inbox removal', 'DELETE FROM control_plane.webhook_inbox WHERE false'],
     ['commercial reads', 'SELECT * FROM control_plane.subscriptions LIMIT 1'],
     ['setup rewrite', 'UPDATE control_plane.organization_setups SET revision=revision WHERE false'],
     ['setup removal', 'DELETE FROM control_plane.organization_setups WHERE false'],
   ])('refuses %s with PostgreSQL insufficient_privilege', async (_name, sql) => {
     await expect(query(runtimeUrl, sql)).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('lets the runtime login mark the state of an inbox event, which 017 grants it, and no other column', async () => {
+    await expect(query(runtimeUrl, 'UPDATE control_plane.webhook_inbox SET state=state, processed_at=processed_at WHERE false')).resolves.toBeDefined();
   });
 
   it('keeps the runtime login unprivileged and without role memberships', async () => {
