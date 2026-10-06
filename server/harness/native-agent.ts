@@ -405,6 +405,8 @@ export class NativeAgent {
               response: result.response,
               usage: result.usage ?? null,
               ...(managed?.success ? { managed: managed.data } : {}),
+              // DIO-254: what a local call left out to fit its window, on the record this step already writes.
+              ...(result.room ? { room: result.room } : {}),
               ...(result.transcript
                 ? {
                     transcript: transcriptSchema.parse(result.transcript),

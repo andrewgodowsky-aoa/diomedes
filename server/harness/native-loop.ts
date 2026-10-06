@@ -506,6 +506,8 @@ export class NativeLoop {
           ...(result.transcript
             ? { transcript: transcriptSchema.parse(result.transcript), inputTranscript: copy(effective.transcript) }
             : {}),
+          // DIO-254: what a local call left out to fit its window, on the record this step already writes.
+          ...(result.room ? { room: result.room } : {}),
         };
       },
       principal,

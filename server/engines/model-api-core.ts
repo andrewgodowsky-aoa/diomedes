@@ -21,7 +21,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { jsonSchema, stepCountIs, streamText, type LanguageModel, type ModelMessage, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
-import type { Json, ToolDescriptor } from '../../shared/harness.js';
+import type { Json, ModelRoom, ToolDescriptor } from '../../shared/harness.js';
 import {
   cacheRequest,
   systemParts,
@@ -512,6 +512,8 @@ export interface RespondResult {
    * Present only when the call carried a cache request.
    */
   marked?: CacheMark;
+  /** DIO-254: what an Agent loop's call on the local model left out to fit its window, when it had to. */
+  room?: ModelRoom;
 }
 
 /** The input-token ceiling a request can reach, from its bytes. One rule, shared with the job estimate. */

@@ -3,7 +3,7 @@ import type { ModelMessage } from 'ai';
 import { findLocalProfile, localContextBudget, localCallCeiling, localDeadlines, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
   type LocalModelProfile } from '../../shared/local-model.js';
 import { MODEL_IMAGE_COUNT, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/model-images.js';
-import type { ToolDescriptor } from '../../shared/harness.js';
+import type { ModelRoom, ToolDescriptor } from '../../shared/harness.js';
 import type { ModelRateCard } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from '../harness/model-api-adapter.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
@@ -129,10 +129,67 @@ const replySchema = z.object({ id: z.string(), model: z.string(), usage: z.unkno
       function: z.object({ name: z.string(), arguments: z.string() }) })).max(1).optional(),
   }) })).length(1) });
 
+/** A call's messages as its template is counted: each image a placeholder, its tokens reserved apart. */
+const countable = (messages: readonly ChatMessage[]): ChatMessage[] => messages.map(m => ({ ...m, content: Array.isArray(m.content)
+  ? m.content.map(p => p.type === 'image_url' ? { type: 'text', text: '[image]' } : p) : m.content }));
+
+/** What a read folded to make room says in its place (DIO-254). */
+export const localFoldedRead = (path: string, chars: number) =>
+  `The ${chars.toLocaleString('en-US')} characters read from ${path} were left out here to make room. Read it again with read_project_file if you need its exact lines.`;
+
+/** The file a tool message's result holds, when it is a read that returned the file's text. */
+function readIn(content: unknown): { path: string; bytes: number; text: string } | null {
+  if (typeof content !== 'string') return null;
+  let value: unknown;
+  try { value = JSON.parse(content); } catch { return null; }
+  if (!value || typeof value !== 'object') return null;
+  const read = value as Record<string, unknown>;
+  return read.found === true && typeof read.path === 'string' && typeof read.text === 'string' && typeof read.bytes === 'number'
+    ? { path: read.path, bytes: read.bytes, text: read.text } : null;
+}
+
+/**
+ * DIO-254, the owner's order (2026-10-06): an Agent loop's call that won't fit its window first
+ * leaves out the reasoning of earlier assistant turns, newest first, then folds a read's text into
+ * a stub that names the file and its size, newest first. Each stops as soon as the call fits, by
+ * the same count as the refusal. Answer text and every other tool result are kept, and nothing
+ * before the first change moves, so the cached prefix holds. Null when the call still won't fit.
+ * Positions are in the call's own messages, after its system prompt.
+ */
+async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMessage[]) => Promise<number>, room: number,
+  counted: number): Promise<{ messages: ChatMessage[]; record: ModelRoom } | null> {
+  const next = messages.map(message => ({ ...message }));
+  const record: ModelRoom = { counted, room, sent: counted, reasoning: [], folded: [] };
+  let needed = counted;
+  for (let i = next.length - 1; i > 0 && needed > room; i--) {
+    const { reasoning_content: reasoning, ...rest } = next[i];
+    if (next[i].role !== 'assistant' || !reasoning) continue;
+    next[i] = rest;
+    record.reasoning.push({ message: i - 1, chars: reasoning.length });
+    needed = await count(next);
+  }
+  const names = new Map(next.flatMap(message => (message.tool_calls ?? []) as { id?: unknown; function?: { name?: unknown } }[])
+    .map(call => [call.id, call.function?.name]));
+  for (let i = next.length - 1; i > 0 && needed > room; i--) {
+    const message = next[i];
+    const read = message.role === 'tool' && names.get(message.tool_call_id) === 'read_project_file' ? readIn(message.content) : null;
+    if (!read) continue;
+    next[i] = { ...message, content: JSON.stringify({ path: read.path, found: true, bytes: read.bytes,
+      note: localFoldedRead(read.path, read.text.length) }) };
+    record.folded.push({ message: i - 1, path: read.path, chars: read.text.length, bytes: read.bytes });
+    needed = await count(next);
+  }
+  if (needed > room) return null;
+  record.sent = needed;
+  return { messages: next, record };
+}
+
 export async function respondLocal(input: {
   runtime: LocalModelRuntime; model: string; instructions: string; effort?: string;
   messages: ModelMessage[]; tools: readonly ToolDescriptor[]; signal: AbortSignal;
   limits?: RespondLimits; transport?: typeof fetch;
+  /** An Agent loop's call (DIO-254): one that won't fit its window makes room before it is refused. */
+  makeRoom?: boolean;
 } & StreamSinks): Promise<LocalModelReply> {
   const chosen = profileOf(input.runtime, input.model);
   const effort = input.effort ?? chosen.defaultEffort!;
@@ -150,8 +207,7 @@ export async function respondLocal(input: {
     chat_template_kwargs: { reasoning_effort: effort, ...(effortBudget ? { enable_thinking: effortBudget.thinking } : {}) },
     ...(effortBudget ? { reasoning_budget_tokens: Math.min(effortBudget.reasoningTokens, Math.max(0, max_tokens - 1)) } : {}), cache_prompt: true };
   const imageCount = messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url').length : 0), 0);
-  const textMessages = messages.map(m => ({ ...m, content: Array.isArray(m.content)
-    ? m.content.map(p => p.type === 'image_url' ? { type: 'text', text: '[image]' } : p) : m.content }));
+  const textMessages = countable(messages);
   if (imageCount > MODEL_IMAGE_COUNT || Buffer.byteLength(JSON.stringify(request)) > 24_000_000 ||
       Buffer.byteLength(JSON.stringify({ ...request, messages: textMessages })) > limits.maxRequestBytes)
     throw refused('This message exceeds the local model attachment or text limit.');
@@ -165,17 +221,31 @@ export async function respondLocal(input: {
       // The running profile's context, as the server reported it.
       const window = status.contextTokens ?? profile.contextTokens;
       const budget = localContextBudget(profile, { nativeTotalWindow: window, outputReserve: max_tokens });
-      const body = { model, ...request };
+      let body = { model, ...request };
       // Tokenize the actual chat template before inference; reserve a 1024-token cap per image.
-      const template = z.object({ prompt: z.string() }).parse(await jsonRequest(`${descriptor.serverRoot}/apply-template`,
-        { ...body, messages: textMessages }, signal, transport, false, budget.templateResponseBytes));
-      const tokens = z.object({ tokens: z.array(z.number().int()).max(1_000_000) }).parse(await jsonRequest(`${descriptor.serverRoot}/tokenize`,
-        { content: template.prompt, add_special: true }, signal, transport, false, 12_000_000));
-      if (tokens.tokens.length + imageCount * 1024 > budget.inputRoom)
+      const count = async (chat: ChatMessage[]) => {
+        const template = z.object({ prompt: z.string() }).parse(await jsonRequest(`${descriptor.serverRoot}/apply-template`,
+          { ...body, messages: chat }, signal, transport, false, budget.templateResponseBytes));
+        const tokens = z.object({ tokens: z.array(z.number().int()).max(1_000_000) }).parse(await jsonRequest(`${descriptor.serverRoot}/tokenize`,
+          { content: template.prompt, add_special: true }, signal, transport, false, 12_000_000));
+        return tokens.tokens.length + imageCount * 1024;
+      };
+      let needed = await count(textMessages);
+      let room: ModelRoom | undefined;
+      // DIO-254: only a call that won't fit changes; one that fits is sent exactly as it was.
+      if (needed > budget.inputRoom && input.makeRoom) {
+        const made = await makeRoom(messages, chat => count(countable(chat)), budget.inputRoom, needed);
+        if (made) {
+          body = { ...body, messages: made.messages };
+          room = made.record;
+          needed = made.record.sent;
+        }
+      }
+      if (needed > budget.inputRoom)
         throw refused(`This message and its answer need more than ${window.toLocaleString('en-US')} tokens. Start a new thread or reduce its sources.`);
       dispatched = true;
       const ceiling = localCallCeiling({ measuredRates: profile.measuredRates,
-        callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, tokens.tokens.length, max_tokens);
+        callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, needed - imageCount * 1024, max_tokens);
       const raw = await readLocalStream({ url: `${descriptor.baseUrl}/chat/completions`, body, model,
         signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(limits.callWallMs, ceiling))]),
         transport, maxResponseBytes: limits.maxResponseBytes,
@@ -207,7 +277,7 @@ export async function respondLocal(input: {
       return { outcome, usage, rawUsage: { provider: response.usage, local: { profile: profile.slug, inferenceCostMicroUsd: 0,
         ...(response.timings !== undefined ? { timings: response.timings } : {}) } },
         reportedModel: model, responseId: response.id, providerRequestId: response.id,
-        responseMessages: [{ role: 'assistant', content }], warnings: 0, servedBy: 'local' };
+        responseMessages: [{ role: 'assistant', content }], warnings: 0, servedBy: 'local', ...(room ? { room } : {}) };
     });
   } catch (error) {
     if (error instanceof LocalModelError) throw new ModelApiError(`${PREFIX}_${error.state}`, error.message, dispatched);
@@ -219,6 +289,8 @@ export function createLocalAdapter(input: {
   runtime: LocalModelRuntime; model: string; instructions: string; effort?: string; transcripts: ModelTranscripts;
   images?: readonly ModelImage[]; loadImage?: (image: ModelImage) => Promise<string>;
   limits?: RespondLimits; transport?: typeof fetch; sinks?: StreamSinks;
+  /** An Agent loop's calls (DIO-254): one that won't fit its window makes room before it is refused. */
+  makeRoom?: boolean;
 }) {
   const descriptor = input.runtime.descriptor();
   if (!descriptor) throw refused(LOCAL_MODEL_NOT_INSTALLED);
