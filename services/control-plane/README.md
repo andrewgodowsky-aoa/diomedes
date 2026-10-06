@@ -716,8 +716,15 @@ only from it. Bought credits grant no feature.
   the purchase row exactly as for a business, and the same Checkout, customer and
   webhook path pays it: the row names the person's scope and tenant.
 - `GET /account/routing/individual/:id/access` adds `boughtCredits`: `available`,
-  `spent` or `none`, never the figure (`FundingService.boughtState`, a SELECT the
-  Worker login may run). It changes no other field and adds no feature.
+  `spent` or `none` (`FundingService.boughtState`, a SELECT the Worker login may run).
+  It changes no other field and adds no feature.
+- The same view adds `boughtAvailable`: the person's own bought balance in ledger
+  units, a whole number (`FundingService.boughtAvailable`, the same SELECT-only read).
+  It is for their own Individual scope only, never a business or another person, and
+  is left out when the read fails or there is no reader. A yes or no cannot size the
+  desktop's local safety guard, which stops that computer sending past what the person
+  could fund, so the desktop sets its cap from this amount for work admitted as pay as
+  you go. The ledger stays the authority; the gateway still checks every call.
 - Admission (`RoutingService.admit`) admits a person whose plan does not hold the
   Agent while `boughtCredits` is `available`, with `planId` null, for work they
   start on the company route only. The team (`team`), automations (`automation`)

@@ -71,6 +71,12 @@ export interface AdmittedAgentWork {
   readonly scope?: AccountScope;
   readonly personId: string;
   readonly planId: string | null;
+  /**
+   * Pay as you go only (DIO-223): the person's own bought balance in ledger units, as the account service reported it for this
+   * admission. Set only for Personal work admitted with no plan while the service sent the amount; absent for a plan holder, for a
+   * business and for an older service. It only sizes this computer's local guard; the service's ledger is the authority.
+   */
+  readonly boughtAvailable?: number;
   /** The routing tier policy revision the service admitted under. Not a telemetry policy. */
   readonly policyRevision: number;
   readonly routeKind: AgentRouteKind;

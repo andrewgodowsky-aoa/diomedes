@@ -1,6 +1,6 @@
 # DIOMEDES CORE PILLARS — BINDING PRODUCT CONSTITUTION
 
-**Version:** 2026-10-05.1
+**Version:** 2026-10-06.1
 **Status:** Owner-approved product/business/agent/design authority  
 **Product:** Nectovia (named Diomedes until 2026-09-22)  
 **Company direction:** Diomedes Systems  
@@ -78,6 +78,8 @@ Connected subscription, ACP and other native engines follow their own updates. N
 ## Pillar 07 — Diomedes is the agent; models and engines are interchangeable resources
 
 **Technical contract:** Native Diomedes Agent owns the supervisory loop and can use customer subscription-backed routes, local models, BYO APIs, Diomedes-hosted inference, or specialist external engines. Preserve actual model/engine/provider/payer attribution and never silently change payer, provider, data policy, or authority. Direct-agent mode remains distinct from native Diomedes-led work.
+
+When a person chooses to prefer an eligible connected subscription, Nectovia may use it for supported work within that person's own authorized scope, on that person's computer, and only through that engine's own coding tool (its installed command-line or app-server program, signed in through the provider's own flow). It never uses a consumer chat product, its sessions or its credentials. Product entitlement, provider eligibility, account ownership, data permissions and spending authority stay separately enforced. Managed inference stays ready to use without any subscription, and connecting one never turns the preference on by itself. A subscription never funds pooled or shared organization work. A worker's subscription usage does not debit Nectovia credits; any managed supervisor, tool or verification usage in the same job stays attributable.
 
 **Human version:** You do not need to bring, buy or share an AI subscription to use Diomedes. It can run on the AI an Individual or Business plan includes, on a supported customer-owned provider or subscription route, or on a capable local computer. You are paying for Diomedes to organize the work, not for a mystery model name.
 
@@ -209,6 +211,7 @@ Amendments:
 - **2026-09-26.1 (minor, Andrew's explicit decision):** Expanded P02/P03/P05/P11 and added P13/P14 under SC-2026-09-26.1. Persistent self-configuration, governed learning, scoped departmental knowledge and measured accounts-per-employee scaling are core direction. No runtime release, pricing change or production-access permission is implied.
 - **2026-09-27.2 (Andrew's explicit decision):** Connected engines follow their own updates and report current account models and capabilities. Remove vendor-version allowlists; preserve artifact integrity and account, route, data, payer and paid-Agent boundaries. Free users retain manual boards and direct engines, with no Nectovia Agent access. The current NC-IF Individual offer supersedes the earlier 500-credit proposal; documentation direction does not certify implementation.
 - **2026-10-05.1 (minor, Andrew's explicit decision; synchronized 2026-10-05):** A person without a plan may buy credits at the no-plan price ($130 for 1,000) and, while they hold them, use Nectovia Agent for their own Personal work: conversations and tasks they start. Plans buy extra credits at $100 for 1,100 and keep Routines, phone access, business rules, the team lead and Business workspaces; every Business workspace still needs its own Business plan. Credits are priced per tier from a private, versioned price table, so what a credit buys can be retuned from real usage without changing what customers pay for credits. Credits a customer buys expire 12 months after purchase, oldest first. This supersedes the free-user wording of 2026-09-25.1 and 2026-09-27.2. Documentation direction does not certify implementation.
+- **2026-10-06.1 (minor, Andrew's explicit decision):** Pillar 07 adds the connected-subscription preference as an opt-in. A person may choose to prefer an eligible connected subscription for supported work in their own authorized scope, on their own computer, and only through that engine's own coding tool; it never uses a consumer chat product, and a subscription never funds pooled or shared organization work. This narrows 2026-09-19.1 without reversing it: customers are still not expected to bring, buy or share a subscription, managed inference stays ready without one, and connecting one never turns the preference on by itself. A worker's subscription usage does not debit Nectovia credits. Drafted 2026-10-03 and approved 2026-10-06. This repository mirror is ahead of the cloud canonical until that document is synchronized. Documentation direction does not certify implementation.
 
 ## NC-IF-2026-09-27.1 — Owner-approved Individual and computer-access amendment
 

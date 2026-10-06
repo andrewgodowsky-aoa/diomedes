@@ -238,9 +238,13 @@ export class AccountRoutingSession {
       throw admissionRefusal(answer.decision.code, reason);
     }
     if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
+    // Pay as you go (DIO-223): the amount this admission's own access read carried, for the local guard. Never for a plan holder
+    // or a business, and not guessed when the service did not send it.
+    const bought = scope.kind === 'individual' && answer.decision.planId === null && this.paysAsYouGo(scope)
+      ? this.individualAccess?.value.boughtAvailable : undefined;
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
-      validUntil: answer.validUntil };
+      validUntil: answer.validUntil, ...(bought === undefined ? {} : { boughtAvailable: bought }) };
   }
   async preference(projectId: string | null) {
     await this.refresh(projectId);
