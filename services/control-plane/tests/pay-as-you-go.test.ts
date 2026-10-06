@@ -305,6 +305,26 @@ describe('the Agent on bought credits', () => {
     expect((await access(free, scope)).features ?? []).toEqual([]);
   });
 
+  it('runs a person whose own plan has ended on their bought credits, never on the ended plan', async () => {
+    let free = await signIn('free');
+    const person = await personOf(free);
+    const short = await call('POST', `/ops/people/${person.id}/grants`, billing, { planId: 'individual', source: 'internal-test',
+      reference: 'Synthetic short plan', note: '', validUntil: new Date(clock + 3_600_000).toISOString() });
+    expect(short.status, JSON.stringify(short.body)).toBe(201);
+    const scope = await personalScope(free);
+    // Bought while the plan was active, so at the plan rate.
+    expect((await buyPersonal(free, 110)).amountCents).toBe(1000);
+    clock += 2 * 3_600_000;
+    free = await signIn('free');
+    expect(await access(free, scope)).toMatchObject({ agent: false, boughtCredits: 'available' });
+    expect((await access(free, scope)).state).not.toBe('active');
+    expect((await admit(free, scope)).body.decision).toMatchObject({ admitted: true, planId: null });
+    await completed(await step(free, scope));
+    const attempts = cloud.store.snapshot().funding.attempts.filter(a => a.organizationId === scope.id);
+    expect(attempts.map(a => a.periodId)).toEqual([BOUGHT_CREDITS_PERIOD]);
+    expect(attempts[0].monthlyHoldMicroUsd).toBe(0);
+  });
+
   it('leaves a person with an Individual plan on their plan’s monthly credits', async () => {
     const free = await signIn('free');
     await individualPlan(free);

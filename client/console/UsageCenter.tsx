@@ -25,7 +25,9 @@ import './usage-center.css';
  * Only an owner or an admin of the selected business sees it; the server refuses everyone else too, so
  * leaving it out is a courtesy and not the protection. Customers read credits here. The one place a
  * dollar figure appears is the price of a purchase, before it is made and after it is paid, and that
- * figure is always the account service's quote and never worked out in this file. Where usage can't be
+ * figure is always the account service's quote and never worked out in this file. The one exception
+ * is the buy box's published price line beside a ready quote: ten of the steps the service quoted
+ * ("$130 buys 1,000 credits."), display arithmetic on the service's own step, never a total. Where usage can't be
  * read there is one plain line and nothing to buy: an absent balance is not a zero one.
  */
 
