@@ -130,6 +130,16 @@ export function chargeSnapshot(table: CreditPriceTable | null | undefined, tier:
 }
 
 /**
+ * The expiry a tier's charge carries in the routing snapshot. A charge has no outside evidence that
+ * goes stale: it holds until the next table version replaces it, and the snapshot's own `validUntil`
+ * is what makes the desktop refresh. The stamp must not move between snapshots of one table version.
+ * The desktop's rate card version digests these price fields (`nectoviaRateCard`), saved context is
+ * bound to that version, and a stamp that moved on every snapshot refused every multi-step job's next
+ * step after a refresh, on desktops already installed too.
+ */
+export const CHARGE_VALID_UNTIL = '9999-12-31T23:59:59.999Z';
+
+/**
  * A tier's charge in the shape the desktop's routing snapshot carries a price in
  * (`resolvedRoutingSnapshotSchema`: `price` and `guardPrices`). Since tier pricing, those fields
  * carry the charge, in ledger units, never a provider's price: the desktop's local guard and its job
@@ -137,7 +147,7 @@ export function chargeSnapshot(table: CreditPriceTable | null | undefined, tier:
  * desktop already installed reads it unchanged. Reasoning and the request fee are written out as
  * `usageCost` reads them (output's price, and nothing, when unset).
  */
-export function chargeAsRoutingPrice(charge: ChargeSnapshot, observedAt: string, validUntil: string): RoutingPrice {
+export function chargeAsRoutingPrice(charge: ChargeSnapshot, observedAt: string): RoutingPrice {
   const prices = (band: Band) => ({
     inputMicroUsdPerMillion: band.inputMicroUsdPerMillion,
     outputMicroUsdPerMillion: band.outputMicroUsdPerMillion,
@@ -147,7 +157,7 @@ export function chargeAsRoutingPrice(charge: ChargeSnapshot, observedAt: string,
     requestFeeMicroUsd: band.requestFeeMicroUsd ?? 0,
   });
   return {
-    version: charge.version, observedAt, validUntil, evidence: `Credit price table version ${charge.tableVersion}`,
+    version: charge.version, observedAt, validUntil: CHARGE_VALID_UNTIL, evidence: `Credit price table version ${charge.tableVersion}`,
     ...prices(charge),
     longContext: (charge.longContext ?? []).map(b => ({ aboveInputTokens: b.aboveInputTokens, ...prices(b) })),
   };

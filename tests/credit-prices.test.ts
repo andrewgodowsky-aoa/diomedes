@@ -165,7 +165,7 @@ describe('the hold and the display', () => {
 
   it('writes a charge in the routing snapshot\'s price shape, which the installed desktop reads unchanged', () => {
     const charge = chargeSnapshot({ ...TABLE, tiers: { ...TABLE.tiers, thorough: { ...CHARGE, longContext: [{ ...CHARGE, aboveInputTokens: 9 }] } } }, 'thorough')!;
-    const price = routingPriceSchema.parse(chargeAsRoutingPrice(charge, TABLE.publishedAt, '2026-10-05T00:01:00.000Z'));
+    const price = routingPriceSchema.parse(chargeAsRoutingPrice(charge, TABLE.publishedAt));
     expect(price).toMatchObject({ version: 'credit-prices:7:thorough', inputMicroUsdPerMillion: 1_000_000,
       reasoningMicroUsdPerMillion: 5_000_000, requestFeeMicroUsd: 0 });
     expect(price.longContext[0]).toMatchObject({ aboveInputTokens: 9, reasoningMicroUsdPerMillion: 5_000_000, requestFeeMicroUsd: 0 });

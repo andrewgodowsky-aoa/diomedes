@@ -18,7 +18,7 @@ const table: CreditPriceTable = { v: 1, version: 3, ceilingMicroUsdPerCredit: 40
 
 function snapshot(maxAttempts: number): ResolvedRoutingSnapshot {
   const validUntil = new Date(Date.now() + 60_000).toISOString();
-  const price = chargeAsRoutingPrice(chargeSnapshot(table, 'efficient')!, table.publishedAt, validUntil);
+  const price = chargeAsRoutingPrice(chargeSnapshot(table, 'efficient')!, table.publishedAt);
   const tier = { entryId: 'route-a', entryRevision: 1, model: 'synthetic-model', label: 'Synthetic', provider: 'azure-openai' as const, price,
     capabilities: { contextTokens: 100_000, outputTokens: 4_096, tools: true, images: false, reasoning: false },
     reasoningSummaries: false, guardPrices: [price], fallbackEnabled: maxAttempts > 1, maxAttempts };

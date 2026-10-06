@@ -299,6 +299,18 @@ describe('Operations publication through authenticated funded dispatch', () => {
     expect(snapshot.body.tiers.efficient).toMatchObject({ entryId: 'aws-chat', reasoningSummaries: false });
   });
 
+  it('keeps a tier’s charge identical across snapshots of one price table, so saved context survives a refresh', async () => {
+    // The desktop's rate card version digests these fields and saved context is bound to it (nectoviaRateCard).
+    expect((await publish()).status).toBe(201);
+    const first = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    clock += 30_000;
+    const second = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    expect(second.body.validUntil).not.toBe(first.body.validUntil);
+    expect(first.body.tiers.efficient).not.toBeNull();
+    expect(second.body.tiers.efficient.price).toEqual(first.body.tiers.efficient.price);
+    expect(second.body.tiers.efficient.guardPrices).toEqual(first.body.tiers.efficient.guardPrices);
+  });
+
   it('removes optional summary on an unsupported fallback while retaining reasoning effort', async () => {
     await addAwsRoute('aws-supported', 'us.openai.gpt-5.6-luna');
     await addAwsRoute('aws-unsupported', 'us.openai.gpt-6-luna');

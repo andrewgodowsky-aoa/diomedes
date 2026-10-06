@@ -318,7 +318,7 @@ export class RoutingService {
         const entry = selected.candidates[0]?.route, binding = entry?.binding;
         const catalogEntry = entry && routes.find(r => r.id === entry.id);
         // The desktop's price fields carry the tier's charge, never a provider's price (shared/credit-prices.ts).
-        const charge = chargeAsRoutingPrice(ceiling.charge, state.priceTable.publishedAt, validUntil);
+        const charge = chargeAsRoutingPrice(ceiling.charge, state.priceTable.publishedAt);
         tiers[tier] = entry && binding && catalogEntry ? { entryId: entry.id, entryRevision: entry.revision, model: entry.model,
           label: catalogEntry.label, provider: entry.provider, price: charge, capabilities: binding.capabilities,
           reasoningSummaries: supportsReasoningSummaries(catalogEntry, selected.candidates[0].connection), guardPrices: [charge],
