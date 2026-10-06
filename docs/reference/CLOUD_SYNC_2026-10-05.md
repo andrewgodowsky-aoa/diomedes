@@ -31,7 +31,7 @@ Replacing a whole body would have deleted the other side's material, so each clo
 - **In-paragraph edits:** Docs' Find and replace dialog, opened from the Edit menu, with Match case on and regular expressions off. Each find string occurred once.
 - **The Pillars amendment:** pasted after the document's last line.
 - **Checking:** after every step, Google's plain-text export was normalised and hashed and compared with the expected text computed beforehand.
-- **Two slips:** two pastes in the Pillars landed in the wrong paragraph. Each was undone straight away, and the export hash confirmed the earlier text before the next step.
+- **Three slips, all in the Pillars:** a search string meant for the find box was typed into the body, and two pastes landed in the wrong paragraph. Each was undone straight away, and the export hash confirmed the earlier text before the next step.
 
 ## Digests
 
