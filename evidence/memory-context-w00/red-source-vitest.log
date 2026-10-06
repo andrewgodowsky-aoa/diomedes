@@ -1,0 +1,251 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/memory-context-contracts
+
+ ❯ tests/memory-context-baseline.test.ts (21 tests | 9 failed) 7248ms
+   × W00 two-tenant first-sentence baseline > 'tenant-a' / 'answer-correction': actual selection and compaction preserve references but omit critical text 305ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Correction: approval is still pending…'
+   × W00 two-tenant first-sentence baseline > 'tenant-a' / 'later-user-correction': actual selection and compaction preserve references but omit critical text 293ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Correction: approval is still pending…'
+   × W00 two-tenant first-sentence baseline > 'tenant-a' / 'exception-after-long-opening': actual selection and compaction preserve references but omit critical text 269ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Exception: approval is still pending;…'
+   × W00 two-tenant first-sentence baseline > 'tenant-b' / 'answer-correction': actual selection and compaction preserve references but omit critical text 279ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Correction: approval is still pending…'
+   × W00 two-tenant first-sentence baseline > 'tenant-b' / 'later-user-correction': actual selection and compaction preserve references but omit critical text 268ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Correction: approval is still pending…'
+   × W00 two-tenant first-sentence baseline > 'tenant-b' / 'exception-after-long-opening': actual selection and compaction preserve references but omit critical text 279ms
+     → Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Exception: approval is still pending;…'
+   ✓ W00 two-tenant first-sentence baseline > safe controls: whole recent text and an omitted first-sentence correction survive 145ms
+   × W00 actual ModelSessionRuns to NativeAgent dispatch > 'answer-correction': the recorded omitted text actually reaches offline downstream dispatch 1593ms
+     → expected [ { intent: { …(14) }, …(9) }, …(44) ] to deeply equal [ { intent: { …(14) }, …(9) }, …(44) ]
+   × W00 actual ModelSessionRuns to NativeAgent dispatch > 'later-user-correction': the recorded omitted text actually reaches offline downstream dispatch 1580ms
+     → expected [ { intent: { …(14) }, …(9) }, …(44) ] to deeply equal [ { intent: { …(14) }, …(9) }, …(44) ]
+   × W00 actual ModelSessionRuns to NativeAgent dispatch > 'exception-after-long-opening': the recorded omitted text actually reaches offline downstream dispatch 1991ms
+     → expected [ { intent: { …(14) }, …(9) }, …(44) ] to deeply equal [ { intent: { …(14) }, …(9) }, …(44) ]
+   ✓ L01 separate serialization, UTF-8 and declared token constraints > 262144 is the inclusive serialized UTF-16 code-unit guard, even with a million-token declaration 3ms
+   ✓ L01 separate serialization, UTF-8 and declared token constraints > Unicode and JSON escaping distinguish serialized units from bytes and estimates 4ms
+   ✓ L01 separate serialization, UTF-8 and declared token constraints > unknown native window and unknown usage remain unknown in the real account 0ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > prepare cannot expand or rewrite scope 1ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > prepare cannot expand or rewrite transcript 0ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > prepare cannot expand or rewrite tools 0ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > prepare cannot expand or rewrite restrictions 0ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > host source epoch change at before-dispatch refuses replay without rewriting frozen prepare 52ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > host source epoch change at after-observation refuses replay without rewriting frozen prepare 46ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > repeated opaque references stay outside portable messages; completed steps replay without another call 111ms
+   ✓ W00 prepare authority, epochs and opaque transcript replay > actual NativeAgent refuses a foreign-tenant ancestor before prepare or dispatch 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-a' / 'answer-correction': actual selection and compaction preserve references but omit critical text
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-a' / 'later-user-correction': actual selection and compaction preserve references but omit critical text
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-b' / 'answer-correction': actual selection and compaction preserve references but omit critical text
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-b' / 'later-user-correction': actual selection and compaction preserve references but omit critical text
+AssertionError: Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Correction: approval is still pending…'
+
+- Expected
++ Received
+
+- Correction: approval is still pending; do not place the order.
++ [Diomedes left out 3 earlier messages (2–4) to fit this conversation’s history budget of 12 messages and 24,000 characters. A summary of this conversation’s own follows.]
++
++ Summary of the earlier messages left out, extracted by Diomedes from the first sentence of each side (no model wrote it; the full messages stay in this conversation’s History):
++ - Message 2: the person asked “Report the purchase order status.”; Diomedes answered “The purchase order is approved.”
++ - Message 3: the person asked “Fixture question 3.”; Diomedes answered “Fixture answer 3.”
++ - Message 4: the person asked “Fixture question 4.”; Diomedes answered “Fixture answer 4.”
++
++ Person: Fixture question 1.
++
++ Diomedes: Fixture answer 1.
++
++ Person: Fixture question 5.
++
++ Diomedes: Fixture answer 5.
++
++ Person: Fixture question 6.
++
++ Diomedes: Fixture answer 6.
++
++ Person: Fixture question 7.
++
++ Diomedes: Fixture answer 7.
++
++ Person: Fixture question 8.
++
++ Diomedes: Fixture answer 8.
++
++ Person: Fixture question 9.
++
++ Diomedes: Fixture answer 9.
++
++ Person: Fixture question 10.
++
++ Diomedes: Fixture answer 10.
++
++ Person: Fixture question 11.
++
++ Diomedes: Fixture answer 11.
++
++ Person: Fixture question 12.
++
++ Diomedes: Fixture answer 12.
++
++ Person: Fixture question 13.
++
++ Diomedes: Fixture answer 13.
++
++ Person: Fixture question 14.
++
++ Diomedes: Fixture answer 14.
++
++ Person: Fixture question 15.
++
++ Diomedes: Fixture answer 15.
+
+ ❯ assertCriticalText tests/memory-context-baseline.test.ts:117:111
+    115| }
+    116| function assertCriticalText(text: string, critical: string) {
+    117|   if (expectPreserved) expect(text, 'Desired invariant: the exact corr…
+       |                                                                                                               ^
+    118|   else expect(text, 'Current baseline limitation: the correction is ab…
+    119| }
+ ❯ tests/memory-context-baseline.test.ts:136:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-a' / 'exception-after-long-opening': actual selection and compaction preserve references but omit critical text
+ FAIL  tests/memory-context-baseline.test.ts > W00 two-tenant first-sentence baseline > 'tenant-b' / 'exception-after-long-opening': actual selection and compaction preserve references but omit critical text
+AssertionError: Desired invariant: the exact correction must survive or be rehydrated.: expected '[Diomedes left out 3 earlier messages…' to contain 'Exception: approval is still pending;…'
+
+- Expected
++ Received
+
+- Exception: approval is still pending; do not place the order.
++ [Diomedes left out 3 earlier messages (2–4) to fit this conversation’s history budget of 12 messages and 24,000 characters. A summary of this conversation’s own follows.]
++
++ Summary of the earlier messages left out, extracted by Diomedes from the first sentence of each side (no model wrote it; the full messages stay in this conversation’s History):
++ - Message 2: the person asked “Report the purchase order status.”; Diomedes answered “The purchase order is approved for the fictional scheduled delivery fictional scheduled delivery fictional scheduled delivery fictional scheduled delivery fict…”
++ - Message 3: the person asked “Fixture question 3.”; Diomedes answered “Fixture answer 3.”
++ - Message 4: the person asked “Fixture question 4.”; Diomedes answered “Fixture answer 4.”
++
++ Person: Fixture question 1.
++
++ Diomedes: Fixture answer 1.
++
++ Person: Fixture question 5.
++
++ Diomedes: Fixture answer 5.
++
++ Person: Fixture question 6.
++
++ Diomedes: Fixture answer 6.
++
++ Person: Fixture question 7.
++
++ Diomedes: Fixture answer 7.
++
++ Person: Fixture question 8.
++
++ Diomedes: Fixture answer 8.
++
++ Person: Fixture question 9.
++
++ Diomedes: Fixture answer 9.
++
++ Person: Fixture question 10.
++
++ Diomedes: Fixture answer 10.
++
++ Person: Fixture question 11.
++
++ Diomedes: Fixture answer 11.
++
++ Person: Fixture question 12.
++
++ Diomedes: Fixture answer 12.
++
++ Person: Fixture question 13.
++
++ Diomedes: Fixture answer 13.
++
++ Person: Fixture question 14.
++
++ Diomedes: Fixture answer 14.
++
++ Person: Fixture question 15.
++
++ Diomedes: Fixture answer 15.
+
+ ❯ assertCriticalText tests/memory-context-baseline.test.ts:117:111
+    115| }
+    116| function assertCriticalText(text: string, critical: string) {
+    117|   if (expectPreserved) expect(text, 'Desired invariant: the exact corr…
+       |                                                                                                               ^
+    118|   else expect(text, 'Current baseline limitation: the correction is ab…
+    119| }
+ ❯ tests/memory-context-baseline.test.ts:136:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  tests/memory-context-baseline.test.ts > W00 actual ModelSessionRuns to NativeAgent dispatch > 'answer-correction': the recorded omitted text actually reaches offline downstream dispatch
+ FAIL  tests/memory-context-baseline.test.ts > W00 actual ModelSessionRuns to NativeAgent dispatch > 'later-user-correction': the recorded omitted text actually reaches offline downstream dispatch
+ FAIL  tests/memory-context-baseline.test.ts > W00 actual ModelSessionRuns to NativeAgent dispatch > 'exception-after-long-opening': the recorded omitted text actually reaches offline downstream dispatch
+AssertionError: expected [ { intent: { …(14) }, …(9) }, …(44) ] to deeply equal [ { intent: { …(14) }, …(9) }, …(44) ]
+
+- Expected
++ Received
+
+@@ -3303,16 +3303,13 @@
+      "outputHash": "6b9bb607a57eb1361f2a7266a8f0ff8782f744bb040011f2d6d1ed5da65f33f2",
+      "startedAt": "2026-10-06T08:27:34.171Z",
+      "state": "succeeded",
+    },
+    {
+-     "attempt": 1,
+-     "endedAt": "2026-10-06T08:27:34.231Z",
+-     "error": {
+-       "message": "Waiting for explicit input.",
+-       "name": "Suspended",
+-     },
++     "attempt": 2,
++     "endedAt": "2026-10-06T08:27:34.253Z",
++     "error": null,
+      "intent": {
+        "approval": false,
+        "cost": 0,
+        "destination": "local",
+        "effect": "pure",
+@@ -3329,11 +3326,13 @@
+        "stepVersion": "1",
+        "trustedInputRequired": false,
+      },
+      "intentHash": "bc2fc886d02562f6ff9387b61f344b7f6163d7c083ad332a87165d324af99efa",
+      "leaseFence": 1,
+-     "output": null,
+-     "outputHash": null,
+-     "startedAt": "2026-10-06T08:27:34.227Z",
+-     "state": "waiting_event",
++     "output": {
++       "inputReceived": true,
++     },
++     "outputHash": "be89e352b22480903f3de50b3c49a652d78613b007f685beffc135e5541faf42",
++     "startedAt": "2026-10-06T08:27:34.248Z",
++     "state": "succeeded",
+    },
+  ]
+
+ ❯ tests/memory-context-baseline.test.ts:188:75
+    186|     expect(child!.input).toMatchObject({ historyShared: true, history:…
+    187|     expect(child!.steps.find(step => step.intent.stepId === 'context:0…
+    188|     expect((await runs.get(runId)).steps.slice(0, original.steps.lengt…
+       |                                                                           ^
+    189|     const account = (await driver.evidence('project-local', runId, 'pr…
+    190|     expect(account.window).toEqual({ tokens: null, source: 'not declar…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 12 passed (21)
+   Start at  04:27:27
+   Duration  10.73s (transform 1.70s, setup 0ms, collect 2.92s, tests 7.25s, environment 0ms, prepare 111ms)
+
+JSON report written to F:/Diomedes/diomedes-wt/memory-context-contracts/evidence/memory-context-w00/red-source-vitest.json

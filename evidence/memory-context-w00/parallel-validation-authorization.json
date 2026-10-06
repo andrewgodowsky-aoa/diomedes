@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "scope": "Remaining W00 build and required browser gates only",
+  "authorization": "User asked to go ahead and run tests now if possible, citing available RAM and VRAM, after the shared-slot delay was reported.",
+  "decision": "Run in the owned worktree with disjoint browser ports, app data and Vite dependency cache. This is a task-specific user override of the repository's shared-slot scheduling guideline, not a claim to own or release another lane's slot.",
+  "recordedAt": "2026-10-06T09:42:00Z",
+  "observedOtherSlot": "slot_muwhmjtw_851f792a",
+  "observedOtherWorktree": "F:/Diomedes/diomedes-wt/nectovia-reskin-work-view",
+  "ownDependencyTarget": "F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules",
+  "otherDependencyTarget": "F:/Diomedes/diomedes-wt/nectovia-reskin-work-view/node_modules",
+  "browserPorts": { "client": 5184, "service": 47642, "native": 47644 },
+  "browserWorkers": 1,
+  "data": "Worktree-local test-results generated profiles; no installed profile or customer credentials",
+  "build": "Owned worktree dist only; no dependency install or manifest edit",
+  "otherLaneMutations": 0
+}

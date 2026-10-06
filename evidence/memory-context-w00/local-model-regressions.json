@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "record_id": "NC-MEM-LC-W00-LOCAL-REGRESSIONS-2026-10-06",
+  "observed_date": "2026-10-06",
+  "scope": "Read-only source and scoring-metadata reconciliation for W00; historical development regressions, not new model execution or sealed evaluation.",
+  "lab_root": "F:/Diomedes/local-models",
+  "path_convention": "Relative asset paths resolve under lab_root unless an explicit root is supplied.",
+  "hash_algorithm": "SHA-256",
+  "hash_evidence": "File hashes below were measured during reconciliation. Model-weight and runtime-archive identities are assertions from existing download receipts, not fresh rehashes of those large artifacts.",
+  "subject_outputs_copied": false,
+  "evaluator_gold_copied": false,
+  "model_calls_performed": 0,
+  "tests_performed": 0,
+  "authority": {
+    "issue": "DIO-213",
+    "url": "https://linear.app/diomedesdevs/issue/DIO-213/own-nectovia-models-pick-open-weight-bases-by-bake-off-then-train-a",
+    "observed_status": "Backlog",
+    "observed_updated_at": "2026-10-06T07:43:05.924Z",
+    "stage_zero_task_bank_requirement": "50 to 100 tasks with deterministic verifiers, shared with DIO-149; no active-bank designation inferred from the imported Business Trials package.",
+    "addendum": {
+      "path": "C:/Users/andre/Downloads/AI_PROJECT_RECONCILIATION.md",
+      "sha256": "46d03433b612be7ab51d3056da9ae6cfcabc91bab6384b71918709c4eb387370"
+    },
+    "scoring_interpretations": {
+      "path": "audit/audit-notes.json",
+      "sha256": "2a1414d8cdb662d382aed409bf9826a188e6dbe642471ac4122bf53fb03f076d"
+    }
+  },
+  "occupied_context_regression": {
+    "classification": "known-development-regression",
+    "mode": "occupied_business_reconciliation",
+    "coverage": [
+      "Highest source revision rather than latest textual position",
+      "Per-SKU rather than aggregate reconciliation",
+      "Authorized tenant scope",
+      "Proposal-only grant and absence of payment authority",
+      "Untrusted document instructions",
+      "Exact source identity"
+    ],
+    "saved_prompt_sha256": "2151f1e6e455f6cd063f8252377665fd8cb75c36b4ab490e748ba452c9a367a9",
+    "document_rows": 2100,
+    "raw_document_tokens": 114959,
+    "actual_input_tokens": 115164,
+    "cached_tokens": 0,
+    "historical_runs": [
+      {
+        "id": "qwen-business-115k-v1",
+        "path": "evidence/qwen-business-115k-v1.json",
+        "sha256": "3b2e4356a538e821c9b5a4e17506def5d5f349e9997deabb959038b62e07def5",
+        "model_alias": "qwen-main",
+        "recorded_config": {"port": 18091, "thinking": true, "target_tokens": 115000},
+        "historical_counts": {"passed": 0, "failed": 1, "skipped": 0, "unrun": 0},
+        "count_basis": "One completed task and explicit passed=false",
+        "actual_output_tokens": 3840,
+        "recorded_verifier_sha256": null
+      },
+      {
+        "id": "qwen-business-115k-high-v1",
+        "path": "evidence/qwen-business-115k-high-v1.json",
+        "sha256": "c04fbabc8cd2b480382c5319b932d8fcca343d0dea2b1a50e680acbca6cb3897",
+        "model_alias": "qwen-main",
+        "recorded_config": {"port": 18091, "thinking": true, "effort": "high", "target_tokens": 115000},
+        "historical_counts": {"passed": 0, "failed": 1, "skipped": 0, "unrun": 0},
+        "count_basis": "One completed task and explicit passed=false",
+        "actual_output_tokens": 3840,
+        "recorded_verifier_sha256": null
+      },
+      {
+        "id": "ornith-business-115k-v1",
+        "path": "evidence/ornith-business-115k-v1.json",
+        "sha256": "d2243bbbe4fbbf6cd6b55eeb77d783dc7c90766043f97da770191c1e58438a0d",
+        "model_alias": "ornith-main",
+        "recorded_config": {"port": 18092, "thinking": true, "target_tokens": 115000},
+        "historical_counts": {"passed": 1, "failed": 0, "skipped": 0, "unrun": 0},
+        "count_basis": "One completed task and explicit passed=true",
+        "actual_output_tokens": 2652,
+        "recorded_verifier_sha256": null
+      }
+    ],
+    "audit_interpretation": "The audit records authorization, per-SKU shape and grant-source failures in both Qwen runs. Ornith passed this one task. No general long-context acceptance follows.",
+    "available_sources": [
+      {"path": "long-workflow.py", "sha256": "bb0a7d65c06946203436d3ca68a457ec572294cda4c73a2d80b505fe7435d4e0", "role": "current source, not a historically bound verifier"},
+      {"path": "evidence/long-workflow-v1.py", "sha256": "7ffe53c818bdb8f1aa7fac020948dc12ddb0480d9fbe3d2b52944617e2d693ba", "role": "preserved earlier source, not a historically bound verifier"},
+      {"path": "benchmark.py", "sha256": "56da456a97e575356f4a0ea26a828571861b311591895bf68b72e64ac2e43cdf", "role": "shared system prompt and request helper"},
+      {"path": "reasoning-profiles.json", "sha256": "d574f3b6d41d30f9209b489f0992b60159e96a911269cc1acb52186b663f8a71", "role": "current effort definitions"}
+    ],
+    "preserved_earlier_source_request_settings": {
+      "seed": 92837,
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "thinking": true,
+      "total_output_token_cap": 4096,
+      "cache_prompt": false,
+      "qualification": "Read from preserved source; run-to-source binding absent. Do not silently promote these into verified per-run configuration."
+    },
+    "current_high_profile": {
+      "reasoning_budget_tokens": 8192,
+      "total_output_token_cap": 12288,
+      "remaining_answer_allowance_tokens": 4096,
+      "input_margin_tokens": 1024,
+      "qualification": "Historical High record stores the profile name, not resolved profile bytes."
+    },
+    "grant_revocation_coverage": "The occupied ledger has a proposal-only grant. It does not itself establish a grant-revocation scenario. The neighboring generated conversation source contains payload-bound approval invalidation, which is a distinct case."
+  },
+  "recovery_regressions": {
+    "classification": "known-development-regression",
+    "case_ids": ["schema_binding", "exhausted_discovery", "unknown_outcome", "stale_receipt", "coding_repair"],
+    "default_historical_seeds": [8041, 8042, 8043],
+    "scope": "Four simulated tool scenarios and one code-repair task; not a reproduction of Unity or production behavior.",
+    "historical_runs": [
+      {
+        "id": "ornith-agent-failures-v1",
+        "path": "evidence/ornith-agent-failures-v1.json",
+        "sha256": "a03635fa07d90c8de616dee6c0e06c9b632a2759ba4cdbd5f66098fb0c6cb4e0",
+        "model_alias": "ornith-main",
+        "recorded_verifier_sha256": "0f453bbb7d11978a2d367930dd787f8508744a4863b2c66702d1672329ae8e89",
+        "historical_counts": {"passed": 6, "failed": 9, "skipped": 0, "unrun": 0}
+      },
+      {
+        "id": "qwen-agent-failures-v1",
+        "path": "evidence/qwen-agent-failures-v1.json",
+        "sha256": "e28bd050b52b0ed043d59f2288b8f578bc403cb34a6659b0cb633f502adeb22b",
+        "model_alias": "qwen-main",
+        "recorded_verifier_sha256": "070e6d1f29695f7674f12c7e0f8fd29bd1d037c3bf88d1a759ba35b089da25fd",
+        "historical_counts": {"passed": 15, "failed": 0, "skipped": 0, "unrun": 0}
+      },
+      {
+        "id": "ornith-agent-diagnostics-v2",
+        "path": "evidence/ornith-agent-diagnostics-v2.json",
+        "sha256": "71650dcfe06db4b0245321b46e619e62d24087b1c0d5739c96a0891db2c70b90",
+        "model_alias": "ornith-main",
+        "recorded_verifier_sha256": "49f1dd207476bf3ba96214624ea7385534627415e5070e06b8e6aef0140723eb",
+        "selected_case_ids": ["schema_binding", "exhausted_discovery", "stale_receipt"],
+        "seeds": [8042],
+        "historical_counts": {"passed": 0, "failed": 3, "skipped": 12, "unrun": 0}
+      },
+      {
+        "id": "ornith-agent-finalization-v1",
+        "path": "evidence/ornith-agent-finalization-v1.json",
+        "sha256": "f8bab8988af9e74106cc2645af1c0f806cb2255344e05b6aaaa8df192c80ce16",
+        "model_alias": "ornith-main",
+        "recorded_verifier_sha256": "b11778e58f9b19e6dcaa286075926cfe7b2f727139748b95bd4828a21440d3a2",
+        "terminal_finalization": true,
+        "historical_counts": {"passed": 9, "failed": 1, "skipped": 0, "unrun": 5}
+      }
+    ],
+    "scoring_interpretations": [
+      "All three original Ornith unknown_outcome attempts repeated a read-only status call after a terminal success receipt; this is not duplicate mutation evidence.",
+      "Original stale_receipt failures are JSON parsing failures, not proof that the model believed stale state.",
+      "The finalization control passed schema_binding, exhausted_discovery and unknown_outcome three times each. Its one stale_receipt failure was extra-field shape failure despite current-state values, per audit metadata.",
+      "Finalization changes tool availability and output constraints; do not attribute this mitigation to repaired model weights or spontaneous stopping."
+    ],
+    "current_source": {"path": "agent-failure-benchmark.py", "sha256": "fe277410d60470c8657791ded56d95cc528b35af9ea7339a5702420a70d4e6f6"},
+    "snapshot_lookup": {
+      "root": "audit/snapshots",
+      "matching_named_source_files": 4,
+      "shared_saved_source_sha256": "5143558661d36d7cd741bb46d95c64eab473c8197c6bb316f03f0fb96ce59225",
+      "matches_to_historical_run_verifier_hashes": 0,
+      "qualification": "Bounded lookup of the four saved audit source snapshots; not an exhaustive claim about all machine history."
+    }
+  },
+  "model_identity_receipts": [
+    {
+      "alias": "qwen-main",
+      "model_path": "models/Qwen3.6-35B-A3B-UD-IQ3_S.gguf",
+      "quantization": "UD-IQ3_S",
+      "repository": "unsloth/Qwen3.6-35B-A3B-GGUF",
+      "repository_revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+      "recorded_bytes": 13676723168,
+      "recorded_model_sha256": "66a3ca888ce13482b40c333db2432c0ebde3a7b13754fc29f0c6f5e89703ec66",
+      "receipt": {"path": "evidence/download-qwen-main.json", "sha256": "61bc77ea09555b933cea907c9d6f20b8850e2e28c24840284d980f66219f0143"}
+    },
+    {
+      "alias": "ornith-main",
+      "model_path": "models/Ornith-1.5-35B-A3B-AD-Q4_K-IQ4_XS.gguf",
+      "quantization": "AD-Q4_K-IQ4_XS",
+      "repository": "AtomicChat/Ornith-1.5-35B-A3B-GGUF",
+      "repository_revision": "7aa8fc1d9b861d797880f4a341166d4bb3439f74",
+      "recorded_bytes": 20125923520,
+      "recorded_model_sha256": "6def24b4ef1436f080403b8c0fa9ca3b593abc080c74e64ef7c72d3d6a7322f1",
+      "receipt": {"path": "evidence/download-ornith-main.json", "sha256": "8b62024f4c443e3ac5d56be7f4787667ccc0c9d1fff107cfca8218b659894910"}
+    }
+  ],
+  "runtime_identity": {
+    "runtime": "llama-b11146 Windows CUDA 13.4",
+    "recorded_archive_sha256": "b1866c0ce76bc7bfb0c24b33e9a37e9669f1be18539b12c74ce361f81c41f047",
+    "download_receipt": {"path": "evidence/download-llama-runtime.json", "sha256": "4b3182aff1a6c8fbeaaf09163ed42a4e4961f10311ae7e5d46f06125574c7082"},
+    "phase_receipts": [
+      {"path": "evidence/ornith-official-long-runtime.json", "sha256": "cdc9adf9c4ae2047d6d28759ca218bef670cb815385f1de5f7daeecb5a1fde1c", "template": "official"},
+      {"path": "evidence/qwen-high-long-runtime.json", "sha256": "7c8e45e6a256a8400df16765b69fd3c403d4568ae33a475f6a7e6d7faabe3e8f", "template": "embedded"}
+    ],
+    "phase_configuration": {"allocated_context": 131072, "slots": 1, "kv_cache": "q8_0", "mtp": false, "threads": 6, "batch": 512, "microbatch": 256, "placement": "automatic fit"},
+    "official_template": {"path": "models/ornith-1.5-official-chat-template.jinja", "sha256": "182e77dd83bd8e9ca818b240b82e28f243762cd5dda32e6eef327df7b1cd107e"},
+    "qualification": "Phase associations, not per-answer runtime bindings. Exact historical hardware placement and embedded Qwen template digest are unresolved. Different quantizations confound comparisons."
+  },
+  "business_trials_import": {
+    "root": "F:/Diomedes/local-models/audit/business-trials",
+    "version": "0.1",
+    "package_date": "2026-10-05",
+    "dio213_active_bank_designation": "UNRESOLVED",
+    "split_type": "business-disjoint, shared skill/template families",
+    "chronological_split_established": false,
+    "source_counts": {"cases": 192, "businesses": 16, "train": 120, "dev": 24, "test": 48, "scored_stages": 224},
+    "extension_counts": {"cases": 12, "dev": 11, "test_linked": 1, "scored_stages": 18},
+    "register_counts": {"cases": 204, "train": 120, "dev": 35, "test": 49, "scored_stages": 242},
+    "long_variants": {"count": 32, "parent_cases": 8, "new_independent_tasks": 0, "total_prepared_response_slots_including_variants": 274},
+    "register_status": "All 204 register rows are DID_NOT_RUN; this register is preparation evidence, not a census of every later execution elsewhere.",
+    "independent_final_test_freeze_established": false,
+    "test_linked_extension": {"id": "NCT-AUD-11", "parents": ["NCT-IT-11", "NCT-LG-12"], "model_input": "model-inputs/test/NCT-AUD-11.json", "training_allowed": false, "development_smoke_allowed": false, "independent_held_out_family": false},
+    "assets": [
+      {"path": "originals/Nectovia_Business_Trials_v0.1_Evaluator_Pack.zip", "sha256": "dfb4597da9b7eb167d00e0785c2ee44a04802906946e737c28f29dcbac4dcf31", "access": "evaluator-only"},
+      {"path": "originals/Nectovia_Business_Trials_v0.1_Model_Inputs.zip", "sha256": "c5d674e19a2a4bca207c5f6190edd28be83cf14c08c33d74ad438ac92befb177", "access": "selected-case-only"},
+      {"path": "canonical/evaluator-pack/MANIFEST.json", "sha256": "8d856f6d088c01a65a11f31d3a298cc31ef94a00e5268ef964178bd2eea7cedb", "access": "evaluator-metadata"},
+      {"path": "scenario-register.json", "sha256": "969fe5d2599afa346bbebd778417169838cb09b24e473cd6d730edeb24b75c7e", "access": "selection-metadata"},
+      {"path": "scenario-register.csv", "sha256": "935a4b9fde22f5513b8748ee630076a91f287722951b002dff8b40cda48a624b", "access": "selection-metadata"},
+      {"path": "long-variant-register.json", "sha256": "75da5715ce91e1d83ebc806667a3fef137f27bbb72973f8f689f383b292c77d1", "access": "selection-metadata"},
+      {"path": "canonical/evaluator-pack/evaluator/model_run_manifest_template.json", "sha256": "a4b79525fae309baa418f55564caa50f7114993cbe55ce0c7773fd05ff062e70", "access": "evaluator-metadata"},
+      {"path": "strict_scoring.py", "sha256": "4bc31c9a1ce4078fac4affcc747e8d82c830ddc371ae587e2cfabe127430a66a", "access": "evaluator-only"},
+      {"path": "canonical/evaluator-pack/tools/grade_outputs.py", "sha256": "780f1e1ebd7375e5e78b1b9acee27d677555d0aeb3e50ab4f5207dfc67403e70", "access": "evaluator-only"}
+    ],
+    "selection_rule": "Use scenario-register as allowlist and canonical/model-inputs-pack/model_inputs for selected public inputs; never glob a split directory. A superseded NCT-AUD-11 development copy exists.",
+    "verifier_limits": [
+      "Strict adapter results remain verified_pass=false, manual_review_required=true and semantic_review=DID_NOT_RUN.",
+      "Legacy grade_outputs.py does not automatically call strict_scoring.py.",
+      "Batch reconciliation, semantic grading and live model integration remain unqualified."
+    ]
+  },
+  "retention_and_training_constraints": {
+    "authority": "DIO-213 as observed, plus AI_PROJECT_RECONCILIATION.md; project constraints, not a new legal interpretation or new data-use permission.",
+    "bedrock_stage_zero": "Evaluation only: score outputs, then discard. Disable memory capture where output-retention protocol forbids it. Retain scoring receipts or metadata only as allowed by that protocol.",
+    "eligible_training_routes_pending_recheck": ["Code-generated data", "Open weights run on SageMaker endpoints or EC2", "DeepSeek own API with synthetic prompts only"],
+    "forbidden_training_output_sources": ["Opus", "GPT", "Gemini", "Grok", "Codex", "Claude Code", "Devin", "Cursor", "OpenCode"],
+    "customer_content": "Explicit forward-looking revocable organization opt-in required; business facts remain in retrieval.",
+    "per_example_provenance_required": true,
+    "evaluator_isolation": "Exclude gold labels, future events, private coding fixtures, evaluator-only directories and controller future-turn directors from subject retrieval and Dreaming. Deliver only the authorized next episode turn.",
+    "no_automatic_promotion": "Known outputs and failures do not become memory, learned skills or training examples merely because W00 references their scoring metadata."
+  },
+  "unresolved_or_unrun": [
+    {"id": "REG-G01", "status": "UNRESOLVED", "detail": "Historical recovery verifier source bytes for four recorded hashes were not located in the four saved audit snapshots or current source."},
+    {"id": "REG-G02", "status": "UNRESOLVED", "detail": "115K ledger records lack verifier source hashes, full saved prompt bytes and per-answer runtime bindings."},
+    {"id": "REG-G03", "status": "UNRESOLVED", "detail": "Exact historical sampler/resolved budget/hardware identity cannot be filled from mutable current defaults."},
+    {"id": "REG-G04", "status": "UNRESOLVED", "detail": "DIO-213 active task-bank designation is not established by the imported Business Trials manifests."},
+    {"id": "REG-G05", "status": "UNRESOLVED", "detail": "Independent final-test freeze and chronological split are not established; known cases remain development regressions."},
+    {"id": "REG-G06", "status": "DID_NOT_RUN", "detail": "Real-harness comparison with and without memory or capsules, including revoked authority, was not executed."},
+    {"id": "REG-G07", "status": "DID_NOT_RUN", "detail": "Exact historical replay and fresh verifier qualification were not run in W00 reconciliation."}
+  ]
+}

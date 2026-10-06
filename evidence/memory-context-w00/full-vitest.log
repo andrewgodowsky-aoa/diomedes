@@ -1,0 +1,795 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/memory-context-contracts
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > persists an admitted command, host run, model step, attempt and fence before Work dispatch
+H01_WORK_DISPATCH {"command":"independent-work-command","runs":1}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > persists a durable run before the application text support route sends a prompt
+H01_TEXT_DISPATCH {"runs":1,"providerCalls":1}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > carries host run, step, attempt and lease fence through the actual app-facing preview event
+H01_APP_PREVIEW {"projectId":"c9bc0ec11f78","threadId":"C16102dfa3fd5","requestId":"R9466194cd139","runId":"c9bc0ec11f78-R9466194cd139","kind":"delta","stepId":"text:dispatch","attempt":1,"fence":1,"seq":1,"text":"Synthetic cafe inventory: café 🚀"}
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\approval-admission.test.ts:329:67)
+    at Store.mockCall (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.resolve (F:\Diomedes\diomedes-wt\memory-context-contracts\server\native-work.ts:1545:22)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:566:16
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > diagnostic only: returns the durable result when the same logical EngineService request is replayed
+H01_LOGICAL_REPLAY {"providerCalls":1}
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched
+Error: Synthetic preparation failure.
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\tests\approval-admission.test.ts:342:26
+    at file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\approval-admission.test.ts:355:15)
+    at Store.mockCall (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:1755:18)
+    at Store.recoverAndReload (F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:539:5)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:569:9
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Supervision could not evaluate a run: Synthetic finalization disk fault.
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\approval-admission.test.ts:355:15)
+    at Store.mockCall (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:1755:18)
+    at Store.recoverAndReload (F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:539:5)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:564:34
+
+stderr | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > reopens saved application text without another provider call or changed attribution
+Skipped a harness run whose capability is unavailable.
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > rechecks current app enablement after observation and before provider dispatch
+H01_ENABLEMENT_RACE {"responseStatus":409,"providerCalls":0}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > rejects old-owner previews after lease expiry and host takeover
+H01_STALE_OWNER_PREVIEW {"oldFence":1,"newFence":2,"frames":[{"projectId":"9599932c65ff","threadId":"C980892933473","requestId":"Recc0386bc19d","runId":"9599932c65ff-Recc0386bc19d","kind":"started"},{"projectId":"9599932c65ff","threadId":"C980892933473","requestId":"Recc0386bc19d","runId":"9599932c65ff-Recc0386bc19d","kind":"delta","stepId":"text:dispatch","attempt":1,"fence":1,"seq":1,"text":"Synthetic cafe inventory: café 🚀"},{"projectId":"9599932c65ff","threadId":"C980892933473","requestId":"Recc0386bc19d","runId":"9599932c65ff-Recc0386bc19d","kind":"ended"}],"afterState":"running"}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > refuses a current account-route selection change during admission before provider dispatch
+H01_ACCOUNT_ROUTE_RACE {"status":409,"calls":0}
+
+stdout | tests/independent-h01-20260917.test.ts > H01 real application and host acceptance > parks an in-flight app result when route authority is withdrawn and never records an answer
+H01_RESULT_AUTHORITY {"status":503,"state":"reconcile_required","calls":1}
+
+ ✓ tests/remembered-approvals.test.ts (65 tests) 28216ms
+   ✓ both routes through the real host > the learned offer appears exactly at the threshold, only once, and accepting creates the grant  2943ms
+   ✓ both routes through the real host > a declined offer is remembered and does not come back  4285ms
+   ✓ both routes through the real host > a decline starts the count again  2923ms
+   ✓ both routes through the real host > Go ahead and remember covers the next identical step, once per item per project  1752ms
+   ✓ both routes through the real host > the write-time check refuses a write outside the remembered destination  965ms
+   ✓ both routes through the real host > only the local client, and only an approval just given, can be remembered  579ms
+   ✓ revocation, restart and re-asking > revoking stops coverage immediately and is recorded as evidence  1341ms
+   ✓ revocation, restart and re-asking > a covered step whose grant is revoked before it runs writes nothing  1031ms
+   ✓ revocation, restart and re-asking > a remembered approval survives a restart, and a revoked one stays revoked  1220ms
+   ✓ out of pattern asks again > the exact pattern is covered and each listed trigger asks again  513ms
+   ✓ out of pattern asks again > a changed connection at run time asks again through the real host  847ms
+   ✓ out of pattern asks again > a Codex step is bound to the account its run used, so another account asks again  798ms
+   ✓ out of pattern asks again > always-asks steps are never offered, remembered or covered  528ms
+   ✓ configuration, rollback and restart never create or revive > pack activation, a settings change, the offer threshold and a restart create nothing  1018ms
+   ✓ configuration, rollback and restart never create or revive > a prepared state image cannot revive a revoked grant or reopen a declined offer  1355ms
+   ✓ versioned format and the Codex task scope > existing Codex grants carry forward losslessly beside remembered ones  589ms
+   ✓ versioned format and the Codex task scope > an unknown format or grant version is refused, never rewritten  570ms
+   ✓ versioned format and the Codex task scope > tampered remembered evidence cannot authorize  884ms
+stdout | tests/independent-h01-20260917.test.ts > H01 real provider transport regressions > OpenCode observes successful prompt acceptance and partial SSE before an actual socket drop
+H01_SSE_DROP {"trace":[{"event":"prompt-accepted","status":204},{"event":"partial-output"},{"event":"connection-drop","terminalSent":false},{"event":"abort"},{"event":"delete"}],"error":"DISPATCH_UNCERTAIN","previews":["Partial fixture answer"]}
+
+stderr | tests/independent-h01-20260917.test.ts > H01 real provider transport regressions > parks a dropped-SSE app operation durably for reconciliation across restart
+Skipped a harness run whose capability is unavailable.
+
+ ✓ tests/independent-h01-20260917.test.ts (22 tests) 42136ms
+   ✓ H01 real application and host acceptance > persists an admitted command, host run, model step, attempt and fence before Work dispatch  2047ms
+   ✓ H01 real application and host acceptance > persists a durable run before the application text support route sends a prompt  2397ms
+   ✓ H01 real application and host acceptance > carries host run, step, attempt and lease fence through the actual app-facing preview event  1970ms
+   ✓ H01 real application and host acceptance > commits one matching host terminal result for a completed app text operation  1828ms
+   ✓ H01 real application and host acceptance > diagnostic only: returns the durable result when the same logical EngineService request is replayed  1955ms
+   ✓ H01 real application and host acceptance > replays the existing admitted Work command and its receipt without another provider call  2000ms
+   ✓ H01 real application and host acceptance > reopens saved application text without another provider call or changed attribution  2305ms
+   ✓ H01 real application and host acceptance > rejects a second controller while a provider turn remains active  2051ms
+   ✓ H01 real application and host acceptance > rejects a withdrawn model observed between listing and dispatch  1699ms
+   ✓ H01 real application and host acceptance > rejects sign-out between listing and dispatch  1300ms
+   ✓ H01 real application and host acceptance > does not dispatch after cancellation during the final capability check  992ms
+   ✓ H01 real application and host acceptance > rechecks current app enablement after observation and before provider dispatch  1582ms
+   ✓ H01 real application and host acceptance > rejects old-owner previews after lease expiry and host takeover  2418ms
+   ✓ H01 real application and host acceptance > refuses a current account-route selection change during admission before provider dispatch  1463ms
+   ✓ H01 real application and host acceptance > parks an in-flight app result when route authority is withdrawn and never records an answer  1888ms
+   ✓ H01 real provider transport regressions > Claude handles unicode through its production process parser  1981ms
+   ✓ H01 real provider transport regressions > Claude handles stderr through its production process parser  2455ms
+   ✓ H01 real provider transport regressions > Claude refuses no-terminal without fabricated completion or retry  2247ms
+   ✓ H01 real provider transport regressions > Claude refuses truncated without fabricated completion or retry  1541ms
+   ✓ H01 real provider transport regressions > Claude refuses oversized without fabricated completion or retry  1765ms
+   ✓ H01 real provider transport regressions > OpenCode observes successful prompt acceptance and partial SSE before an actual socket drop  2091ms
+   ✓ H01 real provider transport regressions > parks a dropped-SSE app operation durably for reconciliation across restart  2161ms
+ ✓ tests/ph07-review.test.ts (17 tests) 24894ms
+   ✓ A exclusion and identity transitions > A1 the same internal owner on a direct engine (Claude Code) sends nothing, in conversation or Work, while that owner’s AWS turn does  1857ms
+   ✓ A exclusion and identity transitions > A2 startup: a restart with observation on sends nothing for recorded work, and the next turn in the same conversation sends only itself  1134ms
+   ✓ A exclusion and identity transitions > A3 switching between two entitled businesses: the internal one’s queued events drop, the other sends nothing, and switching back resurrects nothing  1159ms
+   ✓ A exclusion and identity transitions > A4 a revocation the host learns only from a refused admission (no reload) ends export of the queued events (contract section 3)  607ms
+   ✓ B spoofing > B1 a client-supplied plan, tenant, internal flag, organization, route kind or header never creates eligibility, for a paying business or Free  1049ms
+   ✓ C outgoing-packet privacy > C1 canaries in the prompt, answer, nested tool input, tool error, unregistered tool name, URL, path, provider error body and code, and profile, project and business names never appear in the POST bodies  788ms
+   ✓ D failure isolation > D1 export throwing, hanging, answering 429 or 5xx, a one-event queue and a one-event budget leave the answer, the runs, the approval, the file, the history, the ledger and the provider calls equal to export off  4737ms
+   ✓ E accounting honesty > E1 usage the provider did not report stays unknown (never zero); its late reconciliation is one correlated event, never a second generation; a resent command adds nothing  622ms
+   ✓ F bounds > F3 a full queue drops the tail; enqueue never throws or blocks with a hung sink; health never leaves the machine  498ms
+   ✓ G default off through the environment > G1 every condition present exports; removing or malforming any one of them sends nothing  10042ms
+   ✓ G default off through the environment > G2 a funded-until date that is not a calendar date is malformed, so it reads as absent and sends nothing  456ms
+   ✓ H the normal internal trace > H1 an internal loop on AWS through createApp: generations, a registered tool span and the recorded verification share one trace, with mapped fields  875ms
+   ✓ I durable run records > I1 a stored run written before errorCode existed still loads, projects and lets its conversation continue  889ms
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > an allocation smaller than the first worker hold refuses through the production factory before any child SDK send
+The harness run stopped: ModelApiError: This run has used or holds $0.00 of its $0.001000 allocation, and its next step could take it to $0.007933. Nothing more was held or sent. Nothing was sent.
+
+stdout | tests/approval-admission.test.ts > exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity
+Approval replay at 1024 receipts: 50 requests in 104.8 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3867026 bytes.
+
+ ✓ tests/approval-admission.test.ts (46 tests) 71209ms
+   ✓ exact native approval admission > lost response and duplicate go-ahead return one immutable decision through two restarts  949ms
+   ✓ exact native approval admission > lost response and duplicate declined return one immutable decision through two restarts  515ms
+   ✓ exact native approval admission > approval is durable before the writer and the write carries its exact event link  552ms
+   ✓ exact native approval admission > rejects a changed displayed proposalDigest without using the writer  612ms
+   ✓ exact native approval admission > rejects a changed displayed actionDigest without using the writer  639ms
+   ✓ exact native approval admission > rejects a changed displayed baseDigest without using the writer  624ms
+   ✓ exact native approval admission > strict version and authority validation: {"protocolVersion":2}  411ms
+   ✓ exact native approval admission > strict version and authority validation: {"commandId":""}  442ms
+   ✓ exact native approval admission > strict version and authority validation: {"commandId":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}  369ms
+   ✓ exact native approval admission > strict version and authority validation: {"actor":"owner"}  356ms
+   ✓ exact native approval admission > strict version and authority validation: {"scope":"authenticated"}  371ms
+   ✓ exact native approval admission > strict version and authority validation: {"allowForTask":true}  391ms
+   ✓ exact native approval admission > strict version and authority validation: {"actionDigest":"bad"}  390ms
+   ✓ exact native approval admission > an unversioned caller cannot bypass an exact Need; sample requests remain compatible  381ms
+   ✓ exact native approval admission > denies a stale Brief.md including unchanged selected inputs and creation targets  398ms
+   ✓ exact native approval admission > denies a stale Reference.md including unchanged selected inputs and creation targets  367ms
+   ✓ exact native approval admission > denies a stale Draft.md including unchanged selected inputs and creation targets  396ms
+   ✓ exact native approval admission > competing decisions and command reuse cannot reinterpret an accepted action  487ms
+   ✓ exact native approval admission > expires at the boundary, but an accepted receipt replays after expiry without IO  511ms
+   ✓ exact native approval admission > expiry is rechecked at durable admission after asynchronous base validation  444ms
+   ✓ exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried  521ms
+   ✓ exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched  410ms
+   ✓ exact native approval admission > failed journal recovery blocks later mutations until recovery finishes  633ms
+   ✓ exact native approval admission > project, Host, Origin and client boundaries protect decisions and receipts  429ms
+   ✓ exact native approval admission > inconsistent saved version fails closed without rewriting project state  478ms
+   ✓ exact native approval admission > inconsistent saved digest fails closed without rewriting project state  503ms
+   ✓ exact native approval admission > inconsistent saved event fails closed without rewriting project state  540ms
+   ✓ exact native approval admission > inconsistent saved decision fails closed without rewriting project state  492ms
+   ✓ exact native approval admission > inconsistent saved action-bytes fails closed without rewriting project state  528ms
+   ✓ exact native approval admission > inconsistent saved execution fails closed without rewriting project state  453ms
+   ✓ exact native approval admission > digests bind bytes, destination, displayed explanation and read-only source identity  347ms
+   ✓ exact native approval admission > abrupt exit at before-decision recovers once with the correct durable outcome  4072ms
+   ✓ exact native approval admission > abrupt exit at after-decision recovers once with the correct durable outcome  4114ms
+   ✓ exact native approval admission > abrupt exit at journal recovers once with the correct durable outcome  3756ms
+   ✓ exact native approval admission > abrupt exit at first-file recovers once with the correct durable outcome  3578ms
+   ✓ exact native approval admission > abrupt exit at after-files recovers once with the correct durable outcome  4587ms
+   ✓ exact native approval admission > abrupt exit at finalized recovers once with the correct durable outcome  3220ms
+   ✓ exact native approval admission > recovery preserves an outside text replacement and reports a conflict without replaying  3230ms
+   ✓ exact native approval admission > recovery preserves an outside binary replacement and reports a conflict without replaying  3643ms
+   ✓ exact native approval admission > recovery preserves an outside oversized replacement and reports a conflict without replaying  4104ms
+   ✓ exact native approval admission > recovery preserves an outside directory replacement and reports a conflict without replaying  3814ms
+   ✓ exact native approval admission > an inconsistent prepared action fails closed before any recovery write  3796ms
+   ✓ exact native approval admission > an inconsistent prepared missing-link fails closed before any recovery write  4944ms
+   ✓ exact native approval admission > an inconsistent prepared receipt fails closed before any recovery write  4700ms
+   ✓ exact native approval admission > a damaged content object cannot change the bytes authorized by a receipt  3659ms
+   ✓ exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity  1052ms
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > a draining real worker cannot use the lead verification and correction allocation or obtain its full six sends
+The harness run stopped: ModelApiError: This run has used or holds $0.014100 of its $0.02 allocation, and its next step could take it to $0.024157. Nothing more was held or sent. Nothing was sent.
+
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > public Stop fences a real owned response and its late SDK result; restart and original-command replay do not resend
+The harness run stopped: EngineError: The request was stopped. No late response was saved.
+
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > fresh source refusal prevents a held Team result from creating a reply, report or further dispatch
+The harness run stopped: HarnessError: The selected source bytes changed after admission.
+
+stderr | tests/interaction-seam.test.ts > R-05: narrowing after the task was admitted stops the Work start and keeps the task readable
+Error: the process died
+    at ClaudeSessionRuns.d.record (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\interaction-seam.test.ts:580:70)
+    at record (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:737:14)
+    at InteractionTurns.settle (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:777:11)
+    at InteractionTurns.choose (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:530:21)
+    at InteractionTurns.select (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:470:14)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\engines\interaction-routes.ts:75:18
+
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > fresh profile refusal prevents a held Team result from creating a reply, report or further dispatch
+The harness run stopped: HarnessError: The measured automatic Team decision no longer matches its root and current qualification.
+
+stderr | tests/interaction-seam.test.ts > R-14: a message whose decision was never recorded reads as unresolved on every route, settled or not
+Error: the process died
+    at Object.decide (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\interaction-seam.test.ts:638:19)
+    at ClaudeSessionRuns.decide (F:\Diomedes\diomedes-wt\memory-context-contracts\server\harness\claude-session-run.ts:584:31)
+    at ClaudeSessionRuns.drive (F:\Diomedes\diomedes-wt\memory-context-contracts\server\harness\claude-session-run.ts:1296:26)
+    at EngineService.nativeTurn (F:\Diomedes\diomedes-wt\memory-context-contracts\server\engines\service.ts:2095:22)
+    at InteractionTurns.answer (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:415:16)
+    at InteractionTurns.message (F:\Diomedes\diomedes-wt\memory-context-contracts\server\interaction-service.ts:390:14)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\engines\interaction-routes.ts:75:18
+
+stderr | tests/interaction-seam.test.ts > R-03: a projection that failed is repaired from the turn itself, not from the files and settings as they stand now
+Error: the disk was full
+    at Store.live.persist (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\interaction-seam.test.ts:682:13)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\app.ts:5748:21
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:566:22
+
+stderr | tests/automatic-work-host.test.ts > real production Team factory, public profile selection and root scope > fresh trust refusal prevents a held Team result from creating a reply, report or further dispatch
+The harness run stopped: HarnessError: The measured automatic Team decision no longer matches its root and current qualification.
+
+ ✓ tests/interaction-seam.test.ts (20 tests) 14177ms
+   ✓ C01: a greeting is answered and creates nothing  675ms
+   ✓ C06: under Automatic a valid act proposal is shown, never started, until the person selects it  537ms
+   ✓ a selection bound to the message, the proposal and the target starts exactly one task and one work session  1056ms
+   ✓ a proposal naming another message is not a proposal  562ms
+   ✓ Answer only and Plan only never show or start work, whatever the model proposes  815ms
+   ✓ narrowing the Mode control after a proposal was shown means it can no longer be started  699ms
+   ✓ R-03: a reused command with a changed text, mode or source list is refused before and after projection, and changes nothing  528ms
+   ✓ R-14: a message answered on a cancelled conversation is still readable, and nothing can be started through it  798ms
+   ✓ a busy target is a final refusal: the task exists, the work did not start, and a retry does not try again  1410ms
+   ✓ a receipt that exists without its phase is linked after a restart, never sent again  848ms
+   ✓ R-05: a selection saved before a crash cannot start work once the Mode is narrowed to ask  550ms
+   ✓ R-05: a selection saved before a crash cannot start work once the Mode is narrowed to plan  537ms
+   ✓ R-05: narrowing after the task was admitted stops the Work start and keeps the task readable  671ms
+   ✓ R-15: a cancellation after task-input is recorded and before its admission starts nothing  616ms
+   ✓ R-15: a cancellation after work-input is recorded and before its admission starts nothing  692ms
+   ✓ R-14: a message whose decision was never recorded reads as unresolved on every route, settled or not  687ms
+   ✓ R-03: a projection that failed is repaired from the turn itself, not from the files and settings as they stand now  539ms
+   ✓ R-10: a lineage that runs out of budget is replaced once, and the replacement is what a retry and a restart find  1032ms
+   ✓ an explicit request in Automatic mode on an outside tool stays the proposal the person starts  662ms
+stderr | tests/automatic-work-host.test.ts > fresh explicit Team ownership after host restart > a closed uncertain response keeps exact history and spend while a new command binds one distinct response
+The harness run stopped: EngineError: The request was stopped. No late response was saved.
+
+ ✓ tests/opencode-adapter.test.ts (78 tests) 56231ms
+   ✓ OpenCode 1.18.4 authenticated text route > inspects only a connected native OpenCode Go catalogue  598ms
+   ✓ OpenCode 1.18.4 authenticated text route > streams text and returns the logical request identity  661ms
+   ✓ OpenCode 1.18.4 authenticated text route > ignores events belonging to another session  681ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with line feeds  598ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with carriage return line feeds  606ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with carriage returns  762ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with a line ending split across two chunks  707ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with one event spread over several data fields  708ms
+   ✓ OpenCode 1.18.4 authenticated text route > reads a stream framed with comments and fields this route does not read  693ms
+   ✓ OpenCode 1.18.4 authenticated text route > still refuses a different provider or model under carriage return line feeds  695ms
+   ✓ OpenCode 1.18.4 authenticated text route > still ignores another session under carriage return line feeds  628ms
+   ✓ OpenCode 1.18.4 authenticated text route > never completes on a stream truncated inside an event  628ms
+   ✓ OpenCode 1.18.4 authenticated text route > rejects retry without accepting output  616ms
+   ✓ OpenCode 1.18.4 authenticated text route > rejects tools without accepting output  574ms
+   ✓ OpenCode 1.18.4 authenticated text route > rejects mismatch without accepting output  875ms
+   ✓ OpenCode 1.18.4 authenticated text route > rejects malformed without accepting output  610ms
+   ✓ OpenCode 1.18.4 authenticated text route > rejects cancellation and aborts the remote session  428ms
+   ✓ OpenCode 1.18.4 authenticated text route > reports a bounded server timeout separately from cancellation  667ms
+   ✓ OpenCode 1.18.4 authenticated text route > keeps the request-budget sentence for a timed-out request  671ms
+   ✓ OpenCode 1.18.4 authenticated text route > gives the startup budget its own timeout sentence  2568ms
+   ✓ OpenCode 1.18.4 authenticated text route > an SSE connection drop midstream never fabricates a completion and aborts the remote session  720ms
+   ✓ OpenCode 1.18.4 authenticated text route > preserves the request failure and reports uncertain process cleanup safely  801ms
+   ✓ OpenCode 1.18.4 authenticated text route > cannot see a separate OpenCode Zen provider at all, and says so rather than implying a missing sign-in  754ms
+   ✓ OpenCode 1.18.4 authenticated text route > reports nothing connected as signed out, with no account-route issue  883ms
+   ✓ OpenCode 1.18.4 authenticated text route > reports a connected Go account that offers no models as signed in  801ms
+   ✓ OpenCode 1.18.4 authenticated text route > records no provider identifier the tool did not publish in its own catalogue  730ms
+   ✓ OpenCode 1.18.4 authenticated text route > answers the account-route field for ok so a resolved issue cannot survive a recheck  901ms
+   ✓ OpenCode 1.18.4 authenticated text route > answers the account-route field for none so a resolved issue cannot survive a recheck  600ms
+   ✓ OpenCode 1.18.4 authenticated text route > answers the account-route field for zero-models so a resolved issue cannot survive a recheck  650ms
+   ✓ OpenCode 1.18.4 authenticated text route > answers the account-route field for zen so a resolved issue cannot survive a recheck  870ms
+   ✓ OpenCode 1.18.4 authenticated text route > names an unsigned Go account rather than a missing model before dispatch  718ms
+   ✓ OpenCode 1.18.4 authenticated text route > refuses a Zen-only machine before dispatch, naming the route rather than a missing model  649ms
+   ✓ OpenCode 1.18.4 authenticated text route > still refuses a model the connected Go account does not offer  517ms
+   ✓ OpenCode failure stages > does not read its own rejected loopback password as a signed-out account  563ms
+   ✓ OpenCode failure stages > reads a 401 after the handshake as the local server too, never as the account  623ms
+   ✓ OpenCode failure stages > never carries a response body from assistant-denied into anything a person or support reads  631ms
+   ✓ OpenCode failure stages > never carries a response body from api-limit into anything a person or support reads  612ms
+   ✓ OpenCode failure stages > never carries a response body from context-overflow into anything a person or support reads  631ms
+   ✓ OpenCode failure stages > does not read a sentence about a local disk as the account running out of allowance  606ms
+   ✓ OpenCode failure stages > reads each named stream error as what the tool said it was  1421ms
+   ✓ OpenCode failure stages > reports a startup timeout at the launch stage  2449ms
+   ✓ OpenCode failure stages > reports none at its own stage  639ms
+   ✓ OpenCode failure stages > reports zen at its own stage  614ms
+   ✓ OpenCode failure stages > reports wrong-model at its own stage  612ms
+   ✓ OpenCode failure stages > reports dispatch-500 at its own stage  713ms
+   ✓ OpenCode failure stages > reports usage-429 at its own stage  562ms
+   ✓ OpenCode failure stages > reports malformed at its own stage  574ms
+   ✓ OpenCode failure stages > reports retry at its own stage  647ms
+   ✓ OpenCode failure stages > reports tools at its own stage  711ms
+   ✓ OpenCode failure stages > reports mismatch at its own stage  627ms
+   ✓ OpenCode failure stages > reports stream-drop at its own stage  581ms
+   ✓ OpenCode failure stages > reports truncated at its own stage  602ms
+   ✓ OpenCode failure stages > reports a request timeout at the stage it ran out on  3265ms
+   ✓ OpenCode failure stages > stamps a cancellation with the stage it was stopped at  737ms
+   ✓ OpenCode failure stages > stamps a cancellation that arrives before the server is ready at the launch stage  445ms
+   ✓ OpenCode failure stages > names a host deadline that expires before the server is ready a timeout, not a cancellation  450ms
+   ✓ OpenCode failure stages > reads session-denied as the account refusing the work, at the provider-auth stage  628ms
+   ✓ OpenCode failure stages > reads assistant-denied as the account refusing the work, at the provider-auth stage  564ms
+   ✓ OpenCode failure stages > leaves a session error that is not a refusal at the stream stage  538ms
+   ✓ OpenCode failure stages > refuses a single event that grows past the parser bound, at the stream stage  566ms
+   ✓ OpenCode failure stages > reports a cleanup that cannot confirm the process stopped at the cleanup stage  487ms
+   ✓ OpenCode failure stages > keeps the failing stage when the process cannot be confirmed stopped  562ms
+   ✓ OpenCode failure stages > carries no stage on a successful inspection or request  1027ms
+   ✓ OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23) > lists the catalogue the person's own OpenCode last refreshed, not the bundled one  503ms
+   ✓ OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23) > dispatches the exact MiMo 2.6 slug a check listed and attributes the answer to it  1159ms
+   ✓ OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23) > leaves a person with no refreshed catalogue on the bundled one and refuses MiMo 2.6 before dispatch  1005ms
+   ✓ OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23) > leaves the bundled catalogue when the person's cache is older than the installed OpenCode  526ms
+   ✓ OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23) > never deletes the person's cache when it cannot be parsed  517ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > keeps a reasoning part out of the answer and out of the stream  570ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > recovers a text delta that arrived before its part was announced  592ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > recovers an early delta for a later text part as well  589ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > tries readiness again when one probe never reaches a listening server  858ms
+   ✓ OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23) > still gives up at the startup deadline when no probe is ever answered  1609ms
+ ✓ tests/automatic-work-host.test.ts (38 tests) 99496ms
+   ✓ ordinary automatic request admission and its production root > an unconnected OpenRouter model is refused by public thread choice without replacing the current selection or sending  375ms
+   ✓ ordinary automatic request admission and its production root > a qualifying ordinary request automatically links one Task and root without a human-selection phase  1348ms
+   ✓ ordinary automatic request admission and its production root > concurrent identical messages, subsequent replay and app restart never create a second root or send  1730ms
+   ✓ ordinary automatic request admission and its production root > reusing a normal message command for a changed goal, mode or source pin is refused before any extra send  1255ms
+   ✓ ordinary automatic request admission and its production root > a non-action or explicitly limited request starts no automatic task or Team: What does the selected inventory say?  455ms
+   ✓ ordinary automatic request admission and its production root > a non-action or explicitly limited request starts no automatic task or Team: Just say hello.  439ms
+   ✓ ordinary automatic request admission and its production root > a non-action or explicitly limited request starts no automatic task or Team: Plan only: prepare an inventory report without editing anything.  425ms
+   ✓ ordinary automatic request admission and its production root > a non-action or explicitly limited request starts no automatic task or Team: Write the inventory report, but do not change or write any files.  451ms
+   ✓ ordinary automatic request admission and its production root > a non-action or explicitly limited request starts no automatic task or Team: Answer only; read inventory.txt and explain the discrepancy.  455ms
+   ✓ ordinary automatic request admission and its production root > a source changed during the conversation is refused before native dispatch and is not retried on replay  754ms
+   ✓ ordinary automatic request admission and its production root > narrowing the ordinary Mode during its answer fences automatic task and native dispatch  601ms
+   ✓ ordinary automatic request admission and its production root > changing the original model while its answer is pending refuses automatic admission without a native send  646ms
+   ✓ ordinary automatic request admission and its production root > changing the original effort while its answer is pending refuses automatic admission without a native send  653ms
+   ✓ ordinary automatic request admission and its production root > revising the original saved profile while its answer is pending refuses its recorded exact revision before task creation  612ms
+   ✓ ordinary automatic request admission and its production root > a real process exit after answer-projection resumes from durable production receipts without duplicate planning, Task or root  6479ms
+   ✓ ordinary automatic request admission and its production root > a real process exit after task-persist resumes from durable production receipts without duplicate planning, Task or root  4795ms
+   ✓ ordinary automatic request admission and its production root > a real process exit after root-persist resumes from durable production receipts without duplicate planning, Task or root  4864ms
+   ✓ real production Team factory, public profile selection and root scope > F2: production owned Team generations resolve their exact child and parent while sharing the original spend cap  8383ms
+   ✓ real production Team factory, public profile selection and root scope > F2: an eligible child from another business cannot borrow internal observation  3004ms
+   ✓ real production Team factory, public profile selection and root scope > F3: recreating the actual loop adapter preserves its live boundary and the in-flight generation exactly once  3080ms
+   ✓ real production Team factory, public profile selection and root scope > F2: disabled observation exports nothing from an otherwise admitted production Team child  3223ms
+   ✓ real production Team factory, public profile selection and root scope > F2: signing out drops a real queued child generation and signing back in cannot revive it  3674ms
+   ✓ real production Team factory, public profile selection and root scope > one normal request selects a measured fixture pair and links its real child, mailbox and Board without a selection phase  7060ms
+   ✓ real production Team factory, public profile selection and root scope > explicit selected profiles cold-start honestly as hypothesis and H14 plus owned Team calls use the one existing root cap  9947ms
+   ✓ real production Team factory, public profile selection and root scope > an allocation smaller than the first worker hold refuses through the production factory before any child SDK send  3585ms
+   ✓ real production Team factory, public profile selection and root scope > a draining real worker cannot use the lead verification and correction allocation or obtain its full six sends  4779ms
+   ✓ real production Team factory, public profile selection and root scope > public Stop fences a real owned response and its late SDK result; restart and original-command replay do not resend  3734ms
+   ✓ real production Team factory, public profile selection and root scope > fresh source refusal prevents a held Team result from creating a reply, report or further dispatch  3510ms
+   ✓ real production Team factory, public profile selection and root scope > fresh profile refusal prevents a held Team result from creating a reply, report or further dispatch  3319ms
+   ✓ real production Team factory, public profile selection and root scope > fresh trust refusal prevents a held Team result from creating a reply, report or further dispatch  3594ms
+   ✓ real production Team factory, public profile selection and root scope > the public selected-Team path refuses absent owner identity before any SDK send or child effect  559ms
+   ✓ real production Team factory, public profile selection and root scope > the public selected lead refuses a mismatched model before model or child dispatch  525ms
+   ✓ real production Team factory, public profile selection and root scope > the public selected lead refuses a mismatched account before model or child dispatch  490ms
+   ✓ real production Team factory, public profile selection and root scope > the public selected lead refuses a mismatched effort before model or child dispatch  501ms
+   ✓ real production Team factory, public profile selection and root scope > a stopped selected member cannot be admitted by a new root through the public cold-start path  602ms
+   ✓ real production Team factory, public profile selection and root scope > the public fixed Jev selection reports its missing Decisions/account qualification and sends nothing  571ms
+   ✓ fresh explicit Team ownership after host restart > a closed uncertain response keeps exact history and spend while a new command binds one distinct response  8784ms
+stderr | tests/automation-scheduler.test.ts > overlap, revalidation and budget at fire time > without a hard spending bound nothing starts on a schedule; an exhausted budget stops before writing (A22)
+The harness run stopped: HarnessError: budget exceeded
+
+ ✓ tests/software-pack.test.ts (18 tests) 51195ms
+   ✓ the pack loads only where it is on > every route refuses in a project that has not turned the pack on, and starts no process  803ms
+   ✓ the pack loads only where it is on > turning the pack off again refuses again, and what it recorded stays  733ms
+   ✓ the pack loads only where it is on > a tool refuses at the point of use when the pack is off, whatever the caller  619ms
+   ✓ the repository view > branch, changed files and recent commits, read-only  5776ms
+   ✓ the repository view > a project folder that is not a repository says so  848ms
+   ✓ worktrees > add waits for an exact approval, then works on a branch without touching your checkout  3877ms
+   ✓ worktrees > a worktree with uncommitted work is never removed; a clean one is, and its branch stays  4905ms
+   ✓ worktrees > declining changes nothing; names outside the rules and a linked worktree folder are refused  1602ms
+   ✓ declared commands > nothing runs before its exact approval; declining runs nothing; approving runs it once  3562ms
+   ✓ declared commands > a failing command is a recorded failure with its output, not an error  2411ms
+   ✓ declared commands > a timeout ends the command and every process it started  7410ms
+   ✓ declared commands > output past the cap ends the command  2187ms
+   ✓ declared commands > the command runs with a minimal environment: no secret reaches it  2249ms
+   ✓ declared commands > a shell metacharacter or a shell program is refused at declaration and never reaches a process  1447ms
+   ✓ declared commands > a run a stop interrupted is said to be unconfirmed, is never re-run, and does not block the next one  1437ms
+   ✓ declared commands > a declaration outside the project folder is refused  468ms
+   ✓ H17 reads a declared command run as evidence > without the pack a command check is never run; with it, an approved passing run verifies  5793ms
+   ✓ H17 reads a declared command run as evidence > a failing declared command fails verification with its evidence  5067ms
+stdout | tests/ph07-round3-review.test.ts > M which admission failures end a business’s observation > M3 failures that are not a refusal end nothing: 429, a body cut off mid-read, a 200 that is `{}` or not JSON, a 422
+M3 observed: {"422":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"429":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"cut-off body":{"person":403,"exported":["$ai_generation","$ai_trace"],"denied":{}},"200 {}":{"person":409,"exported":["$ai_generation","$ai_trace"],"denied":{}},"200 not JSON":{"person":409,"exported":["$ai_generation","$ai_trace"],"denied":{}}}
+
+ ✓ tests/automation-scheduler.test.ts (27 tests) 20608ms
+   ✓ turning a schedule on is an explicit, recorded act (A01) > a recorded weekly answer never runs, and nothing starts until an owner turns a schedule on  604ms
+   ✓ turning a schedule on is an explicit, recorded act (A01) > turning on records who, when, the setup revision and this computer, and History says so  518ms
+   ✓ turning a schedule on is an explicit, recorded act (A01) > a change sent against an older read is refused (A24), and a bad schedule never saves  538ms
+   ✓ turning a schedule on is an explicit, recorded act (A01) > a member who is not an owner or admin cannot change the schedule  492ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > at its interpreted time, once, with an occurrence, a run, a Task and a draft  767ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > a duplicate dispatch of one slot is one run and a receipt (A05)  708ms
+   ✓ a due slot starts on its own through the same admission (OPS-08) > a nonexistent local time runs when the clocks jump; a repeated one runs once (A04)  2827ms
+   ✓ missed work and this computer (OPS-09) > slots missed while the computer was off are recorded; only the latest catches up, within its window (A02)  927ms
+   ✓ missed work and this computer (OPS-09) > back after the window: nothing runs, a backlog is never run, and one item says so  708ms
+   ✓ missed work and this computer (OPS-09) > the last-known heartbeat is shown; a stale one reads as unknown, never as a live outage (A03)  505ms
+   ✓ missed work and this computer (OPS-09) > a schedule assigned to another computer never runs here (A08: no takeover)  583ms
+   ✓ a crash between recording a slot and starting its run (A06) > the slot is settled once on restart, never re-admitted, and a person is told  612ms
+   ✓ pause, resume, turn off, and restart (A10, A12) > a pause that lands before the slot suppresses it and says so; resume never revives it  800ms
+   ✓ pause, resume, turn off, and restart (A10, A12) > a slot admitted before the pause keeps its run; the pause is recorded after it (A10)  676ms
+   ✓ pause, resume, turn off, and restart (A10, A12) > pause and turn-off survive restarts and are never revived by one (A12)  735ms
+   ✓ overlap, revalidation and budget at fire time > a slot while the previous run is still active is skipped and recorded (A09)  493ms
+   ✓ overlap, revalidation and budget at fire time > a missing source stops a scheduled run as Waiting for data, raised once however often it is read (A17, A31)  934ms
+   ✓ overlap, revalidation and budget at fire time > a setup activated after the schedule was turned on blocks it until an owner turns it on again (A13)  697ms
+   ✓ overlap, revalidation and budget at fire time > a removed member is never impersonated: their schedule blocks with the reason (A15)  683ms
+   ✓ overlap, revalidation and budget at fire time > someone else signed in on this computer does not run another person’s schedule  627ms
+   ✓ overlap, revalidation and budget at fire time > without a hard spending bound nothing starts on a schedule; an exhausted budget stops before writing (A22)  699ms
+   ✓ editing a schedule around its slot (A13, A35) > an edit after a slot ran never runs that slot again; the new time runs under the new revision  1023ms
+   ✓ editing a schedule around its slot (A13, A35) > an edit before the slot moves it; the old time never runs  772ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > a slot that fell due just before an edit is still admitted, not lost to the edit  726ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > a slot that fell due just before a pause is recorded, never silently dropped  718ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > moving the time earlier the same day never runs the new, already-passed time as a catch-up  601ms
+   ✓ independent review (review-e): every slot is accounted for, with the truth about this computer > a slot missed while the running computer slept names when it was last seen, not when Diomedes started  632ms
+stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:63887/mcp/team/3333e7b79b8d","tokenEnv":"DIOMEDES_TEAM_S3F9B6D35917B","slotId":"S3f9b6d35917b","role":"lead","roleInstructions":"You are Astra, the leader of a small team working in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+stdout | tests/ph07-round3-review.test.ts > C refusalCode is invisible to the person > C1 every refusal the gate can raise gives the same status and the same body bytes with the field as without it, on the AWS route and on the Nectovia route
+C1 observed: {"entitlement_revoked / aws":{"status":403,"body":"{\"error\":\"This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_revoked / nectovia":{"status":403,"body":"{\"error\":\"This business’s Nectovia Agent access was withdrawn. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_expired / aws":{"status":403,"body":"{\"error\":\"This business’s plan has ended, so the Nectovia Agent is not available. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_expired / nectovia":{"status":403,"body":"{\"error\":\"This business’s plan has ended, so the Nectovia Agent is not available. Your files and history are unchanged.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"agent_not_included / aws":{"status":403,"body":"{\"error\":\"The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"agent_not_included / nectovia":{"status":403,"body":"{\"error\":\"The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal_workspace / aws":{"status":403,"body":"{\"error\":\"The Nectovia Agent works for a business.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal_workspace / nectovia":{"status":403,"body":"{\"error\":\"The Nectovia Agent works for a business.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"not_a_member (403) / aws":{"status":403,"body":"{\"error\":\"You are not a member of this business, so the Nectovia Agent cannot work for it.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"not_a_member (403) / nectovia":{"status":403,"body":"{\"error\":\"You are not a member of this business, so the Nectovia Agent cannot work for it.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_unknown (503) / aws":{"status":403,"body":"{\"error\":\"The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"entitlement_unknown (503) / nectovia":{"status":403,"body":"{\"error\":\"The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"sign_in_required (401) / aws":{"status":401,"body":"{\"error\":\"A verified bearer session is required.\",\"code\":\"sign_in_required\"}"},"sign_in_required (401) / nectovia":{"status":401,"body":"{\"error\":\"A verified bearer session is required.\",\"code\":\"sign_in_required\"}"},"personal / aws":{"status":403,"body":"{\"error\":\"Buy credits or get a plan to use the Nectovia Agent here. Your own AI tools work without either.\",\"code\":\"AGENT_NOT_INCLUDED\"}"},"personal / nectovia":{"status":403,"body":"{\"error\":\"Buy credits or get a plan to use the Nectovia Agent here. Your own AI tools work without either.\",\"code\":\"AGENT_NOT_INCLUDED\"}"}}; codes ["entitlement_revoked","entitlement_revoked","entitlement_revoked","entitlement_revoked","entitlement_expired","entitlement_expired","entitlement_expired","entitlement_expired","agent_not_included","agent_not_included","agent_not_included","agent_not_included","personal_workspace","personal_workspace","personal_workspace","personal_workspace","not_a_member","not_a_member","not_a_member","not_a_member","entitlement_unknown","entitlement_unknown","entitlement_unknown","entitlement_unknown","sign_in_required","sign_in_required","sign_in_required","sign_in_required","agent_not_included","agent_not_included"]
+
+stdout | tests/ph07-round3-review.test.ts > P payer and managed cost > P1 a Nectovia turn whose thread is switched to AWS while the gateway is answering: every event of that turn stays nectovia/managed, the next turn is aws-bedrock/byo, and no trace mixes
+P1 observed: {"switchStatus":200,"second":200,"firstTurn":"completed","events":[["$ai_generation","nectovia","managed"],["$ai_trace","nectovia","managed"],["$ai_generation","aws-bedrock","byo"],["$ai_trace","aws-bedrock","byo"]]}
+
+ ✓ tests/ph07-round3-review.test.ts (15 tests) 19967ms
+   ✓ K which failed rechecks are final > K2 an access read that fails during a refresh (503, 429, network, a body cut off mid-read, a 200 that is not JSON) ends a running turn’s observation for good; a malformed `{}` does not  4188ms
+   ✓ M which admission failures end a business’s observation > M1 a 404 or 403 that is not the service’s membership answer (a Worker that does not know the route, an edge block) is read as `not_a_member` and ends the business’s observation  1142ms
+   ✓ M which admission failures end a business’s observation > M2 positive control: a real membership withdrawal ends the business’s observation  561ms
+   ✓ M which admission failures end a business’s observation > M3 failures that are not a refusal end nothing: 429, a body cut off mid-read, a 200 that is `{}` or not JSON, a 422  2734ms
+   ✓ B the workspace a scope is bound against > B1 a workspace switch during an admitted turn’s round trip: the scope is bound against the business switched to, so the turn’s events leave while the person is in the other business, and are dropped if they come back  1046ms
+   ✓ C refusalCode is invisible to the person > C1 every refusal the gate can raise gives the same status and the same body bytes with the field as without it, on the AWS route and on the Nectovia route  2173ms
+   ✓ P payer and managed cost > P1 a Nectovia turn whose thread is switched to AWS while the gateway is answering: every event of that turn stays nectovia/managed, the next turn is aws-bedrock/byo, and no trace mixes  785ms
+   ✓ I invariants on the Nectovia route > I1 observation off, by the option and by the unset environment: nothing is constructed and a Nectovia send is unchanged  969ms
+   ✓ I invariants on the Nectovia route > I2 Personal, Free, no plan, and a paying business that is not internal with spoofed headers: Nectovia sends observe nothing  735ms
+   ✓ I invariants on the Nectovia route > I3 the POST bytes of a Nectovia turn carry none of the planted values, in any of six encodings  447ms
+   ✓ I invariants on the Nectovia route > I4 a PostHog that throws, answers 500 or hangs leaves a Nectovia turn, its local hold and the gateway’s settlement identical to export off  4925ms
+ ✓ tests/conversation-update.test.ts (15 tests) 17271ms
+   ✓ "Update this conversation" with history sharing on > retires the conversation opened under 0.1.8 with one note, and the next message carries the recent messages under today's text  1158ms
+   ✓ "Update this conversation" with history sharing on > a turn records the carry only while the carried messages still reach it  3958ms
+   ✓ "Update this conversation" with history sharing on > the carried history is bounded: the last 12 messages, which give way to the new lineage's own  4113ms
+   ✓ "Update this conversation" with history sharing on > a retry of the same command reads back what it did and writes no second note, even after the conversation moved on  585ms
+   ✓ "Update this conversation" with history sharing on > a conversation already on this build's text has nothing to update: nothing retires and no note is written  400ms
+   ✓ "Update this conversation" with history sharing off > carries nothing, says so, and leaves sharing off  858ms
+   ✓ "Update this conversation" with history sharing off > a grant given after the update carries nothing: the update said it won't remember, and that stands  951ms
+   ✓ "Update this conversation" with history sharing off > carries nothing when sharing is turned off after the update: each send checks again  645ms
+   ✓ "Update this conversation" is refused, with its reason, while > a message is being answered, and goes ahead once it is answered  667ms
+   ✓ "Update this conversation" is refused, with its reason, while > an Automatic proposal waits for the person's choice, and goes ahead once another message follows it  817ms
+   ✓ only a conversation on instructions this build knows is carried > a text this build does not know is updated, and carries nothing  713ms
+   ✓ only a conversation on instructions this build knows is carried > a revoked text is updated, and carries nothing  691ms
+   ✓ only a conversation on instructions this build knows is carried > a text revoked after the update stops the carry at the next send  908ms
+   ✓ the dry run > names no route, and promises nothing, while the tier's route cannot answer; the update still goes ahead  496ms
+   ✓ the endpoint > takes exactly one command, and names a thread that exists  310ms
+ ✓ tests/native-work.test.ts (66 tests) 21002ms
+   ✓ member thread to real adapter glue > ask forwards team config and tracks completion  497ms
+   ✓ member thread to real adapter glue > work/start forwards team config and tracks completion  384ms
+   ✓ member thread to real adapter glue > unowned thread keeps all MCP disabled  335ms
+   ✓ member thread to real adapter glue > waits for approval, then handles go-ahead and releases token  380ms
+   ✓ member thread to real adapter glue > waits for approval, then handles declined and releases token  319ms
+   ✓ member thread to real adapter glue > service close cancels live member work and releases its environment  323ms
+   ✓ member thread to real adapter glue > stop releases the token and ignores late results; a rejected second start preserves the live token  335ms
+   ✓ guarded native file proposals > a run in flight is attributed to the model it was sent to, as a request, and named for its account  309ms
+   ✓ guarded native file proposals > returns before generation finishes and sends only explicit sources  302ms
+   ✓ guarded native file proposals > applies approved text through real history and review, with reversible deletion  595ms
+   ✓ guarded native file proposals > declining a proposal writes no files and returns the task to To do  329ms
+   ✓ guarded native file proposals > rejects stale selected text before any proposed file is written  309ms
+   ✓ guarded native file proposals > checks source freshness even when that source is not modified by the proposal  394ms
+   ✓ guarded native file proposals > stops immediately, aborts its generator, and ignores a late response  320ms
+   ✓ guarded native file proposals > a stopped response cannot attach a proposal to a newer session  343ms
+   ✓ guarded native file proposals > rejects a junction target during generation and when one appears before approval  344ms
+   ✓ guarded native file proposals > enforces one project session across native and sample work  321ms
+   ✓ guarded native file proposals > keeps notes local and requires a separate exact approval for every new proposal  391ms
+   ✓ team native work requests > forwards a private copy of team options and records technical tool calls before approval  307ms
+   ✓ untrusted generated proposal validation > rejects binary contents without project writes  308ms
+   ✓ untrusted generated proposal validation > rejects duplicate paths without project writes  321ms
+   ✓ untrusted generated proposal validation > rejects remove unselected file without project writes  336ms
+   ✓ untrusted generated proposal validation > a refused prose reply is kept on the session and its fault entry  302ms
+   ✓ untrusted generated proposal validation > a long refused reply is capped at 4000 characters with a truncation note  354ms
+   ✓ team wake through the adapter > a message to a member whose thread allows the task starts its run  409ms
+   ✓ team wake through the adapter > a message to a member whose thread shows first parks it until the owner wakes it  384ms
+   ✓ project instructions reach the model > a loaded instruction file arrives whole, delimited, and recorded on the session  525ms
+   ✓ project instructions reach the model > a file discovery would make no rule from is never delivered  402ms
+   ✓ project instructions reach the model > a nested file governs work in its folder, is recorded with its scope and survives a restart  800ms
+   ✓ project instructions reach the model > a file that changed since discovery is sent at its current sha and said to have changed  598ms
+ ✓ tests/crash-matrix.test.ts (12 tests) 33897ms
+   ✓ project writes: object, journal, project file, state file > killed at object-write: the in-flight write is absent, the acknowledged one kept  2977ms
+   ✓ project writes: object, journal, project file, state file > killed at journal-append: the in-flight write is applied, the acknowledged one kept  2830ms
+   ✓ project writes: object, journal, project file, state file > killed at project-file: the in-flight write is applied, the acknowledged one kept  2788ms
+   ✓ project writes: object, journal, project file, state file > killed at state-temp: the in-flight write is applied, the acknowledged one kept  2712ms
+   ✓ project writes: object, journal, project file, state file > killed at state-rename: the in-flight write is applied, the acknowledged one kept  2719ms
+   ✓ project writes: object, journal, project file, state file > killed at journal-unlink: the in-flight write is applied, the acknowledged one kept  2779ms
+   ✓ automation occurrences and their migration > killed at occurrence-temp: the file holds ["one"], each once  2660ms
+   ✓ automation occurrences and their migration > killed at occurrence-rename: the file holds ["one","two"], each once  2472ms
+   ✓ automation occurrences and their migration > killed at migration-backup: the next open finishes the migration with one backup of the original  2572ms
+   ✓ automation occurrences and their migration > killed at migration-rewrite: the next open finishes the migration with one backup of the original  2630ms
+   ✓ Ready queue claims > killed at claim-temp: after restart the task starts exactly once  3322ms
+   ✓ Ready queue claims > killed at claim-rename: after restart the task starts exactly once  3434ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: created 3000 fixture files in 838 ms
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: project creation took 34 ms
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: explicit document walk took 278 ms, 3036 lstat calls
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 42 ms
+
+ ✓ tests/backend.test.ts (53 tests) 19445ms
+   ✓ real project files and durable history > starts empty and creates three sample documents only when requested  303ms
+   ✓ real project files and durable history > editor writes require the opened version, merge, restore, and undo a restore  554ms
+   ✓ real project files and durable history > empty files are distinct from absent files across restore and redo  350ms
+   ✓ real project files and durable history > preserves exact UTF-8 BOM and CRLF bytes through read, edit, and restore  377ms
+   ✓ real project files and durable history > detects outside changes and preserves overwritten contents before a forced restore  359ms
+   ✓ real project files and durable history > restores copies without modifying newer files  372ms
+   ✓ real project files and durable history > a saved version restores the whole folder and later file removal can be undone  700ms
+   ✓ task, approval, sample worker, and review flow > approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task  636ms
+   ✓ task, approval, sample worker, and review flow > declines file creation while continuing the recorded plan update  493ms
+   ✓ task, approval, sample worker, and review flow > stop expires needs immediately and fault preserves its partial changes  492ms
+   ✓ request and filesystem boundaries > settings survive restart and every supported appearance validates  353ms
+   ✓ threads are first-class conversations > POST /threads creates, PUT renames, GET lists newest-updated first  363ms
+   ✓ threads are first-class conversations > POST /ask with threadId appends to that thread and bumps updatedAt  390ms
+   ✓ threads are first-class conversations > Work task names use the trimmed first line, cut on a word with an ellipsis  1121ms
+   ✓ threads are first-class conversations > threads default to show-first, PUT sets task, and full is rejected  305ms
+   ✓ threads are first-class conversations > work sessions carry the thread permission, defaulting to show-first  771ms
+   ✓ request and filesystem boundaries (continued) > sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent  447ms
+   ✓ the data folder lock tells a live owner from a reused pid > this platform reports its own start time, and a loopback port is testable  385ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time matches still owns the folder  655ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time differs is a reused pid, so the lock is stale  719ms
+   ✓ modes belong to the thread and every turn > the fourth fix in the same thread is 409  594ms
+   ✓ modes belong to the thread and every turn > ask and plan turns record their mode  330ms
+   ✓ modes belong to the thread and every turn > mode: 'work' is accepted and stored as 'build'  327ms
+   ✓ state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder  1815ms
+ ✓ tests/scoped-work.test.ts (30 tests) 13285ms
+   ✓ human-issued task scope > completion observation stays pending for working sessions and ignores another project  588ms
+   ✓ human-issued task scope > one confirmation permits twenty journaled edits, each with independent authorization evidence  4536ms
+   ✓ human-issued task scope > review changes still waits and legacy task flags do not mint authority  341ms
+   ✓ human-issued task scope > proposal and recorded write retain the runtime origin independently from settings  489ms
+   ✓ human-issued task scope > refuses unsupported or forged scope {"engine":"opencode"}  338ms
+   ✓ human-issued task scope > a new task receives no authority from another task  366ms
+   ✓ human-issued task scope > out-of-scope destinations and deletions require an exact review  307ms
+   ✓ human-issued task scope > a host restart retains effects but never revives an active scope or duplicates a write  321ms
+   ✓ human-issued task scope > a selected base changed during generation is preserved under a scope  324ms
+   ✓ human-issued task scope > budget exhaustion, deletion, and a changed billing route never silently apply  549ms
+   ✓ human-issued task scope > expiry and revocation are checked immediately before the filesystem effect  399ms
+   ✓ human-issued task scope > revoked scope with a genuine outside replacement still records truthful conflict evidence  430ms
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\work-admission.test.ts:136:17)
+    at Store.mockCall (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Diomedes\diomedes-wt\memory-context-contracts\server\work.ts:199:22)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\work.ts:111:71
+    at commit (F:\Diomedes\diomedes-wt\memory-context-contracts\server\work.ts:97:72)
+    at WorkService.start (F:\Diomedes\diomedes-wt\memory-context-contracts\server\work.ts:98:20)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:566:16
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Diomedes\diomedes-wt\memory-context-contracts\tests\work-admission.test.ts:136:17)
+    at Store.mockCall (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Diomedes/diomedes-wt/nectovia-reskin-home-thread/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Diomedes\diomedes-wt\memory-context-contracts\server\native-work.ts:1610:22)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\native-work.ts:836:20
+    at NativeWorkService.start (F:\Diomedes\diomedes-wt\memory-context-contracts\server\native-work.ts:672:30)
+    at admitWork (F:\Diomedes\diomedes-wt\memory-context-contracts\server\app.ts:3186:22)
+    at F:\Diomedes\diomedes-wt\memory-context-contracts\server\store.ts:566:16
+
+ ✓ tests/harness-host.test.ts (22 tests) 20079ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  800ms
+   ✓ native harness through the real host > an unanswered Need remains resolvable after service restart  596ms
+   ✓ native harness through the real host > expired approval is refused and the run remains waiting  333ms
+   ✓ native harness through the real host > declining cancels the run, persists the single decision, and writes no report  359ms
+   ✓ native harness through the real host > a newer run version cannot break app startup or overwrite the run file  302ms
+   ✓ native harness through the real host > routes validate the cursor, enforce project scope and client header, and cancel through the person principal  370ms
+   ✓ native harness through the real host > a malformed null record cannot break startup and is not rewritten  371ms
+   ✓ native harness through the real host > a malformed scope record cannot break startup and is not rewritten  352ms
+   ✓ native harness through the real host > a listing that started before run creation cannot erase the new run lookup  322ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  682ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  1970ms
+   ✓ native harness through the real host > outside edits invalidate the exact write and remain untouched  500ms
+   ✓ native harness through the real host > changed identity is refused and the existing Session stop route cancels the harness  405ms
+   ✓ native harness through the real host > thread permission is mirrored while the fixture still requires exact approval  335ms
+   ✓ native harness through the real host > unknown effects stay waiting for reconciliation across failure, completion, restart, and cancellation  455ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  3996ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  3533ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  3437ms
+ ✓ tests/conversation-engines.test.ts (12 tests | 1 skipped) 24829ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a ChatGPT thread continues one Codex thread through the conversation, and offers exactly its controls  3422ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a ChatGPT answer without runtime model metadata is unverified in the saved thread and evidence  2280ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > provider-only secrets are absent from live output, HTTP answers, saved threads, replay, and run evidence  1321ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > ChatGPT signed out while its thread waits: the next message is refused in its own words, nothing is sent, and the thread keeps ChatGPT  2549ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a whole-project read is refused on ChatGPT before anything is recorded or started  878ms
+   ✓ ChatGPT, and a thread moved between ChatGPT and Claude Code > a thread moved from ChatGPT to Claude Code and back opens a new lineage each time, and nothing crosses engines  3161ms
+   ✓ a cursor conversation > continues its ACP session through the conversation, and offers exactly its controls  3025ms
+   ✓ a cursor conversation > signed out while its thread waits: the next message is refused in Cursor's own words, nothing is sent, and the thread keeps Cursor  2245ms
+   ✓ a devin conversation > continues its ACP session through the conversation, and offers exactly its controls  3000ms
+   ✓ an OpenCode conversation > continues its OpenCode session through the conversation, and offers exactly its controls  2801ms
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 104.8 ms; no scans or writes.
+
+ ✓ tests/h04-opencode-session-routes.test.ts (6 tests) 20514ms
+   ✓ a kept OpenCode session answers follow-ups on one session and projects each answer once, attributed to OpenCode  3378ms
+   ✓ a message sent while OpenCode answers is shown in the thread once it is sent, attributed like any other turn  4718ms
+   ✓ closed and restarted hosts resume the same OpenCode session only through explicit resume, and fork from it  4773ms
+   ✓ after OpenCode updates itself, a restarted host resumes the same session on the version installed now  3408ms
+   ✓ a fork the OpenCode build cannot make is refused with its reason  3332ms
+   ✓ a thread on another engine cannot open an OpenCode session  902ms
+ ✓ tests/work-admission.test.ts (49 tests) 20254ms
+   ✓ durable task Work admission > failed sample admission persistence returns no phantom receipt  332ms
+   ✓ durable task Work admission > failed codex admission persistence returns no phantom receipt  414ms
+   ✓ durable task Work admission > rejects cross-project tasks, threads, receipt access and unauthorized browser origins  356ms
+   ✓ durable task Work admission > the admitted native path previews, approves once, writes and restores exact bytes without Git  433ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  3086ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  2756ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  2961ms
+   ✓ durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence  348ms
+   ✓ durable task Work admission > restart expires an unapproved proposal while retaining its original receipt  348ms
+   ✓ durable task Work admission > recovers the file journal at prepared while keeping receipt and history consistent  364ms
+   ✓ durable task Work admission > recovers the file journal at applied while keeping receipt and history consistent  341ms
+   ✓ durable task Work admission > recovers the file journal at finalized while keeping receipt and history consistent  341ms
+   ✓ durable task Work admission > a saved task document survives reload and uses exact approval and attributed History  360ms
+   ✓ durable task Work admission > bounded receipt capacity refuses new commands without evicting existing identities  438ms
+stderr | tests/h14-team-host.test.ts > profiles, durability and retry > Stop on the lead stops every worker it is waiting for
+The harness run stopped: HarnessError: stale attempt
+
+ ✓ tests/h14-team-host.test.ts (13 tests) 10836ms
+   ✓ a lead with workers and an advisor on the fixture route > workers run as their own bounded runs, the advisor advises, and the lead verifies the outcome  1408ms
+   ✓ a lead with workers and an advisor on the fixture route > scope: a worker cannot be given a file outside the lead’s scope, and a worker reads nothing outside its own  973ms
+   ✓ budgets, fan-out and authority on a stub model-API route > a worker cannot ask for more turns than admitted, and one that keeps going is stopped at its budget  799ms
+   ✓ budgets, fan-out and authority on a stub model-API route > a worker is stopped before the call that would pass its reported-token budget  690ms
+   ✓ budgets, fan-out and authority on a stub model-API route > fan-out: at most three workers at once, and they run at the same time; a worker is never offered delegation  1874ms
+   ✓ budgets, fan-out and authority on a stub model-API route > authority: a worker that tries to write is refused, nothing is written, and its lead stops for a retry  549ms
+   ✓ budgets, fan-out and authority on a stub model-API route > advisor: read-only by construction; one that tries to write is refused and the lead goes on  496ms
+   ✓ budgets, fan-out and authority on a stub model-API route > an advisor’s advice is attributed to the model the runtime reported  489ms
+   ✓ profiles, durability and retry > a worker runs under its own H09 profile, pinned by revision; a profile that cannot run refuses by name  969ms
+   ✓ profiles, durability and retry > a worker that fails stops its lead; the record survives a restart; H08 Retry reruns only that worker  1826ms
+   ✓ profiles, durability and retry > Stop on the lead stops every worker it is waiting for  540ms
+ ✓ tests/home-conversation.test.ts (24 tests) 10102ms
+   ✓ startup creates no home, and a fresh listing of projects is empty  309ms
+   ✓ a binding with the wrong revision is dropped on load and reads as no home  335ms
+   ✓ a malformed binding is dropped on load and reads as no home  491ms
+   ✓ a binding naming a foreign project reads as no home  316ms
+   ✓ a client PUT of settings carrying home does not change the binding  339ms
+   ✓ adoption repairs an invalid binding without a second home Project or a second thread  373ms
+   ✓ the home Project is never listed, and is still enumerated for recovery after a restart  636ms
+   ✓ from home an Automatic proposal naming no project needs a target, and one naming a project is proposed there  930ms
+   ✓ R-16: the direct route is refused in the home Project for every mode, before it touches anything  549ms
+   ✓ R-17: the ordinary thread update cannot reroute home away from its conversation engine  486ms
+   ✓ R-17: a refused home engine change is whole, and the conversation still answers after a restart  455ms
+   ✓ R-17: home keeps every control that is not its engine, and an ordinary project keeps them all  536ms
+   ✓ the home update accepts a supported conversation route and records it as the person's  510ms
+   ✓ a Claude Code Home answers with no grant, and a follow-up needs the history grant  724ms
+   ✓ a Claude Code Home follow-up is answered after the page's grant and refused after its revoke  778ms
+ ✓ tests/acp-session.test.ts (30 tests) 27048ms
+   ✓ kept ACP conversation — cursor > saves the ACP session id before the prompt and continues it with session/load  893ms
+   ✓ kept ACP conversation — cursor > streams thought chunks to the thinking sink and keeps them out of the answer  482ms
+   ✓ kept ACP conversation — cursor > starts fresh and says so when the agent does not advertise loadSession  1058ms
+   ✓ kept ACP conversation — cursor > continues after a restart from the saved checkpoint alone, and starts fresh if the agent lost it  1389ms
+   ✓ kept ACP conversation — cursor > continues a session saved by an older version of the engine, on the version installed now  921ms
+   ✓ kept ACP conversation — cursor > continues a connected conversation when the engine updates itself between turns  948ms
+   ✓ kept ACP conversation — cursor > Stop sends session/cancel and records that the agent acknowledged it  1015ms
+   ✓ kept ACP conversation — cursor > Stop ends the process tree after the bounded wait when the agent ignores session/cancel  3531ms
+   ✓ kept ACP conversation — devin > saves the ACP session id before the prompt and continues it with session/load  951ms
+   ✓ kept ACP conversation — devin > streams thought chunks to the thinking sink and keeps them out of the answer  476ms
+   ✓ kept ACP conversation — devin > starts fresh and says so when the agent does not advertise loadSession  944ms
+   ✓ kept ACP conversation — devin > continues after a restart from the saved checkpoint alone, and starts fresh if the agent lost it  1455ms
+   ✓ kept ACP conversation — devin > continues a session saved by an older version of the engine, on the version installed now  881ms
+   ✓ kept ACP conversation — devin > continues a connected conversation when the engine updates itself between turns  884ms
+   ✓ kept ACP conversation — devin > Stop sends session/cancel and records that the agent acknowledged it  961ms
+   ✓ kept ACP conversation — devin > Stop ends the process tree after the bounded wait when the agent ignores session/cancel  3516ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > a web fetch outside the read scope becomes a question; go-ahead allows exactly that call  485ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > a declined question tells the agent no and the same answer continues  467ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > a question nobody answers in time stops the turn and tells the agent it was cancelled  463ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > an edit is never put to a person: it stays declined and stops the turn  495ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > a plan presented for approval is a question; go-ahead lets the agent continue with it  953ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > without a person to ask, a plan is declined exactly as on the text route  471ms
+   ✓ kept ACP conversation — questions for a person (Cursor) > a Stop while a question is open cancels the question  540ms
+   ✓ kept ACP conversation — review F: a question is a person's, for one call, in a live turn > a go-ahead for one fetch is not re-granted when the agent asks again with the same call id  475ms
+   ✓ kept ACP conversation — review F: a question is a person's, for one call, in a live turn > a question nobody answers tells the agent it was cancelled, and never selects an allow option  951ms
+   ✓ kept ACP conversation — review F: a question is a person's, for one call, in a live turn > a saved session is continued only on the engine, account route and scope it was saved with  484ms
+   ✓ kept ACP conversation — review F: a question is a person's, for one call, in a live turn > an agent that dies while a question is open ends the turn and the question with it  437ms
+   ✓ kept ACP conversation — review F: a question is a person's, for one call, in a live turn > a Stop while a question is open, which the agent acknowledges, is recorded as acknowledged  519ms
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: cancellation after work-input must prevent new work admission
+INDEPENDENT_CANCEL_RACE {"response":409,"state":"cancelled","tasks":1,"sessions":0}
+
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: narrowing Mode during selection must prevent new work admission
+INDEPENDENT_MODE_RACE {"response":200,"mode":"ask","tasks":0,"sessions":0}
+
+stdout | tests/interaction-seam.review-20260921.test.ts > independent: a message still waiting for its first answer is not answered
+INDEPENDENT_PENDING_OUTCOME {"runId":"claude-161833d8688455a305c0558fd8d96fa0a5337d75bd3a43dfc78a6cb4be3f7317","commandId":"m-pending-review","sourceMessageId":"sm.82aa2c475c8544a26e64967812d5904e","answerText":null,"interrupted":false,"outcome":{"status":"unresolved","message":"This did not finish. Send the same message again to finish it."}}
+
+ ✓ tests/interaction-seam.review-20260921.test.ts (13 tests) 9844ms
+   ✓ C01: a greeting is answered and creates nothing  604ms
+   ✓ C06: under Automatic a valid act proposal is shown, never started, until the person selects it  494ms
+   ✓ a selection bound to the message, the proposal and the target starts exactly one task and one work session  983ms
+   ✓ a proposal naming another message is not a proposal  454ms
+   ✓ Answer only and Plan only never show or start work, whatever the model proposes  589ms
+   ✓ narrowing the Mode control after a proposal was shown means it can no longer be started  628ms
+   ✓ R-03: a reused command with a changed text, mode or source list is refused before and after projection, and changes nothing  533ms
+   ✓ R-14: a message answered on a cancelled conversation is still readable, and nothing can be started through it  729ms
+   ✓ a busy target is a final refusal: the task exists, the work did not start, and a retry does not try again  1282ms
+   ✓ a receipt that exists without its phase is linked after a restart, never sent again  783ms
+   ✓ independent: cancellation after work-input must prevent new work admission  713ms
+   ✓ independent: narrowing Mode during selection must prevent new work admission  1307ms
+   ✓ independent: a message still waiting for its first answer is not answered  744ms
+stderr | tests/delegate-sandbox-host.test.ts > Stop, depth and restart > a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes
+The harness run stopped: HarnessError: stale attempt
+
+ ✓ tests/delegate-sandbox-host.test.ts (7 tests) 11681ms
+   ✓ a delegate’s change set, settled into the project > in scope it applies as the model’s change; out of scope it waits under a Need that outlives the run  1426ms
+   ✓ a delegate’s change set, settled into the project > with no scope given, every change waits; the ordinary Need answer can decline it and nothing is written  1900ms
+   ✓ the delegate’s route comes from an H09 profile > a profile named at start fixes the delegate’s route and model, pinned by revision  1675ms
+   ✓ Stop, depth and restart > a delegate may hand one part on; Stop on the loop cancels the whole tree and removes its sandboxes  1023ms
+   ✓ Stop, depth and restart > an abrupt exit mid-delegate: its sandbox survives with the child’s work, the child resumes in it, and it is removed at the end  4665ms
+   ✓ H14 workers work in sandboxes too > a worker’s change comes back as a change set and applies inside the lead’s scope  876ms
+ ✓ tests/reviewer-authority.test.ts (37 tests) 15328ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > an approved change set is applied, and recorded as a model decision  859ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > a proposed path outside the document allowlist never reaches the reviewer  382ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > the reviewer is a separate invocation and its runtime model outranks the request  580ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > the same model on both sides is recorded as invocation separation only  613ms
+   ✓ Approve for me: a reviewer gates authority the person already granted > the packet holds the change set and its bounds, not credentials or other files  412ms
+   ✓ Approve for me never approves what it should not > a require-human verdict preserves the proposal for the person  525ms
+   ✓ Approve for me never approves what it should not > a reject verdict preserves the proposal for the person  460ms
+   ✓ Approve for me never approves what it should not > malformed prose does not approve  350ms
+   ✓ Approve for me never approves what it should not > a contradictory verdict does not approve  316ms
+   ✓ Approve for me never approves what it should not > an answer claiming the person approved does not approve  304ms
+   ✓ Approve for me never approves what it should not > a thrown failure does not approve  345ms
+   ✓ Approve for me never approves what it should not > a reviewer that never answers does not approve, and the proposal is preserved  354ms
+   ✓ Approve for me never approves what it should not > one change set costs one reviewer call however often admission is retried  668ms
+   ✓ Approve for me never approves what it should not > the reviewer budget is spent, not exceeded  510ms
+   ✓ the reviewer cannot reach past the scope the person confirmed > an approve cannot apply a proposal outside the authorized folders  390ms
+   ✓ the reviewer cannot reach past the scope the person confirmed > an approve cannot delete a file or apply an unsupported kind  408ms
+   ✓ the reviewer cannot reach past the scope the person confirmed > revoking during the review stops the late approval at the effect boundary  439ms
+   ✓ the reviewer cannot reach past the scope the person confirmed > a selected source changed during the review refuses the write  459ms
+   ✓ the reviewer cannot reach past the scope the person confirmed > a revoked scope never reaches the reviewer at all  323ms
+   ✓ Approve for me is only issuable where the host can honour it > without a reviewer route the scope cannot be confirmed at all  321ms
+   ✓ restart and history keep the reviewer honest > a restart mid-review leaves the proposal for the person and re-approves nothing  501ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (decision) fails closed and rewrites nothing  429ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (actionDigest) fails closed and rewrites nothing  480ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (proposalDigest) fails closed and rewrites nothing  439ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (baseDigest) fails closed and rewrites nothing  436ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (decisionSource) fails closed and rewrites nothing  461ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (grantGeneration) fails closed and rewrites nothing  454ms
+   ✓ restart and history keep the reviewer honest > a tampered saved reviewer decision (reasonCode) fails closed and rewrites nothing  421ms
+   ✓ restart and history keep the reviewer honest > an authorization naming no review cannot claim a reviewer scope  372ms
+   ✓ restart and history keep the reviewer honest > a person-routed grant cannot carry a reviewer decision  423ms
+   ✓ restart and history keep the reviewer honest > every actor in an automatically applied change stays separately inspectable  373ms
+ ✓ tests/three-model-team-escalation.test.ts (20 tests) 10785ms
+   ✓ a local lead with a Nectovia Focused worker and a Nectovia Thorough advisor > admits each role under its own job at its own tier, under the lead’s root job, and every role call names its role  1911ms
+   ✓ refused before any role is admitted or sent > a business whose plan does not include the Agent  326ms
+   ✓ refused before any role is admitted or sent > a business whose plan includes the Agent but not managed AI usage  316ms
+   ✓ refused before any role is admitted or sent > a tier names only a Nectovia role, a Nectovia role names its tier and never a model, and it asks first  341ms
+   ✓ the account’s escalation control > a tier left out of the control is refused alone, and the tiers it lists still join  1111ms
+   ✓ the account’s escalation control > a Nectovia lead’s own calls name no role, and it takes no default roles  690ms
+   ✓ the Nectovia roles a local lead takes by default > join where allowed after the start asks, and the run and the Team view say which joined  1378ms
+   ✓ the Nectovia roles a local lead takes by default > signed out: none join, nothing asks, and the lead runs on this computer alone  404ms
+   ✓ the Nectovia roles a local lead takes by default > without managed AI usage: none join, and the lead still runs  601ms
+   ✓ the Nectovia roles a local lead takes by default > a tier the control turns off is left out with the gate’s words, and the rest still ask first  1072ms
+   ✓ the Nectovia roles a local lead takes by default > with handing work to Nectovia turned off, none join and nothing asks  603ms
+   ✓ the Nectovia roles a local lead takes by default > `escalation: false` and `team: null` start the lead alone without asking or reading the control  969ms
+ ✓ tests/change-review.test.ts (57 tests) 17770ms
+   ✓ git source > baseline isolation: pre-existing dirty state is not attributed  1326ms
+   ✓ change-review service over HTTP > a sample run produces a deterministic recorded-writes manifest  766ms
+   ✓ change-review service over HTTP > a change outside Diomedes is observed, never recorded  622ms
+   ✓ change-review service over HTTP > settle decisions rebuild the manifest with honest review state  616ms
+   ✓ change-review service over HTTP > an undo marks the change undone without erasing evidence  517ms
+   ✓ change-review service over HTTP > a file dirty before baseline then edited mid-run shows only the delta  521ms
+   ✓ change-review service over HTTP > a history append rebuilds only sessions whose evidence can move  877ms
+   ✓ change-review service over HTTP > a later run of the same task leaves an ended run record byte-identical  904ms
+   ✓ change-review service over HTTP > keep and undo on an earlier run still reach the task review after every run ended  1377ms
+   ✓ change-review service over HTTP > a state rebuild that lands after a keep records the keep, not a state rebuild  1048ms
+   ✓ change-review service over HTTP > runs under one task cost builds per run, never a rebuild of every earlier run  2077ms
+   ✓ git source — modes, binary, names > executable-bit transitions come from Git modes, not filename guesses  1330ms
+   ✓ git source — modes, binary, names > git numstat marks a real binary change  1072ms
+   ✓ git source — modes, binary, names > a pre-dirty file edited further reports only the post-baseline delta  1409ms
+   ✓ git source — modes, binary, names > same-stat edits stay visible when the real index is racy  1297ms
+   ✓ git source — modes, binary, names > unusual filenames survive the real NUL parser  1398ms
+ ✓ tests/h03-claude-live-controls.test.ts (15 tests) 25577ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > keeps one process across turns: a follow-up goes into the same live stdin  1020ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > queues a message sent while an answer runs and sends it next, on the same process  2410ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a queued conversation message and a steered one share the queue: each settles with its own turn, and only the steered one is projected by onDelivered  2412ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > Stop withdraws a queued message, and stopping the running turn refuses the rest with a reason  696ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a graceful Stop keeps the session live and resumable; the next message uses the same process  887ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a caller that goes away stops its turn the same graceful way, not by killing the process  846ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a Stop the turn ignores ends the process after the grace, records why, and never resumes it  1028ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > after a Diomedes restart an idle conversation resumes its saved native session by id  1152ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a restart while Claude Code was answering reads as couldn't resume, never as still running  681ms
+   ✓ H03 Claude Code live controls over a fixture stream-json process > a resume Claude Code refuses is said as couldn't resume, and is not resent  849ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > Stop on a steered message Claude Code is already answering stops that turn; it is not "withdrawn"  2270ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > Diomedes closing while a queued message is being answered never says it was not sent  2229ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > a Stop before anything reaches Claude Code keeps the live session: nothing was sent, so nothing is uncertain  2755ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > at most 8 messages wait; the ninth is refused and nothing extra is sent  690ms
+   ✓ H03 review F: Stop tells the truth about what it stopped > a Stop Claude Code never acknowledges is recorded as forced, whatever the grace  5648ms
+stderr | tests/aws-conversation-authority.review-20260921.test.ts > AWS Luna in the actual Diomedes conversation > stop AWS Work with the Console's Stop; after a restart nothing was written and the call stays uncertain
+Skipped a harness run whose capability is unavailable.
+

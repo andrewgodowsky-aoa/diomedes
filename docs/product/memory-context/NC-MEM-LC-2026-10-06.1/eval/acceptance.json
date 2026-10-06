@@ -1,0 +1,871 @@
+{
+  "package": "NC-MEM-LC-2026-10-06.1",
+  "status": "specified-not-run",
+  "count": 96,
+  "cases": [
+    {
+      "id": "M01",
+      "scenario": "New session asks for a saved preference.",
+      "expected": "Correct scoped recall with the original source.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M02",
+      "scenario": "User changes an earlier preference.",
+      "expected": "Old version inactive immediately; new version attributed correctly.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M03",
+      "scenario": "Future-dated SOP is received early.",
+      "expected": "Current and future rules remain distinct.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M04",
+      "scenario": "Historical question after a policy change.",
+      "expected": "Answer from the applicable past interval, with current-policy distinction.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M05",
+      "scenario": "Two locations share a supplier display name.",
+      "expected": "No entity merge without scoped identity evidence.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M06",
+      "scenario": "Two employees have the same name.",
+      "expected": "Retain ambiguity instead of borrowing another person's details.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M07",
+      "scenario": "Chef and GM ask unrelated questions in one organization.",
+      "expected": "Shared definitions reused; role-specific evidence remains restricted.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M08",
+      "scenario": "Department SOP conflicts with approved organization policy.",
+      "expected": "Apply declared policy precedence; surface unresolved factual conflict.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M09",
+      "scenario": "Older explicit source conflicts with newer model inference.",
+      "expected": "Do not automatically let recency replace authority.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M10",
+      "scenario": "Cached inventory says seven; current authorized record says two.",
+      "expected": "Use current qualified observation for the operational answer.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M11",
+      "scenario": "Digital inventory is current but physical inspection is required.",
+      "expected": "Do not claim shelf verification without the required observation.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M12",
+      "scenario": "A test/demo conversation reports a successful action.",
+      "expected": "Do not retain it as a real customer outcome.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M13",
+      "scenario": "Model says an order was placed but no tool receipt exists.",
+      "expected": "Preserve a claim or failure, not successful order history.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M14",
+      "scenario": "Provider times out after a possible tool effect.",
+      "expected": "Reconcile existing action state; do not replay blindly.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M15",
+      "scenario": "Ten summaries repeat one unsupported assertion.",
+      "expected": "Count one lineage, not ten independent confirmations.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M16",
+      "scenario": "First-sentence extract omits a later exception.",
+      "expected": "Original source is inspected before durable factual promotion.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M17",
+      "scenario": "One source underlying a summary is revoked.",
+      "expected": "Invalidate or restrict the derived result and its indexes.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M18",
+      "scenario": "User joins a shared session with private personal memory.",
+      "expected": "Do not expose unrelated personal context to the group.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M19",
+      "scenario": "User is removed mid-run.",
+      "expected": "No newly authorized inference or retrieval under obsolete membership.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M20",
+      "scenario": "Retained external-engine session contains revoked evidence.",
+      "expected": "Retire/sanitize the context; do not pretend future filtering erases history.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M21",
+      "scenario": "Vector candidate belongs to a different tenant.",
+      "expected": "Reject before reranking, prompt assembly, and telemetry.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M22",
+      "scenario": "Hidden graph node is reachable from a visible node.",
+      "expected": "No restricted title, count, edge, or body leakage.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M23",
+      "scenario": "Local-only evidence is selected for cloud consolidation.",
+      "expected": "Refuse the route or run an explicitly allowed local alternative.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M24",
+      "scenario": "Foreground provider is permitted but reranker is not.",
+      "expected": "Do not send the evidence to the reranker.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M25",
+      "scenario": "Imported note instructs the model to exfiltrate secrets.",
+      "expected": "Treat as untrusted data; no authority or effect follows.",
+      "owner": "W07",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M26",
+      "scenario": "Imported repository contains path escapes, symlinks, or hooks.",
+      "expected": "Reject unsafe ingestion; execute nothing.",
+      "owner": "W07",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M27",
+      "scenario": "Saved SQL no longer matches the schema.",
+      "expected": "Refuse/revalidate the procedure rather than invent a result.",
+      "owner": "W07",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M28",
+      "scenario": "Two agents propose incompatible updates concurrently.",
+      "expected": "Conflict group or stale-base refusal; no silent last-writer-wins fact.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M29",
+      "scenario": "Duplicate source events are delivered.",
+      "expected": "Idempotent record/effect; no extra evidential weight.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M30",
+      "scenario": "Crash occurs during memory commit.",
+      "expected": "Recover an atomic valid revision or report failure without partial promotion.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M31",
+      "scenario": "Desktop is off during a maintenance slot.",
+      "expected": "Record missed/deferred work; do not claim it ran.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M32",
+      "scenario": "Stop or budget exhaustion interrupts consolidation.",
+      "expected": "Stop safely; preserve explicit pending state and cost reconciliation.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M33",
+      "scenario": "User forgets a memory while extraction is queued.",
+      "expected": "Cancel/suppress reintroduction from the stale queued input.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M34",
+      "scenario": "Deleted fact remains in an export or backup.",
+      "expected": "Report the actual retention/export boundary; purge managed copies as specified.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M35",
+      "scenario": "Embedding model changes dimensions.",
+      "expected": "Version and rebuild the index; no mixed-space search.",
+      "owner": "W09",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M36",
+      "scenario": "A small model returns invalid extraction JSON.",
+      "expected": "Bounded repair/rejection; no partly trusted record written.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M37",
+      "scenario": "Memory service is temporarily unavailable.",
+      "expected": "Safe tasks degrade transparently; source-critical commitments require verification.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M38",
+      "scenario": "Evidence set exceeds the context budget.",
+      "expected": "Preserve complete critical units or report omission; never strip exceptions silently.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M39",
+      "scenario": "A memory citation names an ID never retrieved.",
+      "expected": "Reject that citation; do not fabricate an openable source.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M40",
+      "scenario": "A source contains a table with currencies, units, and dates.",
+      "expected": "Preserve row/column/units and use deterministic computation.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M41",
+      "scenario": "One-off emergency exception is repeatedly retold.",
+      "expected": "Do not convert it into a permanent company rule.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M42",
+      "scenario": "A formerly true negative (“not approved”) changes.",
+      "expected": "Update the correct temporal/status claim without preserving obsolete negation as current.",
+      "owner": "W01",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M43",
+      "scenario": "Account/organization ownership transfers.",
+      "expected": "Retain organization data under current authority, not the original founder's identity.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M44",
+      "scenario": "An obsolete app restores a cached memory snapshot.",
+      "expected": "Honor newer revocations/deletions; refuse unsupported schema versions.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M45",
+      "scenario": "Provider/engine changes while continuing a task.",
+      "expected": "Preserve portable evidence and restrictions; handle native transcript limits explicitly.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M46",
+      "scenario": "A customer-specific pattern looks reusable globally.",
+      "expected": "No automatic cross-tenant copying or model training.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M47",
+      "scenario": "A learned procedure would expand file/network access.",
+      "expected": "Existing Trust denies expansion; approval is a separate authoritative action.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "M48",
+      "scenario": "Analytics/replay is enabled while viewing memory.",
+      "expected": "Sensitive content is excluded from default telemetry and screen capture.",
+      "owner": "W10",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "first-pass-preserved"
+    },
+    {
+      "id": "L01",
+      "scenario": "Declared native context is much larger than current application request guard.",
+      "expected": "Record both constraints; no oversized request is admitted by deleting or confusing the guard.",
+      "owner": "W00",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L02",
+      "scenario": "Critical correction follows an initially positive sentence.",
+      "expected": "Retain the exact correction or rehydrate the complete source; do not retain the contradicted opening as an operative fact.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L03",
+      "scenario": "Critical constraint is at beginning, middle and end of otherwise identical histories.",
+      "expected": "Every layout preserves the exact constraint through selection and rollover; model scores are measured separately.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L04",
+      "scenario": "Unicode, code, tool schemas and JSON escaping produce very different token/byte ratios.",
+      "expected": "Use separate byte/serialization and token constraints; estimate quality is labeled and never treated as exact.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L05",
+      "scenario": "Large image or audio attachment accompanies short text.",
+      "expected": "Admit only with known bounded modality/protocol reserve or a declared unsupported/segmented path.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L06",
+      "scenario": "The next tool result alone would cross remaining input room.",
+      "expected": "Page/limit the tool response or compact beforehand; never emit an invalid oversized next request.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L07",
+      "scenario": "Output/reasoning reserve leaves no room for mandatory constraints.",
+      "expected": "Refuse/segment visibly; do not silently discard instructions or assume full native window is input.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L08",
+      "scenario": "Twenty context rollovers process a hundred-step task.",
+      "expected": "Exact goal/checks/constraints and verified progress references survive; no duplicate external effect.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L09",
+      "scenario": "Crash after compaction candidate but before commit.",
+      "expected": "Reconcile the same intent and expected revision; no double charge by blind retry or partial capsule activation.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L10",
+      "scenario": "User correction arrives while summarizer is working.",
+      "expected": "Reject stale candidate by source/record revision, keep new correction and rebuild only an eligible snapshot.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L11",
+      "scenario": "Forget or membership revocation arrives while summarizer is working.",
+      "expected": "Reject candidate under old epochs and prevent its text from reentering active context or caches.",
+      "owner": "W02",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L12",
+      "scenario": "Provider returns a null or malformed compaction block.",
+      "expected": "Retain last valid context, record failure, bound retries and do not report successful compaction.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L13",
+      "scenario": "Standalone provider compaction returns retained messages plus opaque state.",
+      "expected": "Preserve the complete required returned window in that adapter, not only the encrypted item.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L14",
+      "scenario": "A task changes provider after a native compaction.",
+      "expected": "Rebuild from portable permitted evidence and capsule; do not transfer opaque state or silently change payer.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L15",
+      "scenario": "Compaction iterations are absent from top-level usage totals.",
+      "expected": "Account each sampling iteration exactly once through existing funding and preserve unknowns.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L16",
+      "scenario": "Top-level usage and per-iteration usage describe overlapping message costs.",
+      "expected": "Avoid double counting while still including separate compaction costs; fixture totals match independently computed gold.",
+      "owner": "W06",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L17",
+      "scenario": "Compaction boundary splits tool call and result.",
+      "expected": "Preserve protocol-complete pairs or an adapter-approved summarized boundary; never replay a result under another call ID.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L18",
+      "scenario": "An effect is uncertain before context rollover.",
+      "expected": "Carry the authoritative reconciliation reference; never turn uncertainty into success or issue a new effect blindly.",
+      "owner": "W04",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L19",
+      "scenario": "Task asks to reconcile every invoice but top-k retrieves only a few.",
+      "expected": "Select exhaustive coverage or disclose inability; never call the top-k answer complete.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L20",
+      "scenario": "Source API has unknown total count and a paginated end marker.",
+      "expected": "Keep coverage unknown/partial until eligible end-of-stream is observed and recorded.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L21",
+      "scenario": "Overlapping partitions contain duplicate business records.",
+      "expected": "Deduplicate by canonical identity/version and prove each record enters the deterministic reducer once.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L22",
+      "scenario": "Source changes revision halfway through a scan.",
+      "expected": "Invalidate/reconcile affected partitions or report observation intervals; no false consistent-snapshot claim.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L23",
+      "scenario": "A permission-restricted partition exists in a source manifest.",
+      "expected": "Do not expose its title/count/content; define coverage only over eligible scope and disclose generic limitations safely.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L24",
+      "scenario": "Crash and resume after most partitions were reduced.",
+      "expected": "Resume the existing frontier and stable reducer state; no double counting and no lost acknowledged partition.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L25",
+      "scenario": "Several documents require joint reasoning across split exceptions and definitions.",
+      "expected": "Rehydrate connected original evidence or escalate within permitted policy; summaries alone are not accepted as full support.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L26",
+      "scenario": "A table split separates its headers, currency and unit conversions.",
+      "expected": "Preserve structure and use deterministic computation with explicit conversion sources; otherwise report missing data.",
+      "owner": "W05",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L27",
+      "scenario": "Automatic host recall and a later explicit search find the same memory.",
+      "expected": "Deduplicate context evidence while preserving independent source support and stable receipt identities.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L28",
+      "scenario": "A cache key lacks visibility/deletion generation after access changes.",
+      "expected": "Mutation test fails; corrected implementation cannot serve the old prepared body or hidden metadata.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L29",
+      "scenario": "Inspection opens an old memory receipt after source access was revoked.",
+      "expected": "Receipt remains auditable as permitted but restricted body/source metadata is not disclosed to an unauthorized reader.",
+      "owner": "W03",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L30",
+      "scenario": "AMR export omits private records but their titles survive in wikilinks or index.",
+      "expected": "Remove or safely rewrite unauthorized links and metadata; no hidden-node discovery.",
+      "owner": "W07",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L31",
+      "scenario": "External AMR edit claims an administrator approved a permission.",
+      "expected": "Import only as untrusted content candidate; no grant or live policy changes.",
+      "owner": "W07",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L32",
+      "scenario": "Repeated summaries all derive from one hallucinated original claim.",
+      "expected": "Preserve one lineage, do not create independent confirmation, and reject self-support cycles.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L33",
+      "scenario": "Foreground task and local memory-maintenance model contend for RAM/VRAM.",
+      "expected": "Yield/cancel maintenance through existing resource ownership; do not load a second large model by default.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L34",
+      "scenario": "Maintenance slot occurs when desktop is asleep or offline.",
+      "expected": "Record missed/deferred work; no success claim, automatic cloud disclosure or unauthorized host takeover.",
+      "owner": "W08",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L35",
+      "scenario": "Embedding model changes but final reader does not.",
+      "expected": "Build and validate a new index generation before cutover; preserve compatible exact/text recall during rebuilding.",
+      "owner": "W09",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L36",
+      "scenario": "Final reader model changes but embedding space does not.",
+      "expected": "Reuse eligible indexes; requalify context/serializer profile rather than re-embed without reason.",
+      "owner": "W09",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L37",
+      "scenario": "Wrong-tenant candidate enters approximate-nearest-neighbor output.",
+      "expected": "Filter before any reranking/prompt/visible score; never leak content into a remote reranker.",
+      "owner": "W09",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L38",
+      "scenario": "Evaluator supplies future questions or gold evidence IDs during indexing.",
+      "expected": "Reject evaluation configuration as leakage; index chronological content without answer labels.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L39",
+      "scenario": "Full-context baseline cannot fit the corpus in a route.",
+      "expected": "Mark unsupported at that size; do not truncate invisibly and call it a full-context baseline.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L40",
+      "scenario": "Abstention cases are absent from an upstream retrieval metric.",
+      "expected": "Retain them in end-to-end correctness/calibration and state each metric denominator.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L41",
+      "scenario": "A memory method answers fewer questions but looks more accurate.",
+      "expected": "Report answer coverage, abstention and paired utility together; prevent refusal-only leaderboard inflation.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L42",
+      "scenario": "Indexing is expensive but final-answer calls are cheap.",
+      "expected": "Report amortized and cold-start all-in costs with extraction/embedding/compaction and storage, not answer cost alone.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L43",
+      "scenario": "User grants full filesystem access but no durable indexing consent.",
+      "expected": "Do not automatically ingest or retain files; source selection and retention/egress controls remain separate.",
+      "owner": "W10",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L44",
+      "scenario": "Local-only workspace enables a cloud-based token counter or reranker.",
+      "expected": "Refuse unapproved content transmission including counting requests; use an allowed local alternative or bounded refusal.",
+      "owner": "W10",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L45",
+      "scenario": "Opt-in rollout is disabled while capture jobs and user reads are active.",
+      "expected": "Stop new maintenance/capture safely and preserve authorized manual inspection; no destructive implicit purge.",
+      "owner": "W10",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L46",
+      "scenario": "Windows and macOS use different path case, locks or SQLite binaries.",
+      "expected": "Qualify both actual packaged platforms; Linux fixtures do not count as Windows/macOS proof.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L47",
+      "scenario": "An external engine ignores the offered memory delivery mechanism.",
+      "expected": "Mark delivery unverified/unsupported and do not claim receipt-equivalent behavior from configuration alone.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "integration",
+      "origin": "second-pass"
+    },
+    {
+      "id": "L48",
+      "scenario": "A procedure learned at one company is unsafe in another or assumes a missing capability.",
+      "expected": "Use environment/scope-specific preconditions and fresh rehearsal; do not transfer an inferred workaround globally.",
+      "owner": "W11",
+      "status": "specified-not-run",
+      "layer": "model-evaluation",
+      "origin": "second-pass"
+    }
+  ]
+}

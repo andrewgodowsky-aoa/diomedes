@@ -1,0 +1,12 @@
+{
+  "command": ["node_modules/.bin/tsc.cmd", "--noEmit"],
+  "cwd": "F:/Diomedes/diomedes-wt/memory-context-contracts",
+  "base": "c02ddac80a48e2ee247d72d6e172ad754e2c1286",
+  "exitCode": 0,
+  "log": "tsc-final.log",
+  "evidenceSource": "Parent exec session 18200 completed with exit_code 0, tool chunk f38441",
+  "earlierAttempt": { "exitCode": 2, "log": "tsc.log", "reason": "Control-plane dependency junction absent; reused existing matching-lockfile install and reran without source changes" },
+  "dependenciesInstalled": false,
+  "mainLockfileSha256": "6c14ddc8717633ee67bd536efccb01a58a6aef2c3398fa139452360c5152a41a",
+  "controlPlaneLockfileSha256": "ac0e6e79bc6909be5eb86e69ec2245c1a5ae3744f77970e878ff0b2b15e4f40e"
+}
