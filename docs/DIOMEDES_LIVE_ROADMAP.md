@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-10-05.1
+Roadmap version: 2026-10-06.1
 Last reconciled: engine and provider checkpoint below
 Product: Nectovia (named Diomedes until 2026-09-22)
 Company direction: Diomedes Systems
@@ -12,6 +12,8 @@ Engine and provider checkpoint
 Connected native engines follow their current installations and authenticated model catalogues. Vendor version equality is not an admission gate. Recheck capabilities, account, isolation and artifact identity after updates; refresh model and reasoning choices in the app. A failed check withdraws stale choices and does not silently select a different model or payer.
 
 Free accounts may update task boards manually and use eligible direct connected engines. Nectovia Agent execution, including Board supervision, requires a paid Nectovia entitlement regardless of subscription, ACP, API or local inference. Since 2026-10-05 a person with no plan may also use it for conversations and tasks they start in their own Personal work, while credits they bought last. Managed calls retain the account tier's allowance and company spending ceiling. This preserves the Individual and Business definitions below.
+
+Since 2026-10-06 (Pillar 07 amendment 2026-10-06.1) a person may choose to prefer an eligible connected subscription for supported work in their own authorized scope, on their own computer, and only through that engine's own coding tool. Connecting one never turns the preference on, a subscription never funds pooled or shared organization work, and a worker's subscription usage debits no Nectovia credits. The subscription and external workers that use it stay off by default (`DIOMEDES_SUBSCRIPTION_WORKERS`, `DIOMEDES_EXTERNAL_WORKERS`) until their fresh review (DIO-180); switching them on is its own change.
 
 Andrew selected GPT-5.6 Luna temporarily for the managed AWS route while GPT-6 access is unresolved. Both Luna models still reject this account after activation. A tiny Haiku control returned BEDROCK_OK through the same existing AWS key, with 14 input and 8 output tokens and thinking disabled. That proves Anthropic connectivity only; it does not qualify Luna or change the production Agent model. AWS case 179055771300245 contains the evidence.
 
