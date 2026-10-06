@@ -1,0 +1,131 @@
+vite v7.3.6 building client environment for production...
+transforming...
+../nectovia-reskin-home-thread/node_modules/zod/v4/core/util.js (330:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "../nectovia-reskin-home-thread/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../nectovia-reskin-home-thread/node_modules/zod/v4/core/regexes.js (70:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "../nectovia-reskin-home-thread/node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+Γ£ô 2595 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/inventory.html                                                    0.86 kB Γöé gzip:   0.45 kB
+dist/index.html                                                        1.02 kB Γöé gzip:   0.50 kB
+dist/assets/ibm-plex-mono-vietnamese-500-normal-C8zxqsMH.woff          5.62 kB
+dist/assets/ibm-plex-mono-vietnamese-400-normal-DDuiU_S-.woff          5.62 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BIfNGwUT.woff        5.77 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-DMdlQ8Kv.woff        5.82 kB
+dist/assets/ibm-plex-mono-vietnamese-400-normal-BulugwFq.woff2         5.87 kB
+dist/assets/ibm-plex-mono-vietnamese-500-normal-DZ4AoWbu.woff2         6.04 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-xuaO2J-f.woff2       6.91 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BqneJy0T.woff2       6.97 kB
+dist/assets/ibm-plex-mono-cyrillic-400-normal-CEL4l2ZJ.woff            7.20 kB
+dist/assets/ibm-plex-mono-cyrillic-500-normal-Ael50iVv.woff            7.21 kB
+dist/assets/ibm-plex-mono-cyrillic-400-normal-BSMlKf0J.woff2           8.36 kB
+dist/assets/ibm-plex-mono-cyrillic-500-normal-Bq9vWWag.woff2           8.46 kB
+dist/assets/schibsted-grotesk-latin-ext-400-normal-DHVTfbSM.woff2     11.50 kB
+dist/assets/schibsted-grotesk-latin-ext-500-normal-Ch1izu81.woff2     11.66 kB
+dist/assets/schibsted-grotesk-latin-ext-600-normal-C5pQPdUJ.woff2     11.73 kB
+dist/assets/ibm-plex-mono-latin-ext-400-normal-D3D2R8hC.woff          11.77 kB
+dist/assets/ibm-plex-mono-latin-ext-500-normal-CZ70TYgx.woff          11.77 kB
+dist/assets/schibsted-grotesk-latin-ext-400-italic--tbUVzxy.woff2     12.07 kB
+dist/assets/instrument-serif-latin-ext-400-italic-C9HzH3YL.woff2      12.38 kB
+dist/assets/ibm-plex-mono-latin-400-normal-CvHOgSBP.woff              13.14 kB
+dist/assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff              13.16 kB
+dist/assets/ibm-plex-mono-latin-ext-400-normal-BmRBH3aV.woff2         13.35 kB
+dist/assets/ibm-plex-mono-latin-ext-500-normal-CAhNIIs5.woff2         13.43 kB
+dist/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2             14.71 kB
+dist/assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2             14.89 kB
+dist/assets/schibsted-grotesk-latin-ext-400-normal-DUPvg9bQ.woff      15.36 kB
+dist/assets/schibsted-grotesk-latin-ext-500-normal-BjmYCtCC.woff      15.65 kB
+dist/assets/schibsted-grotesk-latin-ext-600-normal-DQsnXf5q.woff      15.66 kB
+dist/assets/schibsted-grotesk-latin-ext-400-italic-BdPkgrIu.woff      15.98 kB
+dist/assets/instrument-serif-latin-400-italic-DKMiL14s.woff2          22.13 kB
+dist/assets/schibsted-grotesk-latin-400-normal-DPhJBilQ.woff2         24.34 kB
+dist/assets/schibsted-grotesk-latin-600-normal-Czv9Obfv.woff2         25.18 kB
+dist/assets/schibsted-grotesk-latin-500-normal-rf9C4Thp.woff2         25.22 kB
+dist/assets/schibsted-grotesk-latin-400-italic-B2CqrFvO.woff2         25.54 kB
+dist/assets/schibsted-grotesk-latin-400-normal-BkiRe4WW.woff          29.93 kB
+dist/assets/schibsted-grotesk-latin-500-normal-Ba39e-CX.woff          30.80 kB
+dist/assets/schibsted-grotesk-latin-600-normal-BieE9YjJ.woff          30.88 kB
+dist/assets/schibsted-grotesk-latin-400-italic-CoqBDaJf.woff          31.48 kB
+dist/assets/nectovia-bust-A-840x898-CuTZqTGn.webp                     56.32 kB
+dist/assets/nectovia-bust-B-840x898-RwLsYAkF.webp                     61.63 kB
+dist/assets/inventory-E7_0tfs6.css                                     2.47 kB Γöé gzip:   0.90 kB
+dist/assets/ErrorBoundary-rcH3zlLo.css                                 3.65 kB Γöé gzip:   0.73 kB
+dist/assets/app-DXFSpnVv.css                                         287.08 kB Γöé gzip:  47.83 kB
+dist/assets/channel-Bn8ZnPwn.js                                        0.12 kB Γöé gzip:   0.13 kB
+dist/assets/init-Gi6I4Gst.js                                           0.15 kB Γöé gzip:   0.13 kB
+dist/assets/chunk-2Q5K7J3B-BDdjVucH.js                                 0.19 kB Γöé gzip:   0.16 kB
+dist/assets/chunk-JWPE2WC7-NhhkwPAC.js                                 0.23 kB Γöé gzip:   0.17 kB
+dist/assets/chunk-XXDRQBXY-6lcldjJl.js                                 0.23 kB Γöé gzip:   0.21 kB
+dist/assets/chunk-5VM5RSS4-Bu4sPanJ.js                                 0.37 kB Γöé gzip:   0.27 kB
+dist/assets/stateDiagram-v2-MP3YSRHH-BZ3vy2j-.js                       0.46 kB Γöé gzip:   0.32 kB
+dist/assets/classDiagram-ZZMXUADV-nBUVteJf.js                          0.50 kB Γöé gzip:   0.34 kB
+dist/assets/classDiagram-v2-VYDZK3BY-nBUVteJf.js                       0.50 kB Γöé gzip:   0.34 kB
+dist/assets/chunk-POPQ4Y6H-Dkwrf9N1.js                                 0.51 kB Γöé gzip:   0.36 kB
+dist/assets/swimlanesDiagram-VR7AAH4N-kN3AazOr.js                      0.58 kB Γöé gzip:   0.39 kB
+dist/assets/infoDiagram-27XIBGKW-Cyhze3fE.js                           0.62 kB Γöé gzip:   0.42 kB
+dist/assets/sizeCapture-INFHLROL-DHfR4TbS.js                           0.97 kB Γöé gzip:   0.55 kB
+dist/assets/ordinal-Cboi1Yqb.js                                        1.19 kB Γöé gzip:   0.57 kB
+dist/assets/railroadDiagram-O6MQD6OU-CjGM-_1C.js                       1.64 kB Γöé gzip:   0.78 kB
+dist/assets/abnfDiagram-VCTEODGH-Rd46BYFa.js                           1.84 kB Γöé gzip:   0.91 kB
+dist/assets/chunk-F27PBJKO-6Uo55goV.js                                 1.88 kB Γöé gzip:   0.83 kB
+dist/assets/pegDiagram-XKGWAZYB-CJMAt-Xv.js                            1.99 kB Γöé gzip:   0.94 kB
+dist/assets/ebnfDiagram-PWID7BFC-DGqeIko5.js                           2.04 kB Γöé gzip:   0.90 kB
+dist/assets/arc-DKf9jC8p.js                                            3.44 kB Γöé gzip:   1.49 kB
+dist/assets/diagram-Z3DM3KII-CttaCOHw.js                               4.25 kB Γöé gzip:   1.85 kB
+dist/assets/defaultLocale-DX6XiGOO.js                                  4.69 kB Γöé gzip:   2.18 kB
+dist/assets/linear-Dq_9Fx5y.js                                         5.66 kB Γöé gzip:   2.31 kB
+dist/assets/diagram-UQ7AKVKN-C411txzb.js                               6.11 kB Γöé gzip:   2.64 kB
+dist/assets/pieDiagram-E7YTZNPT-CsaaqctE.js                            6.33 kB Γöé gzip:   2.64 kB
+dist/assets/diagram-S7CK7UJ4-EucDX0l-.js                               8.25 kB Γöé gzip:   3.69 kB
+dist/assets/cynefinDiagram-5FMLGOSQ-D-XqofcO.js                       10.13 kB Γöé gzip:   3.65 kB
+dist/assets/stateDiagram-D77RDMKH-CJKEsap3.js                         10.40 kB Γöé gzip:   3.64 kB
+dist/assets/dagre-GXQ25YYZ-GDwishE3.js                                10.71 kB Γöé gzip:   4.05 kB
+dist/assets/diagram-VSXAHHWV-CbEkV3lJ.js                              10.75 kB Γöé gzip:   4.15 kB
+dist/assets/chunk-SVP7TREG-DjxyWocS.js                                15.74 kB Γöé gzip:   4.41 kB
+dist/assets/diagram-VX7I27RA-hQh-PwN-.js                              15.99 kB Γöé gzip:   5.72 kB
+dist/assets/inventory-D7ldX7T1.js                                     16.57 kB Γöé gzip:   5.72 kB
+dist/assets/ishikawaDiagram-5VMMS53U-Ce8SaRNA.js                      17.50 kB Γöé gzip:   6.66 kB
+dist/assets/kanban-definition-UXKFOSKX-22-al3l1.js                    20.33 kB Γöé gzip:   7.22 kB
+dist/assets/mindmap-definition-YA3MSWOX-0XTp8bj-.js                   23.21 kB Γöé gzip:   7.84 kB
+dist/assets/sankeyDiagram-P5KCCOFB-1PX0rUZ8.js                        23.23 kB Γöé gzip:   8.58 kB
+dist/assets/journeyDiagram-3NMN7TZE-B6CsnHWu.js                       23.61 kB Γöé gzip:   8.36 kB
+dist/assets/wardleyDiagram-VM6X3IG4-BqGmH9pU.js                       25.54 kB Γöé gzip:   6.81 kB
+dist/assets/gitGraphDiagram-WWUBYQGX-DTGIAAfs.js                      29.45 kB Γöé gzip:   8.72 kB
+dist/assets/erDiagram-RLTQ6QDP-DmT3zPn5.js                            30.82 kB Γöé gzip:  10.61 kB
+dist/assets/timeline-definition-24CTP7MA-BEtbYWTw.js                  30.86 kB Γöé gzip:  10.17 kB
+dist/assets/requirementDiagram-BXWQKSXE-CsYYFGFi.js                   31.03 kB Γöé gzip:   9.75 kB
+dist/assets/quadrantDiagram-AXDQQJYC-C_tcmSKd.js                      34.04 kB Γöé gzip:  10.00 kB
+dist/assets/layout-QPEDKL4U.js                                        35.44 kB Γöé gzip:  12.75 kB
+dist/assets/chunk-IMKFNOWR-DTcys9EZ.js                                38.08 kB Γöé gzip:  12.51 kB
+dist/assets/blockDiagram-I7D4REHJ-BQEuPIA_.js                         41.79 kB Γöé gzip:  13.60 kB
+dist/assets/vennDiagram-4TSXK5OY-rktPbwxU.js                          42.00 kB Γöé gzip:  15.72 kB
+dist/assets/xychartDiagram-S5SC5T6Z-Bosmsqjg.js                       44.54 kB Γöé gzip:  12.63 kB
+dist/assets/chunk-TICWLB2K-SVYRwYvA.js                                49.18 kB Γöé gzip:  15.74 kB
+dist/assets/flowDiagram-HODETNUW-BN5T3oBN.js                          61.85 kB Γöé gzip:  19.87 kB
+dist/assets/c4Diagram-7LVT6UL2-ByYEN0fe.js                            65.51 kB Γöé gzip:  18.80 kB
+dist/assets/ganttDiagram-EL5Y4UJY-QOVSnTev.js                         69.73 kB Γöé gzip:  23.58 kB
+dist/assets/cose-bilkent-JH36ORCC-ULmiu5oj.js                         81.74 kB Γöé gzip:  22.50 kB
+dist/assets/swimlanes-42K2YHIH-CiT6J1jv.js                           115.83 kB Γöé gzip:  42.54 kB
+dist/assets/sequenceDiagram-WJ2MYXX4-D_L_RRyd.js                     117.00 kB Γöé gzip:  31.16 kB
+dist/assets/architectureDiagram-5GKGNRK7-Dh_RTMol.js                 151.86 kB Γöé gzip:  43.17 kB
+dist/assets/katex-HP8lGamR.js                                        261.31 kB Γöé gzip:  77.57 kB
+dist/assets/ErrorBoundary-F73raIG3.js                                286.34 kB Γöé gzip:  86.75 kB
+dist/assets/cytoscape.esm-BB4DxJjf.js                                443.04 kB Γöé gzip: 141.98 kB
+dist/assets/mermaid.core-BRQlwgFm.js                                 683.05 kB Γöé gzip: 169.06 kB
+dist/assets/cynefin-OW5HDTMX-DaAElzqE.js                             687.91 kB Γöé gzip: 154.14 kB
+dist/assets/app-B8rFZ62j.js                                        1,160.28 kB Γöé gzip: 355.53 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+Γ£ô built in 10.23s

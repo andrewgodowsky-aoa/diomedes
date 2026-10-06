@@ -1,0 +1,761 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nectovia:memory-context:records:1",
+  "title": "Proposed Nectovia memory/context records, not authorization",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/MemoryRecord"
+    },
+    {
+      "$ref": "#/$defs/ContinuationCapsule"
+    },
+    {
+      "$ref": "#/$defs/MemoryUseReceipt"
+    },
+    {
+      "$ref": "#/$defs/CoveragePlan"
+    },
+    {
+      "$ref": "#/$defs/MemoryProposal"
+    }
+  ],
+  "$defs": {
+    "SourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "sourceType": {
+          "enum": [
+            "message",
+            "file",
+            "connector",
+            "tool-observation"
+          ]
+        },
+        "contentSha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "accessPolicyRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "restrictionsRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "sourceId",
+        "revision",
+        "locator",
+        "sourceType",
+        "contentSha256",
+        "observedAt",
+        "accessPolicyRef",
+        "restrictionsRef"
+      ]
+    },
+    "MemoryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recordType": {
+          "const": "memory"
+        },
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "accessEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "enum": [
+            "fact",
+            "preference",
+            "episode",
+            "procedure-candidate"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "lifecycle": {
+          "enum": [
+            "candidate",
+            "active",
+            "superseded",
+            "retracted"
+          ]
+        },
+        "epistemic": {
+          "enum": [
+            "asserted",
+            "source-supported",
+            "live-verified",
+            "inferred"
+          ]
+        },
+        "scopeRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "restrictionsRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 256
+        },
+        "validFrom": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "validTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 256
+        },
+        "retentionClass": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "recordType",
+        "v",
+        "id",
+        "revision",
+        "tenantId",
+        "workspaceId",
+        "accessEpoch",
+        "deletionEpoch",
+        "createdAt",
+        "kind",
+        "body",
+        "lifecycle",
+        "epistemic",
+        "scopeRef",
+        "restrictionsRef",
+        "sources",
+        "validFrom",
+        "validTo",
+        "dependencies",
+        "retentionClass"
+      ]
+    },
+    "ContinuationCapsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recordType": {
+          "const": "capsule"
+        },
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "accessEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceSnapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/SourceRef"
+                },
+                "maxItems": 256
+              }
+            },
+            "required": [
+              "text",
+              "sources"
+            ]
+          },
+          "maxItems": 64
+        },
+        "runtimeStateRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 256
+        },
+        "memoryRevisionRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 256
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "maxItems": 64
+        },
+        "nextIntentions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "maxItems": 32
+        },
+        "coverageRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 256
+        },
+        "previousRevision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "continuationIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "recordType",
+        "v",
+        "id",
+        "revision",
+        "tenantId",
+        "workspaceId",
+        "accessEpoch",
+        "deletionEpoch",
+        "createdAt",
+        "taskId",
+        "runId",
+        "sourceSnapshotId",
+        "goal",
+        "constraints",
+        "runtimeStateRefs",
+        "memoryRevisionRefs",
+        "openQuestions",
+        "nextIntentions",
+        "coverageRefs",
+        "previousRevision",
+        "continuationIndex"
+      ]
+    },
+    "MemoryUseReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recordType": {
+          "const": "memory-use"
+        },
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "accessEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "stepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceSnapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "memoryRevisionRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 256
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 256
+        },
+        "compilerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "renderedSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "tokenCountQuality": {
+          "enum": [
+            "estimated",
+            "local-tokenizer",
+            "provider-counted",
+            "unknown"
+          ]
+        },
+        "estimatedTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reportedTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "ref",
+              "reason"
+            ]
+          },
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "recordType",
+        "v",
+        "id",
+        "revision",
+        "tenantId",
+        "workspaceId",
+        "accessEpoch",
+        "deletionEpoch",
+        "createdAt",
+        "runId",
+        "stepId",
+        "sourceSnapshotId",
+        "memoryRevisionRefs",
+        "sources",
+        "compilerVersion",
+        "renderedSha256",
+        "tokenCountQuality",
+        "estimatedTokens",
+        "reportedTokens",
+        "omissions"
+      ]
+    },
+    "CoveragePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recordType": {
+          "const": "coverage"
+        },
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "accessEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceSnapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "mode": {
+          "enum": [
+            "point",
+            "contextual",
+            "document",
+            "exhaustive"
+          ]
+        },
+        "expectedItems": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "completedItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "unknown",
+            "partial",
+            "complete",
+            "invalidated"
+          ]
+        },
+        "partitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "sourceRevision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 512
+              },
+              "state": {
+                "enum": [
+                  "pending",
+                  "running",
+                  "verified",
+                  "failed",
+                  "invalidated"
+                ]
+              },
+              "resultSha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "recordIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "maxItems": 10000
+              }
+            },
+            "required": [
+              "id",
+              "sourceRevision",
+              "state",
+              "resultSha256",
+              "recordIds"
+            ]
+          },
+          "maxItems": 4096
+        },
+        "reducerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "recordType",
+        "v",
+        "id",
+        "revision",
+        "tenantId",
+        "workspaceId",
+        "accessEpoch",
+        "deletionEpoch",
+        "createdAt",
+        "taskId",
+        "runId",
+        "sourceSnapshotId",
+        "mode",
+        "expectedItems",
+        "completedItems",
+        "status",
+        "partitions",
+        "reducerVersion"
+      ]
+    },
+    "MemoryProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "preference",
+            "episode",
+            "procedure-candidate"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "sourceLocators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "locator": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "sourceId",
+              "locator"
+            ]
+          },
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "kind",
+        "body",
+        "sourceLocators"
+      ]
+    }
+  }
+}

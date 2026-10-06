@@ -1,0 +1,150 @@
+{
+  "package": "NC-MEM-LC-2026-10-06.1",
+  "source_commit": "cb2e756257de92a6091659200213cdcb79829700",
+  "drive_folder": "https://drive.google.com/drive/folders/1EiGGIuCgG6RSv397z8Rq1MQDUDFdLYMv",
+  "linear_epic": {
+    "id": "DIO-226",
+    "url": "https://linear.app/diomedesdevs/issue/DIO-226/nc-mem-lc-governed-memory-and-reliable-long-context-execution"
+  },
+  "notion_pages": [
+    {
+      "id": "3f192213-bac9-81e0-b69c-ffeab65df50c",
+      "kind": "feature",
+      "url": "https://app.notion.com/p/3f192213bac981e0b69cffeab65df50c?pvs=204"
+    },
+    {
+      "id": "3f192213-bac9-81ed-9ff9-c877ee7d300c",
+      "kind": "build-sequence",
+      "url": "https://app.notion.com/p/3f192213bac981ed9ff9c877ee7d300c?pvs=204"
+    },
+    {
+      "id": "3f192213-bac9-816a-9d67-cdd367a2c51d",
+      "kind": "risk-and-bug-context",
+      "url": "https://app.notion.com/p/3f192213bac9816a9d67cdd367a2c51d?pvs=204"
+    }
+  ],
+  "linear_work_items": [
+    {
+      "work_item": "W00",
+      "id": "DIO-227",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-227/nc-mem-lc-w00-reconcile-source-and-freeze-memorycontext-contracts"
+    },
+    {
+      "work_item": "W01",
+      "id": "DIO-228",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-228/nc-mem-lc-w01-versioned-memory-ledger-and-transactional-local"
+    },
+    {
+      "work_item": "W02",
+      "id": "DIO-229",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-229/nc-mem-lc-w02-evidence-scope-corrections-forgetting-and-managed-store"
+    },
+    {
+      "work_item": "W03",
+      "id": "DIO-230",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-230/nc-mem-lc-w03-native-recall-tools-and-immutable-memory-use-receipts"
+    },
+    {
+      "work_item": "W04",
+      "id": "DIO-231",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-231/nc-mem-lc-w04-h18-continuation-capsules-budgets-and-safe-context"
+    },
+    {
+      "work_item": "W05",
+      "id": "DIO-232",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-232/nc-mem-lc-w05-exhaustive-corpus-coverage-and-duplicate-safe"
+    },
+    {
+      "work_item": "W06",
+      "id": "DIO-233",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-233/nc-mem-lc-w06-engine-adapters-context-caching-and-complete-compaction"
+    },
+    {
+      "work_item": "W07",
+      "id": "DIO-234",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-234/nc-mem-lc-w07-agent-memory-repo-interoperability-and-scoped-plugin"
+    },
+    {
+      "work_item": "W08",
+      "id": "DIO-235",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-235/nc-mem-lc-w08-governed-capture-and-bounded-dreaming-maintenance"
+    },
+    {
+      "work_item": "W09",
+      "id": "DIO-236",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-236/nc-mem-lc-w09-temporal-relationships-and-measured-hybrid-retrieval"
+    },
+    {
+      "work_item": "W10",
+      "id": "DIO-237",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-237/nc-mem-lc-w10-console-memory-controls-observability-and-rollout"
+    },
+    {
+      "work_item": "W11",
+      "id": "DIO-238",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-238/nc-mem-lc-w11-full-memorycontext-evaluation-and-release-qualification"
+    }
+  ],
+  "linear_investigations": [
+    {
+      "id": "DIO-239",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-239/investigate-h18-first-sentence-compaction-dropping-later-corrections",
+      "status": "Backlog / Needs reproduction"
+    }
+  ],
+  "uploads": [
+    {
+      "path": "00_START_HERE.md",
+      "id": "19ALDX6QKUiZ6FLf-Y1nV5ukseoJ4qB_q",
+      "url": "https://drive.google.com/file/d/19ALDX6QKUiZ6FLf-Y1nV5ukseoJ4qB_q/view?usp=drivesdk",
+      "size": 8030,
+      "sha256": "2ac49da8d006ba8c9a2a7ffcf5b4464c4404c8df2af400be7dbe4c129aef67ab",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    },
+    {
+      "path": "prompts/00_OPUS_KICKOFF.md",
+      "id": "1w2TEMhF_nMLbyz7zBuRwrmYiVmJOlRah",
+      "url": "https://drive.google.com/file/d/1w2TEMhF_nMLbyz7zBuRwrmYiVmJOlRah/view?usp=drivesdk",
+      "size": 8874,
+      "sha256": "774fd00745793a4ee7968efff3e3b0170f23aa9140fd877ebf2dcbff1d7841d1",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    },
+    {
+      "path": "02_ARCHITECTURE_SPEC.md",
+      "id": "1AJARTbk4jn3ZNN5b853jyPF5yAQnzB4x",
+      "url": "https://drive.google.com/file/d/1AJARTbk4jn3ZNN5b853jyPF5yAQnzB4x/view?usp=drivesdk",
+      "size": 26268,
+      "sha256": "7d5008c22a667764eb49f026374f45313ca6ca5f9234a9d7fc3d1a4b630457d6",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    },
+    {
+      "path": "03_IMPLEMENTATION_PLAN.md",
+      "id": "1n1YkhJfgbLB7i_5YNPBtwLaVpHirxnOs",
+      "url": "https://drive.google.com/file/d/1n1YkhJfgbLB7i_5YNPBtwLaVpHirxnOs/view?usp=drivesdk",
+      "size": 31197,
+      "sha256": "98212496211758664944acb6506e546803463a28a4f629b25a1d2419f5679cda",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    },
+    {
+      "path": "01_RESEARCH_FINDINGS.md",
+      "id": "1O1qAZlePsXccavN9S46-OBXc_3mqJNFv",
+      "url": "https://drive.google.com/file/d/1O1qAZlePsXccavN9S46-OBXc_3mqJNFv/view?usp=drivesdk",
+      "size": 11452,
+      "sha256": "7129f630e878074b7882fe042b864c68583da17e48a8b611d820302b705c2375",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    },
+    {
+      "path": "04_ACCEPTANCE_MATRIX.md",
+      "id": "17-OgsGg2QDGK71N8mVs5a1vgtFzNMbHQ",
+      "url": "https://drive.google.com/file/d/17-OgsGg2QDGK71N8mVs5a1vgtFzNMbHQ/view?usp=drivesdk",
+      "size": 15737,
+      "sha256": "2a460a712ffec3f0ff3b9e9570b9d832c7e2a739665216aa502428757fd41d4a",
+      "status": "upload-succeeded; metadata readback pending at archive freeze"
+    }
+  ],
+  "status": "Tracking pages/issues created and standalone files uploaded; archive verification is in external upload receipt.",
+  "product_implementation": "not performed",
+  "product_tests": "not run",
+  "canonical_docs": "Proposed addendum only; existing canonical documents not overwritten; DIO-222 remains open",
+  "upload_receipt_note": "Final ZIP upload metadata is in the separately published UPLOAD_RECEIPT.json, to avoid a self-referential archive hash."
+}

@@ -1,0 +1,18 @@
+{
+  "kind": "runtime-capability-probe",
+  "driver": "node:sqlite",
+  "platform": "win32",
+  "arch": "x64",
+  "node": "24.20.0",
+  "electron": "44.2.0",
+  "sqlite": "3.53.4",
+  "passed": 4,
+  "failed": 0,
+  "checks": [
+    "composite tenant and record key",
+    "duplicate key refused",
+    "transaction rollback",
+    "FTS5 available"
+  ],
+  "scope": "In-memory runtime probe only; not packaged-app, persistence/crash, macOS or W01 qualification."
+}

@@ -1,0 +1,17 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/memory-context-contracts
+
+ ✓ tests/memory-context-baseline.test.ts (21 tests) 6908ms
+   ✓ W00 two-tenant first-sentence baseline > 'tenant-a' / 'answer-correction': actual selection and compaction preserve references but omit critical text  314ms
+   ✓ W00 two-tenant first-sentence baseline > 'tenant-a' / 'later-user-correction': actual selection and compaction preserve references but omit critical text  369ms
+   ✓ W00 actual ModelSessionRuns to NativeAgent dispatch > 'answer-correction': the recorded omitted text actually reaches offline downstream dispatch  1670ms
+   ✓ W00 actual ModelSessionRuns to NativeAgent dispatch > 'later-user-correction': the recorded omitted text actually reaches offline downstream dispatch  1561ms
+   ✓ W00 actual ModelSessionRuns to NativeAgent dispatch > 'exception-after-long-opening': the recorded omitted text actually reaches offline downstream dispatch  1498ms
+ ✓ tests/memory-contracts.test.ts (49 tests) 18ms
+
+ Test Files  2 passed (2)
+      Tests  70 passed (70)
+   Start at  04:35:55
+   Duration  10.01s (transform 1.02s, setup 0ms, collect 2.02s, tests 6.93s, environment 0ms, prepare 257ms)
+
+JSON report written to F:/Diomedes/diomedes-wt/memory-context-contracts/evidence/memory-context-w00/green-vitest.json

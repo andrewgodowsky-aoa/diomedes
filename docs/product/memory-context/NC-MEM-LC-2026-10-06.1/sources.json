@@ -1,0 +1,219 @@
+{
+  "package": "NC-MEM-LC-2026-10-06.1",
+  "sources": [
+    {
+      "id": "S01",
+      "title": "Cognition: Agent Memory Repo",
+      "url": "https://cognition.com/agent-memory-repo",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Portable notes and proposed Dreaming; local trial explicitly lacks automatic startup/scheduling.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S02",
+      "title": "Agent Memory Repo specification",
+      "url": "https://raw.githubusercontent.com/AgentMemoryRepo/agentmemoryrepo/main/SPEC.md",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Entry point, topic bullets, open metadata and memory-root wikilinks.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S03",
+      "title": "Agent Memory Repo reference skill",
+      "url": "https://raw.githubusercontent.com/AgentMemoryRepo/agentmemoryrepo/main/skills/agent-memory-repo/SKILL.md",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Manual invocation, memory as data, local-first and explicit private synchronization.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S04",
+      "title": "Agent Memory Repo LICENSE",
+      "url": "https://raw.githubusercontent.com/AgentMemoryRepo/agentmemoryrepo/main/LICENSE",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "MIT licensing; preserve applicable notices for any copied material.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S05",
+      "title": "Anthropic: Effective context engineering",
+      "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Just-in-time retrieval, compaction, structured notes and subagents; compression can omit subtle context.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S06",
+      "title": "Anthropic: Effective harnesses for long-running agents",
+      "url": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Incremental work and durable progress artifacts across sessions.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S07",
+      "title": "NVIDIA RULER",
+      "url": "https://github.com/NVIDIA/RULER",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Configurable synthetic long-context tests beyond simple recall; not a substitute for realistic tasks.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S08",
+      "title": "Lost in the Middle",
+      "url": "https://arxiv.org/abs/2307.03172",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Historical evidence-position sensitivity; motivates position-sweep tests without claiming current universal scores.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S09",
+      "title": "LongMemEval paper",
+      "url": "https://arxiv.org/abs/2410.10813",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Multi-session, temporal, updated-knowledge and abstention evaluation.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S10",
+      "title": "LongMemEval official repository",
+      "url": "https://github.com/xiaowu0162/LongMemEval",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Pin cleaned dataset versions; keep evidence/answer labels separate from ingestion.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S11",
+      "title": "LongMemEval-V2 official repository",
+      "url": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Enterprise/web agent histories, workflow/gotcha/premise tasks; corpus size is not native prompt size.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S12",
+      "title": "Mastra observational memory",
+      "url": "https://mastra.ai/research/observational-memory",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Observer/reflector compression mechanism; published scores are not Nectovia benchmark results.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S13",
+      "title": "Recursive Language Models v3",
+      "url": "https://arxiv.org/html/2512.24601v3",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Inspect/decompose long input as an environment; bounded Nectovia adaptation proposed.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S14",
+      "title": "OpenAI compaction documentation",
+      "url": "https://developers.openai.com/api/docs/guides/compaction",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Opaque state and distinct chaining versus standalone output handling.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S15",
+      "title": "Anthropic compaction overview",
+      "url": "https://platform.claude.com/docs/en/build-with-claude/compaction",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Current on-demand/threshold modes are separate beta capabilities.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S16",
+      "title": "Anthropic threshold compaction",
+      "url": "https://platform.claude.com/docs/en/build-with-claude/compaction-threshold",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Usage iteration accounting and failed/null compaction require explicit validation.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "S17",
+      "title": "Chroma context-rot research",
+      "url": "https://www.trychroma.com/research/context-rot",
+      "accessed": "2026-10-06",
+      "kind": "external-primary",
+      "finding": "Primary motivation for length/distractor evaluation; no Nectovia performance inferred.",
+      "usage": "design inspiration or adapter qualification; not executed here"
+    },
+    {
+      "id": "N01",
+      "title": "server/harness/context-assembly.ts",
+      "url": "https://github.com/andrewgodowsky-aoa/diomedes/blob/cb2e756257de92a6091659200213cdcb79829700/server/harness/context-assembly.ts",
+      "accessed": "2026-10-06",
+      "kind": "live-connector-source",
+      "commit": "cb2e756257de92a6091659200213cdcb79829700",
+      "blob_sha": "3fbf31e7aee4dce5ef10c06550fc8375e211cb49",
+      "inspected_lines": "1-155"
+    },
+    {
+      "id": "N02",
+      "title": "shared/context-accounting.ts",
+      "url": "https://github.com/andrewgodowsky-aoa/diomedes/blob/cb2e756257de92a6091659200213cdcb79829700/shared/context-accounting.ts",
+      "accessed": "2026-10-06",
+      "kind": "live-connector-source",
+      "commit": "cb2e756257de92a6091659200213cdcb79829700",
+      "blob_sha": "472c4ac7b94d9d7902ee488246ed14ecb7fd81e4",
+      "inspected_lines": "1-165"
+    },
+    {
+      "id": "N03",
+      "title": "server/harness/native-agent.ts",
+      "url": "https://github.com/andrewgodowsky-aoa/diomedes/blob/cb2e756257de92a6091659200213cdcb79829700/server/harness/native-agent.ts",
+      "accessed": "2026-10-06",
+      "kind": "live-connector-source",
+      "commit": "cb2e756257de92a6091659200213cdcb79829700",
+      "blob_sha": "532665fe2e3d9f100770db037e55cc8cfa74aa6b",
+      "inspected_lines": "1-135 and 220-345"
+    },
+    {
+      "id": "N04",
+      "title": "server/harness/tools.ts",
+      "url": "https://github.com/andrewgodowsky-aoa/diomedes/blob/cb2e756257de92a6091659200213cdcb79829700/server/harness/tools.ts",
+      "accessed": "2026-10-06",
+      "kind": "live-connector-source",
+      "commit": "cb2e756257de92a6091659200213cdcb79829700",
+      "blob_sha": "e686c885f7ab94d0ffdb20d31df14fb479da1c1d",
+      "inspected_lines": "87-121"
+    },
+    {
+      "id": "N05",
+      "title": "Existing H18 delivery record",
+      "url": "https://linear.app/diomedesdevs/issue/DIO-23/h18-context-accounting-selective-retrieval-cache-reuse-and-safe",
+      "kind": "live-connector-source",
+      "accessed": "2026-10-06"
+    },
+    {
+      "id": "N06",
+      "title": "Prior memory architectural handoff",
+      "path": "archive/NC-MEM-2026-10-06.1.md",
+      "kind": "provided-project-artifact",
+      "scope": "Earlier source snapshot preserved, not freshly re-audited in full"
+    },
+    {
+      "id": "N07",
+      "title": "Upstream AMR revision",
+      "url": "https://github.com/AgentMemoryRepo/agentmemoryrepo/tree/1db04a5735adbc4f2158308f2077fd960e243c04",
+      "kind": "live-connector-source",
+      "accessed": "2026-10-06"
+    }
+  ]
+}

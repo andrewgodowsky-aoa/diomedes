@@ -1,0 +1,37 @@
+{
+  "steps": 100,
+  "forced_rollovers_at_steps": [
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    75,
+    80,
+    85,
+    90,
+    95,
+    100
+  ],
+  "variants": [
+    "baseline",
+    "late-correction",
+    "forget-while-compacting",
+    "revoke-source-midrun",
+    "crash-after-effect-intent",
+    "duplicate-partition",
+    "source-revision-change",
+    "wrong-tenant-vector-candidate",
+    "unknown-source-count",
+    "null-compaction-output"
+  ]
+}

@@ -1,0 +1,28 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/memory-context-contracts
+
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/memory-context-baseline.test.ts [ tests/memory-context-baseline.test.ts ]
+Error: Cannot find package 'ai' imported from 'F:/Diomedes/diomedes-wt/memory-context-contracts/server/engines/model-api-core.ts'
+ ❯ server/engines/model-api-core.ts:21:1
+     19|  */
+     20| import { isDeepStrictEqual } from 'node:util';
+     21| import { jsonSchema, stepCountIs, streamText, type LanguageModel, type…
+       | ^
+     22| import { z } from 'zod';
+     23| import type { RawToolActivity } from '../../shared/adapter-contract.js…
+
+Caused by: Error: Failed to load url ai (resolved id: ai) in F:/Diomedes/diomedes-wt/memory-context-contracts/server/engines/model-api-core.ts. Does the file exist?
+ ❯ loadAndTransform ../../diomedes/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  04:26:14
+   Duration  3.20s (transform 1.27s, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 123ms)
+
+JSON report written to F:/Diomedes/diomedes-wt/memory-context-contracts/evidence/memory-context-w00/red-vitest.json

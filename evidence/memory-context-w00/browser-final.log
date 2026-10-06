@@ -1,0 +1,66 @@
+dev-server guard: ports 5184, 47642 already free
+[WebServer] Diomedes: http://127.0.0.1:5184. Press Ctrl+C to stop both local processes.
+[WebServer] (node:44448) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 5:42:05 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 766 ms
+[WebServer] 
+[WebServer]   Γ₧£  Local:   http://127.0.0.1:5184/
+[WebServer] 5:42:07 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47642
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] 5:42:08 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47642
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] 5:42:09 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47642
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] (node:51704) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47642
+[WebServer] App data: F:\Diomedes\diomedes-wt\memory-context-contracts\test-results\app-data-1791279723166-40928\data
+[WebServer] Project root: F:\Diomedes\diomedes-wt\memory-context-contracts\test-results\app-data-1791279723166-40928\projects
+
+Running 36 tests using 1 worker
+
+(node:39356) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\field.spec.ts:115:1 ΓÇ║ C01: the rail lists threads, carries New, marks the selection, and offers the three views (7.6s)
+  ok  2 tests\field.spec.ts:135:1 ΓÇ║ C02: the view switch swaps Thread, Board, and Team (1.8s)
+  ok  3 tests\field.spec.ts:150:1 ΓÇ║ C03: the Board shows the Ready task, and Show-me-first confirms instead of starting (1.7s)
+  ok  4 tests\field.spec.ts:180:1 ΓÇ║ C04: the palette finds and filters, Escape closes, and outside a project Ctrl+K finds a project (2.1s)
+  ok  5 tests\field.spec.ts:209:1 ΓÇ║ C05: the wake is skipped under automation (1.5s)
+  ok  6 tests\field.spec.ts:216:1 ΓÇ║ C06: the Ember scheme applies its package and token, then Field is restored (2.0s)
+  ok  7 tests\field.spec.ts:241:1 ΓÇ║ C07: the thread head states the exact-OK rule while an approval is open (2.2s)
+  ok  8 tests\field.spec.ts:287:1 ΓÇ║ C08: a mode chosen on the Projects page arrives with the ask (1.9s)
+  ok  9 tests\native-ui.spec.ts:130:1 ΓÇ║ Native UI: consent, exact proposal preview, approval, Review and History with an injected generator (2.8s)
+  ok 10 tests\native-ui.spec.ts:239:1 ΓÇ║ Console task Start recovers both lost responses from state without duplicating Work (2.5s)
+  ok 11 tests\native-ui.spec.ts:306:1 ΓÇ║ Console exact approval recovers both lost responses from durable state even with task permission (2.8s)
+  ok 12 tests\native-ui.spec.ts:370:1 ΓÇ║ Console New task makes a task, Ready shows it, and Start admits one run (1.3s)
+  ok 13 tests\native-ui.spec.ts:414:1 ΓÇ║ Console retries a lost task creation response after reload and shows the durable receipt (1.7s)
+  ok 14 tests\native-ui.spec.ts:474:1 ΓÇ║ Console closes a confirmed creation even if refreshing the Board fails (1.3s)
+  ok 15 tests\native-ui.spec.ts:499:1 ΓÇ║ Console Start again restarts a faulted task through the same admission (1.2s)
+  ok 16 tests\native-ui.spec.ts:539:3 ΓÇ║ Console document selection at creation proposes the exact file and retains History attribution (2.3s)
+  ok 17 tests\native-ui.spec.ts:539:3 ΓÇ║ Console document selection at start proposes the exact file and retains History attribution (2.5s)
+  ok 18 tests\native-ui.spec.ts:626:1 ΓÇ║ Console document selection blocks stale paths and listing failures without admitting work (2.6s)
+  ok 19 tests\native-ui.spec.ts:662:1 ΓÇ║ Cloud sharing selects an exact future path before AI review can send it (3.5s)
+  ok 20 tests\ui.spec.ts:218:1 ΓÇ║ F01-F02: first run preserves detail and approvals, supports AI skip, and resumes (10.6s)
+  ok 21 tests\ui.spec.ts:402:1 ΓÇ║ F04, F06: sample project opens and a plan edit survives reload with History (3.8s)
+  ok 22 tests\ui.spec.ts:470:1 ΓÇ║ F10: plan steps become real tasks with provenance and a History entry (5.4s)
+  ok 23 tests\ui.spec.ts:518:1 ΓÇ║ F11-F13: work asks twice, decline skips creation, and the remaining change is recorded (10.0s)
+  ok 24 tests\ui.spec.ts:628:1 ΓÇ║ F15-F16: Review keeps the changed file and History exposes the recorded change (2.9s)
+  ok 25 tests\ui.spec.ts:675:1 ΓÇ║ F07-F08: restore and undo recover both versions; newer edits are a conflict (5.7s)
+  ok 26 tests\ui.spec.ts:718:1 ΓÇ║ F14: Stop settles a started sample promptly and expires its approval (3.7s)
+  ok 27 tests\ui.spec.ts:748:1 ΓÇ║ F17, F20-F22: detail changes preserve data; the Console meets layout and motion checks (6.7s)
+  ok 28 tests\ui.spec.ts:902:1 ΓÇ║ Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts (6.1s)
+  ok 29 tests\ui.spec.ts:1052:1 ΓÇ║ Services roster: every reported engine listed with switch discipline at every detail level; Console has no Connections (5.7s)
+  ok 30 tests\ui.spec.ts:1128:1 ΓÇ║ Usage: chip, signal bar and Settings bars from the test-mode snapshot (8.8s)
+  ok 31 tests\ui.spec.ts:1201:1 ΓÇ║ Landing: ask box carries a draft into the chosen project (1.7s)
+  ok 32 tests\ui.spec.ts:1261:1 ΓÇ║ Unavailable helper: the application notice has no invented runtime caption (2.5s)
+  ok 33 tests\ui.spec.ts:1277:1 ΓÇ║ Engine choices: the list comes from the engine, and the levels follow the choice (6.0s)
+  ok 34 tests\ui.spec.ts:1386:1 ΓÇ║ Modes: the Console composer shows four modes and Fix needs what is failing (2.8s)
+  ok 35 tests\ui.spec.ts:1459:1 ΓÇ║ Enter sends from the Console composer and Shift+Enter adds a line (1.9s)
+  ok 36 tests\ui.spec.ts:1492:1 ΓÇ║ Usage: a settings save preserves a concurrent engine setting while refresh is delayed (2.1s)
+
+  36 passed (2.8m)
