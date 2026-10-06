@@ -114,7 +114,8 @@ describe.skipIf(!ownerUrl)('Individual funding with real PostgreSQL runtime and 
   beforeEach(() => { clock = initial; });
 
   it('preserves the phase-2a person grant and billing identity and replays migration without allocation', async () => {
-    expect(migrations.at(-1)?.version).toBe(12);
+    // Every migration file was loaded, contiguous to the newest (012 when this was written).
+    expect(migrations.at(-1)?.version).toBe(migrations.length);
     expect(await migrate(ownerFactory, migrations)).toEqual([]);
     const grants = await new PostgresCommercialRepository(runtimeFactory).transaction(tx => tx.personGrants(oldPerson));
     expect(JSON.stringify(grants[0])).toBe(oldGrant);
