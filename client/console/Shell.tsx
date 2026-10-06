@@ -57,6 +57,7 @@ import { ThreadView } from './ThreadView';
 import { ThreadMenu } from './ThreadMenu';
 import { readRecordedArtifacts } from './artifact-evidence';
 import { endThinking, stepThinking, type LiveThinking } from './engine-reasoning';
+import { acceptReading, closeReading, type ReadingProgress } from './engine-prompt-progress';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import {
   discardPendingMessage,
@@ -389,6 +390,8 @@ export function Shell({
     activity: ActivityState | null;
     /** The engine's thinking on the same run, folded at the first answer text. */
     thinking: LiveThinking | null;
+    /** A local model's read on the same run, until answer text follows it. */
+    reading: ReadingProgress | null;
     /** When the started frame arrived, for how long the engine thought. */
     startedAt: number;
   } | null>(null);
@@ -626,6 +629,7 @@ export function Shell({
           engine: askEngine.current ?? '',
           activity: null,
           thinking: null,
+          reading: null,
           startedAt: Date.now(),
         });
         return;
@@ -646,9 +650,12 @@ export function Shell({
         setStreaming((prev) => {
           if (!prev || prev.requestId !== data.requestId) return prev;
           const next = (prev.text + accepted.text).slice(0, MAX_STREAM_CHARS);
-          // The first answer text folds the thinking above it.
+          // The first answer text folds the thinking above it and ends the read before it.
           const thinking = endThinking(prev.thinking, Date.now());
-          return next === prev.text && thinking === prev.thinking ? prev : { ...prev, text: next, thinking };
+          const reading = accepted.text ? closeReading(prev.reading) : prev.reading;
+          return next === prev.text && thinking === prev.thinking && reading === prev.reading
+            ? prev
+            : { ...prev, text: next, thinking, reading };
         });
         return;
       }
@@ -719,6 +726,32 @@ export function Shell({
       });
     };
     es.addEventListener('engine-reasoning', onEngineReasoning as EventListener);
+    // A local model's read on the ask on screen: counters and the host's one sentence, matched
+    // like its thinking. Narration only; nothing here is saved.
+    const onEnginePromptProgress = (ev: Event) => {
+      let data: { projectId?: unknown; threadId?: unknown; requestId?: unknown; runId?: unknown } | null;
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      if (
+        !data ||
+        data.projectId !== currentId.current ||
+        streamingId.current == null ||
+        data.requestId !== streamingId.current ||
+        data.runId !== streamingRunId.current ||
+        data.threadId !== askThreadId.current
+      )
+        return;
+      const requestId = streamingId.current;
+      setStreaming((prev) => {
+        if (!prev || prev.requestId !== requestId) return prev;
+        const reading = acceptReading(prev.reading, data);
+        return reading === prev.reading ? prev : { ...prev, reading };
+      });
+    };
+    es.addEventListener('engine-prompt-progress', onEnginePromptProgress as EventListener);
     return () => {
       clearTimeout(timer);
       es.close();
@@ -971,6 +1004,7 @@ export function Shell({
           engine: streaming.engine,
           activity: streaming.activity?.lines,
           thinking: streaming.thinking,
+          reading: streaming.reading,
         }
       : undefined;
   // A conversation message this thread sent and never had confirmed, read from the shared claim
