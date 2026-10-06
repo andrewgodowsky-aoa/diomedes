@@ -38,10 +38,8 @@ import type { StaffRole } from '../shared/access.js';
 import { SIGN_IN_REQUIRED } from '../shared/accounts.js';
 import {
   CREDIT_PURCHASE_MAX_CREDITS,
-  CREDIT_PURCHASE_MIN_CREDITS,
-  CREDIT_PURCHASE_STEP,
   isAllowedCheckoutUrl,
-  isPurchasableCredits,
+  isAskableCredits,
   type CreditPurchaseStarted,
   type CreditPurchaseStatus,
   type CreditQuote,
@@ -134,14 +132,16 @@ export interface OrganizationUsageReader {
  * anything, takes a payment or opens the payment page itself.
  */
 export interface CreditPurchasing {
-  quoteCredits(organizationId: string, credits: number): Promise<CreditQuote>;
+  /** A quote of an amount, or of one step when no amount is asked: how a screen learns the step its business buys in. */
+  quoteCredits(organizationId: string, credits: number | null): Promise<CreditQuote>;
   startCreditPurchase(organizationId: string, credits: number): Promise<CreditPurchaseStarted>;
   readCreditPurchase(organizationId: string, purchaseId: string): Promise<CreditPurchaseStatus>;
   /** The origin of the test service's own checkout page when the account service is the test one, else null. */
   localCheckoutOrigin(): string | null;
 }
 
-const CREDITS_REASON = `Credits are bought in steps of ${CREDIT_PURCHASE_STEP}, from ${CREDIT_PURCHASE_MIN_CREDITS} up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
+// Whether the amount is a whole number of the business's steps is the account service's to say: the step depends on the business's plan.
+const CREDITS_REASON = `Enter a whole number of credits, up to ${CREDIT_PURCHASE_MAX_CREDITS.toLocaleString('en-US')}.`;
 const PURCHASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export function mountManagedUsageRoutes(
@@ -315,9 +315,9 @@ export function mountManagedUsageRoutes(
     if (!credits) throw new ApiError(401, 'Sign in to use Nectovia.', { code: SIGN_IN_REQUIRED });
     return { id, credits };
   };
-  /** A whole multiple of 100 in the bounds, or a 422 in plain words. */
+  /** A whole number of credits inside the cap, or a 422 in plain words. The account service checks it is a whole number of steps. */
   const askedCredits = (value: unknown) => {
-    if (!isPurchasableCredits(value)) throw new ApiError(422, CREDITS_REASON, { code: 'invalid_credits' });
+    if (!isAskableCredits(value)) throw new ApiError(422, CREDITS_REASON, { code: 'invalid_credits' });
     return value;
   };
 
@@ -325,8 +325,9 @@ export function mountManagedUsageRoutes(
     '/api/workspace/organizations/:organizationId/allowance/credit-purchases/quote',
     route(async (req) => {
       const { id, credits: buying } = buyer(req);
-      // A query value is text: a plain run of digits, or it is not an amount at all.
+      // No amount is one step. A query value is text: a plain run of digits, or it is not an amount at all.
       const text = req.query.credits;
+      if (text === undefined) return buying.quoteCredits(id, null);
       return buying.quoteCredits(id, askedCredits(typeof text === 'string' && /^[1-9][0-9]{0,9}$/.test(text) ? Number(text) : undefined));
     }, false),
   );

@@ -1171,7 +1171,7 @@ export class AccountSessionService {
   // --- buying credits (the account service prices, takes the payment and records it) ---
 
   /** What an amount of credits costs, as the person signed in. */
-  quoteCredits(organizationId: string, credits: number) {
+  quoteCredits(organizationId: string, credits: number | null) {
     return this.call((token) => this.backend.client.quoteCredits(token, organizationId, credits));
   }
   /** Start a purchase as the person signed in: where to pay, and what for. */

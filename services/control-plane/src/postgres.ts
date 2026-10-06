@@ -178,10 +178,14 @@ export type VerifiedWebhook = z.infer<typeof verifiedWebhookSchema>;
  * purchase. The business and tenant here are never read from the event, so the customer row and the inbox row are written
  * against ours.
  */
-export const verifiedPaymentSchema = z.strictObject({ eventId: verifiedWebhookSchema.shape.eventId, customerId: verifiedWebhookSchema.shape.customerId,
+export const verifiedPaymentSchema = z.strictObject({ environment: z.enum(['test', 'live']), eventId: verifiedWebhookSchema.shape.eventId, customerId: verifiedWebhookSchema.shape.customerId,
   organizationId: z.string().min(1).max(200), tenantId: z.string().min(1).max(200), payloadHash: verifiedWebhookSchema.shape.payloadHash,
   eventType: verifiedWebhookSchema.shape.eventType, payload: verifiedWebhookSchema.shape.payload });
 export type VerifiedPaymentInput = z.infer<typeof verifiedPaymentSchema>;
+/** A verified event of a type nothing handles: stored and marked ignored. The customer attributes the row only when it is one of ours. */
+export const ignoredEventSchema = z.strictObject({ environment: z.enum(['test', 'live']), eventId: verifiedWebhookSchema.shape.eventId, customerId: verifiedWebhookSchema.shape.customerId.nullable(),
+  payloadHash: verifiedWebhookSchema.shape.payloadHash, eventType: verifiedWebhookSchema.shape.eventType, payload: verifiedWebhookSchema.shape.payload });
+export type IgnoredEventInput = z.infer<typeof ignoredEventSchema>;
 const WEBHOOK_PAYLOAD_LIMIT = 262_144;
 
 export class PostgresRepository implements AccountRepository {
@@ -213,37 +217,38 @@ export class PostgresRepository implements AccountRepository {
   }
 
   /**
-   * The business's Stripe customer from an earlier verified payment, or null. Read on the Worker login (billing_customers,
-   * SELECT) so a repeat purchase passes the customer Stripe already made for this business, never a figure from a request.
+   * The business's Stripe customer in one environment, from a purchase or an earlier verified payment, or null. Read on the Worker login
+   * (billing_customers, SELECT) so a repeat purchase passes the customer Stripe already made for this business, never a figure from a request.
+   * A business has one customer in each environment, so a test customer is never offered to a live purchase.
    */
-  async storedCustomer(ref: { tenantId: string; organizationId: string }): Promise<string | null> {
+  async storedCustomer(ref: { tenantId: string; organizationId: string; environment: 'test' | 'live' }): Promise<string | null> {
     return inTransaction(this.factory, async (client) => {
-      const row = (await client.query('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3',
-        ['stripe', ref.tenantId, ref.organizationId])).rows[0];
+      const row = (await client.query('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3 AND environment=$4',
+        ['stripe', ref.tenantId, ref.organizationId, ref.environment])).rows[0];
       return row ? verifiedWebhookSchema.shape.customerId.parse(row.customer_id) : null;
     });
   }
 
   /**
-   * The business's one Stripe customer, made before its first Checkout Session. In one transaction on the Worker login, under
+   * The business's one Stripe customer in an environment, made before its first Checkout Session. In one transaction on the Worker login, under
    * the lock a paid event takes for the same business: read the stored customer, and when there is none run `make` (the
    * Stripe call, which answers the customer id Stripe gave) and store that id. Two first purchases made at once therefore
    * share one customer: the second waits on the lock and then reads the first's row, and `make` runs once.
    *
    * The id is trusted only from our own row or from `make`, and `make`'s answer is checked to be a Stripe customer id before
    * it is stored. The row needs nothing a verified event gives: billing_customers (002) holds the customer, its business and its
-   * tenant, keyed by the business, and only webhook_inbox and the top-up that names it need an event. When `make` throws the
+   * tenant, keyed by the business and the environment, and only webhook_inbox and the top-up that names it need an event. When `make` throws the
    * transaction rolls back and nothing is stored. The lock is held across the Stripe call, which the caller bounds by its own timeout.
    */
-  async ensureCustomer(ref: { tenantId: string; organizationId: string }, make: () => Promise<string>): Promise<string> {
+  async ensureCustomer(ref: { tenantId: string; organizationId: string; environment: 'test' | 'live' }, make: () => Promise<string>): Promise<string> {
     return inTransaction(this.factory, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['payment-ledger', ref.tenantId, ref.organizationId])]);
-      const row = (await client.query('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3',
-        ['stripe', ref.tenantId, ref.organizationId])).rows[0];
+      const row = (await client.query('SELECT customer_id FROM control_plane.billing_customers WHERE provider=$1 AND tenant_id=$2 AND organization_id=$3 AND environment=$4',
+        ['stripe', ref.tenantId, ref.organizationId, ref.environment])).rows[0];
       if (row) return verifiedWebhookSchema.shape.customerId.parse(row.customer_id);
       const customerId = verifiedWebhookSchema.shape.customerId.parse(await make());
-      await client.query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)',
-        ['stripe', customerId, ref.organizationId, ref.tenantId]);
+      await client.query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id,environment) VALUES ($1,$2,$3,$4,$5)',
+        ['stripe', customerId, ref.organizationId, ref.tenantId, ref.environment]);
       return customerId;
     });
   }
@@ -253,11 +258,12 @@ export class PostgresRepository implements AccountRepository {
    * has none yet, and the event in the inbox, in one transaction on the Worker login. The funding login never writes either
    * table; the top-up it records references this event, so a top-up can exist only for an event stored here.
    *
-   * One customer per business: a session names the customer ensureCustomer stored, so the event names that same customer and
-   * this check refuses any other (a mismatch is never stored or paid). A business with no stored customer, which only a session
+   * One customer per business in each environment: a session names the customer ensureCustomer stored, so the event names that same
+   * customer and this check refuses any other (a mismatch is never stored or paid). A business with no stored customer, which only a session
    * made before ensureCustomer existed can leave, stores the one the event names. Idempotent by event id: a replay with the same contents stores
-   * nothing, and one with other contents is refused. A 409 for a customer that belongs to another business, a business with a
-   * different customer, or an event already stored with other contents; nothing is written then.
+   * nothing, and one with other contents is refused. A 409 for a customer that belongs to another business or another environment, a business
+   * with a different customer, or an event already stored with other contents; nothing is written then. The event is stored pending, and
+   * markEvent moves it once it is applied.
    */
   async recordVerifiedPayment(input: VerifiedPaymentInput): Promise<{ inserted: boolean }> {
     const event = verifiedPaymentSchema.parse(input);
@@ -266,24 +272,70 @@ export class PostgresRepository implements AccountRepository {
     return inTransaction(this.factory, async (client) => {
       // One business's first payments serialize here, so two of them cannot each store a different customer.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['payment-ledger', event.tenantId, event.organizationId])]);
-      const mapped = (await client.query('SELECT customer_id,organization_id,tenant_id FROM control_plane.billing_customers WHERE provider=$1 AND (customer_id=$2 OR (tenant_id=$3 AND organization_id=$4))',
-        ['stripe', event.customerId, event.tenantId, event.organizationId])).rows;
+      const mapped = (await client.query('SELECT customer_id,organization_id,tenant_id,environment FROM control_plane.billing_customers WHERE provider=$1 AND (customer_id=$2 OR (tenant_id=$3 AND organization_id=$4 AND environment=$5))',
+        ['stripe', event.customerId, event.tenantId, event.organizationId, event.environment])).rows;
       if (mapped.length === 0) {
-        await client.query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)',
-          ['stripe', event.customerId, event.organizationId, event.tenantId]);
-      } else if (mapped.length !== 1 || mapped[0].customer_id !== event.customerId || mapped[0].organization_id !== event.organizationId || mapped[0].tenant_id !== event.tenantId) {
+        await client.query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id,environment) VALUES ($1,$2,$3,$4,$5)',
+          ['stripe', event.customerId, event.organizationId, event.tenantId, event.environment]);
+      } else if (mapped.length !== 1 || mapped[0].customer_id !== event.customerId || mapped[0].organization_id !== event.organizationId || mapped[0].tenant_id !== event.tenantId
+        || mapped[0].environment !== event.environment) {
         throw new AccountError(409, 'The billing customer does not belong to this business.', 'customer_mismatch');
       }
-      const old = (await client.query('SELECT customer_id,organization_id,tenant_id,payload_hash FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2',
+      const old = (await client.query('SELECT customer_id,organization_id,tenant_id,payload_hash,environment FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2',
         ['stripe', event.eventId])).rows[0];
       if (old) {
-        if (old.customer_id !== event.customerId || old.organization_id !== event.organizationId || old.tenant_id !== event.tenantId || old.payload_hash !== event.payloadHash)
+        if (old.customer_id !== event.customerId || old.organization_id !== event.organizationId || old.tenant_id !== event.tenantId || old.payload_hash !== event.payloadHash
+          || old.environment !== event.environment)
           throw new AccountError(409, 'The duplicate event has conflicting provenance.', 'event_conflict');
         return { inserted: false };
       }
-      await client.query('INSERT INTO control_plane.webhook_inbox(provider,event_id,customer_id,organization_id,tenant_id,payload_hash,event_type,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',
-        ['stripe', event.eventId, event.customerId, event.organizationId, event.tenantId, event.payloadHash, event.eventType, payload]);
+      await client.query('INSERT INTO control_plane.webhook_inbox(provider,event_id,customer_id,organization_id,tenant_id,payload_hash,event_type,payload,environment) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)',
+        ['stripe', event.eventId, event.customerId, event.organizationId, event.tenantId, event.payloadHash, event.eventType, payload, event.environment]);
       return { inserted: true };
+    });
+  }
+
+  /**
+   * A verified event of a type nothing handles, stored once and marked ignored (migration 016 lets an inbox row carry no business). The business
+   * and tenant come from our own customer row for the customer the event names in this environment, never from the event; with no such row the
+   * event is stored with none. The customer is checked before anything is written. Two deliveries of one event serialize on its id, so the
+   * second finds the first's row: the same contents store nothing, other contents are a 409 and nothing is written.
+   */
+  async recordIgnoredEvent(input: IgnoredEventInput): Promise<{ inserted: boolean }> {
+    const event = ignoredEventSchema.parse(input);
+    const payload = JSON.stringify(event.payload);
+    if (new TextEncoder().encode(payload).length > WEBHOOK_PAYLOAD_LIMIT) throw new AccountError(413, 'Webhook payload exceeds the storage limit.');
+    return inTransaction(this.factory, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['stripe-event', event.eventId])]);
+      const old = (await client.query('SELECT payload_hash,environment FROM control_plane.webhook_inbox WHERE provider=$1 AND event_id=$2', ['stripe', event.eventId])).rows[0];
+      if (old) {
+        if (old.payload_hash !== event.payloadHash || old.environment !== event.environment)
+          throw new AccountError(409, 'The duplicate event has conflicting provenance.', 'event_conflict');
+        return { inserted: false };
+      }
+      let owner: { customer_id: string; organization_id: string; tenant_id: string } | null = null;
+      if (event.customerId !== null) {
+        const row = (await client.query('SELECT customer_id,organization_id,tenant_id FROM control_plane.billing_customers WHERE provider=$1 AND environment=$2 AND customer_id=$3',
+          ['stripe', event.environment, event.customerId])).rows[0];
+        if (row) owner = z.object({ customer_id: z.string(), organization_id: z.string(), tenant_id: z.string() }).parse(row);
+      }
+      await client.query("INSERT INTO control_plane.webhook_inbox(provider,event_id,customer_id,organization_id,tenant_id,payload_hash,event_type,payload,environment,state) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'ignored')",
+        ['stripe', event.eventId, owner?.customer_id ?? null, owner?.organization_id ?? null, owner?.tenant_id ?? null, event.payloadHash, event.eventType, payload, event.environment]);
+      return { inserted: true };
+    });
+  }
+
+  /**
+   * Move a stored event out of pending: processed once its payment is applied, quarantined once it is refused for good (migration 016's inbox
+   * states). Only a pending row moves, so a replay never rewrites a row that was already settled. The Worker login holds UPDATE on these two
+   * columns of webhook_inbox and nothing else of it. True when this call moved the row.
+   */
+  async markEvent(ref: { environment: 'test' | 'live'; eventId: string }, state: 'processed' | 'quarantined'): Promise<boolean> {
+    const eventId = verifiedWebhookSchema.shape.eventId.parse(ref.eventId);
+    return inTransaction(this.factory, async (client) => {
+      const result = await client.query("UPDATE control_plane.webhook_inbox SET state=$1, processed_at=$2 WHERE provider='stripe' AND environment=$3 AND event_id=$4 AND state='pending'",
+        [state, state === 'processed' ? new Date().toISOString() : null, ref.environment, eventId]);
+      return result.rowCount === 1;
     });
   }
 }

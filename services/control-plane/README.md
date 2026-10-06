@@ -475,38 +475,77 @@ These run as the funding login (FUNDING_DATABASE_URL) and answer 503 without
 it. `scripts/funding-permissions.sql` carries the grants for the four new
 tables; `cp_runtime` is unchanged. Migration 014 is additive and applies after
 011, 012 and 013.
-## Buying credits (migration 015, 2026-10-01, DIO-161 slice 1)
+## Buying credits (migrations 015 and 016, 2026-10-01, DIO-161 slice 1; billing foundation 2026-10-05)
 
 Owner rule: only a Business owner or a Manager (roles `owner` and `admin`) buys
-credits for a business. Credits are bought in whole steps of 100, at least 100
-and at most 100,000 in one purchase, and paid through Stripe Checkout. Test mode
-first. The price is a Worker setting, never a default in code, and nothing but a
+credits for a business. Credits are bought in whole steps at the business's rate
+(see CREDIT_RATE_PLAN and CREDIT_RATE_FREE below), at least one step and at most
+100,000 credits in one purchase, and paid through Stripe Checkout. Test mode
+first. The rates are Worker settings, never a default in code, and nothing but a
 quoted total for an asked amount ever reaches a client.
 
-Settings (Worker settings, read on every call):
+### Rates
 
-- `CREDIT_PRICE_CENTS_PER_100`: whole cents the business pays for 100 credits,
-  from 50 to 1,000,000. Unset, blank or unusable: every quote and purchase
-  answers 503 "Buying credits isn't available right now. Try again later." and
-  the Worker logs `credit-purchases-price-unavailable` with the rule it broke
-  (never the value). Set it as a Worker secret (`npx wrangler secret put
-  CREDIT_PRICE_CENTS_PER_100 --name diomedes`): it reads the same as a var,
-  survives a deploy, and keeps the figure out of the repository, where it would
-  sit beside the cost of a credit.
+A rate is written `cents:credits`: the whole cents one step costs and the whole
+credits it buys, each a positive integer (cents from 50 to 1,000,000, credits from
+1 to 10,000). A purchase is a whole number of steps, and all the arithmetic is in
+integers: `credits = steps * rate credits` and `amountCents = steps * rate cents`,
+with no division and no rounding. A purchase no single charge can cover is 422.
+
+- `CREDIT_RATE_PLAN`: the rate for a business that holds an active plan grant
+  (a grant with the `managed-inference` or the `nectovia-agent` feature, valid now).
+- `CREDIT_RATE_FREE`: the rate for every other business. An organization with no
+  plan buys at this rate.
+
+The server picks the rate at quote and purchase time from the business's own
+grants (the Worker login reads `feature_grants`), never from a request, and
+locks it into the purchase row (`rate_cents`, `rate_credits`, with the check
+that the row's credits and amount are whole steps of that rate). The webhook
+credits the row and never works the rate out again, so a plan that lapses
+between the quote and the payment changes nothing: the buyer gets what the row
+says. A setting that is unset or unusable answers 503 "Buying credits isn't
+available right now. Try again later." for the businesses that need it, and the
+Worker logs `credit-purchases-rate-unavailable` with the setting and the rule it
+broke (never the value); it does not fall back to the other rate. Set both as
+Worker secrets (`npx wrangler secret put CREDIT_RATE_PLAN --name diomedes`, the
+same for `CREDIT_RATE_FREE`): they read the same as vars, survive a deploy, and
+keep the figures out of the repository. The single per-100 price these two
+replace is gone from the code, the tests, the faux cloud and this file.
+
+### Settings
+
+Worker settings, read on every call:
+
 - `STRIPE_SECRET_KEY`: a Worker secret (`npx wrangler secret put
-  STRIPE_SECRET_KEY --name diomedes`), the `sk_test_...` key for test mode.
-  Unset: purchases answer 503; quotes still work.
+  STRIPE_SECRET_KEY --name diomedes`). Unset: purchases answer 503; quotes still
+  work.
+- `STRIPE_LIVE`: the test and live guard. Only the exact value `1` means live;
+  anything else, or unset, is test. In test mode the secret key must start
+  `sk_test_` or `rk_test_` and the Worker refuses any other key (purchases
+  answer 503 and the log says `live-key-needs-stripe-live`, never the key). In live
+  mode it must start `sk_live_` or `rk_live_`. A key that does not belong to the
+  mode is never sent anywhere.
 - `STRIPE_WEBHOOK_SECRET`: a Worker secret, the `whsec_...` signing secret of
   the endpoint below. Unset: the webhook answers 503 and records nothing, so
   Stripe sends the event again once it is set.
+- `STRIPE_WEBHOOK_SECRET_PREVIOUS` (optional): the endpoint's signing secret
+  before a rotation. A signature that is valid under either secret is accepted,
+  within the same 300 second tolerance, so a rotation needs no gap. Remove it
+  once Stripe has stopped signing with the old secret.
 - `FUNDING_DATABASE_URL` (existing): the purchase rows and the top-ups they
   record are funding writes, so they run as `cp_funding`. Run the updated
   `scripts/funding-permissions.sql` as the owner after migrating 015. The
   business's Stripe customer and the verified events are not funding writes:
   they run as the Worker login (`DATABASE_URL`, `cp_runtime`), which needs the
   updated `scripts/runtime-permissions.sql` (SELECT and INSERT on
-  `billing_customers` and `webhook_inbox`, nothing more; making the customer
-  adds no privilege).
+  `billing_customers` and `webhook_inbox`, and UPDATE on `webhook_inbox`'s
+  `state` and `processed_at` columns only, so an event can be marked; making the
+  customer adds no privilege).
+
+Every Stripe API request carries a pinned `Stripe-Version` header
+(`STRIPE_API_VERSION` in `src/credit-purchases.ts`, currently
+`2026-08-26.dahlia`), so a change of Stripe's default version never changes what
+the Worker receives. The faux Stripe refuses a request without it.
 
 Register this endpoint in Stripe (test mode first): `https://accounts.diomedes.net/billing/stripe/webhook`.
 Subscribe it to these events:
@@ -517,14 +556,50 @@ Subscribe it to these events:
 - `checkout.session.expired`
 
 The first two pay a purchase, the third closes one whose delayed payment failed,
-and the last closes one nobody paid. Any other event is acknowledged and ignored.
+and the last closes one nobody paid. Any other event is acknowledged: it is stored
+in the inbox marked `ignored` and nothing is applied.
+
+### The event router and the inbox
+
+One router (`src/stripe-events.ts`) maps an event type to its handler. The four
+`checkout.session.*` types above are handled exactly as before; every other type
+goes to one fallback, which stores the event in `webhook_inbox` as `ignored` and
+returns. Later slices add their types to the router's map and never a branch to the
+receiver. An ignored event keeps only its id, type, mode, the id of the object it
+is about and, when that object names a customer of ours, the customer and the
+business that customer belongs to (from our own `billing_customers` row, never from
+the event); it carries no buyer name, email or address. An event that names no
+customer of ours is stored with no business (migration 016 lets an inbox row carry
+none, all three of customer, organization and tenant together or none of them).
+Delivery is idempotent by event id: a second delivery of the same event stores
+nothing, and the same id with other contents is logged
+(`stripe-event-ledger-refused`) and changes nothing.
+
+The inbox state of an event is `pending` (stored, not yet applied), `processed`
+(applied; `processed_at` is set), `quarantined` (refused for good, such as a
+mismatched amount or a closed purchase; no time is set) or `ignored`. A paid event
+is stored `pending`, then marked `processed` or `quarantined` once the purchase
+has answered; a failure a retry could change leaves it `pending` and the receiver
+answers 503. The mark is a single UPDATE of `state` and `processed_at` by the
+Worker login, `WHERE state = 'pending'`, so only a pending event moves, once; a
+mark that cannot be written is logged (`stripe-event-mark-failed`) and changes
+nothing about the payment.
+
+Mode: an event is acted on only in the mode the Worker is in. `livemode: true` is
+refused unless `STRIPE_LIVE=1`, `livemode: false` is refused in live mode, and an
+event that does not carry a boolean `livemode` is refused. A refusal answers 400,
+logs `stripe-event-wrong-mode`, and stores nothing. Each stored row also carries
+its `environment` (`test` or `live`), and a purchase only ever pays from an event
+of its own environment.
 
 Routes, for an owner or an admin of the business, behind the same bearer, origin
 and query rules as the other account routes:
 
 - `GET /account/organizations/:id/credit-purchases/quote?credits=N` answers
-  `{ credits, amountCents, currency: 'usd' }`. Credits that are not a whole step
-  of 100 inside the bounds are 422.
+  `{ credits, amountCents, currency: 'usd', steps, stepCredits, stepCents }` at the
+  business's rate; `stepCredits` and `stepCents` are its step, and a request with
+  no `credits` is one step, which is how a screen learns the step before it asks
+  for more. Credits that are not a whole number of steps inside the bounds are 422.
 - `POST /account/organizations/:id/credit-purchases` `{ credits }` (strict body)
   makes a pending purchase and a Checkout Session, and answers 201
   `{ purchaseId, checkoutUrl, credits, amountCents }`. The amount is the Worker's
@@ -554,7 +629,8 @@ verified raw body. Then the funding login, in one transaction, marks the purchas
 paid and records the top-up (the credits bought, keyed by the purchase id, with
 the event id as its source). Replays, a second event for a paid purchase, a
 mismatched amount and an unknown session change nothing and answer 200, because
-the receiver checks all of that, read-only, before it stores anything.
+the receiver checks all of that, read-only, before it stores anything. A signature
+valid under `STRIPE_WEBHOOK_SECRET` or `STRIPE_WEBHOOK_SECRET_PREVIOUS` verifies.
 `GET /billing/return` is the plain page Stripe sends the buyer back to; it
 says to go back to Nectovia and echoes nothing from the request.
 
@@ -591,12 +667,34 @@ privilege on `webhook_inbox` or `billing_customers`, so it cannot make bought
 credits on its own, and `cp_runtime` has no privilege on `credit_purchases` and
 only reads `credit_topups`. The two steps are separate transactions, the event first. If
 the second fails, Stripe sends the event again: the event is stored once, and the
-top-up once. A stored payment event stays `pending` in the inbox, the state a
-future inbox processor would take, so nothing marks it processed. The runner
-refuses 015 until 011, 012, 013 and 014 are in its list before it.
+top-up once. The runner refuses 015 until 011, 012, 013 and 014 are in its list
+before it.
 
-The faux cloud buys without Stripe: `CREDIT_PRICE_CENTS_PER_100` from the
-environment (or the faux test price when it is unset), a faux `POST /v1/customers`
+### Migration 016 and the reserved actor
+
+Migration 016 (`016_stripe_billing_foundation.sql`) took its number at merge, in
+merge order (2026-10-06). The draft pull request #196 had reserved 016 and takes the
+next free number when it lands. The runner needs the versions in its list to equal
+their position plus one, and refuses the whole list, before it opens a transaction,
+when they do not, so each new migration is listed directly after the last one. 016
+is applied to `accounts_staging` with main's runner before the code that needs it
+merges. The migration adds
+`environment` (`test` or `live`, existing rows backfilled to `test`) to
+`billing_customers`, `webhook_inbox` and `credit_purchases`, and makes the
+customer's uniqueness per environment; it adds `ignored` to the inbox states and
+lets an inbox row carry no business; it adds `rate_cents` and `rate_credits` to
+`credit_purchases` (existing rows backfilled at 100 credits per step) with the
+whole-steps check; and it creates the reserved `billing-system` person row.
+
+`billing-system` (`src/billing-system.ts`) is the reserved actor for `issuedBy` on
+grants and for the audit rows of work the billing system does itself, with the role
+`billing`. It is not a person: it cannot be added as staff, and it never holds a
+session.
+
+The faux cloud buys without Stripe: `CREDIT_RATE_PLAN` and `CREDIT_RATE_FREE` from
+the environment (or the faux test rates, `1000:110` and `1300:100`, when they are
+unset; the seeded Juniper Street Bakery holds a plan and Harbor Hardware does not),
+a faux `POST /v1/customers`
 (one customer per idempotency key, as Stripe makes them) beside the faux Checkout
 Session call, a local checkout page at
 `/faux/checkout/:sessionId`, and `FauxCloud.completeCheckout(sessionId)`, which

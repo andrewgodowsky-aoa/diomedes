@@ -195,10 +195,18 @@ export interface CreditPurchaseRow {
   purchaseId: string;
   /** The verified person who bought. */
   personId: string;
-  /** A whole number of credits, in steps of 100. */
+  /** A whole number of credits: whole steps of the rate below. */
   credits: number;
-  /** What Stripe is asked to charge, in cents. */
+  /** What Stripe is asked to charge, in cents: the same whole steps at the rate below. */
   amountCents: number;
+  /**
+   * The rate the server chose when the purchase was made, from the paying business's plan at that moment: `rateCredits` credits for
+   * `rateCents` cents per step. The paid event credits this row's credits and never works a rate out again.
+   */
+  rateCents: number;
+  rateCredits: number;
+  /** The Stripe environment the purchase was made in. Only an event from the same one can pay it. */
+  environment: 'test' | 'live';
   currency: 'usd';
   /** Null until Stripe has made the Checkout Session. */
   checkoutSessionId: string | null;
@@ -591,27 +599,35 @@ export class FundingService {
   /**
    * Start a credit purchase (migration 015): the pending row, before Stripe is asked for a Checkout
    * Session. Idempotent by purchase id; the same terms find the row, different terms are a 409.
-   * Server-only: the amount comes from the Worker's price setting, never from a request.
+   * Server-only: the credits, the price and the rate come from the Worker's own settings and the business's plan, never from a request.
+   * The credits are whole steps of the rate and the price is those steps at its price, in integers, so a row cannot say it bought credits
+   * at a rate it was not charged.
    */
-  async startCreditPurchase(input: { tenantId: string; organizationId: string; purchaseId: string; personId: string; credits: number; amountCents: number }): Promise<CreditPurchaseRow> {
+  async startCreditPurchase(input: { tenantId: string; organizationId: string; purchaseId: string; personId: string; credits: number; amountCents: number;
+    rateCents: number; rateCredits: number; environment: 'test' | 'live' }): Promise<CreditPurchaseRow> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
     const purchaseId = requireId(input.purchaseId, 'purchase');
     const personId = requireId(input.personId, 'person');
-    const { credits, amountCents } = input;
-    if (!Number.isSafeInteger(credits) || credits < 100 || credits > 1_000_000 || credits % 100 !== 0)
-      throw new FundingError(422, 'Credits are bought in whole steps of 100.', 'invalid_request');
-    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999)
-      throw new FundingError(422, 'A purchase needs a price in whole cents.', 'invalid_amount');
+    const { credits, amountCents, rateCents, rateCredits, environment } = input;
+    if (environment !== 'test' && environment !== 'live')
+      throw new FundingError(422, 'A purchase is made in the test or the live environment.', 'invalid_request');
+    if (!Number.isSafeInteger(rateCents) || rateCents < 1 || rateCents > 99_999_999 || !Number.isSafeInteger(rateCredits) || rateCredits < 1 || rateCredits > 1_000_000)
+      throw new FundingError(422, 'A purchase needs a rate in whole cents and whole credits.', 'invalid_amount');
+    if (!Number.isSafeInteger(credits) || credits < rateCredits || credits > 1_000_000 || credits % rateCredits !== 0)
+      throw new FundingError(422, 'Credits are bought in whole steps.', 'invalid_request');
+    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999 || amountCents !== (credits / rateCredits) * rateCents)
+      throw new FundingError(422, 'A purchase needs a price in whole cents that is its steps at the rate.', 'invalid_amount');
     return this.repository.transaction(async (tx) => {
       await tx.lockOrganization(tenantId, organizationId);
       const existing = await tx.creditPurchase(tenantId, purchaseId);
       if (existing) {
-        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.credits !== credits || existing.amountCents !== amountCents)
+        if (existing.organizationId !== organizationId || existing.personId !== personId || existing.credits !== credits || existing.amountCents !== amountCents
+          || existing.rateCents !== rateCents || existing.rateCredits !== rateCredits || existing.environment !== environment)
           throw new FundingError(409, 'That purchase already exists with different terms.', 'purchase_conflict');
         return existing;
       }
-      const row: CreditPurchaseRow = { tenantId, organizationId, purchaseId, personId, credits, amountCents, currency: 'usd',
+      const row: CreditPurchaseRow = { tenantId, organizationId, purchaseId, personId, credits, amountCents, rateCents, rateCredits, environment, currency: 'usd',
         checkoutSessionId: null, state: 'pending', createdAt: this.at(), resolvedAt: null, stripeEventId: null };
       await tx.saveCreditPurchase(row);
       return row;
@@ -676,12 +692,13 @@ export class FundingService {
    * Replays, mismatches and unknown sessions come back ignored, with the reason, and change nothing.
    */
   async previewCreditPurchase(input: { sessionId: string; purchaseId: string | null; tenantId: string | null; organizationId: string | null;
-    amountTotal: number | null; currency: string | null }):
+    amountTotal: number | null; currency: string | null; environment: 'test' | 'live' }):
     Promise<{ outcome: 'payable'; tenantId: string; organizationId: string; purchaseId: string } | { outcome: 'ignored'; reason: string; purchaseId: string | null }> {
     const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
     return this.repository.transaction(async (tx) => {
       const found = await tx.creditPurchaseBySession(input.sessionId);
       if (!found) return ignored('unknown_session');
+      if (found.environment !== input.environment) return ignored('environment_mismatch', found.purchaseId);
       if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
       if (found.state !== 'pending') return ignored(`already_${found.state}`, found.purchaseId);
       if (paysAnotherAmount(found, input)) return ignored('amount_mismatch', found.purchaseId);
@@ -698,13 +715,14 @@ export class FundingService {
    * the signature has been verified.
    */
   async resolveCreditPurchase(input: { kind: 'paid' | 'expired' | 'failed'; sessionId: string; purchaseId: string | null; tenantId: string | null;
-    organizationId: string | null; amountTotal: number | null; currency: string | null; eventId: string }):
+    organizationId: string | null; amountTotal: number | null; currency: string | null; eventId: string; environment: 'test' | 'live' }):
     Promise<{ outcome: 'paid' | 'expired' | 'failed' | 'ignored'; reason: string | null; purchaseId: string | null }> {
     const eventId = requireId(input.eventId, 'billing event');
     const ignored = (reason: string, purchaseId: string | null = null) => ({ outcome: 'ignored' as const, reason, purchaseId });
     return this.repository.transaction(async (tx) => {
       const found = await tx.creditPurchaseBySession(input.sessionId);
       if (!found) return ignored('unknown_session');
+      if (found.environment !== input.environment) return ignored('environment_mismatch', found.purchaseId);
       if (namesAnotherPurchase(found, input)) return ignored('metadata_mismatch', found.purchaseId);
       await tx.lockOrganization(found.tenantId, found.organizationId);
       const purchase = await tx.creditPurchase(found.tenantId, found.purchaseId);
