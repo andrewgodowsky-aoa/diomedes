@@ -55,7 +55,7 @@ import type { WorkspaceView } from '../shared/workspaces';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 /** The sentence a person reads wherever an Automation is refused for want of a plan. */
-const PAID_PLAN = /^Automations are part of a paid plan\./;
+const PAID_PLAN = /^Routines are part of a paid plan\./;
 const MONDAY_8: AutomationSchedule = {
   cadence: 'weekly',
   weekday: 1,

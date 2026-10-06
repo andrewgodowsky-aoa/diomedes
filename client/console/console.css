@@ -1162,6 +1162,97 @@ html[data-surface='console'] body {
 .console #secRecent li.quiet {
   font-size: var(--dm-type-caption);
 }
+/* The board beside a thread in Work (round 2 board BD1). It sits in the aside's own column, so
+   the stage's widths are unchanged; every size is one of the type tokens. */
+.console .ledger .bh {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.console .ledger .bh h2 {
+  text-transform: none;
+  letter-spacing: 0;
+  font: 600 var(--dm-type-section) / 1.3 var(--ui);
+  color: var(--t1);
+}
+.console .ledger .bh-open {
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .ledger .bh-open:hover {
+  color: var(--t1);
+}
+.console .ledger .bcs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.console .ledger .bcs li {
+  display: block;
+  padding: 0;
+}
+.console .ledger .bc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  text-align: left;
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+}
+.console .ledger .bc:hover,
+.console .ledger .bc[aria-current='true'] {
+  border-color: var(--hair-2);
+}
+.console .ledger .bc .bt {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.console .ledger .bc .bm {
+  color: var(--t3);
+  font-size: var(--dm-type-meta);
+  overflow-wrap: anywhere;
+}
+.console .ledger .bc .bs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--t2);
+  font-size: var(--dm-type-meta);
+}
+.console .ledger .bc .bx {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .ledger .bc .go {
+  margin-left: auto;
+  flex: none;
+  color: var(--attn);
+}
+.console .ledger li.fin {
+  grid-template-columns: 1fr auto;
+  color: var(--t2);
+}
+.console .ledger p.quiet {
+  margin: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+/* Under the conversation on a narrow window the board keeps the thread's own work and what needs
+   the person; Open full board has the rest, so the short strip stays as calm as it was. */
+@container app (max-width: 1100px) {
+  .console #scrThread > .ledger :is(#secWork, #secNext, #secDone) {
+    display: none;
+  }
+}
 
 /* ---- model picker: full name in every mode ---- */
 .console .picker {

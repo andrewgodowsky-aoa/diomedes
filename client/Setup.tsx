@@ -9,6 +9,7 @@ import {
 } from '../shared/onboarding';
 import AISetup from './AISetup';
 import { useAccount } from './AccountGate';
+import { VIEW_LABELS, shownView } from './console/work-view';
 
 /**
  * What will answer once setup ends. A business that includes the Agent has it ready whether or
@@ -96,10 +97,11 @@ export function Setup({
           <>
             <h1>Your workspace is ready</h1>
             <p className="prose intro">
-              You&apos;ll start in the Conversation view, with {titleCase(settings.detail)} detail:{' '}
-              {detailDescriptions[settings.detail].toLowerCase()} File proposals require review
-              before Nectovia applies them. Your other approval preferences are in Settings, where you
-              can also switch to the Architect view for the full workspace.
+              You&apos;ll start in the{' '}
+              {VIEW_LABELS[shownView(settings.view, account?.state.plan.agent === 'free')]} view, with{' '}
+              {titleCase(settings.detail)} detail: {detailDescriptions[settings.detail].toLowerCase()}{' '}
+              File proposals require review before Nectovia applies them. Your other approval
+              preferences are in Settings. The switch at the top moves between Nectovia and Work.
             </p>
             <ReadyNote settings={settings} workspaces={account?.state.workspaces ?? null} />
             <div className="actions">

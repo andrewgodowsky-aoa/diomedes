@@ -226,12 +226,14 @@ test('Nectovia: its tokens, the mark, and a plate with its bevel', async ({ page
   expect(await rootVar(page, '--attn')).toBe('#e0a94a');
 
   await openWork(page);
-  // The mark in the Console's strip: its plates, one lit point, the word.
+  // The mark in the Console's strip: its plates and one lit point. The switch beside it spells the
+  // name, so the strip draws the glyph alone (round 2 board BD1).
   const mark = page.locator('.console .top .dm-nmark');
   await expect(mark).toBeVisible();
   await expect(mark.locator('svg polygon.dm-nmark-plate')).toHaveCount(3);
   await expect(mark.locator('[data-mark-point]')).toHaveCount(1);
-  await expect(mark.locator('.dm-nmark-word')).toHaveText('Nectovia');
+  await expect(mark.locator('.dm-nmark-word')).toHaveCount(0);
+  await expect(page.locator('.console .top .view-switch .view-tab').first()).toHaveText('Nectovia');
   // The composer is a plate: a cut layer behind it and a lit edge on the bevel.
   const composer = page.locator('#scrThread .composer');
   await expect(composer).toBeVisible();

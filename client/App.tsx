@@ -49,6 +49,7 @@ import { withBaseStructure } from '../shared/appearance-structure';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 import { shortcutHint } from './keyboard';
+import { ROUTINES, ROUTINES_FREE_VERSION, shownView } from './console/work-view';
 
 const PLACE_KEY = 'diomedes.window.place';
 /** The project this window was showing before a reload, or null. */
@@ -70,7 +71,8 @@ function updateNoticeNote(text: string | undefined): string | undefined {
 }
 
 /** Why the home row opened no Automations for a person on the free version: there's no business to switch to. */
-const AUTOMATIONS_FREE_VERSION = "Automations are part of a paid plan, and you're on the free version.";
+// Automations are called Routines wherever a person reads them (round 2 board BD3).
+const AUTOMATIONS_FREE_VERSION = ROUTINES_FREE_VERSION;
 
 export function App() {
   const freePlan = useFreePlan();
@@ -387,7 +389,8 @@ export function App() {
     // setting unreachable for anybody working there; with one surface left that
     // would have retired Detail altogether.
     root.dataset.detail = settings.detail;
-    root.dataset.view = settings.view ?? 'architect';
+    // The view the Console shows: the free version keeps Work (round 2 board BD1).
+    root.dataset.view = shownView(settings.view, freePlan !== null);
     // One owner for the appearance. With no custom theme this is the code that
     // has always run, unchanged, so the ten built-in schemes behave exactly as
     // before; with one, the resolver decides and the runtime writes, and the
@@ -437,7 +440,7 @@ export function App() {
     // Surface changes never resize the interface. Explicit size preferences win.
     for (const [name, value] of Object.entries(scales))
       root.style.setProperty(`--dm-${name}`, String(value));
-  }, [settings, activeTheme]);
+  }, [settings, activeTheme, freePlan !== null]);
   useEffect(() => {
     const change = (command: ScaleCommand) => {
       // Serialize held/repeated shortcuts and read the current preference each time.
@@ -665,7 +668,7 @@ export function App() {
     },
     {
       id: 'automations',
-      label: 'Automations',
+      label: ROUTINES,
       hint: 'What runs for your business, what it last did, and what needs you.',
     },
     { id: 'engines', label: 'AI engines', hint: 'Which engines are installed, signed in, and switched on.' },
@@ -710,7 +713,7 @@ export function App() {
         setHomeNotice(
           freePlan
             ? AUTOMATIONS_FREE_VERSION
-            : 'Automations are set up per business workspace, and Personal has none. Open a project and switch under Change workspace.',
+            : 'Routines are set up per business workspace, and Personal has none. Open a project and switch under Change workspace.',
         );
         return;
       }
@@ -725,7 +728,7 @@ export function App() {
         setHomeNotice(
           output
             ? `${name} writes into “${output.projectName}”, which is not here any more. Choose where it writes under Change workspace.`
-            : `${name} has not chosen the project it writes into, so there is nowhere to open Automations. Choose one under Change workspace.`,
+            : `${name} hasn't chosen the project it writes into, so there's nowhere to open Routines. Choose one under Change workspace.`,
         );
         return;
       }

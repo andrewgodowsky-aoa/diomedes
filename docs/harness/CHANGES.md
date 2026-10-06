@@ -1,5 +1,51 @@
 # Harness host integration changes, 2026-09-09
 
+## The Work view, round 2 reskin slice 3, 2026-10-06
+
+Slice 3 of the round 2 reskin (DIO-200) builds boards BD1 to BD3: the Work view replaces Architect,
+Automations are called Routines wherever a person reads them, and the team view has a free state.
+On 2026-10-06 Andrew directed that the reskin be pushed fully through, and that is the owner
+override for the hot files. `client/console/Shell.tsx` gains the top switch, the board's open-a-task
+handler and the free version's view rule; `shared/access.ts` renames one paid ability and one
+reason; `server/workspace-routes.ts` renames two error lines. `shared/types.ts`, `server/app.ts`
+and `server/store.ts` do not change: the stored view keeps its value `architect`, which now opens
+Work, so every saved setting keeps working and the server's settings check is untouched.
+
+- The top switch (BD1). The strip reads "Nectovia | Work" beside the mark's glyph
+  (`client/console/ViewSwitch.tsx`, `work-view.ts`), in the strip's first cell, so the strip keeps
+  its three columns. It replaces the View radios in the "···" menu; Settings > Appearance and Ctrl K
+  name the views Nectovia and Work. On the free version (`useFreePlan`, the gate main already uses
+  for the ask row) the Nectovia tab carries a lock and opens a short notice, "Nectovia comes with a
+  paid plan", with Sign up for a plan, Remind me later and Don't remind me again. The two reminders
+  go to the account's existing plan notice route, so every free notice reads one answer. A free
+  person always sees Work; their stored choice is left alone and comes back with a plan.
+- The board beside the thread (BD1). The project aside in Work keeps its column and becomes the
+  board: Board with Open full board, the project and its open count, the thread's own work (Team and
+  Loop run stay), then Needs your input, Working, Up next and Finished today. Cards read the Board's
+  records and the one needs-you rule (`workBoard` in `work-view.ts`); a card opens its thread, a
+  decision opens where it waits. Activity and Recent left the aside: the thread shows its run, and
+  the board shows what finished today. On a narrow window, where the aside stands under the
+  conversation, it keeps the thread's own work and Needs your input; Open full board has the rest.
+  The strip draws the mark's glyph beside the switch, since the switch's first tab spells the name
+  (`tests/name-contract.test.ts` follows).
+- Routines (BD3). Every place a person reads Automations now reads Routines: the rail and
+  Everything, the palette, the screen's heading and list, the home's notices, Change workspace, the
+  paid abilities list, the plan reason and two brief errors. Ids, the `Automations` screen value, the
+  API paths and the `automation` usage class keep their names. Routines is a default rail pin, and on
+  the free version its row reads Paid plans. A New routine button holds its place, disabled, since a
+  routine of a person's own isn't built.
+- The team view (BD2). It stays on every plan. On the free version it shows the person in the lead
+  seat and Nectovia's seat locked ("Can lead this team"), and while the account's plan notice is due,
+  one line: "Nectovia can lead the team and call models like Jev on a paid plan." with the same three
+  choices. A paid person sees the team as before.
+- Work's engine menu is slice 1's ask row, unchanged: Nectovia grayed with "Buy credits or upgrade
+  your plan to use Nectovia" on the free version.
+
+Unit tests: `tests/work-view.test.ts`, and the board in `tests/attribution-shared-ui.test.ts`. The
+browser specs use the top switch (`tests/console-view-ui.spec.ts`, `tests/ui.spec.ts`,
+`tests/completion-journey.spec.ts`) and the Routines names (`tests/automations.spec.ts`,
+`tests/cd05-zoom-motion.spec.ts`, `tests/diomedes-home.spec.ts`, `tests/automations-paid-plan.test.ts`).
+
 ## The Nectovia home and thread, round 2 reskin slice 2, 2026-10-06
 
 Slice 2 of the round 2 reskin (DIO-200) builds boards N1 and N2, with N3 as the alternative view,

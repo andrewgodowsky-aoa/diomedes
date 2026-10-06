@@ -302,17 +302,17 @@ for (const [label, width, height] of [
       requireReached(names, 'Settings > Engines', [/^(?:Engines|Helpers on this computer)$/, 'Appearance']);
     });
 
-    test('the screens landed alongside: Automations, Settings > Permissions and Rules', async ({ page }) => {
+    test('the screens landed alongside: Routines, Settings > Permissions and Rules', async ({ page }) => {
       await settle(page);
       await page.goto('/');
       await reopenLastProject(page);
       await page.getByRole('button', { name: 'Everything', exact: true }).click();
-      await page.getByRole('menuitem', { name: /^Automations\b/ }).click();
+      await page.getByRole('menuitem', { name: /^Routines\b/ }).click();
       await expect(
-        page.getByRole('region', { name: 'Automations' }).getByRole('heading', { name: 'Automations', level: 1 }),
+        page.getByRole('region', { name: 'Routines' }).getByRole('heading', { name: 'Routines', level: 1 }),
       ).toBeVisible();
-      await holdsAt200(page, 'Automations');
-      await tabWalk(page, 'Automations', 40);
+      await holdsAt200(page, 'Routines');
+      await tabWalk(page, 'Routines', 40);
 
       await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
       for (const section of ['Permissions', 'Rules']) {

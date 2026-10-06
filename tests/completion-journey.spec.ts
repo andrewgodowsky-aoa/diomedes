@@ -361,8 +361,7 @@ test('Completion journey: fresh install to a reviewed, verified change that surv
 
   await test.step('A task is made on the Board and started on the sample route', async () => {
     // A new person starts in the Conversation view; the Board is part of the full Console.
-    await page.getByRole('button', { name: 'Interface detail menu' }).click();
-    await page.getByRole('menuitemradio', { name: 'Architect', exact: true }).click();
+    await page.getByRole('navigation', { name: 'View', exact: true }).getByRole('button', { name: 'Work', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'architect');
     await openBoard(page);
     await boardOf(page).getByRole('button', { name: 'New task', exact: true }).click();

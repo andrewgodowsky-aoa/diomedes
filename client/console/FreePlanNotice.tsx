@@ -99,20 +99,34 @@ export function FreePlanNotice({ plan, busy = false, error = '', onChoice }: Fre
  */
 export function AccountPlanNotice() {
   const account = useAccount();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { busy, error, choose } = usePlanNoticeChoice();
   const plan = account?.state.plan;
   if (!account || !plan?.notice) return null;
-  const choose = async (choice: PlanNoticeChoice) => {
+  return <FreePlanNotice plan={plan} busy={busy} error={error} onChoice={(choice) => void choose(choice)} />;
+}
+
+/**
+ * Sends Remind me later or Don't remind me again to the host, which keeps the choice for the
+ * account, so every notice of the free version (this one, the Nectovia tab's and the team view's)
+ * reads the same answer. Resolves true once the host has it.
+ */
+export function usePlanNoticeChoice() {
+  const account = useAccount();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const choose = async (choice: PlanNoticeChoice): Promise<boolean> => {
+    if (!account || busy) return false;
     setBusy(true);
     setError('');
     try {
       account.apply(await api<AccountStateView>('/account/plan-notice', 'POST', { choice }));
+      return true;
     } catch (failure) {
       setError(failure instanceof Error && failure.message ? failure.message : 'That choice could not be saved. Try again.');
+      return false;
     } finally {
       setBusy(false);
     }
   };
-  return <FreePlanNotice plan={plan} busy={busy} error={error} onChoice={(choice) => void choose(choice)} />;
+  return { busy, error, choose };
 }

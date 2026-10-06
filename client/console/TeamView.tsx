@@ -17,6 +17,10 @@ import { LeadWorkers } from './LeadWorkers';
 import { WorkerRows } from './WorkerRows';
 import { HandoffForm } from './HandoffForm';
 import { isManualCard } from '../../shared/task-workflow';
+import { AskIcon } from './AskRow';
+import { AGENT_NAME } from '../../shared/agent-name';
+import { PlansLink, usePlanNoticeChoice } from './FreePlanNotice';
+import { TEAM_LEAD, TEAM_NECTOVIA_SEAT, TEAM_PAID_LINE, TEAM_YOU } from './work-view';
 
 const KIND_WORDS = new Set([
   'read',
@@ -207,8 +211,10 @@ export function TeamView({
   onOpenThread,
   teamRoutes,
   onAddMember,
+  free = null,
 }: TeamProps) {
   const [adding, setAdding] = useState(false);
+  const planChoice = usePlanNoticeChoice();
   // The member whose manual hand-off form is open (S1).
   const [handingFrom, setHandingFrom] = useState<Slot | null>(null);
   const ordered = useMemo(
@@ -387,6 +393,48 @@ export function TeamView({
           </button>
         )}
       </div>
+      {free && (
+        // The team view is on every plan. Nectovia leading the team and calling models like Jev
+        // is paid only, so on the free version the person leads (round 2 board BD2).
+        <div className="team-seats" role="list" aria-label="Who leads">
+          <div className="seat you" role="listitem">
+            {TEAM_YOU}
+            <span className="seat-role">{TEAM_LEAD}</span>
+          </div>
+          <div className="seat locked" role="listitem">
+            <span className="seat-name">{AGENT_NAME}</span>
+            <span className="seat-role">
+              <AskIcon name="lock" size={13} stroke={2} />
+              {TEAM_NECTOVIA_SEAT}
+            </span>
+          </div>
+        </div>
+      )}
+      {free?.notice && (
+        <div className="team-upsell" role="note" aria-label="Paid plan">
+          <p>{TEAM_PAID_LINE}</p>
+          {planChoice.error && <p role="alert">{planChoice.error}</p>}
+          <div className="team-upsell-acts">
+            <PlansLink plan={free} className="send ready" />
+            <button
+              type="button"
+              className="send"
+              aria-disabled={planChoice.busy || undefined}
+              onClick={() => void planChoice.choose('later')}
+            >
+              Remind me later
+            </button>
+            <button
+              type="button"
+              className="send"
+              aria-disabled={planChoice.busy || undefined}
+              onClick={() => void planChoice.choose('never')}
+            >
+              Don't remind me again
+            </button>
+          </div>
+        </div>
+      )}
       {onAddMember && adding && (
         <AddMember
           routes={teamRoutes ?? null}

@@ -1,5 +1,4 @@
 import type {
-  HistoryEntry,
   Mode,
   Need,
   Project,
@@ -8,15 +7,12 @@ import type {
   Task,
 } from '../../shared/types';
 import { formatOrigin, originForSession } from '../attribution-display';
-import { OriginLine, time } from '../components';
+import { OriginLine } from '../components';
 import { taskEvidence } from '../workbench/task-evidence';
-import { evidenceTone, needsYou } from '../../shared/needs-you';
+import { evidenceTone } from '../../shared/needs-you';
 // The Board's own reading, so a task's age is the same number on both: since it last moved.
 import { ageOf } from './BoardView';
-
-function clockOf(iso: string): string {
-  return new Date(iso).toTimeString().slice(0, 5);
-}
+import { cardNeed, workBoard, type BoardCard } from './work-view';
 
 interface LedgerProps {
   project: Project;
@@ -30,13 +26,18 @@ interface LedgerProps {
   onBoard(): void;
   onTeam(): void;
   onReviewNeed(need: Need): void;
+  /** Opens a task's own thread, from its card. */
+  onOpenTask?(taskId: string): void;
   /** H13: start a work loop run on this thread's task. */
   onLoopRun?(): void;
 }
 
 /**
- * The project aside: name, the thread's own work on a stronger hairline,
- * then Work, Needs you, Activity and Recent. Dimming follows the mode.
+ * The board beside a thread in Work (round 2 board BD1). It keeps the place the project aside
+ * held, so the column and its widths are unchanged: the thread's own work first, then Needs your
+ * input, Working, Up next and Finished today, read from the same records as the Board screen.
+ * Each card opens its thread, and a decision opens where it waits. Open full board goes to the
+ * Board screen.
  */
 export function Ledger({
   project,
@@ -50,16 +51,10 @@ export function Ledger({
   onBoard,
   onTeam,
   onReviewNeed,
+  onOpenTask,
   onLoopRun,
 }: LedgerProps) {
-  const projection = (item: Task) => taskEvidence(item, state.sessions, state.needs, state.changes);
-  const open = state.tasks
-    .filter((item) => !item.deletedAt)
-    .map((item) => ({ task: item, evidence: projection(item) }))
-    .filter((item) => item.evidence.column !== 'Done');
-  const focus = task ? projection(task) : null;
-  // The one needs-you rule: the same items the home counts and the Board marks.
-  const waiting = needsYou(state);
+  const focus = task ? taskEvidence(task, state.sessions, state.needs, state.changes) : null;
   const worker = (item: Task, session: Session | null) =>
     session
       ? formatOrigin(originForSession(session)).label
@@ -68,27 +63,44 @@ export function Ledger({
         : item.id === task?.id && taskWorker
           ? taskWorker
           : 'Assistant - model not recorded';
-  const activityRunning = running && latest?.state === 'working';
-  const lastHistory: HistoryEntry | undefined = state.history.at(-1);
-  const sub = open.length
-    ? `N open items, updated ${lastHistory ? time(lastHistory.time) : 'never'}`.replace(
-        'N open items',
-        `${open.length} open ${open.length === 1 ? 'item' : 'items'}`,
-      )
-    : 'Ready when you are';
-  const recent = state.history.slice(-3).reverse();
-  const activity = latest ? [...latest.log].reverse().slice(0, 8) : [];
-  const sessionOf = (sessionId: string | null) =>
-    sessionId ? (state.sessions.find((s) => s.id === sessionId) ?? null) : null;
-  const originLabelOf = (entry: HistoryEntry): string | null => {
-    const session = sessionOf(entry.sessionId);
-    const snapshot = entry.origin ?? (session ? originForSession(session) : undefined);
-    return snapshot ? formatOrigin(snapshot).label : null;
+  const board = workBoard(state, worker);
+  const open = (card: BoardCard) => {
+    const need = cardNeed(card, openNeeds);
+    if (need) onReviewNeed(need);
+    else if (card.taskId && onOpenTask) onOpenTask(card.taskId);
+    else onBoard();
   };
+  const cards = (list: BoardCard[], go?: string) =>
+    list.map((card) => (
+      <li key={card.id}>
+        <button
+          type="button"
+          className="bc"
+          aria-current={card.taskId && card.taskId === task?.id ? 'true' : undefined}
+          onClick={() => open(card)}
+        >
+          <span className="bt">{card.title}</span>
+          {card.meta && <span className="bm">{card.meta}</span>}
+          <span className="bs">
+            <span className={`pt ${card.tone}`} aria-hidden="true" />
+            <span className="bx">{card.status}</span>
+            {go && <span className="go">{go}</span>}
+          </span>
+        </button>
+      </li>
+    ));
+  const activity = running && latest?.state === 'working' ? 'running' : latest?.state === 'waiting' ? 'waiting' : null;
   return (
     <aside className="ledger" aria-label="This project">
-      <h2>{project.name}</h2>
-      <p className="sub">{sub}</p>
+      <div className="bh">
+        <h2>Board</h2>
+        <button type="button" className="bh-open" onClick={onBoard}>
+          Open full board
+        </button>
+      </div>
+      <p className="sub">
+        {project.name}, {board.open} open
+      </p>
       {task && focus && (
         <div className="focus" aria-label="This thread's work">
           <div className="t">
@@ -99,9 +111,7 @@ export function Ledger({
             <span className="mono" title={ageOf(task).title}>
               {focus.detail}, {ageOf(task).short}
             </span>
-            <button type="button" onClick={onBoard}>
-              Board
-            </button>
+            {activity && <span className="mono">{activity}</span>}
             <button type="button" onClick={onTeam}>
               Team
             </button>
@@ -120,99 +130,38 @@ export function Ledger({
           )}
         </div>
       )}
-      <section id="secWork" className={mode === 'ask' ? 'dim' : ''}>
-        <h3>
-          Work <span className="mono">{open.length} open</span>
+      <section id="secNeeds" aria-labelledby="secNeedsH">
+        <h3 id="secNeedsH">
+          Needs your input <span className="mono">{board.needs.length}</span>
         </h3>
-        <ul>
-          {open.map(({ task: t, evidence }) => (
-            <li key={t.id}>
-              <span className={`pt ${evidenceTone(evidence)}`} />
-              {t.name}
-              <span className="mono lc" title={ageOf(t).title}>
-                {ageOf(t).short}
-              </span>
-              <span className="sub">
-                {worker(t, evidence.session)} · {evidence.detail}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {board.needs.length ? <ul className="bcs">{cards(board.needs, 'Review')}</ul> : <p className="quiet">Nothing right now</p>}
       </section>
-      <section id="secNeeds">
-        <h3>
-          Needs you <span className="mono">{waiting.length ? waiting.length : ''}</span>
+      <section id="secWork" className={mode === 'ask' ? 'dim' : ''} aria-labelledby="secWorkH">
+        <h3 id="secWorkH">
+          Working <span className="mono">{board.working.length}</span>
         </h3>
-        <ul>
-          {waiting.length ? (
-            waiting.map((item) => {
-              const need = item.needId ? openNeeds.find((n) => n.id === item.needId) : undefined;
-              return (
-                <li key={item.id}>
-                  <span className={`pt ${item.kind === 'failed' ? 'fail' : 'attn'}`} />
-                  <span title={item.detail}>{need ? need.what : item.label}</span>
-                  {need ? (
-                    <button type="button" onClick={() => onReviewNeed(need)}>
-                      Review
-                    </button>
-                  ) : (
-                    <button type="button" onClick={onBoard}>
-                      Board
-                    </button>
-                  )}
-                </li>
-              );
-            })
-          ) : (
-            <li className="quiet">Nothing right now</li>
-          )}
-        </ul>
+        {board.working.length > 0 && <ul className="bcs">{cards(board.working)}</ul>}
       </section>
-      <section id="secActivity" className={activityRunning ? '' : 'dim'}>
-        <h3>
-          Activity{' '}
-          <span className="mono">
-            {activityRunning
-              ? 'running'
-              : latest?.state === 'waiting'
-                ? 'waiting'
-                : latest?.state === 'queued'
-                  ? 'queued'
-                  : 'quiet'}
-          </span>
+      <section id="secNext" aria-labelledby="secNextH">
+        <h3 id="secNextH">
+          Up next <span className="mono">{board.next.length}</span>
         </h3>
-        {latest ? (
-          <ul className="ev">
-            {activity.map((l, i) => (
-              <li key={i}>
-                <b>{clockOf(l.time)}</b>
-                <span>{l.sentence}</span>
+        {board.next.length > 0 && <ul className="bcs">{cards(board.next)}</ul>}
+      </section>
+      <section id="secDone" aria-labelledby="secDoneH">
+        <h3 id="secDoneH">
+          Finished today <span className="mono">{board.finished.length}</span>
+        </h3>
+        {board.finished.length > 0 && (
+          <ul>
+            {board.finished.map((card) => (
+              <li key={card.id} className="fin">
+                <span>{card.title}</span>
+                <span className="mono lc">{card.at}</span>
               </li>
             ))}
           </ul>
-        ) : (
-          <ul className="ev">
-            <li className="quiet">No runs yet</li>
-          </ul>
         )}
-      </section>
-      <section id="secRecent" className={mode === 'ask' || mode === 'plan' ? 'dim' : ''}>
-        <h3>Recent</h3>
-        <ul>
-          {recent.length ? (
-            recent.map((h) => {
-              const label = originLabelOf(h);
-              return (
-                <li className="quiet" key={h.id}>
-                  {h.sentence}
-                  {label ? <span className="mono lc"> · {label}</span> : null}
-                </li>
-              );
-            })
-          ) : (
-            <li className="quiet">No history yet</li>
-          )}
-        </ul>
       </section>
     </aside>
   );
