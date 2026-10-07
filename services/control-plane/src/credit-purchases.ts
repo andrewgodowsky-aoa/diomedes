@@ -655,6 +655,7 @@ export interface StripeWebhookOptions {
   /** Where a verified event and its customer are stored, and marked once it is applied. */
   ledger: Pick<PaymentLedger, 'recordVerifiedPayment' | 'recordIgnoredEvent' | 'markEvent'>;
   now?: () => number;
+  handlers?: Record<string, StripeEventHandler>;
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -669,7 +670,7 @@ export class StripeWebhookService {
   constructor(private readonly funding: Pick<FundingService, 'previewCreditPurchase' | 'resolveCreditPurchase'>, private readonly options: StripeWebhookOptions) {
     this.now = options.now ?? Date.now;
     const checkout: StripeEventHandler = (context) => this.checkout(context);
-    this.router = new StripeEventRouter(Object.fromEntries(Object.keys(KINDS).map((type) => [type, checkout])), (context) => this.ignore(context));
+    this.router = new StripeEventRouter({ ...options.handlers, ...Object.fromEntries(Object.keys(KINDS).map((type) => [type, checkout])) }, (context) => this.ignore(context));
   }
 
   /**

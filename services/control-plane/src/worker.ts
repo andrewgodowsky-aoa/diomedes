@@ -45,6 +45,10 @@ import { routeInputRefusal } from './route-field-refusals.js';
 import { publishCreditPricesInput } from '../../../shared/credit-prices.js';
 import { publishCheckInDefaultsInput } from '../../../shared/job-check-ins.js';
 import { JobCheckInService, keepGoingInput, setCheckInOverrideInput } from './job-check-ins.js';
+import { billingTarget, developerKeyInput, subscriptionInput } from '../../../shared/account-billing.js';
+import { DeveloperKeyService, DeveloperKeyVerifier, PostgresDeveloperKeys, type DeveloperScopeResolver } from './developer-keys.js';
+import { SubscriptionService, readSubscriptionCatalog } from './subscriptions.js';
+import { PostgresSubscriptions } from './billing-postgres.js';
 
 /** The phone relay's per-business hub, bound as RELAY_HUB (both wrangler.jsonc files). */
 export { RelayHub } from './relay/durable-object.js';
@@ -194,12 +198,32 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
   // receiver's records, written on the Worker login (DATABASE_URL), never on the funding login: a top-up names a stored event,
   // so the funding login alone cannot make bought credits.
   const ledgerFor = (config: Configuration) => new PostgresRepository(neonClientFactory(config.databaseUrl));
+  const resolveBilling = (config: Configuration, accounts: AccountService): DeveloperScopeResolver => async (token, organizationId) => {
+    if (organizationId !== null) {
+      const member = await accounts.membership(token, organizationId);
+      if (!['owner', 'admin'].includes(member.membership.role)) throw new AccountError(403, 'Only a Business owner or Manager can manage billing and developer keys.');
+      return { actor: member, scope: { kind: 'organization', id: member.organization.id }, tenantId: member.organization.tenantId };
+    }
+    const actor = await accounts.signIn(token);
+    const scope = await new CommercialPersonScopes(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))).ensure(actor.person);
+    return { actor, scope: { kind: 'individual', id: scope.id }, tenantId: actor.person.id };
+  };
+  const subscriptionEnabled = (config: Configuration, env: Record<string, unknown>) => env.STRIPE_SUBSCRIPTIONS_ENABLED === '1' &&
+    (config.environment !== 'production' || readBillingSettings(env).mode === 'live');
+  const subscriptionsFor = (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => new SubscriptionService({
+    settings: readBillingSettings(env), catalog: readSubscriptionCatalog(env), store: new PostgresSubscriptions(neonClientFactory(config.databaseUrl)), ledger: ledgerFor(config),
+    resolve: resolveBilling(config, accounts), enabled: subscriptionEnabled(config, env) });
+  const keysFor = (config: Configuration, accounts: AccountService, env: Record<string, unknown>) => {
+    if (env.DEVELOPER_API_ENABLED !== '1') throw new AccountError(503, 'Developer API access is not enabled here yet.');
+    return new DeveloperKeyService(new PostgresDeveloperKeys(neonClientFactory(config.databaseUrl)), resolveBilling(config, accounts));
+  };
   const createCreditPurchases = options.createCreditPurchases ?? ((config: Configuration, accounts: AccountService, env: Record<string, unknown>) =>
     new CreditPurchaseService(accounts, fundingFor(config, 'credit-purchases-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config),
       plans: new GrantPlanLookup(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))),
       persons: new CommercialPersonScopes(new PostgresCommercialRepository(neonClientFactory(config.databaseUrl))) }));
   const createStripeWebhook = options.createStripeWebhook ?? ((config: Configuration, env: Record<string, unknown>) =>
-    new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config) }));
+    new StripeWebhookService(fundingFor(config, 'credit-purchases-webhook-funding-database-unavailable'), { settings: readBillingSettings(env), ledger: ledgerFor(config),
+      handlers: subscriptionEnabled(config, env) ? subscriptionsFor(config, create(config, 'customer'), env).handlers() : {} }));
 
   // Limits and raise requests write funding rows too, so they run as the funding login as well.
   const createLimits = options.createLimits ?? ((config: Configuration, accounts: AccountService) => {
@@ -332,6 +356,39 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
 
   return async (request: Request, env: Record<string, unknown>, ctx?: ManagedContext): Promise<Response> => {
     const entry = new URL(request.url).pathname;
+    if (entry.startsWith('/developer/')) {
+      const headers = managedHeaders();
+      try {
+        if (env.DEVELOPER_API_ENABLED !== '1') throw new AccountError(503, 'Developer API access is not enabled here yet.');
+        // Server-to-server credentials: browsers use the account cookie or desktop session instead.
+        if (request.headers.has('origin') || request.headers.has('sec-fetch-site')) throw new AccountError(403, 'Developer keys are for server applications.');
+        if (new URL(request.url).search) throw new AccountError(422, 'Developer requests take no query parameters.');
+        const config = readConfiguration(env);
+        const kind = request.headers.get('X-Nectovia-Scope-Kind');
+        const id = request.headers.get(kind === 'individual' ? 'X-Nectovia-Account' : 'X-Nectovia-Organization');
+        if (!['individual', 'organization'].includes(kind ?? '') || !accountId.safeParse(id).success ||
+            (kind === 'individual' && request.headers.has('X-Nectovia-Organization')) || (kind === 'organization' && request.headers.has('X-Nectovia-Account')))
+          throw new AccountError(422, 'Name exactly the billing scope on the developer key.');
+        const scope: AccountScope = { kind: kind as AccountScope['kind'], id: id! };
+        const token = request.headers.get('authorization')?.match(/^Bearer (ndk_[A-Za-z0-9_-]{43})$/)?.[1];
+        if (!token) throw new AccountError(401, 'A developer API key is required.');
+        const factory = neonClientFactory(config.databaseUrl);
+        const accounts = new AccountService(new PostgresRepository(factory), new DeveloperKeyVerifier(new PostgresDeveloperKeys(factory), config.identity.issuer, scope));
+        const attempt = /^\/developer\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/.exec(entry);
+        if (attempt && request.method === 'GET') return await createManaged(config, accounts).attempt(request, attempt[1]);
+        if (entry === '/developer/v1/routing' && request.method === 'GET') return Response.json(await createRouting(config, accounts).snapshot(token, scope, env), { headers });
+        if (entry === '/developer/v1/admissions' && request.method === 'POST') {
+          const input = await body(request, agentAdmissionInput);
+          if (input.routeKind !== 'managed') throw new AccountError(422, 'Developer API requests use managed AI.');
+          return Response.json(await createRouting(config, accounts).admit(token, scope, input), { headers });
+        }
+        if ((entry === '/developer/v1/responses' || entry === '/developer/v1/evaluations') && request.method === 'POST') {
+          if (request.headers.get('X-Nectovia-Usage-Class') !== 'metered-work') throw new AccountError(422, 'Developer API calls use metered-work credits.');
+          return entry.endsWith('/responses') ? await createManaged(config, accounts).respond(request, env, ctx) : await createManaged(config, accounts).evaluate(request, env);
+        }
+        throw new AccountError(404, 'This developer API route was not found.');
+      } catch (error) { return managedErrorResponse(error, headers); }
+    }
     if (entry.startsWith('/managed/')) return managed(request, env, ctx);
     if (entry === '/billing/stripe/webhook' || entry === '/billing/return') return billing(request, env, entry);
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
@@ -362,6 +419,15 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       const method = request.method;
       const accounts = create(config, pathname.startsWith('/ops/') ? 'staff' : 'customer');
       let match: RegExpExecArray | null;
+
+      if (pathname === '/account/billing' && method === 'POST') return json(await subscriptionsFor(config, accounts, env).view(token, (await body(request, billingTarget)).organizationId));
+      if (pathname === '/account/billing/checkout' && method === 'POST') return json(await subscriptionsFor(config, accounts, env).checkout(token, await body(request, subscriptionInput)));
+      if (pathname === '/account/billing/portal' && method === 'POST') return json(await subscriptionsFor(config, accounts, env).portal(token, (await body(request, billingTarget)).organizationId));
+      if (pathname === '/account/developer-keys' && method === 'GET') return json({ keys: await keysFor(config, accounts, env).list(token) });
+      if (pathname === '/account/developer-keys' && method === 'POST') return json(await keysFor(config, accounts, env).create(token, await body(request, developerKeyInput)), 201);
+      if ((match = route('/account/developer-keys/:id/revoke').exec(pathname)) && method === 'POST') {
+        await body(request, z.strictObject({})); return json(await keysFor(config, accounts, env).revoke(token, match[1]));
+      }
 
       // --- customer account routes (original shapes unchanged) --------------------------
       if (pathname === '/account/session' && method === 'GET') {

@@ -25,6 +25,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type { BillingAction } from '../../shared/account-billing.js';
 import {
   ACCOUNT_VIEW_VERSION,
   SIGN_IN_REQUIRED,
@@ -1242,6 +1243,9 @@ export class AccountSessionService {
   /** What an amount of credits costs, as the person signed in. */
   quoteCredits(organizationId: string, credits: number | null) {
     return this.call((token) => this.backend.client.quoteCredits(token, organizationId, credits));
+  }
+  billing(input: BillingAction) {
+    return this.call(token => this.backend.client.billing(token, input));
   }
   /** Start a purchase as the person signed in: where to pay, and what for. */
   startCreditPurchase(organizationId: string, credits: number) {

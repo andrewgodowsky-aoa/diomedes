@@ -10,6 +10,7 @@ import { PlansLink } from './console/FreePlanNotice';
 import { ManagedInferencePolicy } from './ManagedInferencePolicy';
 import { RoutingPreferences } from './console/RoutingPreferences';
 import { PersonalUsage } from './console/NectoviaUsage';
+import { AccountBilling } from './AccountBilling';
 
 /**
  * Settings, Account: who is signed in, and each business they belong to as
@@ -95,6 +96,7 @@ export function AccountSettings() {
         </>
       )}
       <RoutingPreferences />
+      <AccountBilling key={state.person?.id} workspaces={state.workspaces} />
       <PersonalUsage personId={state.person?.id ?? null} report={(e) => setError(message(e, 'Your Individual credits could not be read.'))} />
       <h2>Your businesses</h2>
       {state.workspaces.length === 0 &&

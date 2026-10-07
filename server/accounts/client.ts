@@ -8,6 +8,7 @@
  * for every answer here; the desktop caches, it never decides.
  */
 import { z } from 'zod';
+import { billingActionInput, type BillingAction } from '../../shared/account-billing.js';
 import { readStaffMarker, type AccessView, type StaffMarker } from '../../shared/access.js';
 import type { PersonAccessView, PersonalUsageView } from '../../shared/individual-plan.js';
 import type { OrganizationSetupAnswer, OrganizationSetupWrite } from '../../shared/organization-setup.js';
@@ -412,6 +413,14 @@ export class ControlPlaneClient {
   }
   // --- buying credits (owner or admin; the service checks) -------------------------------
 
+  /** Finite billing operations using the same protected account session as other settings. */
+  async billing(token: string, input: BillingAction): Promise<unknown> {
+    const { action, ...data } = billingActionInput.parse(input);
+    if (action === 'keys') return this.call('GET', '/account/developer-keys', token);
+    if (action === 'revoke-key') return this.call('POST', `/account/developer-keys/${encodeURIComponent((data as { id: string }).id)}/revoke`, token, {});
+    const path = action === 'read' ? '/account/billing' : action === 'create-key' ? '/account/developer-keys' : `/account/billing/${action}`;
+    return this.call('POST', path, token, data);
+  }
   /** What an amount of credits costs, and the step it is bought in. With no amount it quotes one step. The service prices it; this app never does. */
   async quoteCredits(token: string, organizationId: string, credits: number | null): Promise<CreditQuote> {
     const query = credits === null ? '' : `?credits=${credits}`;

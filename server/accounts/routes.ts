@@ -20,6 +20,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { SIGN_IN_REQUIRED } from '../../shared/accounts.js';
+import { allowedBillingUrl, billingActionInput } from '../../shared/account-billing.js';
 import { ApiError } from '../paths.js';
 import type { AccountSessionService } from './session.js';
 
@@ -71,6 +72,21 @@ export function mountAccountSessionRoutes(app: Express, session: AccountSessionS
     };
   const router = express.Router();
   router.use(express.json({ limit: '16kb' }));
+  router.use('/billing', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+  // Only server-returned Stripe destinations can leave the desktop through this billing flow.
+  const billingDestinations = new Set<string>();
+  const allowsCheckout = app.locals.allowsCheckoutReference;
+  app.locals.allowsCheckoutReference = (destination: string) => billingDestinations.has(destination) || allowsCheckout?.(destination) === true;
+  router.post('/billing/action', route(async req => {
+    const result = await session.billing(parse(billingActionInput, req.body));
+    const link = z.object({ url: z.string() }).safeParse(result);
+    if (link.success) {
+      if (!allowedBillingUrl(link.data.url)) throw new ApiError(502, 'The billing page could not be verified.');
+      if (billingDestinations.size >= 50) billingDestinations.clear();
+      billingDestinations.add(link.data.url);
+    }
+    return result;
+  }));
 
   router.get('/', route(async () => session.read()));
   router.post('/sign-in', route(async (req) => session.signIn(parse(signInBody, req.body))));

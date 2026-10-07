@@ -97,3 +97,7 @@ GRANT SELECT, INSERT ON control_plane.credit_price_tables TO cp_runtime;
 -- the new funded_jobs.tier column is written by the INSERT it already has.
 GRANT SELECT, INSERT ON control_plane.job_check_in_defaults TO cp_runtime;
 GRANT SELECT, INSERT, UPDATE ON control_plane.job_check_in_overrides TO cp_runtime;
+-- 021: billing projections require a verified inbox event; keys store hashes and only permit revocation.
+GRANT SELECT, INSERT ON control_plane.subscription_accounts, control_plane.developer_keys TO cp_runtime;
+GRANT UPDATE (attempt, projection, source_event_id, suspended) ON control_plane.subscription_accounts TO cp_runtime;
+GRANT UPDATE (revoked_at) ON control_plane.developer_keys TO cp_runtime;
