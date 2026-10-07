@@ -98,8 +98,8 @@ describe('the report in plain words', () => {
       ['done', 'done', 'Done'],
     ]);
     expect(model.rows.map((row) => row.sentence)).toEqual([
-      'Two things are waiting on you.',
-      'One thing is waiting on you.',
+      "Two items need your review.",
+      "One item needs your review.",
       'One run is working now.',
       'All four tasks are done.',
     ]);
@@ -133,8 +133,8 @@ describe('the report in plain words', () => {
     expect(accent([project('a', { tasksDone: 2, tasksTotal: 2 })])).toBe(
       'Every task on your lists is done.',
     );
-    expect(accent([project('a', { tasksDone: 1, tasksTotal: 2 })])).toBe('Nothing is waiting on you.');
-    expect(accent([])).toBe('Nothing is waiting on you.');
+    expect(accent([project('a', { tasksDone: 1, tasksTotal: 2 })])).toBe("No items need your review.");
+    expect(accent([])).toBe("No items need your review.");
   });
 
   it('keeps the report short and says how many projects it left out', () => {
@@ -144,10 +144,10 @@ describe('the report in plain words', () => {
     expect(model.more).toBe(2);
     expect(model.quiet).toBe(1);
     expect(quietLine(model)).toBe(
-      'Two more projects have something to report. One other project is quiet.',
+      "Two more projects have something to report. One other project has no activity to report.",
     );
     expect(quietLine({ more: 1, quiet: 0 })).toBe('One more project has something to report.');
-    expect(quietLine({ more: 0, quiet: 3 })).toBe('Three projects are quiet.');
+    expect(quietLine({ more: 0, quiet: 3 })).toBe("Three projects have no activity to report.");
     expect(quietLine({ more: 0, quiet: 0 })).toBeNull();
   });
 
@@ -207,7 +207,7 @@ describe('what waits on the person, by name', () => {
     expect(model.waiting.length).toBeLessThanOrEqual(BRIEF_ITEMS);
     // Kestrel waits on four and two are named; Harbor's one is named, so it has no row.
     expect(model.rows.map((row) => [row.projectId, row.sentence])).toEqual([
-      ['kestrel', 'Two more things are waiting on you.'],
+      ['kestrel', "Two more items need your review."],
     ]);
     // Harbor is named above, so only the project with nothing at all is quiet.
     expect(model.quiet).toBe(1);
@@ -217,7 +217,7 @@ describe('what waits on the person, by name', () => {
   it('counts every waiting item in its row when a status names none', () => {
     const model = homeBrief([project('old', { needsYou: 2 })], morning);
     expect(model.waiting).toEqual([]);
-    expect(model.rows[0].sentence).toBe('Two things are waiting on you.');
+    expect(model.rows[0].sentence).toBe("Two items need your review.");
   });
 
   it('gives each item one button named for what the person does, red for a failure', () => {
@@ -230,7 +230,7 @@ describe('what waits on the person, by name', () => {
         now: morning,
       }),
     );
-    expect(html).toContain('<h3>Waiting on you</h3>');
+    expect(html).toContain("<h3>Needs you</h3>");
     expect(html).toContain('aria-label="Review Task a in Kestrel"');
     expect(html).toContain('aria-label="Check Task d in Harbor"');
     expect(html).toContain('<li class="nv-row fail">');
@@ -366,7 +366,7 @@ describe('the home, rendered', () => {
     // The open project's bar is captioned; the finished one's sentence already says it.
     expect(html).toContain('3 of 5 tasks done');
     expect(html).not.toContain('4 of 4 tasks done</span>');
-    expect(html).toContain('<p class="nv-quiet">One project is quiet.</p>');
+    expect(html).toContain('<p class="nv-quiet">One project has no activity to report.</p>');
   });
 
   it('draws only the resting bust when motion is not allowed, hidden from assistive technology', () => {

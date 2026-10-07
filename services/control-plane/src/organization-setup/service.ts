@@ -63,7 +63,7 @@ export const SETUP_CONFLICT =
 
 /** A write that would take the business's setup back to earlier questions (ORG-02). */
 export const SETUP_NEWER =
-  "This business's setup was saved by a newer version of Nectovia, which asks different questions. Update Nectovia to continue it. Nothing was changed.";
+  "This business's setup was saved by a newer version of Nectovia, which asks different questions. Update Nectovia to continue it.";
 
 /** Who may change a business's setup: an active owner or Manager. */
 export function mayConfigure(role: MemberRole): boolean {

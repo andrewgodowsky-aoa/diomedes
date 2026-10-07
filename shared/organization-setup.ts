@@ -192,7 +192,7 @@ export interface SetupCopy {
 }
 
 export const SETUP_UNREACHABLE_REASON =
-  "The account service can't be reached, so this business's saved setup couldn't be loaded. Nothing was reset. Try again when the connection is back.";
+  "The account service can't be reached, so this business's saved setup couldn't be loaded. Try again when the connection is back.";
 
 export const SETUP_CACHED_REASON =
   "The account service can't be reached. This is the setup as this computer last saw it; changes wait until the service answers.";
@@ -234,7 +234,7 @@ export function decideSetupLoad(input: {
       answer.tenantId !== input.tenantId ||
       (setup !== null && (setup.organizationId !== input.organizationId || setup.tenantId !== input.tenantId))
     )
-      return { kind: 'load-error', reason: 'The account service answered for a different business. Nothing was loaded.' };
+      return { kind: 'load-error', reason: 'The account service answered for a different business.' };
     return { kind: 'service', revision: answer.revision, setup, writtenAt: answer.writtenAt, writtenBy: answer.writtenBy };
   }
   if (fetched.kind === 'refused') return { kind: 'refused', code: fetched.code, reason: fetched.message };

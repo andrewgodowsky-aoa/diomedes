@@ -152,7 +152,7 @@ export class ReviewComments {
         )?.index ?? null;
     } else {
       if (side !== 'new')
-        throw new ApiError(400, 'A comment on a file version is about a line of that version.');
+        throw new ApiError(400, 'Choose a line in this file version to comment on.');
       const found = await textOf(this.store, projectId, wanted.path, wanted.sha);
       if (found.text === null)
         throw new ApiError(415, 'This version is not text, so a comment cannot point at one of its lines.');

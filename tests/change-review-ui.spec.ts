@@ -153,7 +153,7 @@ test('CR-UI-01: the task thread renders the verified review with evidence drill-
   const review = page.locator('.crev');
   await expect(review).toBeVisible();
   await expect(review.getByRole('heading', { name: 'What changed' })).toBeVisible();
-  await expect(review.getByText('Deterministic · no AI model wrote this')).toBeVisible();
+  await expect(review.getByText("From recorded file changes")).toBeVisible();
 
   // Plain sentences first: the file count the records prove.
   await expect(review.locator('.crev-sentences li').first()).toContainText(/files? changed/);

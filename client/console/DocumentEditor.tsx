@@ -88,7 +88,7 @@ export interface DocumentEditorProps {
 }
 
 /** What a caller says to somebody trying to leave with writing that is not saved. */
-export const UNSAVED_WARNING = 'Save your changes before leaving. Your writing is still here.';
+export const UNSAVED_WARNING = 'Save your changes before leaving.';
 
 /** How many names a rescue copy tries before it gives up and says so. */
 const COPY_TRIES = 20;
@@ -227,7 +227,7 @@ function OneDocument({
     void listing?.refresh().catch((cause: unknown) => {
       // A newer look, or any listing since this one was asked for, has the last word.
       if (look.current.n !== n || look.current.listed) return;
-      setLookFailure(plainFailure(cause, `${AGENT_NAME} could not look for this file just now.`));
+      setLookFailure(plainFailure(cause, `${AGENT_NAME} couldn't look for this file just now.`));
     });
   };
   /** `unsupported` is what the read route refuses; it answers as if the file were gone. */
@@ -298,7 +298,7 @@ function OneDocument({
       })
       .catch((cause: unknown) => {
         if (!alive || controller.signal.aborted) return;
-        setFailure(plainFailure(cause, 'This file could not be opened just now.'));
+        setFailure(plainFailure(cause, "This file couldn't be opened just now."));
       });
     return () => {
       alive = false;
@@ -332,13 +332,13 @@ function OneDocument({
       setBase({ text: backup.text, sha: backup.sha });
       setBuffer(backup.draft);
       if (backup.sha === doc.sha) {
-        announce('We brought back writing you had not saved.');
+        announce('Restored your unsaved writing.');
         return;
       }
       setTheirs({ text: doc.text, sha: doc.sha });
       setConflict(true);
       announce(
-        'We brought back writing you had not saved. Someone else changed this file in the meantime.',
+        'Restored your unsaved writing. Someone else changed this file in the meantime.',
       );
       return;
     }
@@ -379,7 +379,7 @@ function OneDocument({
       setBackupWarning(null);
     } catch {
       setBackupWarning(
-        'This computer would not keep a spare copy of your unsaved writing. Save before you close Nectovia.',
+        "This computer couldn't back up your unsaved writing. Save before you close Nectovia.",
       );
     }
   }, [base, buffer, path, projectId]);
@@ -413,7 +413,7 @@ function OneDocument({
       return true;
     } catch {
       setBackupWarning(
-        'This computer would not keep a spare copy of your unsaved writing. Save before you close Nectovia.',
+        "This computer couldn't back up your unsaved writing. Save before you close Nectovia.",
       );
       return false;
     }
@@ -492,7 +492,7 @@ function OneDocument({
   function save() {
     if (!resolved) return;
     if (!supported) {
-      announce('This kind of file cannot be changed here.');
+      announce("This kind of file can't be changed here.");
       return;
     }
     if (readOnlyReason) {
@@ -503,7 +503,7 @@ function OneDocument({
       // Saving again would only be refused again, and it would take the newer
       // version off the screen. The choices are already here.
       conflictBox.current?.focus();
-      announce('This file changed while you were writing. Choose what to do with your writing.');
+      announce('This file changed while you were writing. Choose which version to save.');
       return;
     }
     if (!base) return;
@@ -525,9 +525,9 @@ function OneDocument({
     try {
       const doc = await readDocument(projectId, path);
       setTheirs({ text: doc.text, sha: doc.sha });
-      announce('What the file says now is shown under the choices.');
+      announce('Loaded the current file for comparison.');
     } catch (cause) {
-      setTrouble(plainFailure(cause, 'The newer version could not be read just now.'));
+      setTrouble(plainFailure(cause, "The newer version couldn't be read just now."));
     } finally {
       acting.current = false;
       setBusy(false);
@@ -572,7 +572,7 @@ function OneDocument({
         // on to the copy would lose them, so the person stays here with every
         // word, the backup still holding them and the choices still on screen.
         announce(
-          `Your writing is saved as ${written.path}. You wrote more while that was saving, and those words are not saved yet.`,
+          `Saved as ${written.path}. Changes you made during the save still need saving.`,
         );
         return;
       }
@@ -592,7 +592,7 @@ function OneDocument({
       setAttempt((n) => n + 1);
       announce(`Your writing is saved as ${written.path}. This file now shows the newer version.`);
     } catch (cause) {
-      setTrouble(plainFailure(cause, 'Your writing could not be saved as a separate file.'));
+      setTrouble(plainFailure(cause, "Your writing couldn't be saved as a separate file."));
     } finally {
       acting.current = false;
       setBusy(false);
@@ -607,7 +607,7 @@ function OneDocument({
       await navigator.clipboard.writeText(buffer);
       announce('Your writing was copied. Paste it somewhere safe.');
     } catch {
-      setTrouble('Your writing could not be copied. Select it in the box below and copy it there.');
+      setTrouble("Your writing couldn't be copied. Select the text and copy it.");
     } finally {
       acting.current = false;
     }
@@ -668,7 +668,7 @@ function OneDocument({
     going.current = null;
     setLeaving(false);
     area.current?.focus();
-    announce('Saved. You wrote more while that was saving, and those words are not saved yet.');
+    announce('Saved. Changes you made during the save still need saving.');
   }
 
   function throwAway() {
@@ -747,13 +747,13 @@ function OneDocument({
 
       {resolved && !supported && (
         <p className="de-note">
-          This kind of file cannot be opened here. Open it in the program that made it.
+          Open this file in the program that made it.
         </p>
       )}
       {readOnlyReason && <p className="de-note">{readOnlyReason}</p>}
       {outside && (
         <p className="de-note">
-          This file was changed outside Nectovia. You are looking at the newest version.
+          Reloaded the file after it changed outside Nectovia.
         </p>
       )}
       {backupWarning && <p className="de-note de-warn">{backupWarning}</p>}
@@ -763,7 +763,7 @@ function OneDocument({
           <p>
             {lookFailure ??
               problem ??
-              `${name} is not in this project's list of files, so ${AGENT_NAME} cannot tell yet what kind of file it is. It may have been moved or deleted.`}
+              `${name} isn't in this project's file list. It may have been moved or deleted. Refresh the list to check.`}
           </p>
           {listing && (
             <button type="button" className="de-act" onClick={lookAgain}>
@@ -791,7 +791,7 @@ function OneDocument({
 
       {trouble && (
         <p className="de-trouble" role="alert">
-          {trouble} Your writing is still here.
+          {trouble}
         </p>
       )}
 
@@ -805,8 +805,7 @@ function OneDocument({
         >
           <h3 id={conflictId}>Someone else changed this file while you were writing</h3>
           <p>
-            Your writing is still in the box below, and none of it has been written over. Choose
-            what to do with it.
+            Compare the versions and choose which one to save.
           </p>
           <div className="de-acts">
             {!theirs && (
@@ -853,7 +852,7 @@ function OneDocument({
           </div>
           {theirs && (
             <>
-              <p className="de-note">Nectovia keeps a record of the version you replace.</p>
+              <p className="de-note">Find the version you replace in History.</p>
               <div
                 className="de-theirs"
                 tabIndex={0}
@@ -875,8 +874,8 @@ function OneDocument({
           ref={leavingBox}
           aria-labelledby={leavingId}
         >
-          <h3 id={leavingId}>You have writing that is not saved</h3>
-          <p>Closing now would lose it. Save it first, or throw it away on purpose.</p>
+          <h3 id={leavingId}>You have unsaved writing</h3>
+          <p>Save before closing, or discard your changes.</p>
           <div className="de-acts">
             <button
               type="button"

@@ -334,12 +334,12 @@ describe('what one outcome reads as', () => {
     expect(outcomeCard({ status: 'read', projectId: 'p1' }, projects)).toBeNull();
   });
 
-  it('offers Start only for a proposal, names the project, and promises nothing is written yet', () => {
+  it('offers Start only for a proposal, names the project, and calls for review before approval', () => {
     const card = outcomeCard(proposed, projects)!;
     expect(card.action).toEqual({ kind: 'start', label: 'Start' });
     expect(card.title).toBe('Nectovia can start this in Harbor Street Bakery');
     expect(card.body).toContain('Order the usual from the supplier.');
-    expect(card.body).toContain('Nothing is written until you say go ahead.');
+    expect(card.body).toContain('Review the proposed changes before approving them.');
   });
 
   it('says started only when work started, and offers the way to it', () => {

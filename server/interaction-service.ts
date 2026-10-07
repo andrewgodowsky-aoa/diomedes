@@ -521,7 +521,7 @@ export class InteractionTurns {
       selection,
     });
     if (verdict.outcome !== 'escalate')
-      throw new ApiError(409, 'That choice does not match what was proposed. Nothing was started.', {
+      throw new ApiError(409, 'That choice doesn\'t match the proposal.', {
         code: verdict.outcome === 'blocked' ? verdict.reason : 'not_startable',
       });
     await driver.record(projectId, located.runId, [

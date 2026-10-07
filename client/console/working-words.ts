@@ -8,36 +8,14 @@ export { AGENT_NAME };
  * and History keep their plain record, and none of this reaches either.
  */
 export const WORKING_WORDS = [
-  'flibbertigibbeting',
-  'noodling on it',
-  'percolating',
-  'cogitating',
-  'rummaging through the archives',
-  'untangling the yarn',
-  'consulting the oracle',
-  'sharpening the quill',
-  'polishing the bronze',
-  'counting the ships',
-  'brewing a fresh pot of ideas',
-  'wrangling the words',
-  'pacing the halls',
-  'squinting at the details',
-  'herding the thoughts',
-  'doodling in the margins',
-  'connecting the dots',
-  'reading the tea leaves',
+  'working',
+  'continuing',
 ] as const;
 
-/** Rare ones. Roughly one saying in eight comes from here. */
+/** The less frequent pool keeps the same rotation without inventing a work stage. */
 export const EASTER_EGGS = [
-  "asking Dutch if we're still going to Tahiti",
-  'playing one more round of Gwent',
-  'following Ciri’s trail, again',
-  'waiting for Johnny Silverhand to stop talking',
-  'taking an arrow to the knee',
-  'looking for one more Korok seed',
-  'praising the sun',
-  'checking whether the cake is a lie',
+  'still working',
+  'continuing the work',
 ] as const;
 
 const ROTATE_MS = 3200;

@@ -90,7 +90,7 @@ describe('manual Done honours the completion guard', () => {
     const result = await put(task.id, 'done');
     expect(result.status).toBe(409);
     expect(JSON.stringify(result.data)).toContain(
-      `Cannot complete '${task.name}': an open Need (n1) is waiting for the owner.`,
+      `Can't complete '${task.name}'. The owner must answer Need n1.`,
     );
     expect(taskState(task.id)).toBe(before);
   });

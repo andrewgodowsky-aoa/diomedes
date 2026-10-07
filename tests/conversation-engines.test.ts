@@ -338,7 +338,7 @@ describe('ChatGPT, and a thread moved between ChatGPT and Claude Code', () => {
     });
     expect(refused.status).toBe(409);
     expect(((await refused.json()) as { error: string }).error).toBe(
-      "Codex isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+      "Codex isn't signed in on this computer, so this conversation can't continue here.",
     );
     const thread = recorded(on);
     expect(thread.engine).toBe('codex');
@@ -465,7 +465,7 @@ describe.each(['cursor', 'devin'] as const)('a %s conversation', (engine) => {
       });
       expect(refused.status).toBe(409);
       expect(((await refused.json()) as { error: string }).error).toBe(
-        "Cursor isn't signed in on this computer, so this conversation can't continue here. Nothing was sent.",
+        "Cursor isn't signed in on this computer, so this conversation can't continue here.",
       );
       const thread = recorded(on);
       expect(thread.engine).toBe('cursor');

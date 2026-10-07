@@ -5,10 +5,10 @@ import { Button, Modal } from '../components';
 import { historyChange, historyRoutes, type HomeSharing } from './home-history';
 
 /** Said when another window saved first: the boxes have been read again and show what is saved. */
-const CHANGED_ELSEWHERE = 'Cloud sharing changed in another window. This now shows what is saved.';
+const CHANGED_ELSEWHERE = 'Cloud sharing changed in another window. Review the updated choices.';
 
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : 'The request could not be completed.';
+  return error instanceof Error ? error.message : "The request couldn't be completed.";
 }
 
 /**
@@ -103,14 +103,14 @@ export function HomeHistorySharing({
   return (
     <Modal title="Cloud sharing" onClose={onClose}>
       <p className="caption muted">
-        All projects: what you type goes to the route this conversation is on. Earlier messages go
-        with it only to a route checked here.
+        Across all projects, your new messages go to the selected connection. Share earlier
+        messages only with the connections you check here.
       </p>
       {policy === null ? (
         !error && <p className="caption muted">Reading what is shared now…</p>
       ) : offered.length === 0 ? (
         <p className="caption muted">
-          This conversation is not on a cloud route, so nothing is sent.
+          This conversation uses a local connection.
         </p>
       ) : (
         offered.map((entry) => (

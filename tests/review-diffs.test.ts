@@ -162,7 +162,7 @@ describe('P06 partial keep', () => {
     const before = store.state(id).history.length;
     await expect(keep(change.id, { after: hash(PROPOSED), keep: [0], undo: [1, 2] })).rejects.toMatchObject({
       status: 409,
-      message: `${PATH} was changed by you after this change was made, so nothing was written. Review it again against the current file.`,
+      message: `${PATH} was changed by you after this change was made. Review it again against the current file.`,
       details: { code: 'change_conflict', path: PATH, expectedSha: hash(PROPOSED), currentSha: hash(mine) },
     });
     expect(await read()).toBe(mine);

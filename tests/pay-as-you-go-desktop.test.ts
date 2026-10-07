@@ -400,7 +400,7 @@ describe('the strings (Model B section 7)', () => {
     const access = await import('../shared/access');
     const { NECTOVIA_LOCKED } = await import('../client/console/ask-row');
     expect(NECTOVIA_LOCKED).toBe('Buy credits or upgrade your plan to use Nectovia');
-    expect(access.AGENT_PERSONAL_REASON).toBe('Buy credits or get a plan to use the Nectovia Agent here. Your own AI tools work without either.');
+    expect(access.AGENT_PERSONAL_REASON).toBe('Buy credits or get a plan to use the Nectovia Agent here.');
     expect(access.OUT_OF_CREDITS_PERSONAL).toBe("You're out of credits for the Nectovia Agent. Buy more, or get a plan for a better price.");
     expect(access.BUSINESS_PLAN_NEEDED_BUYER).toBe('This business needs a plan to use the Nectovia Agent.');
     expect(access.BUSINESS_PLAN_NEEDED_MEMBER).toBe('Ask an owner or admin about a plan for this business.');

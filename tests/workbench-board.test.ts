@@ -52,7 +52,7 @@ describe('Board controls reflect execution evidence', () => {
   });
   it('blocks a ready task start while a different task is waiting for approval', () => {
     const markup = board({ sessions: [sessionFixture({ taskId: 'other', state: 'waiting' })], needs: [needFixture({ taskId: 'other' })] });
-    expect(markup).toMatch(/disabled=""[^>]*title="One run at a time in this version"[^>]*>Start/);
+    expect(markup).toMatch(/disabled=""[^>]*title="Finish or stop the current job first"[^>]*>Start/);
   });
   it('does not offer retry routing for an active uncertain effect', () => {
     const markup = board({ tasks: [{ ...task, state: 'waiting', reason: 'went-wrong' }], sessions: [sessionFixture({ state: 'waiting' })] });
@@ -93,12 +93,12 @@ describe('Board controls reflect execution evidence', () => {
   });
   it('does not repeat the Ready column caption on a plain Ready row', () => {
     const markup = board({});
-    expect(markup.split('Start explicitly to run')).toHaveLength(2);
+    expect(markup.split("Start the task")).toHaveLength(2);
   });
   it('offers one control that fills the board, and says so where Ready is empty', () => {
     const markup = board({ tasks: [] });
     expect(markup).toContain('>New task</button>');
-    expect(markup).toContain('Nothing is ready. New task adds one.');
+    expect(markup).toContain("No tasks ready. Add a task to begin.");
     expect(markup).not.toContain('Make tasks from a plan.');
   });
   it('offers Start again on a faulted row, so the fault sentence can be obeyed', () => {

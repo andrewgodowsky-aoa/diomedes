@@ -45,7 +45,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
       .catch((error) => {
         if (!cancelled) {
           setSkills([]);
-          setIssue(error instanceof Error ? error.message : 'The project playbooks could not be read.');
+          setIssue(error instanceof Error ? error.message : "The project playbooks couldn't be read.");
         }
       });
     return () => { cancelled = true; };
@@ -66,7 +66,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
       if (!thread || !turn) throw new Error('The source conversation or message is no longer available.');
       setSource({ name: thread.name ?? 'Source conversation', text: turn.text });
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'The source conversation could not be read.');
+      setIssue(error instanceof Error ? error.message : "The source conversation couldn't be read.");
     }
   }
 
@@ -79,7 +79,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
       await api(`${base}/${path}`, method, body);
       after?.();
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'The task could not be changed.');
+      setIssue(error instanceof Error ? error.message : "The task couldn't be changed.");
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -103,7 +103,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
       ? 'Choose how the Nectovia work loop continues through this task.'
       : workflow.continuation === 'full-approval'
       ? 'The agent may continue through this task within its granted scope and limits.'
-      : 'The agent must wait for your approval before starting the next phase.'}</p>
+      : 'Approve each phase before the agent starts the next one.'}</p>
     <p className="ti-quiet">File access, service consent and spending limits still apply.</p>
     <label>
       Maximum action turns
@@ -139,7 +139,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
         </option>)}
       </select>
     </label>
-    <p className="ti-quiet">Optional guidance for how the work is done. It grants nothing.</p>
+    <p className="ti-quiet">Choose a method for the work. Permissions stay separate.</p>
     <h3>Phase: {PHASE_NAMES[workflow.phase]}</h3>
     {workflow.inbox ? <button type="button" className="verb light" disabled={disabled}
       onClick={() => void change('accept', 'POST', { expectedRevision: workflow.revision })}>
@@ -173,7 +173,7 @@ export function TaskWorkflowPanel({ projectId, task, tasks, busy, onOpenTask, on
       }}>
       <label>Task name<input required disabled={disabled} maxLength={200} value={name} onChange={(event) => { setName(event.target.value); childCommand.current = null; }} /></label>
       <label>Separate result<input required disabled={disabled} maxLength={1000} value={output} onChange={(event) => { setOutput(event.target.value); childCommand.current = null; }} /></label>
-      <p className="ti-quiet">The new task waits in Inbox and inherits this task's continuation and turn limit.</p>
+      <p className="ti-quiet">The new task is added to Inbox with this task's continuation and turn limit.</p>
       <button type="submit" className="verb light" disabled={disabled || !!cannotBranch}>Create task</button>
       <button type="button" className="verb" disabled={saving} onClick={() => setAdding(false)}>Cancel</button>
     </form>}

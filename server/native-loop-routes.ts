@@ -309,7 +309,7 @@ export interface LoopRouteGates {
 
 /** Nectovia takes no delegate and no team the person names; S3's host-resolved worker is the only team beside it. */
 export const NECTOVIA_LOOP_TEAM_REFUSED =
-  'A Nectovia loop can’t take a delegate or a team you name. Nothing was sent.';
+  'A Nectovia job can\'t use a delegate or team you name.';
 
 const WORKER_AGENT = 'diomedes.general';
 const ADVISOR_AGENT = 'diomedes.architect';
@@ -392,7 +392,7 @@ export function mountNativeLoopRoutes(
       if (!resolved)
         throw new ApiError(409, 'Sign in to use the Nectovia Agent.', { code: 'route_refused' });
       if (requested.model != null && requested.model !== resolved.model)
-        throw new ApiError(409, 'The Nectovia model is managed. Send without choosing one.', { code: 'route_refused' });
+        throw new ApiError(409, 'Nectovia chooses the AI for this job. Send without choosing a model.', { code: 'route_refused' });
       if (requested.accountRoute != null && requested.accountRoute !== resolved.accountRoute)
         throw new ApiError(409, 'The Nectovia account is managed. Send without choosing one.', { code: 'route_refused' });
       try {
@@ -546,7 +546,7 @@ export function mountNativeLoopRoutes(
       if (lead.route === NECTOVIA_ROUTE || !ids || profile) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
       if (!spec.tier)
         throw new ApiError(400, 'A Nectovia role names its tier: efficient, focused or thorough.', { code: 'team_role_invalid', role: kind });
-      if (spec.model != null) throw refuse('The Nectovia model is managed. Send without choosing one.', 'route_refused');
+      if (spec.model != null) throw refuse('Nectovia chooses the AI for this job. Send without choosing a model.', 'route_refused');
       if (spec.accountRoute != null) throw refuse('The Nectovia account is managed. Send without choosing one.', 'route_refused');
       tier = spec.tier;
       // The effort each tier asks for, as a Nectovia lead at that tier would.

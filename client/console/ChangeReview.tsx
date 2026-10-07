@@ -51,9 +51,9 @@ function count(n: number, one: string, many: string): string {
 function outcomeCaption(manifest: ChangeReviewManifest): string {
   switch (manifest.outcome) {
     case 'active':
-      return 'The run is still in progress — this review updates as work lands.';
+      return 'Work in progress. The review updates with each change.';
     case 'waiting-review':
-      return 'The run is waiting on a decision.';
+      return 'Review the result to continue.';
     case 'declined':
       return 'The proposal was declined.';
     case 'failed':
@@ -68,10 +68,10 @@ function outcomeCaption(manifest: ChangeReviewManifest): string {
 }
 
 const TEXT_EVIDENCE_REASON: Record<string, string> = {
-  binary: 'Binary file — evidence is metadata only; content is never rendered.',
-  'no-before': 'No earlier content was retained — nothing to compare against.',
-  'evidence-limit': "Exact text evidence for this file exceeded the manifest's evidence budget.",
-  unreadable: 'Content could not be shown — unreadable or larger than the evidence bound.',
+  binary: 'Binary file. Only file details are available.',
+  'no-before': "The earlier content isn't available for comparison.",
+  'evidence-limit': 'This file exceeds the review size limit.',
+  unreadable: "The content can't be read or exceeds the review size limit.",
 };
 
 /**
@@ -112,7 +112,7 @@ function ChangeRow({ entry, projectId }: { entry: ChangeEntry; projectId: string
         ? 'Content before it was deleted'
         : entry.kind === 'added'
           ? 'Added content'
-          : 'Current content — the earlier version was not retained for comparison'
+          : "Current content. The earlier version isn't available for comparison"
       : null;
   return (
     <li className={`crev-row ${entry.kind}`}>
@@ -148,8 +148,8 @@ function ChangeRow({ entry, projectId }: { entry: ChangeEntry; projectId: string
           )}
           {entry.binary && (
             <p className="crev-note">
-              Binary file — {entry.sizeAfter ?? entry.sizeBefore ?? 0} bytes; evidence is
-              metadata, never raw bytes.
+              Binary file, {entry.sizeAfter ?? entry.sizeBefore ?? 0} bytes. Only file details
+              are available.
             </p>
           )}
           {evidence.kind !== 'none' && evidence.text !== null && (
@@ -169,8 +169,8 @@ function ChangeRow({ entry, projectId }: { entry: ChangeEntry; projectId: string
           {evidence.truncated && (
             <p className="crev-note">
               {evidence.kind === 'diff'
-                ? `Showing the first changed lines — ${evidence.truncatedLines} more changed ${evidence.truncatedLines === 1 ? 'line was' : 'lines were'} cut at the bound.`
-                : `Truncated — ${evidence.truncatedLines} more ${evidence.truncatedLines === 1 ? 'line was' : 'lines were'} not shown.`}
+                ? `${evidence.truncatedLines} more changed ${evidence.truncatedLines === 1 ? 'line exceeds' : 'lines exceed'} the review size limit.`
+                : `${evidence.truncatedLines} more ${evidence.truncatedLines === 1 ? 'line exceeds' : 'lines exceed'} the review size limit.`}
             </p>
           )}
           {evidence.kind === 'none' && evidence.reason && evidence.reason !== 'binary' && (
@@ -335,7 +335,7 @@ export function ChangeReview({
       </p>
       {exampleFailed && (
         <p className="crev-note" role="status">
-          The example could not be loaded.
+          The example couldn't be loaded.
         </p>
       )}
     </>
@@ -350,11 +350,11 @@ export function ChangeReview({
     <section className="crev" aria-labelledby={headingId}>
       <header className="crev-head">
         <h2 id={headingId}>What changed</h2>
-        <span className="caption">Deterministic · no AI model wrote this</span>
+        <span className="caption">From recorded file changes</span>
       </header>
       {failed && (
         <p className="crev-note" role="status">
-          The change review could not be loaded.{' '}
+          The change review couldn't be loaded.{' '}
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </button>
@@ -370,7 +370,7 @@ export function ChangeReview({
         <>
           {example && !manifest && (
             <p className="crev-note">
-              Example review — {shown.subject.label}.{' '}
+              Example review: {shown.subject.label}.{' '}
               <button type="button" ref={closeButton} onClick={closeExample}>
                 Close
               </button>
@@ -387,7 +387,7 @@ export function ChangeReview({
           </ul>
           {shown.summary.attention.length > 0 && (
             <div className="crev-attention">
-              <h3>Needs your attention</h3>
+              <h3>Needs you</h3>
               <ul>
                 {shown.summary.attention.map((line) => (
                   <li key={line.id} className="crev-flag">
@@ -462,7 +462,7 @@ export function ChangeReview({
                     <dd className="mono lc">
                       {shown.baseline.git.captured
                         ? `HEAD ${shown.baseline.git.head ?? 'none'} · ${shown.baseline.git.statusDigest?.slice(7, 19)}`
-                        : `not captured — ${shown.baseline.git.reason ?? 'unavailable'}`}
+                        : `not captured: ${shown.baseline.git.reason ?? 'unavailable'}`}
                     </dd>
                   </>
                 )}
@@ -481,7 +481,7 @@ export function ChangeReview({
                 <ul className="crev-limits">
                   {shown.coverage.limits.map((limit, index) => (
                     <li key={index} className="crev-note">
-                      Coverage is partial — {limit.detail}
+                      Partial review: {limit.detail}
                     </li>
                   ))}
                 </ul>

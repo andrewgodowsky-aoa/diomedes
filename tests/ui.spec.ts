@@ -967,7 +967,7 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   editor = await openInEditor(page, file);
   await expect(editor).toHaveValue(draftA);
   await expect(page.locator('.docedit [role="status"]')).toHaveText(
-    'We brought back writing you had not saved.',
+    "Restored your unsaved writing.",
   );
 
   await tabs.getByRole('button', { name: second.name, exact: true }).click();
@@ -1549,7 +1549,7 @@ test('Usage: a settings save preserves a concurrent engine setting while refresh
     await page.getByRole('menuitemradio', { name: 'Guided', exact: true }).click();
     expect((await refused).status()).toBe(409);
     await expect(
-      page.getByText('Settings changed while this screen was saving. The saved settings were reloaded.'),
+      page.getByText('Settings changed during saving. Review the latest settings before saving again.'),
     ).toBeVisible();
     let saved = await readSettings(page);
     expect(saved.services?.codex).toBe(true);

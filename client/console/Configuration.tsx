@@ -52,15 +52,15 @@ const KIND_HEADING: Record<ProposalChange['kind'], string> = {
   changed: 'Changed',
   removed: 'Gone',
   inherited: 'Carried over',
-  unsupported: 'Not available yet',
+  unsupported: 'Unavailable',
 };
 
 const KIND_REASON: Record<ProposalChange['kind'], string> = {
-  new: 'Set up for the first time from what you told us.',
-  changed: 'Different from the setup that is running now.',
-  removed: 'Part of the setup running now, and not part of this one.',
-  inherited: 'The same as the setup that is running now.',
-  unsupported: 'Recorded, but this build does not do it. Nothing here is pretending to work.',
+  new: 'Added from your answers.',
+  changed: 'Replaces the current setting.',
+  removed: 'Removed from the current setup.',
+  inherited: 'Matches the current setup.',
+  unsupported: "Nectovia can't use this setting.",
 };
 
 export function Configuration({ organizationId, onClose, onRevise, report }: Props) {
@@ -78,7 +78,7 @@ export function Configuration({ organizationId, onClose, onRevise, report }: Pro
 
   useEffect(() => {
     load().catch((e) => {
-      setError(e instanceof Error ? e.message : 'This setup could not be opened.');
+      setError(e instanceof Error ? e.message : "This setup couldn't be opened.");
       report(e);
     });
   }, [load, report]);
@@ -90,7 +90,7 @@ export function Configuration({ organizationId, onClose, onRevise, report }: Pro
       try {
         setView(await run());
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'That did not go through.');
+        setError(e instanceof Error ? e.message : "That didn't go through.");
         report(e);
       } finally {
         setBusy(false);
@@ -163,10 +163,9 @@ export function Configuration({ organizationId, onClose, onRevise, report }: Pro
           <p className="caption">Reading this setup.</p>
         ) : !view.staged && !view.active ? (
           <>
-            <h3 className="ws-question">Nothing has been prepared yet</h3>
+            <h3 className="ws-question">Prepare your setup</h3>
             <p className="caption ws-reason">
-              Your answers are saved. Preparing turns them into a setup you can read before anything
-              runs.
+              Review a proposal based on your saved answers.
             </p>
             <div className="ws-actions">
               <Button tone="quiet" disabled={busy} onClick={onRevise}>
@@ -182,7 +181,7 @@ export function Configuration({ organizationId, onClose, onRevise, report }: Pro
             {view.active && (
               <p className="ws-current">
                 Running now: version {view.active.revision}
-                {view.staged ? '. What follows is what would replace it.' : '.'}
+                {view.staged ? '. Review the proposed replacement.' : '.'}
               </p>
             )}
 
@@ -210,7 +209,7 @@ export function Configuration({ organizationId, onClose, onRevise, report }: Pro
 
             {blocking.length > 0 && (
               <section className="ws-section">
-                <h3 className="ws-question">This cannot run yet</h3>
+                <h3 className="ws-question">Resolve before starting</h3>
                 <ul className="ws-problems">
                   {blocking.map((problem) => (
                     <li key={`${problem.code}:${problem.field}`}>{problem.message}</li>

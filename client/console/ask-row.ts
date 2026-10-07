@@ -50,10 +50,10 @@ export const NECTOVIA_LOCKED = 'Buy credits or upgrade your plan to use Nectovia
 export const NOT_RUNNING = 'Not running';
 export const LOCAL_STOPPED = "The local model isn't running. Start it on this computer, or choose a tier.";
 /** The free version has no tiers to fall back on, so the way out is another engine. */
-export const LOCAL_STOPPED_FREE = "The local model isn't running. Start it on this computer, or choose another engine.";
+export const LOCAL_STOPPED_FREE = "The local model isn't running. Start it on this computer, or choose another connection.";
 /** Another of the model's profiles is loaded, so this one needs its own Start. */
 export const LOCAL_OTHER = 'The local model is running another profile. Start this one, or choose a tier.';
-export const LOCAL_OTHER_FREE = 'The local model is running another profile. Start this one, or choose another engine.';
+export const LOCAL_OTHER_FREE = 'The local model is running another profile. Start this one, or choose another connection.';
 export const START = 'Start';
 /** The Start inside an open menu, beside the grayed choice it wakes. */
 export const START_LOCAL = 'Start the local model';

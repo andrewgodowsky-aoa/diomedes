@@ -161,7 +161,7 @@ describe('the panel where an owner or admin answers', () => {
 
   it('says so plainly when no one is waiting', () => {
     const page = text(renderToStaticMarkup(createElement(CreditAsksView, { asks: [], roles: {}, onDecide: () => {} })));
-    expect(page).toContain('No one is waiting on an answer.');
+    expect(page).toContain("No credit requests.");
     plainWords(page);
   });
 

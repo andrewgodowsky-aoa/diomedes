@@ -7,7 +7,6 @@ import { useAccount } from '../client/AccountGate';
 import { AccountSettings } from '../client/AccountSettings';
 import { ROLE_CAPABILITIES, type AccessView } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
-import { MODEL_API_NAMES } from '../shared/model-api';
 import { defaults } from '../server/store';
 
 vi.mock('../client/AccountGate', async (original) => ({
@@ -36,13 +35,13 @@ describe('managed inference commercial presentation', () => {
     expect(html.indexOf('Nectovia-managed AI')).toBeLessThan(html.indexOf('External AI tools'));
     expect(html).toContain('<details><summary>Advanced: provider accounts and routing</summary>');
     expect(html).not.toMatch(/<details[^>]*\bopen/);
-    expect(html).toContain(`aria-label="${MODEL_API_NAMES['aws-bedrock']}"`);
+    expect(html).toContain('aria-label="AWS Bedrock"');
   });
 
   it('does not turn Advanced information into customer provider authority', () => {
     const html = renderToStaticMarkup(createElement(AIConnections, { settings: defaults(), save: async () => {}, ownerRoutes: false }));
-    expect(html).toContain('Advanced: organization-owned API or cloud account');
-    expect(html).not.toContain(`aria-label="${MODEL_API_NAMES['aws-bedrock']}"`);
+    expect(html).toContain('Your business&#x27;s own AI account');
+    expect(html).not.toContain('aria-label="AWS Bedrock"');
     expect(html).not.toContain('aria-label="Tiers"');
   });
 
@@ -56,13 +55,14 @@ describe('managed inference commercial presentation', () => {
 
   it('describes a customer rate and bounded authorization without a payment or activation control', () => {
     const html = renderToStaticMarkup(createElement(ManagedInferencePolicy));
-    expect(html).toContain('Nectovia&#x27;s current usage rate');
-    expect(html).toContain('monthly spending cap');
-    expect(html).toContain('never starts automatically');
-    expect(html).toContain('does not authorize extra monthly spending');
+    expect(html).toContain('Nectovia&#x27;s current rate');
+    expect(html).toContain('monthly spending limit');
+    expect(html).toContain('needs your business&#x27;s approval');
+    expect(html).toContain('doesn&#x27;t approve extra monthly spending');
     expect(html).not.toMatch(/<button|<input|<form|provider cost|markup|\$0\./i);
-    expect(html).toContain('cannot fund shared organization-wide');
-    expect(html).toContain('does not use your included Nectovia allowance');
+    expect(html).toContain('can&#x27;t fund shared Agent work');
+    expect(html).toContain('The provider bills you separately');
+    expect(html).toContain('doesn&#x27;t use your Nectovia allowance');
   });
 
   it('keeps account billing policy within the server-granted plan visibility', () => {

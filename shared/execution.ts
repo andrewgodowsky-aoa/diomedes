@@ -80,7 +80,7 @@ export function admit(results: readonly GateResult[]): Admission {
     const result = byId.get(gate);
     if (!result) {
       refusedBy.push(gate);
-      reasons.push(`Nothing checked ${gate} for this work.`);
+      reasons.push(`The ${gate} check is missing for this work.`);
       continue;
     }
     if (result.verdict === 'passed' || (result.verdict === 'not-required' && !result.required))
@@ -135,7 +135,7 @@ export function payerFor(input: {
       kind: 'local-machine',
       id: null,
       coversChildren: true,
-      reason: 'This work runs on your machine and is not billed to anyone.',
+      reason: 'This work runs on this computer without a usage charge.',
     };
   if (input.workspace.kind === 'business' && input.managedInference)
     return {
@@ -150,7 +150,7 @@ export function payerFor(input: {
       id: input.workspace.organizationId,
       coversChildren: true,
       reason:
-        'This runs through the account signed in on this computer, not through business usage. What it costs appears on that account.',
+        'The account signed in on this computer pays for this work.',
     };
   return {
     kind: 'person',
@@ -189,7 +189,7 @@ export function chooseFallback(input: {
     return {
       routeId: null,
       reason:
-        'This setup does not allow a different model to pick the work up. Nothing was changed.',
+        'This setup doesn\'t allow another AI to continue the work.',
     };
   for (const candidate of input.candidates) {
     if (candidate === input.from) continue;
@@ -202,16 +202,16 @@ export function chooseFallback(input: {
     return {
       routeId: null,
       reason:
-        'This work has to stay on this computer, and no local model is available. It was stopped rather than sent to a cloud service.',
+        'This work must stay on this computer. It stopped because no local AI is available.',
     };
   if (input.budgetRemainingUsd !== null && input.budgetRemainingUsd <= 0)
     return {
       routeId: null,
-      reason: 'There is no allowance left, so no other model was started.',
+      reason: 'There is no usage allowance left to continue this work.',
     };
   return {
     routeId: null,
-    reason: 'No other available model can do this work. Nothing was changed.',
+    reason: 'No other available AI can do this work.',
   };
 }
 
@@ -355,7 +355,7 @@ export function recheckAtEffect(
     reason:
       stopping.length === 0
         ? null
-        : `${sentenceFor(stopping)} Nothing was changed. Start the work again to continue under what is true now.`,
+        : `${sentenceFor(stopping)} Start the work again to use the current setup.`,
     checkedAt: at,
   };
 }
@@ -470,7 +470,7 @@ export function evidenceFor(
     handoff: maybe(resolution.team?.handoffId ?? null, 'Nothing was handed to this job.'),
     model: maybe(
       observed.runtimeModel,
-      'The runtime did not report which model answered, so it is not recorded.',
+      'The answering model wasn\'t reported.',
     ),
     runtime: maybe(observed.runtimeEngine, 'The runtime did not identify itself.'),
     choice: {
@@ -489,13 +489,13 @@ export function evidenceFor(
       resolution.budget?.reservationId ?? null,
       'Nothing was reserved for this work.',
     ),
-    effect: maybe(observed.effect, 'Nothing was changed yet.'),
-    verification: maybe(observed.verification, 'This has not been checked yet.'),
+    effect: maybe(observed.effect, 'No change recorded.'),
+    verification: maybe(observed.verification, 'No check recorded.'),
     roles: {
       proposer: maybe(observed.proposer, 'Nobody is recorded as having proposed this.'),
-      reviewer: maybe(observed.reviewer, 'Nobody reviewed this.'),
-      writer: maybe(observed.writer, 'Nothing has been written.'),
-      verifier: maybe(observed.verifier, 'Nobody has checked the result.'),
+      reviewer: maybe(observed.reviewer, 'No reviewer recorded.'),
+      writer: maybe(observed.writer, 'No writer recorded.'),
+      verifier: maybe(observed.verifier, 'No verifier recorded.'),
     },
   };
 }

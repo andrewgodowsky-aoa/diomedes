@@ -450,7 +450,7 @@ export function TeamView({
       {ordered.length === 0 ? (
         !adding && (
           <div className="lane-empty" aria-label="No team yet">
-            <p className="caption">No team yet. Add a leader, then members.</p>
+            <p className="caption">Add a leader, then members.</p>
             {onAddMember && (
               <button type="button" onClick={() => setAdding(true)}>
                 Add
@@ -528,7 +528,7 @@ export function TeamView({
               value={to}
               onChange={(e) => setTo(e.target.value as Slot | 'diomedes')}
             >
-              <option value="diomedes">Nectovia routes it</option>
+              <option value="diomedes">Nectovia chooses the recipient</option>
               {ordered.map((m) => (
                 <option key={m.slotId} value={m.slotId}>
                   {m.name}
@@ -536,12 +536,12 @@ export function TeamView({
               ))}
             </select>
             <span style={{ marginLeft: 'auto' }}>
-              Members talk through the Nectovia team service.
+              Send a message to the selected recipient.
             </span>
           </div>
           <div className="bar">
             <span className="cap" style={{ marginLeft: 6 }}>
-              One task, one record; every message lands in the streams above.
+              Read this task's messages in each member's conversation.
             </span>
             <button className={`send${text.trim() ? ' ready' : ''}`} type="submit">
               Send
@@ -583,15 +583,15 @@ export function AddMember({
   // (owner decision 2026-09-23), so no route or model is ever offered here.
   const caption =
     role === 'lead'
-      ? 'Nectovia runs this member on the tier you choose; a leader works one tier above it.'
-      : 'Nectovia runs this member on the tier you choose.';
+      ? 'The leader uses one tier above your choice.'
+      : 'This member uses the tier you choose.';
   const submit = async () => {
     if (!name.trim() || busy) return;
     setFailure(null);
     try {
       await onAdd({ name: name.trim(), role, engine: AUTO, style });
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'This member could not be added.');
+      setFailure(error instanceof Error ? error.message : "This member couldn't be added.");
     }
   };
   return (
@@ -780,7 +780,7 @@ function Lane({
       <div className="ctx">
         <span className="mono">
           {typeof ctx === 'number' ? `context ${sizeLabel(ctx)}` : 'context unknown'}
-          {unread > 0 ? ` · ${unread} message${unread === 1 ? '' : 's'} waiting` : ''}
+          {unread > 0 ? ` · ${unread} unread message${unread === 1 ? '' : 's'}` : ''}
         </span>
       </div>
       <Action
@@ -892,7 +892,7 @@ function Action({
       <div className="action">
         <span>
           {unread > 0
-            ? `${unread} message${unread === 1 ? '' : 's'} waiting`
+            ? `${unread} unread message${unread === 1 ? '' : 's'}`
             : `Waiting for ${leadName}`}
         </span>
         <span className="mono">WAITING</span>

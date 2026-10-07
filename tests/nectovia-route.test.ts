@@ -436,16 +436,16 @@ describe("the gateway's refusals, in the conversation's words", () => {
   const cases: [number, string, string, string][] = [
     [401, 'sign_in_required', 'nectovia_sign_in_required', NECTOVIA_SIGN_IN],
     [403, 'agent_not_included', 'nectovia_agent_not_included', 'Juniper Street Bakery has no plan that includes the Nectovia Agent.'],
-    [403, 'admission_invalid', 'nectovia_admission_invalid', 'Nectovia could not confirm this message was admitted. Nothing was charged. Send it again.'],
+    [403, 'admission_invalid', 'nectovia_admission_invalid', 'Nectovia couldn\'t confirm this message started. Send it again to check.'],
     [402, 'insufficient_allowance', 'nectovia_insufficient_allowance', MEMBER_WORDS],
     [402, 'cap_request_required', 'nectovia_cap_request_required', 'This job needs a cap request before it can spend more.'],
-    [409, 'tier_unrouted', 'nectovia_tier_unrouted', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
-    [409, 'tier_unpriced', 'nectovia_tier_unpriced', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
-    [409, 'over_cost_ceiling', 'nectovia_over_cost_ceiling', 'Efficient has no Nectovia model right now. Nothing was charged. Choose another tier.'],
-    [413, 'context_too_long', 'nectovia_too_long', 'This message and its sources are longer than Nectovia accepts. Nothing was charged. Choose fewer or shorter sources.'],
-    [429, 'provider_busy', 'nectovia_provider_busy', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
+    [409, 'tier_unrouted', 'nectovia_tier_unrouted', 'Efficient is unavailable right now. Choose another tier.'],
+    [409, 'tier_unpriced', 'nectovia_tier_unpriced', 'Efficient is unavailable right now. Choose another tier.'],
+    [409, 'over_cost_ceiling', 'nectovia_over_cost_ceiling', 'Efficient is unavailable right now. Choose another tier.'],
+    [413, 'context_too_long', 'nectovia_too_long', 'This message and its sources are longer than Nectovia accepts. Choose fewer or shorter sources.'],
+    [429, 'provider_busy', 'nectovia_provider_busy', "Nectovia's AI service is busy. Try again in a minute."],
     [503, 'route_unavailable', 'nectovia_route_unavailable', NECTOVIA_UNAVAILABLE],
-    [400, 'unsupported_field', 'nectovia_unsupported_field', 'Nectovia refused this message: The request field background is not accepted. Nothing was charged.'],
+    [400, 'unsupported_field', 'nectovia_unsupported_field', 'Nectovia refused this message: The request field background is not accepted.'],
   ];
   test.each(cases)('HTTP %i %s reads as %s, with the local hold released and one request', async (status, code, mapped, words) => {
     const said =
@@ -469,7 +469,7 @@ describe("the gateway's refusals, in the conversation's words", () => {
     const error = await failure(call(net.fetch, { account: { refreshPolicy: refresh } }));
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(error.code).toBe('nectovia_policy_changed');
-    expect(error.message).toBe('Nectovia now runs Efficient on GPT-5.6 Luna (2). Nothing was charged. Send your message again to use it.');
+    expect(error.message).toBe('Nectovia now runs Efficient on GPT-5.6 Luna (2). Send your message again to use it.');
     expect(error.evidence.reservation?.state).toBe('released');
     // Nothing is retried, on this route or any other.
     expect(net.sent).toHaveLength(1);

@@ -137,7 +137,7 @@ export interface DiomedesHomeProps {
 }
 
 const words = (error: unknown) =>
-  error instanceof Error ? error.message : 'Nectovia could not complete that.';
+  error instanceof Error ? error.message : "Nectovia couldn't complete that.";
 
 /** A send the host refused because nobody is signed in: signing in answers it. */
 const refusedForSignIn = (error: unknown) =>
@@ -502,7 +502,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         if (!owns()) return;
         setUnavailable(
           scope === null && error instanceof ApiError && error.status === 404
-            ? 'The conversation across all projects is not available in this build. Choose a project to talk about.'
+            ? 'Choose a project to start a conversation. All-project conversations are unavailable.'
             : words(error),
         );
       }

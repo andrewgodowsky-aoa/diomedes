@@ -121,8 +121,7 @@ export function AppUpdates() {
     <div className="app-updates">
       <h2>App updates</h2>
       <p className="prose">
-        Nectovia checks the official release page only when you ask. A newer version downloads first
-        for verification; nothing installs without your explicit close-and-install.
+        Check for an update, then download it. Choose Close and install when you're ready to update.
       </p>
       <p className="prose version-row">
         <span>
@@ -181,18 +180,16 @@ export function AppUpdates() {
                     <br />
                     {status.download.bytes !== null ? `${megabytes(status.download.bytes)} · ` : ''}
                     {status.download.verified === 'size-origin-digest'
-                      ? 'size, origin and published digest verified'
-                      : 'Published digest verification unavailable'}
+                      ? 'Download matches the official release'
+                      : 'Download verification unavailable'}
                   </p>
                   <p className="caption">
-                    Close and install exits Nectovia and opens the verified installer. The existing
-                    per-user installer preserves project and profile data.
+                    Close and install closes Nectovia and opens the installer.
                   </p>
                 </>
               ) : status.platform === 'darwin' ? null : (
                 <p className="caption">
-                  Download checks the official asset's size and published SHA-256 before
-                  installation.
+                  The download is checked against the official release before installation.
                 </p>
               )}
             </section>
@@ -245,7 +242,7 @@ export function AppUpdates() {
           </div>
           {handedOff && (
             <p className="prose">
-              Update handoff accepted. Nectovia is closing; the installer will open after it exits.
+              Nectovia is closing. The installer opens next.
             </p>
           )}
         </>

@@ -15,8 +15,8 @@ describe('the route caption', () => {
     expect(routeName('nectovia')).toBe('Nectovia');
   });
 
-  it('names the owner AWS route AWS Bedrock (Luna)', () => {
-    expect(routeName('aws-bedrock')).toBe('AWS Bedrock (Luna)');
+  it('names the owner AWS route AWS Bedrock', () => {
+    expect(routeName('aws-bedrock')).toBe('AWS Bedrock');
   });
 
   it('names Claude Code as itself, never as a stand-in for AWS', () => {
@@ -57,6 +57,6 @@ describe('the Home composer offers tiers, never routes or models', () => {
 
   it('names a tiered conversation by its tier, and names the route only without one', () => {
     expect(render('thorough')).toContain('<span class="dio-route">Thorough</span>');
-    expect(render(null)).toContain('<span class="dio-route">AWS Bedrock (Luna)</span>');
+    expect(render(null)).toContain('<span class="dio-route">AWS Bedrock</span>');
   });
 });

@@ -115,10 +115,10 @@ export function boardMove(to: BoardColumn, facts: BoardMoveFacts): BoardMove {
     if (from === 'Queued' || from === 'Working')
       return {
         kind: 'refused',
-        reason: 'It is already admitted. It shows Working once its run has started.',
+        reason: 'This task is already queued or working.',
       };
     if (facts.active)
-      return { kind: 'refused', reason: 'It has a run waiting on you. Open it to see what it needs.' };
+      return { kind: 'refused', reason: 'Open this task to resolve its pending decision.' };
     if (from === 'Ready') return facts.slotBusy ? { kind: 'refused', reason: ONE_SLOT } : start('Start');
     if (from === 'Blocked' && facts.failed)
       return facts.slotBusy ? { kind: 'refused', reason: ONE_SLOT } : start('Start again');
@@ -142,7 +142,7 @@ export function boardMove(to: BoardColumn, facts: BoardMoveFacts): BoardMove {
         label: 'Stop',
         pending: 'Stopping…',
         confirm:
-          'Stop this run? The task goes back to Ready and waits for you. Nothing starts in its place.',
+          'Stop this job and return the task to Ready? Restart it manually when you’re ready.',
       };
     }
     const held = unsettled(facts);

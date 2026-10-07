@@ -29,7 +29,7 @@ export const WORKER_PAYER_WORD: Record<WorkerRowPayer, string> = {
   'your-subscription': 'Your subscription',
   'your-key': 'Your key',
   local: 'On this computer',
-  unknown: 'Payer not known',
+  unknown: 'Who pays is unknown',
 };
 
 const VERIFICATION_WORD: Record<Exclude<WorkerRowVerification, 'not-run'>, string> = {

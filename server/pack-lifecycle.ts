@@ -250,7 +250,7 @@ export class PackLifecycle {
       try {
         raw = JSON.parse(text);
       } catch {
-        refuse(409, 'The pack store is not readable JSON. Nothing in it was changed.', {
+        refuse(409, 'The pack store isn\'t readable JSON.', {
           code: 'unreadable-store',
         });
       }
@@ -263,14 +263,14 @@ export class PackLifecycle {
           if (!(error instanceof MigrationRefusal)) throw error;
           refuse(
             409,
-            `The pack store was written with schema ${String(raw.schemaVersion)}, which this Diomedes does not read. Nothing in it was changed.`,
+            `The pack store uses version ${String(raw.schemaVersion)}, which this Nectovia can't read.`,
             { code: 'unknown-store-version' },
           );
         }
       if (!isPackStoreFile(raw))
         refuse(
           409,
-          'The pack store does not have the shape this Diomedes writes. Nothing in it was changed.',
+          'Nectovia can\'t read the pack store\'s format.',
           { code: 'unreadable-store' },
         );
       this.file = raw;
@@ -315,7 +315,7 @@ export class PackLifecycle {
         phase: 'interrupted',
         at: this.clock(),
         detail:
-          'Diomedes stopped before this finished. The store still says what it said before it started, and nothing from it was turned on.',
+          'Nectovia stopped before the pack change finished. Try the change again.',
       });
     if (open.length) await this.persist();
     await fs.rm(this.stagingRoot, { recursive: true, force: true });
@@ -623,7 +623,7 @@ export class PackLifecycle {
       files.push({ path: entry.path, bytes });
     }
     if (packDigest(manifest) !== manifest.digest)
-      refuse(409, "The pack's digest does not match its contents. Nothing was installed.", {
+      refuse(409, "The pack doesn't match its recorded checksum.", {
         code: 'digest-mismatch',
       });
     return { manifest, files, source: { kind: 'directory', path: folder } };
@@ -634,7 +634,7 @@ export class PackLifecycle {
     if (value.kind === 'directory') return this.acquireDirectory(value.path);
     if (value.kind === 'bundled') {
       const manifest = (await this.catalogue()).find((item) => item.id === value.packId);
-      if (!manifest) refuse(404, 'That pack does not ship with this Diomedes.');
+      if (!manifest) refuse(404, 'That pack isn\'t included with this Nectovia.');
       return this.acquireBundled(manifest);
     }
     return refuse(400, 'Choose a bundled pack or a local pack folder.');

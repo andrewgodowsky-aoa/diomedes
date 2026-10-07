@@ -146,7 +146,7 @@ test('a route that declares all six offers each control once, and each leaves a 
   const when = followUps(page).getByRole('radiogroup', { name: 'When this follow-up runs' });
   await when.getByRole('radio', { name: 'now, into this turn' }).click();
   await followUps(page)
-    .getByRole('textbox', { name: 'Steer the running turn' })
+    .getByRole('textbox', { name: "Change the current instruction" })
     .fill('Keep it to five courses.');
   await followUps(page).getByRole('button', { name: 'Steer', exact: true }).click();
   await expect(receipt(page, 'steer')).toHaveAttribute('data-outcome', 'applied');
@@ -253,7 +253,7 @@ test('a route that offers only Stop and Queue shows only those, and labels the q
   const when = followUps(page).getByRole('radiogroup', { name: 'When this follow-up runs' });
   await expect(when.getByRole('radio')).toHaveText(['after this turn', 'after the task is done']);
   await expect(followUps(page).locator('.follow-up-steer-note')).toHaveText(
-    'Sample can’t steer a running turn, so a message waits for the turn to end.',
+    "Sample accepts your next message after the current answer finishes.",
   );
   await followUps(page)
     .getByRole('textbox', { name: 'Queue a follow-up' })

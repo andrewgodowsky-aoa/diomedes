@@ -1114,7 +1114,7 @@ const acpRpcFailure =
     if (kind === 'limited')
       return new EngineError(
         'USAGE_LIMIT',
-        `${name} reported a service limit. No model or account was substituted.`,
+        `${name} reported a service limit.`,
         true,
       );
     if (kind === 'denied') return new EngineError('AUTH_REQUIRED', authDetail, true);

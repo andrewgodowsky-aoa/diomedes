@@ -68,7 +68,7 @@ export function PrepareLocalModels({ onPrepare, onRoute }: { onPrepare(): Promis
   if (!available) return null;
   return <div className="local-model-controls"><button type="button" disabled={busy} onClick={() => {
     setBusy(true); setError(null);
-    void onPrepare().catch((error: unknown) => setError(error instanceof Error ? error.message : 'The conversation could not be opened.'))
+    void onPrepare().catch((error: unknown) => setError(error instanceof Error ? error.message : "The conversation couldn't be opened."))
       .finally(() => setBusy(false));
   }}>Choose a local model</button>{error && <span role="alert">{error}</span>}</div>;
 }
@@ -94,7 +94,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
     const refresh = () => {
       void api<LocalModelsView>('/ai/local-models', 'GET', undefined, controller.signal)
         .then(setView).catch((error: unknown) => {
-          if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Local models could not be checked.');
+          if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Local models couldn't be checked.");
         });
     };
     refresh();
@@ -114,7 +114,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
         'PUT', { engine: view.route, requested: { model: model.slug,
           effort: effort ?? model.defaultEffort, ...(agent ? { agent } : {}) } }, controller.signal));
     } catch (error) {
-      if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'The model choice could not be saved.');
+      if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "The model choice couldn't be saved.");
     } finally {
       if (active.current === controller) active.current = null;
       if (!controller.signal.aborted) setWorking(false);
@@ -134,7 +134,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
       setView(current => current ? { ...current, status } : current);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : 'The local model could not be loaded.');
+        setError(error instanceof Error ? error.message : "The local model couldn't be loaded.");
         try { setView(await api<LocalModelsView>('/ai/local-models', 'GET', undefined, controller.signal)); }
         catch { /* The action's original failure stays visible. */ }
       }
@@ -151,7 +151,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
       onChanged(await api<Conversation>(`/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
         'PUT', { engine: 'nectovia', requested: thread.requested?.agent
           ? { model: null, effort: null, agent: thread.requested.agent } : null }, controller.signal));
-    } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'The model choice could not be saved.'); }
+    } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "The model choice couldn't be saved."); }
     finally { if (active.current === controller) active.current = null; if (!controller.signal.aborted) setWorking(false); }
   }
 
@@ -171,7 +171,7 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
       </select>
       {profile && <>
         <select aria-label="Local reasoning effort" value={level} disabled={locked}
-          title={mode === 'fix' ? 'Fix caps the reasoning level.' : 'Reasoning effort'}
+          title={mode === 'fix' ? 'Fix limits reasoning effort.' : 'Reasoning effort'}
           onChange={e => void change(profile.slug, e.target.value)}>
           {profile.efforts.map(effort => <option key={effort.id} value={effort.id} disabled={effortFor(mode, effort.id, effort.id) !== effort.id}>
             {'label' in effort ? String(effort.label) : effort.id}
@@ -193,8 +193,8 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
     </div>
     {selected && <span className="local-model-status" role="status">{view.status.detail}</span>}
     {profile && profile.callTimeoutMs > 240_000 && <span className="local-model-status">
-      Higher effort can take several minutes. Each model call stops after {profile.callTimeoutMs / 60_000} minutes,
-      and a message after {profile.turnTimeoutMs / 60_000} minutes.
+      Higher effort can take several minutes. A request times out after {profile.callTimeoutMs / 60_000} minutes;
+      the whole answer times out after {profile.turnTimeoutMs / 60_000} minutes.
     </span>}
     {error && <span className="local-model-error" role="alert">{error}</span>}
   </div>;
@@ -221,7 +221,7 @@ export function LocalImageAttachments({ projectId, route, model, paths, onPaths,
     {images && <button type="button" disabled={busy || paths.length >= MODEL_IMAGE_COUNT} onClick={() => {
       setError(null);
       void listDocuments(projectId).then(result => setFiles(result.documents.filter(file => imageMediaType(file.path))))
-        .catch((error: unknown) => setError(error instanceof Error ? error.message : 'Project images could not be read.'));
+        .catch((error: unknown) => setError(error instanceof Error ? error.message : "Project images couldn't be read."));
     }}>Attach image</button>}
     {images && files && <select aria-label="Project image" disabled={busy} value="" onChange={e => {
       if (e.target.value && !paths.includes(e.target.value) && paths.length < MODEL_IMAGE_COUNT) onPaths([...paths, e.target.value]);
@@ -229,7 +229,7 @@ export function LocalImageAttachments({ projectId, route, model, paths, onPaths,
     }}><option value="">Choose an image from Files</option>{files.map(file => <option key={file.path} value={file.path}>{file.path}</option>)}</select>}
     {files?.length === 0 && <span>No project images. Add an image in Files first.</span>}
     {paths.map(path => <button key={path} type="button" disabled={busy} title="Remove image" onClick={() => onPaths(paths.filter(item => item !== path))}>{path} (remove)</button>)}
-    {!images && paths.length > 0 && <span role="alert">The selected model cannot receive these images. Choose an image model or remove them.</span>}
+    {!images && paths.length > 0 && <span role="alert">The selected model can't receive these images. Choose an image model or remove them.</span>}
     {error && <span role="alert">{error}</span>}
   </div>;
 }

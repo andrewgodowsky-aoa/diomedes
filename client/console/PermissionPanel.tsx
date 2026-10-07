@@ -187,10 +187,9 @@ export function PermissionPanel({
             {!preset.available && <p className="permission-why">{preset.unavailableReason}</p>}
             {!preset.available && scopeOnCodexOnly && scopeBacked(preset.id) && (
               <p className="permission-why">
-                This is about the route, not about the {routeName} connection: only Codex has a
-                verified boundary for scoped automatic writes. Set this thread to Codex in the
-                engine picker, or connect Codex in Settings &gt; Engines. Review changes stays
-                available on {routeName}.
+                Use Codex for scoped automatic writes; its file boundary is verified for this mode.
+                Choose Codex for this thread or connect it in Settings &gt; Engines.
+                You can review changes from {routeName}.
               </p>
             )}
             {(choice === preset.id || !preset.available) && (
@@ -206,7 +205,7 @@ export function PermissionPanel({
                   <strong>Which environment would receive this?</strong>{' '}
                   {capabilities?.environments.length
                     ? capabilities.environments.map((item) => item.name).join(', ')
-                    : 'None. There is no isolated environment on this installation to give unrestricted authority to.'}
+                    : 'No isolated environment is available for unrestricted access.'}
                 </p>
                 {!preset.available && (
                   <details>
@@ -264,13 +263,12 @@ export function PermissionPanel({
         </p>
       ) : engine !== 'codex' ? (
         <p>
-          Scoped writes are currently available for Codex text proposals. This engine's containment
-          boundary has not been verified for this mode.
+          Use Codex text proposals for scoped writes. This engine's file boundary isn't verified
+          for this mode.
         </p>
       ) : choice === 'review' ? (
         <p>
-          Review changes needs no confirmation. It is what happens when this task has no scope, and
-          revoking one returns you to it.
+          Review each change when the task has no active file permission.
         </p>
       ) : (
         <>
@@ -278,8 +276,8 @@ export function PermissionPanel({
             <strong>Confirm for this task:</strong> create or update supported text files in{' '}
             <strong>{namedRoots}</strong>, via Codex using its ChatGPT account.
             {choice === 'auto-review'
-              ? ' Each change set goes to the reviewer first; only its approval applies one without you.'
-              : ' This covers the current waiting proposal and future proposals for this same task.'}
+              ? ' The reviewer must approve each change set before it can be applied automatically.'
+              : ' This covers current and future proposals for this task.'}
           </p>
           <p>
             Up to <strong>{maxWrites} file writes</strong> and{' '}
@@ -316,8 +314,8 @@ export function PermissionPanel({
               <p className="permission-why">{reviewer.independence}</p>
               <p>
                 A reviewer check is a separate request on your Codex account, up to{' '}
-                {Math.round(reviewer.timeoutMs / 1000)} seconds each. Confirming here is the consent
-                for those {maxReviews} checks and nothing else.
+                {Math.round(reviewer.timeoutMs / 1000)} seconds each. Approve up to {maxReviews}
+                checks for this task.
               </p>
             </>
           )}
@@ -360,7 +358,7 @@ export function PermissionPanel({
           </details>
           <p>
             No command execution, deletion, installations, external destinations or billing changes.
-            This local prototype does not authenticate a human or device.
+            This installation doesn't verify the person or device approving a change.
           </p>
           <button
             type="button"
@@ -378,8 +376,7 @@ export function PermissionPanel({
           <p key={record.grant.id}>{record.reason}</p>
         ))}
       <p>
-        Revocation blocks future scoped writes and asks owned work to stop. Effects already
-        dispatched may finish.
+        Revoke to block new writes and request a stop. Actions already started may finish.
       </p>
       {error && <p role="alert">{error}</p>}
       <RememberedApprovalsList projectId={projectId} onChange={onChange} />

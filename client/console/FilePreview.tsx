@@ -30,7 +30,7 @@ const size = (bytes: number) =>
 
 /** Where to open a file this window cannot show. Said once, where the preview would be. */
 const NO_HANDOFF =
-  'This window has no hand-off to the desktop shell, so open it from the project folder in the app that owns it.';
+  'Open this file from its project folder in another app.';
 
 function useFacts(projectId: string, path: string, sha?: string | null) {
   const [facts, setFacts] = useState<DocumentFacts | null>(null);
@@ -43,7 +43,7 @@ function useFacts(projectId: string, path: string, sha?: string | null) {
       .then(setFacts)
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
-          setFailure(error instanceof Error ? error.message : 'Files could not read this file.');
+          setFailure(error instanceof Error ? error.message : "Files couldn't read this file.");
       });
     return () => controller.abort();
   }, [projectId, path, sha]);
@@ -75,14 +75,14 @@ export function PicturePreview({ projectId, path, sha }: { projectId: string; pa
       <IdentityLine identity={facts.identity} current={facts.current} />
       {!picture ? (
         <p className="caption">
-          This file is named as a picture but its contents are not a PNG, JPEG, GIF or WebP, so Files does not show it.
+          The contents aren't a supported image. Files supports PNG, JPEG, GIF and WebP.
         </p>
       ) : !facts.picture?.previewable ? (
         <p className="caption">
           {facts.picture?.width}×{facts.picture?.height} pixels is too large for Files to show. {NO_HANDOFF}
         </p>
       ) : broken ? (
-        <p className="caption">This picture could not be drawn. {NO_HANDOFF}</p>
+        <p className="caption">Couldn't draw this picture. {NO_HANDOFF}</p>
       ) : (
         <figure className="files-picture">
           <img
@@ -119,8 +119,7 @@ export function DocumentFactsPreview({
       <div className="files-preview">
         <IdentityLine identity={facts.identity} current={facts.current} />
         <p className="caption">
-          This file is named as {expect === 'pdf' ? 'a PDF' : 'an XLSX workbook'} but its contents are not one, so
-          Files does not describe it.
+          This file is named as {expect === 'pdf' ? 'a PDF' : 'an XLSX workbook'} but its contents don't match that format.
         </p>
       </div>
     );
@@ -140,7 +139,7 @@ export function DocumentFactsPreview({
         )}
       </dl>
       {expect === 'pdf' ? (
-        <p className="caption">Files has no in-app PDF viewer in this build. {NO_HANDOFF}</p>
+        <p className="caption">PDF preview is unavailable. {NO_HANDOFF}</p>
       ) : (
         <WorkbookPreview projectId={projectId} path={path} sha={facts.identity.sha} />
       )}
@@ -163,7 +162,7 @@ function WorkbookPreview({ projectId, path, sha }: { projectId: string; path: st
       .then(setSheet)
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
-          setFailure(error instanceof Error ? error.message : 'Files could not read this workbook.');
+          setFailure(error instanceof Error ? error.message : "Files couldn't read this workbook.");
       });
     return () => controller.abort();
   }, [projectId, path, sha, page]);
@@ -174,7 +173,7 @@ function WorkbookPreview({ projectId, path, sha }: { projectId: string; path: st
       <p className="caption">
         The first sheet, {sheet.sheet}
         {sheet.sheets.length > 1 ? `, of ${sheet.sheets.length} sheets` : ''}. Values are shown as the
-        workbook saved them: formulas are not recalculated and dates are serial numbers.
+        workbook saved them. Formulas aren't recalculated. Dates appear as stored numbers.
       </p>
       <RowsTable
         rows={sheet.rows}
@@ -220,9 +219,9 @@ function RowsTable({
           ? 'No rows'
           : `Rows ${first + 1}–${first + rows.length} of ${total} · ${columns} ${columns === 1 ? 'column' : 'columns'}`}
       </p>
-      {clipped && <p className="caption">Columns past the 50th are not shown.</p>}
+      {clipped && <p className="caption">Columns after the 50th aren't shown.</p>}
       {unterminated && (
-        <p className="caption">A quote is never closed, so the last rows may be joined; Raw shows the text as written.</p>
+        <p className="caption">An unclosed quote may join the last rows. Open Raw to check the original text.</p>
       )}
       <div className="files-table-scroll">
         <table className="files-table">
@@ -355,7 +354,7 @@ export function VersionView({
       .then(setVersion)
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
-          setFailure(error instanceof Error ? error.message : 'This version could not be read.');
+          setFailure(error instanceof Error ? error.message : "This version couldn't be read.");
       });
     return () => controller.abort();
   }, [projectId, path, sha]);
@@ -408,7 +407,7 @@ export function VersionView({
           ) : version.text !== null ? (
             <pre className="files-raw">{version.text}</pre>
           ) : (
-            <p className="caption">This version is not text, so Files describes rather than shows it. {NO_HANDOFF}</p>
+            <p className="caption">Only file details are available for this version. {NO_HANDOFF}</p>
           )}
         </>
       )}

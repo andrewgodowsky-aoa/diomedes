@@ -94,13 +94,13 @@ describe('Google Vertex AI setup card', () => {
 
   test('the five cost figures stay apart and the owner pays, not Nectovia credits', () => {
     const lines = Object.fromEntries(vertexMoneyLines(connected).map((line) => [line.key, line.text]));
-    expect(lines.payer).toMatch(/nectovia-owner-test, not Nectovia credits/);
+    expect(lines.payer).toBe('Your Google Cloud project nectovia-owner-test');
     expect(lines.gross).toBe('$0.0019 at Google’s standard rate');
     expect(lines.unresolved).toBe('up to $0.0005 held');
     expect(lines.promotion).toMatch(/^\$0\.0010 may come back as credit .* Unconfirmed/);
     expect(lines.credits).toMatch(/^Not known here/);
     expect(lines.debit).toBe('$0.00');
-    expect(lines.invoice).toMatch(/^Google’s, not Nectovia’s/);
+    expect(lines.invoice).toMatch(/^Google's invoice\. See /);
   });
 
   test('the connect body is exactly what the host accepts, and consent is required', () => {

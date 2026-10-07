@@ -801,7 +801,7 @@ describe('native loop over an injected model adapter', () => {
     const shown = presentRun(run);
     expect(shown.reason).toBe('went-wrong');
     expect(shown.uncertain?.stepId).toBe('tool:0');
-    expect(shown.sentence).toMatch(/could not confirm/);
+    expect(shown.sentence).toMatch(/An external action has an unconfirmed result/);
   });
 
   test('a registered tool outside the capability is not offered and cannot be called', async () => {

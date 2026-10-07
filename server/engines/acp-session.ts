@@ -144,7 +144,7 @@ const continuityDetail = (
   interrupted: boolean,
 ): string | null => {
   const restart = interrupted
-    ? 'Diomedes restarted while an earlier message was being answered; that message was not completed or resent. '
+    ? 'Nectovia restarted while an earlier message was being answered. That message wasn\'t completed or resent. '
     : '';
   if (origin === 'load-unsupported')
     return `${restart}${name} does not offer to continue a saved session, so this message started a fresh ${name} session. Earlier messages in this conversation were not carried into it.`;
@@ -358,7 +358,7 @@ function askPerson(
     answer === 'expired'
       ? new EngineError(
           'APPROVAL_EXPIRED',
-          `${profile.name} asked for approval and nobody answered in time, so the request was stopped. Nothing was approved.`,
+          `${profile.name}'s approval request expired, so the request stopped.`,
           true,
         )
       : stopped();
@@ -527,7 +527,7 @@ export function recoverAcpCheckpoint(
   return {
     refuse:
       saved.loadSession === false
-        ? `Diomedes restarted while ${name} was answering, and ${name} cannot continue a saved session, so this conversation couldn't resume. Start again.`
-        : `Diomedes restarted while ${name} was answering, and no ${name} session was confirmed to continue, so this conversation couldn't resume. Start again.`,
+        ? `Nectovia restarted while ${name} was answering. ${name} can't continue a saved session, so this conversation couldn't resume. Start again.`
+        : `Nectovia restarted while ${name} was answering. The saved ${name} session couldn't be confirmed, so this conversation couldn't resume. Start again.`,
   };
 }

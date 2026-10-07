@@ -13,7 +13,7 @@ const ROUTE = 'google-vertex' as const;
 const BASE = `/ai/model-api/${ROUTE}`;
 
 const messageOf = (error: unknown) =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
+  error instanceof ApiError || error instanceof Error ? error.message : "The request couldn't be completed.";
 
 /**
  * The owner's Google Vertex AI route. There is no key to paste: the host reads the
@@ -103,7 +103,7 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
       await load();
     });
   const disconnect = () => {
-    if (!window.confirm(`Forget the ${name} connection and switch it off? Spend records are kept.`)) return;
+    if (!window.confirm(`Forget the ${name} connection and switch it off?`)) return;
     void run(async () => {
       setReadiness(null);
       return api<VertexConnectionView>(BASE, 'DELETE');
@@ -135,9 +135,8 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
         <h3>{name}</h3>
       </div>
       <p className="caption ai-route">
-        Owner route: Gemini 3.8 Flash on Google’s global endpoint, billed to your own Google Cloud project, with an
-        API key from that project (kept in protected storage) or the Google sign-in on this computer. Which work runs here is set by
-        the Focused tier, not by this card.
+        Uses Google's global service, billed to your Google Cloud project. Connect with the project's key or this computer's Google sign-in.
+        The Focused tier decides which jobs use this connection.
       </p>
       {view && (
         <ul className="ai-states" aria-label={`${name} setup state`}>
@@ -227,7 +226,7 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
           </label>
           <label className="check">
             <input type="checkbox" checked={limitConsent} onChange={(event) => setLimitConsent(event.target.checked)} />
-            Approve this as the most {AGENT_NAME} may send to {name} in total, estimated at Google’s standard price.
+            Allow Nectovia to spend up to this total on {name}, estimated at Google's standard price.
           </label>
           <div className="actions">
             <Button type="submit" disabled={disabled}>

@@ -179,7 +179,7 @@ test('a run that leaves its selected folder is paused, escalated, and answered o
     'Nectoviasupervision · application action · needs you',
   );
   await expect(escalation.locator('.ask')).toHaveText(
-    'Nectovia paused this run: it started writing outside the selected folder — continue, redirect, or stop?',
+    "Nectovia paused this job. it started writing outside the selected folder",
   );
   await expect(escalation).toContainText('Wrote Reopening plan.md, outside Menu/.');
   await expect(escalation).toContainText('No answer grants anything new.');

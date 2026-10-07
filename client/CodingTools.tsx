@@ -21,7 +21,7 @@ import {
 const PATH = '/settings/subscription-workers';
 
 const FALLBACKS: readonly (readonly [WhenUnavailable, string])[] = [
-  ['single-agent', `${AGENT_NAME} does it with your ${AGENT_NAME} credits`],
+  ['single-agent', `${AGENT_NAME} uses your credits for the task`],
   ['pause', 'Hold the work until one of your tools can take it'],
 ];
 
@@ -138,8 +138,7 @@ function CodingToolsChoice({
   return (
     <>
       <p className="prose">
-        {AGENT_NAME} can hand a task in your Personal work to a coding tool you already pay for. That
-        task runs on your plan, not your {AGENT_NAME} credits.
+        Use a coding tool you already pay for on Personal tasks. Those tasks use that tool's plan.
       </p>
       {consentChanged(view) && (
         <p className="prose">

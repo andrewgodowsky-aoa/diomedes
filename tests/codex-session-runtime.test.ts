@@ -245,7 +245,7 @@ describe('kept ChatGPT conversation over the native conversation driver', () => 
     expect(resumed.nativeSession?.opaqueRef).toBe(first.nativeSession!.opaqueRef);
     expect(resumed.continuity).toMatchObject({
       detail:
-        "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from Codex's saved thread.",
+        "Nectovia restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from Codex's saved thread.",
     });
     // The interrupted command is never answered from the record, and never sent again: Codex kept
     // it in the thread, so the resumed message is the thread's third.

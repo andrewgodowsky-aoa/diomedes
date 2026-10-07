@@ -349,7 +349,7 @@ describe('kept ACP conversation — questions for a person (Cursor)', () => {
       }),
     );
     expect(error.code).toBe('APPROVAL_EXPIRED');
-    expect(error.message).toMatch(/nobody answered in time.*Nothing was approved/);
+    expect(error.message).toMatch(/approval request expired, so the request stopped/);
   });
 
   it('an edit is never put to a person: it stays declined and stops the turn', async () => {

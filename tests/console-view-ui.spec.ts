@@ -123,7 +123,7 @@ test('the top switch moves to Work and back, and the choice is kept', async ({ p
   // The board beside the thread (round 2 board BD1), in the aside's place.
   await expect(ledger(page)).toBeVisible();
   await expect(ledger(page).getByRole('heading', { name: 'Board', level: 2 })).toBeVisible();
-  for (const name of [/^Needs your input/, /^Working/, /^Up next/, /^Finished today/])
+  for (const name of [/^Needs you/, /^Working/, /^Up next/, /^Finished today/])
     await expect(ledger(page).getByRole('heading', { name, level: 3 })).toBeVisible();
   await expect(rail(page).locator('.foot').getByRole('button', { name: /^Routines\b/ })).toBeVisible();
   await expect(rail(page).locator('.foot').getByRole('button', { name: /^Board\b/ })).toBeVisible();

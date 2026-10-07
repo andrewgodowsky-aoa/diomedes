@@ -90,7 +90,7 @@ describe('the Worker entry for managed inference', () => {
     const refused = await handler(request('run-1:1'), env);
     expect(refused.status).toBe(503);
     expect(refused.headers.get('x-nectovia-max-output')).toBe('2000');
-    expect(await refused.json()).toEqual({ error: { code: 'route_unavailable', message: 'Nectovia’s model service isn’t available right now. Nothing was charged.' } });
+    expect(await refused.json()).toEqual({ error: { code: 'route_unavailable', message: 'Nectovia\'s AI service isn\'t available right now.' } });
     expect(spy.calls).toHaveLength(0);
     // Numbers are read too, as a JSON var would arrive.
     const passed = await handler(request('run-1:2'), { ...env, MANAGED_MAX_OUTPUT_TOKENS: 1_500, MANAGED_SPEND_CEILING_MICRO_USD: 100_000_000 });

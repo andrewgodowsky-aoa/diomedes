@@ -95,7 +95,7 @@ export function sessionEvidence(
 export function sessionEvidenceView(session: Session): EvidenceView {
   const agent = session.agent ?? null;
   const origin = originForSession(session);
-  const notRecorded = (what: string) => `Nothing records ${what} for this session yet.` as const;
+  const notRecorded = (what: string) => `No record of ${what} for this session.` as const;
   return {
     ids: {
       agentId: agent?.agentId ?? 'unknown',
@@ -109,17 +109,17 @@ export function sessionEvidenceView(session: Session): EvidenceView {
     agent: agent
       ? { known: true, value: `${agent.agentName} ${agent.agentVersion}` }
       : { known: false, why: 'This work ran before Agent snapshots were recorded.' },
-    team: { known: false, why: 'This job did not run as part of a team.' },
+    team: { known: false, why: 'This job wasn\'t part of a team.' },
     handoff: { known: false, why: 'Nothing was handed to this job.' },
     // `reported` is what actually ran. `requested` is what was asked for, and
     // showing it here would relabel a run with a model that may never have seen it.
     model:
       origin?.model.source === 'runtime' && origin.model.reported
         ? { known: true, value: origin.model.reported }
-        : { known: false, why: 'The runtime did not report which model answered.' },
+        : { known: false, why: 'The tool didn\'t report which model answered.' },
     runtime: origin?.engine?.id
       ? { known: true, value: origin.engine.id }
-      : { known: false, why: 'The runtime did not identify itself.' },
+      : { known: false, why: 'The tool didn\'t identify itself.' },
     choice: {
       agent: agent?.agentSelection ?? 'automatic',
       model: agent?.modelSelection ?? 'runtime-default',
@@ -132,15 +132,15 @@ export function sessionEvidenceView(session: Session): EvidenceView {
       : { known: false, why: notRecorded('what it was permitted to do') },
     payer: { known: false, why: notRecorded('who paid') },
     reservation: { known: false, why: 'Nothing was reserved for this work.' },
-    effect: { known: false, why: 'See the recorded authorization below.' },
-    verification: { known: false, why: 'This has not been checked yet.' },
+    effect: { known: false, why: 'See the recorded authorization.' },
+    verification: { known: false, why: 'No check result is recorded.' },
     roles: {
       proposer: agent
         ? { known: true, value: agent.agentName }
-        : { known: false, why: 'Nobody is recorded as having proposed this.' },
-      reviewer: { known: false, why: 'Nobody reviewed this.' },
-      writer: { known: false, why: 'See the recorded authorization below.' },
-      verifier: { known: false, why: 'Nobody has checked the result.' },
+        : { known: false, why: 'No proposer is recorded.' },
+      reviewer: { known: false, why: 'No reviewer is recorded.' },
+      writer: { known: false, why: 'See the recorded authorization.' },
+      verifier: { known: false, why: 'No checker is recorded.' },
     },
   };
 }

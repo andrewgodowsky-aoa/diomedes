@@ -167,9 +167,9 @@ export function resolveProfileRoute(input: {
       ? `No profile in this ${input.source === 'task' ? 'task' : 'project'}'s list can run: ${tried
           .map((item) => `${item.name}: ${item.reason}`)
           .join(' ')}`
-      : `${first.name} cannot run: ${first.reason} Fallback is off for this ${
+      : `${first.name} can't run. ${first.reason} Fallback is off for this ${
           input.source === 'task' ? 'task' : 'project'
-        }, so no other profile was tried.`,
+        }.`,
     tried,
   };
 }

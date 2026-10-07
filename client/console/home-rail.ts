@@ -45,7 +45,7 @@ export interface RailGroup {
 }
 
 export const GROUP_HEADINGS: Record<RailGroupId, string> = {
-  needs: 'Needs your input',
+  needs: 'Needs you',
   working: 'Working',
   finished: 'Finished',
 };

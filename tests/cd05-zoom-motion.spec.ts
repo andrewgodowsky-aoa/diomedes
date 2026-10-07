@@ -598,7 +598,7 @@ test.describe('N4: the ask row', () => {
     await page.goto('/');
     await reopenLastProject(page);
     await rail(page).getByRole('button', { name: /^Ask row thread/ }).click();
-    const row = page.getByRole('group', { name: 'Engine, model and agent' });
+    const row = page.getByRole('group', { name: "AI settings for this thread" });
     await expect(row).toBeVisible();
     return row;
   }

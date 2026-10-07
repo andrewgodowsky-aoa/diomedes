@@ -57,7 +57,7 @@ async function open(page: Page) {
   await page.goto(baseURL);
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   // The ask row is the conversation's model control (round 2 reskin, slice 2), and no Route box.
-  await expect(page.getByRole('group', { name: 'Engine, model and agent' })).toBeVisible();
+  await expect(page.getByRole('group', { name: "AI settings for this thread" })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Route' })).toHaveCount(0);
 }
 

@@ -516,7 +516,7 @@ describe('profiles, durability and retry', () => {
     expect(refused.status).toBe(409);
     expect(refused.data.code).toBe('team_profile_refused');
     expect(refused.data.error).toBe(
-      'Vertex reader cannot run: Google Vertex AI is off in Settings > Engines. Fallback is off for this project, so no other profile was tried.',
+      'Vertex reader can\'t run. Google Vertex AI is off in Settings > Engines. Fallback is off for this project.',
     );
   });
 

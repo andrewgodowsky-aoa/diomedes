@@ -17,7 +17,7 @@ export const CACHE_POLICY_CHOICES: readonly { value: CachePolicy; label: string;
   {
     value: 'provider-default',
     label: 'Provider default',
-    detail: 'No cache instruction is sent. The provider decides what it reuses.',
+    detail: 'The provider decides what to reuse.',
   },
   {
     value: 'off',
@@ -34,7 +34,7 @@ export const CACHE_POLICY_CHOICES: readonly { value: CachePolicy; label: string;
 
 /** `store: false` and prompt caching are different things, said once beside the choice. */
 export const STORE_FALSE_NOTE =
-  'Every call is sent with store set to false, so the provider keeps no response object. That is not the same as caching off.';
+  "Each request disables saved responses. Prompt caching has its own setting.";
 
 export const FACT_SOURCE_WORDS: Record<FactSource, string> = {
   declared: 'Declared',
@@ -83,13 +83,13 @@ export function capabilityRows(record: RouteCapability): CapabilityRow[] {
 export function offVerdict(record: RouteCapability): string {
   switch (record.cache.off) {
     case 'verified':
-      return 'Caching off is confirmed. The newest route check saw no cache reads or writes with it.';
+      return 'The latest check confirmed caching was off.';
     case 'not-verified':
-      return 'Caching off is not confirmed. The newest route check still saw cache reads or writes with it.';
+      return 'The latest check still found caching with this setting off.';
     case 'unsupported':
-      return 'The provider refused the caching off request in the newest route check.';
+      return 'The provider refused to turn caching off in the latest check.';
     case 'unknown':
-      return 'No current route check has tried caching off on this connection.';
+      return "Caching off hasn't been checked on this connection.";
   }
 }
 
@@ -97,10 +97,10 @@ export function offVerdict(record: RouteCapability): string {
 export function defaultVerdict(record: RouteCapability): string {
   switch (record.cache.byDefault) {
     case 'caches':
-      return 'With no cache instruction, the newest route check saw a repeated prefix read from a cache.';
+      return 'The latest check found caching with the provider default.';
     case 'no-cache-observed':
-      return 'With no cache instruction, the newest route check saw no cache reads.';
+      return 'The latest check found no cache reads with the provider default.';
     case 'unknown':
-      return 'No current route check shows what the provider caches by default.';
+      return "The provider default hasn't been checked.";
   }
 }

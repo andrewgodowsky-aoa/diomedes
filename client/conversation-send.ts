@@ -67,13 +67,13 @@ const inFlight = new Map<
   }
 >();
 
-const invalid = () => new Error('The saved message is damaged; nothing was sent.');
+const invalid = () => new Error('The saved message is damaged.');
 const unavailable = () =>
-  new Error('This browser cannot save the message before sending it; nothing was sent.');
+  new Error("This browser can't save the message for sending.");
 const busy = () =>
-  new Error('Another window is still sending on this conversation. Nothing was sent from this one.');
+  new Error('Another window is sending a message in this conversation.');
 const elsewhere = () =>
-  new Error('That message was discarded or settled in another window. Nothing was sent from this one.');
+  new Error('That message was discarded or settled in another window.');
 const earlier = () =>
   new Error(
     'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
@@ -83,7 +83,7 @@ const stopped = () => new Error('Stopped before anything was sent.');
 /** The request may have been accepted. Sending the same message again checks the original. */
 export class UnconfirmedMessage extends Error {
   constructor() {
-    super('Nectovia could not confirm this message. Send it again to check what happened.');
+    super("Nectovia couldn't confirm this message. Send it again to check what happened.");
   }
 }
 

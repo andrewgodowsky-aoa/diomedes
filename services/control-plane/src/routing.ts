@@ -225,7 +225,7 @@ export class RoutingService {
       const included = decideAgentAdmission({ workspace: scope.kind === 'individual' ? 'personal' : 'business', member: true,
         entitlement: snapshotFromView(view), ...(scope.kind === 'individual' ? { individual: snapshotFromView(view) } : {}), at });
       const planned = included.admitted && input.routeKind === 'managed' && !view.managedInference
-        ? { admitted: false as const, code: 'managed_inference_not_included', reason: 'This account does not include managed AI usage. Nothing was sent.' } : included;
+        ? { admitted: false as const, code: 'managed_inference_not_included', reason: 'This account doesn\'t include managed AI usage.' } : included;
       // Pay as you go (DIO-219): Personal work no plan of the person's holds the Agent for runs on their own bought credits, on the
       // company route only, and never for what a plan keeps (shared/pay-as-you-go.ts).
       const payAsYouGo = scope.kind === 'individual' && bought === 'available' && !(view.state === 'active' && view.agent)
@@ -245,7 +245,7 @@ export class RoutingService {
             (grant.personId !== actor.person.id || grant.tenantId !== actor.tenantId)) ||
           (term && (Date.parse(term.grant.validFrom) < Date.parse(term.cycle.startsAt) || Date.parse(term.grant.validUntil) > Date.parse(term.cycle.endsAt))) ||
           (!term && personGrants.some(grant => grant.billingCycle && individualIncludesMonthlyCredits(grant) && grantState(grant, Date.parse(at)) === 'active')))
-        throw new AccountError(503, 'Your Individual billing period could not be confirmed. Nothing was sent.', 'entitlement_unknown');
+        throw new AccountError(503, 'Your Individual billing period couldn\'t be confirmed.', 'entitlement_unknown');
       const validUntil = term ? Math.min(Date.parse(at) + 60_000, Date.parse(term.cycle.endsAt), Date.parse(term.grant.validUntil),
         Date.parse(decision.admitted && decision.validUntil ? decision.validUntil : term.cycle.endsAt)) : this.now() + 60_000;
       const record = { id: `agent_admission_${crypto.randomUUID()}`, at, tenantId: actor.tenantId,

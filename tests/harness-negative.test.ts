@@ -449,7 +449,7 @@ describe('the store and presentation must not lie', () => {
   test('presentRun must not invent a reason when nothing waits inside', () => {
     const shown = presentRun(runRec({ state: 'waiting', steps: [stepRec({ state: 'succeeded' })] }));
     expect(shown.reason).toBeNull();
-    expect(shown.sentence).toMatch(/outside/);
+    expect(shown.sentence).toMatch(/Paused for an external response\./);
   });
   test('needFromWaitingStep must not drop the requested files', () => {
     expect(needFromWaitingStep(runRec(), stepRec()).files).toEqual(['a.md']);

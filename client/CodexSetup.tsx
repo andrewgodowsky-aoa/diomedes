@@ -72,19 +72,17 @@ export function CodexSetup({
       {view && (
         <p className="caption">
           {!view.supported
-            ? 'This route currently supports Windows.'
+            ? 'This connection requires Windows.'
             : view.installed
-              ? 'Codex is bundled with Nectovia. No separate ChatGPT app or Codex installation is needed.'
-              : 'The bundled runtime is missing. Reinstall Nectovia to restore it.'}
+              ? 'Codex comes with Nectovia.'
+              : 'Codex is missing. Reinstall Nectovia.'}
         </p>
       )}
       <p className="caption">
-        Uses the native Codex account on this computer. Signing in can change that account. ChatGPT
-        subscription usage applies to Ask, Plan, and Work in projects.
+        Uses your ChatGPT subscription. Signing in can change the Codex account on this computer.
       </p>
       <p className="caption">
-        Check connection looks at what is installed, which version it is and whether you are signed
-        in, and confirms it can only read. It starts no work, so it uses none of your plan.
+        Check connection checks the installation and sign-in without using your subscription allowance.
       </p>
       <div className="actions">
         <Button

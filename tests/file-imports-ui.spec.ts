@@ -150,7 +150,7 @@ test('imports exports through Files, removes a source, runs and revises the acti
     await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'Files', exact: true }).click();
   await page.getByRole('button', { name: 'Import files', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Import export files' });
+  const dialog = page.getByRole('dialog', { name: "Import reports" });
   await dialog.getByLabel('Folder on this computer').fill(path.join(root, 'downloads'));
   await dialog.getByRole('button', { name: 'Open folder', exact: true }).click();
   await dialog.getByRole('button', { name: /^room-export.csv/ }).click();

@@ -378,7 +378,7 @@ function errorForResponse(status: number, body: string, stage: SetupStage): Engi
   if (status === 401 || status === 403)
     return new EngineError(
       'HANDSHAKE_FAILED',
-      'Diomedes could not authenticate to the OpenCode server it started. No account was reached, so nothing here is known about its sign-in.',
+      'Nectovia couldn\'t connect to its OpenCode server, so it couldn\'t check the account\'s sign-in.',
       false,
       'local-handshake',
     );
@@ -387,7 +387,7 @@ function errorForResponse(status: number, body: string, stage: SetupStage): Engi
   if (failureKind(parsedBody(body), status) === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
-      'OpenCode reported a service limit. No provider or model was substituted.',
+      'OpenCode reported a service limit.',
       true,
       stage,
     );
@@ -433,7 +433,7 @@ function streamFailure(value: unknown, fallback: string): EngineError {
   if (name === 'APIError' && status === 429)
     return new EngineError(
       'USAGE_LIMIT',
-      'OpenCode reported a service limit. No provider or model was substituted.',
+      'OpenCode reported a service limit.',
       true,
       'stream',
     );
@@ -486,7 +486,7 @@ function streamFailure(value: unknown, fallback: string): EngineError {
   if (kind === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
-      'OpenCode reported a service limit. No provider or model was substituted.',
+      'OpenCode reported a service limit.',
       true,
       'stream',
     );
@@ -1047,7 +1047,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
             const time = object(info.time);
             assistantTerminal = Number.isFinite(time.completed) && text(info.finish).length > 0;
             if (info.error)
-              throw streamFailure(info.error, 'OpenCode reported an assistant error.');
+              throw streamFailure(info.error, 'OpenCode couldn\'t complete the answer.');
           }
           if (kind === 'session.error')
             throw streamFailure(props.error, 'OpenCode reported a session error.');

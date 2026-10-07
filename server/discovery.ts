@@ -574,8 +574,8 @@ function unreadableEntry(
       enabled: false,
       status: running ? 'Running' : 'Installed',
       detail: running
-        ? 'Ollama is running. Diomedes does not use it.'
-        : 'Ollama is installed but not running. Diomedes does not use it.',
+        ? 'Nectovia doesn\'t use Ollama.'
+        : 'Nectovia doesn\'t use Ollama.',
       capabilities: [],
       signIn: spec.signIn,
       adapter: spec.adapter,
@@ -593,8 +593,8 @@ function unreadableEntry(
     status: 'Installed',
     detail:
       spec.adapter === 'planned'
-        ? `${spec.name} is installed. Its version could not be read. Diomedes cannot run it yet.`
-        : `${spec.name} is installed. Its version could not be read. Diomedes does not use it.`,
+        ? `${spec.name}'s version couldn't be read. Nectovia can't run this tool.`
+        : `${spec.name}'s version couldn't be read. Nectovia doesn't use this tool.`,
     capabilities: [],
     signIn: spec.signIn,
     adapter: spec.adapter,
@@ -662,7 +662,7 @@ async function probeBinary(spec: BinarySpec, deps: DiscoveryDeps): Promise<Integ
         ...notFoundEntry(spec),
         found: true,
         status: 'Installed',
-        detail: `${spec.name} is installed. Diomedes does not use it.`,
+        detail: `Nectovia doesn't use ${spec.name}.`,
         location: resolved,
       },
       deps,
@@ -678,8 +678,8 @@ async function probeBinary(spec: BinarySpec, deps: DiscoveryDeps): Promise<Integ
   if (!version) return withDiscovery(unreadableEntry(spec, resolved), deps, resolution);
   const detail =
     spec.adapter === 'planned'
-      ? `${spec.name} ${version} is installed. Diomedes cannot run it yet.`
-      : `${spec.name} ${version} is installed. Diomedes does not use it.`;
+      ? `Nectovia can't run ${spec.name} ${version}.`
+      : `Nectovia doesn't use ${spec.name} ${version}.`;
   return withDiscovery(
     versionedEntry(spec, resolved, version, 'Installed', detail),
     deps,
@@ -724,7 +724,7 @@ async function probeHermes(deps: DiscoveryDeps): Promise<IntegrationStatus> {
         ...base,
         found: true,
         status: 'Running',
-        detail: 'Hermes is running on this computer. Diomedes does not use it.',
+        detail: 'Nectovia doesn\'t use Hermes.',
       },
       deps,
       { method: 'loopback' },
@@ -773,7 +773,7 @@ async function probeOllama(deps: DiscoveryDeps): Promise<IntegrationStatus> {
         location,
         version,
         'Running',
-        `Ollama ${version} is running. Diomedes does not use it.`,
+        `Nectovia doesn't use Ollama ${version}.`,
       ),
     );
   return observed(
@@ -782,7 +782,7 @@ async function probeOllama(deps: DiscoveryDeps): Promise<IntegrationStatus> {
       location,
       version,
       'Installed',
-      `Ollama ${version} is installed but not running. Diomedes does not use it.`,
+      `Nectovia doesn't use Ollama ${version}.`,
     ),
   );
 }

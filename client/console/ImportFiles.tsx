@@ -36,7 +36,7 @@ export function ImportFiles({
       })
       .catch((e: unknown) => {
         if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : 'The folder could not be read.');
+          setError(e instanceof Error ? e.message : "The folder couldn't be read.");
       })
       .finally(() => {
         if (!abort.signal.aborted) setBusy(false);
@@ -51,7 +51,7 @@ export function ImportFiles({
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The import could not be completed.');
+      setError(e instanceof Error ? e.message : "The import couldn't be completed.");
     } finally {
       setBusy(false);
     }
@@ -65,7 +65,7 @@ export function ImportFiles({
   const bytes = selected.reduce((total, file) => total + file.bytes, 0);
   return (
     <Modal
-      title="Import export files"
+      title="Import reports"
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -73,8 +73,8 @@ export function ImportFiles({
     >
       <div className="file-import">
         <p className="caption">
-          Copy UTF-8 TXT, Markdown, CSV, TSV or JSON exports into Imports in this project. Originals
-          stay where they are. Up to 8 files, 1 MB each and 4 MB total.
+          Copy text reports into this project's Imports folder. Supported formats: UTF-8 TXT,
+          Markdown, CSV, TSV and JSON. Up to 8 files, 1 MB each and 4 MB total.
         </p>
         <form
           className="import-location"
@@ -141,8 +141,8 @@ export function ImportFiles({
           ))}
           {listing && !listing.files.length && (
             <p className="caption">
-              No supported text exports in this folder. Images, PDF and spreadsheet workbooks are
-              not supported by this import.
+              No supported text reports in this folder. Choose a folder with TXT, Markdown, CSV,
+              TSV or JSON files.
             </p>
           )}
         </div>
@@ -164,8 +164,8 @@ export function ImportFiles({
           ))}
         </ul>
         <p className="caption">
-          Importing records a local copy in History. Choose the copies separately when preparing a
-          weekly brief; importing sends nothing to a provider.
+          Each local copy appears in History. Choose which reports to include when preparing a
+          weekly brief.
         </p>
         {error && <p role="alert">{error}</p>}
         <div className="dialog-actions">

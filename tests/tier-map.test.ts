@@ -190,7 +190,7 @@ describe('a tier that cannot run is refused by name, never moved', () => {
     const refused = resolveTier({ style: 'focused', mode: 'ask', map: vertex, state });
     expect(refused).toMatchObject({ outcome: 'refuse', route: 'google-vertex', model: 'gemini-3.8-flash' });
     expect(refused.reason).toBe(
-      'Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
+      'Google Vertex AI is unavailable right now. Check your connection and credits, then contact support if it still fails.',
     );
     // Customer text never names a model id, a setup screen or a claim about other providers.
     expect(refused.reason).not.toContain('gemini-3.8-flash');

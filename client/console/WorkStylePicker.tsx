@@ -172,14 +172,12 @@ export function WorkStylePicker({
               ))}
               {pinned && (
                 <p className="note">
-                  This thread was pinned to one model before styles decided the model. Picking a
-                  style clears the pin.
+                  This thread has a fixed model. Choosing a style lets Nectovia choose the model instead.
                 </p>
               )}
               {asks && view?.resolution && <p className="note">{view.resolution.reason}</p>}
               <p className="note">
-                Nectovia picks the model for the style you choose. The mode still decides what
-                this thread may do.
+                Nectovia chooses AI for this style. The mode sets what this thread may do.
               </p>
             </>
           )}

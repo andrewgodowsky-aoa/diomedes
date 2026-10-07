@@ -105,12 +105,12 @@ describe('engine catalogue', () => {
   it('says so plainly when there is no cache, and when it cannot be read', () => {
     const missing = codexCatalog();
     expect(missing.models).toEqual([]);
-    expect(missing.detail).toMatch(/has not written its list yet/);
+    expect(missing.detail).toMatch(/hasn't reported its models/);
     fs.writeFileSync(path.join(home, 'models_cache.json'), 'not json', 'utf8');
     forgetCatalog();
     const broken = codexCatalog();
     expect(broken.models).toEqual([]);
-    expect(broken.detail).toMatch(/could not be read/);
+    expect(broken.detail).toMatch(/couldn't be read/);
   });
 
   it('reports the engines that have no catalogue without pretending otherwise', () => {

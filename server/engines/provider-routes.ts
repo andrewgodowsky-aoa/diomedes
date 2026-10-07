@@ -118,7 +118,7 @@ const azureBody = z.strictObject({
   deployments: z
     .array(
       z.strictObject({
-        model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-6-luna.'),
+        model: z.string().regex(AZURE_LOGICAL_MODEL, 'Enter the model name exactly as Azure shows it.'),
         deployment: z.string().regex(AZURE_DEPLOYMENT, 'Enter the deployment name exactly as Azure shows it.'),
         reasoning: z.boolean(),
         xhigh: z.boolean().optional(),
@@ -218,7 +218,7 @@ export function mountProviderRoutes(
       const summary = connection ? exposure.summary(connection.id) : null;
       const allowance = connection ? exposure.allowance(connection.id) : null;
       const next = !protectedStorage
-        ? `Open the Diomedes desktop app to connect ${spec.label}: this process has no protected credential storage.`
+        ? `Open the Nectovia desktop app to connect ${spec.label} and save its credentials securely.`
         : !connection
           ? `Connect ${spec.label}.`
           : expiredAt(connection.credential.expiresAt)
@@ -238,7 +238,7 @@ export function mountProviderRoutes(
               uncertainMicroUsd: summary.uncertainMicroUsd,
               writtenOffMicroUsd: summary.writtenOffMicroUsd,
               availableMicroUsd: summary.availableMicroUsd,
-              note: `Estimated from the prices you declared and the usage ${spec.label} reports for each call. It is Diomedes’ own limit, not a ${spec.label} billing cap, and not your invoice.`,
+              note: `Estimated from the prices you entered and the usage ${spec.label} reports. This Nectovia spending limit applies separately from ${spec.label} billing; your invoice comes from that service.`,
               recent: exposure
                 .list(connection.id)
                 .slice(-RECENT_HOLDS)
@@ -275,7 +275,7 @@ export function mountProviderRoutes(
           const { secrets } = api();
           const { connections } = services();
           if (!secrets.available())
-            throw new ApiError(409, 'Protected credential storage is available only in the Diomedes desktop app. Nothing was saved.');
+            throw new ApiError(409, 'Open the Nectovia desktop app to save credentials securely.');
           const previous = await connections.read();
           const at = new Date().toISOString();
           const apiKey = String((req.body as { apiKey?: unknown } | null)?.apiKey ?? '');
@@ -334,7 +334,7 @@ export function mountProviderRoutes(
           ready: checks.every((entry) => entry.ok),
           sent: false,
           checks,
-          note: `No request was sent to ${spec.label}. This checks the saved connection, key and spend limit only; whether ${spec.label} accepts the key is known only from a real call.`,
+          note: `No request was sent to ${spec.label}. These checks cover the saved connection, key and spending limit. A real request confirms whether ${spec.label} accepts the key.`,
         };
       }),
     );
@@ -670,11 +670,11 @@ export function mountProviderRoutes(
           const { secrets } = api();
           const identity = body.apiKey ? null : await readAdcIdentity(services().env);
           if (body.apiKey && !secrets.available())
-            throw new ApiError(409, 'Protected credential storage is available only in the Diomedes desktop app. Nothing was saved.');
+            throw new ApiError(409, 'Open the Nectovia desktop app to save credentials securely.');
           if (!body.apiKey && !identity)
             throw new ApiError(
               409,
-              'No Google Application Default Credentials were found on this computer. Enter an API key from the project, or run `gcloud auth application-default login` first. Nothing was saved.',
+              'No Google Application Default Credentials were found on this computer. Enter an API key from the project, or run `gcloud auth application-default login` first.',
             );
           const previous = await services().connections.read();
           const at = new Date().toISOString();

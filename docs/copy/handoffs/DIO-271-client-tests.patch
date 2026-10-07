@@ -1,0 +1,4 @@
+# DIO-271 client assertion handoff: fully applied
+# The two remaining hunks were applied under claim_muxx1x3t_de42d1de after the
+# integrator verified the former owner's process exit and clean worktree.
+# No unapplied client assertion hunks remain. Do not apply this record again.

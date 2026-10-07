@@ -143,7 +143,7 @@ test('the brief says what is missing rather than writing something empty', async
 test('managed access shows no balance, because there is none to show', async ({ page }) => {
   await openPanel(page);
   const section = page.locator('.ws-section', {
-    has: page.getByRole('heading', { name: 'Managed model access' }),
+    has: page.getByRole('heading', { name: "Nectovia AI usage" }),
   });
   await expect(section).toBeVisible();
 
@@ -167,7 +167,7 @@ test('managed access shows no balance, because there is none to show', async ({ 
 test('managed access reads as a plan this build does not offer', async ({ page }) => {
   await openPanel(page);
   const section = page.locator('.ws-section', {
-    has: page.getByRole('heading', { name: 'Managed model access' }),
+    has: page.getByRole('heading', { name: "Nectovia AI usage" }),
   });
   const lines = section.locator('p.caption');
   await expect(lines.first()).toContainText('not available here');

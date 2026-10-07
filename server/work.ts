@@ -172,8 +172,8 @@ export class WorkService {
           : 'It records what the sample work did.',
       consequence:
         stage === 'start'
-          ? 'If you say go ahead, the sample work starts.'
-          : 'If you say go ahead, the file is created and listed in History.',
+          ? 'Approve to start the sample work.'
+          : 'Approve to create the file and record it in History.',
       files:
         stage === 'start'
           ? [run.target, 'Sample work notes.md'].filter((p): p is string => p !== null)
@@ -193,8 +193,8 @@ export class WorkService {
     this.log(
       session,
       stage === 'start'
-        ? `Waiting for your OK to start ${task.name}.`
-        : 'Waiting for your OK to add a file.',
+        ? `Approve to start ${task.name}.`
+        : 'Approve to add the file.',
     );
     await this.store.persist(state);
     if (run.allow) await this.resolve(run.projectId, need.id, 'go-ahead', true, true);
@@ -313,7 +313,7 @@ export class WorkService {
             {
               path: run.target,
               expected: run.targetSha,
-              text: `${current ?? ''}\n\n## Sample work (Diomedes)\n\nThis paragraph was added by a sample work session on ${now()}. It exists to show that a change to an existing file is recorded with a way back. Undo it in Review, or restore the file from History.\n`,
+              text: `${current ?? ''}\n\n## Sample work (Nectovia)\n\nThis sample paragraph was added on ${now()}. Undo it in Review, or restore the file from History.\n`,
             },
           ],
           {
@@ -362,7 +362,7 @@ export class WorkService {
     session.endedAt = now();
     session.needId = null;
     task.needId = null;
-    const sentence = `Something went wrong in ${task.name}. ${count} ${count === 1 ? 'file was' : 'files were'} changed; ${count === 1 ? "it's" : "they're"} in History.`;
+    const sentence = `${task.name} failed. ${count} ${count === 1 ? 'file was' : 'files were'} changed; ${count === 1 ? "it's" : "they're"} in History.`;
     this.log(session, sentence);
     session.log.push({
       time: now(),

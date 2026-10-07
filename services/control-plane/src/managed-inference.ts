@@ -331,14 +331,14 @@ export class ManagedError extends Error {
 export const ROUTE_UNAVAILABLE = 'Nectovia’s model service is not available right now.';
 const unavailable = () => new ManagedError(503, 'route_unavailable', ROUTE_UNAVAILABLE);
 /** The company spend ceiling's only customer-facing words: nothing about the ceiling itself. */
-export const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
+export const CEILING_REFUSAL = 'Nectovia\'s AI service isn\'t available right now.';
 const ceilingReached = () => new ManagedError(503, 'route_unavailable', CEILING_REFUSAL);
 /** Why a call is refused when the business's current grants hold the Agent but not included AI usage. */
-export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS['managed-inference']} isn’t part of this business’s plan, so the Nectovia Agent can’t answer here. Nothing was charged.`;
+export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS['managed-inference']} isn't part of this business's plan, so the Nectovia Agent can't answer here.`;
 /** The contract names these three funding refusals as 402, whatever status FundingService gives them. */
 const PAYMENT_REFUSALS: ReadonlySet<string> = new Set(['insufficient_allowance', 'cap_request_required', 'no_period', MEMBER_LIMIT_REACHED]);
 /** An evaluation no provider could take under the data policy: it reached no model and was released. */
-export const PROVIDER_POLICY_REFUSAL = 'No provider that meets Nectovia’s data policy can take this right now. Nothing was charged.';
+export const PROVIDER_POLICY_REFUSAL = 'No AI service that meets Nectovia\'s data policy is available right now.';
 
 export function managedHeaders(): Headers {
   return new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
@@ -1450,7 +1450,7 @@ export class ManagedInferenceService {
       }
       // A current grant naming a term that is not in force now never falls back to a calendar month.
       if (person.some((grant) => grant.billingCycle && grantState(grant, this.now()) === 'active' && individualIncludesMonthlyCredits(grant)))
-        throw new FundingError(409, 'Your Individual billing period could not be confirmed, so nothing was reserved. Nothing was sent.', 'no_period');
+        throw new FundingError(409, 'Your Individual billing period couldn\'t be confirmed.', 'no_period');
     }
     const periodId = periodIdFor(this.at());
     if (await this.options.fundingReads.transaction((tx) => tx.period(tenantId, organizationId, periodId))) return;

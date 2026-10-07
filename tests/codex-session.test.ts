@@ -364,12 +364,12 @@ test('a restart during a turn keeps a confirmed thread, and the next message say
   expect(recovered).toEqual({ resume: { ...busy, state: 'idle', origin: 'recovered', interruptedRequestId: 'cmd-lost' } });
   expect(recoverCodexCheckpoint({ ...busy, nativeSessionId: null }, 'cmd-lost')).toEqual({
     refuse:
-      "Diomedes restarted while Codex was answering, and no Codex thread was confirmed to continue, so this conversation couldn't resume. Start again.",
+      "Nectovia restarted while Codex was answering. The saved thread couldn't be confirmed, so this conversation couldn't resume. Start again.",
   });
   const again = await open({ restore: (recovered as { resume: CodexSessionCheckpoint }).resume });
   await again.turn(request());
   expect(again.continuity.detail).toBe(
-    "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from Codex's saved thread.",
+    "Nectovia restarted while an earlier message was being answered. That message wasn't completed or sent again. This conversation continued from Codex's saved thread.",
   );
   expect(again.checkpoint).toMatchObject({ origin: 'resumed', interruptedRequestId: null });
 });

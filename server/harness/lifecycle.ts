@@ -190,16 +190,16 @@ export function validateEffect(
     refusals.push('This change names no file, so there is nothing to write.');
 
   if (!request.authorization)
-    refusals.push('Nothing has been approved for this change, so it was not written.');
+    refusals.push('This change needs approval.');
 
   if (request.routeId !== resolution.route.routeId)
     refusals.push(
-      `This work was admitted to run on ${resolution.route.routeId}, and the change came from ${request.routeId}. Nothing was written.`,
+      `This work was assigned to run on ${resolution.route.routeId}, but the change came from ${request.routeId}.`,
     );
 
   if (request.expectedBaseDigest !== request.actualBaseDigest)
     refusals.push(
-      'The file changed since this was prepared. Nothing was written; look at it again.',
+      'The file changed since this was prepared. Review it again.',
     );
 
   if (
@@ -311,7 +311,7 @@ export function correctionWithinBounds(input: {
   if (input.attempt >= CORRECTION_LIMITS.maxAttempts)
     return {
       allowed: false,
-      reason: `Diomedes has tried this ${CORRECTION_LIMITS.maxAttempts} times and stopped. What it ran into is recorded below.`,
+      reason: `Nectovia stopped after ${CORRECTION_LIMITS.maxAttempts} attempts. Read the recorded error.`,
     };
   const durable = input.changes.filter((change) => change.target !== 'attempt');
   if (durable.length > 0)

@@ -242,7 +242,7 @@ function UpdateConversation({
       {current ? (
         <>
           <p className="caption" role="status">
-            This conversation already uses the current instructions. Nothing changed.
+            This conversation already uses the current instructions.
           </p>
           {close}
         </>

@@ -48,22 +48,22 @@ interface MoveRequest {
   sentence: string;
 }
 const WHY: Record<Column, string> = {
-  Inbox: 'Waiting for acceptance',
-  Ready: 'Start explicitly to run',
-  Queued: 'Admitted; waiting to start',
-  Working: 'A run is in progress',
-  Review: 'waits on you',
-  Blocked: 'needs an answer or a route',
+  Inbox: 'Accept or decline the task',
+  Ready: 'Start the task',
+  Queued: 'Accepted; starts when capacity is available',
+  Working: 'Work in progress',
+  Review: 'Review the result',
+  Blocked: 'Resolve the blocker to continue',
   Done: 'Completion evidence stays in the thread',
 };
 const EMPTY: Record<Column, string> = {
-  Inbox: 'Proposed tasks appear here.',
-  Ready: 'Nothing is ready. New task adds one.',
-  Queued: 'Nothing is queued.',
-  Working: 'Nothing is running.',
-  Review: 'Nothing waits on you.',
-  Blocked: 'Nothing is blocked.',
-  Done: 'Finished tasks appear here.',
+  Inbox: 'No proposed tasks.',
+  Ready: 'No tasks ready. Add a task to begin.',
+  Queued: 'No queued tasks.',
+  Working: 'No work in progress.',
+  Review: 'No results to review.',
+  Blocked: 'No blocked tasks.',
+  Done: 'No finished tasks.',
 };
 
 function selForTask(taskId: string): string {
@@ -147,7 +147,7 @@ export function BoardView({
       }
     } catch (error) {
       setCreationIssue(
-        error instanceof Error ? error.message : 'The saved task request could not be checked.',
+        error instanceof Error ? error.message : "The saved task request couldn't be checked.",
       );
     }
   }
@@ -195,7 +195,7 @@ export function BoardView({
     } catch (error) {
       if (signal?.aborted) return;
       if (read === queueRead.current)
-        setQueueIssue(error instanceof Error ? error.message : 'The Ready queue could not be read.');
+        setQueueIssue(error instanceof Error ? error.message : "Ready tasks couldn't be read.");
     }
   }
   useEffect(() => {
@@ -223,7 +223,7 @@ export function BoardView({
       setPausing(null);
       setPauseReason('');
     } catch (error) {
-      setQueueIssue(error instanceof Error ? error.message : 'The Ready queue could not be changed.');
+      setQueueIssue(error instanceof Error ? error.message : "Ready tasks couldn't be changed.");
     } finally {
       setQueueBusy(false);
       await refreshQueue();
@@ -370,7 +370,7 @@ export function BoardView({
     } catch (error) {
       setMoveIssue({
         taskId: task.id,
-        reason: error instanceof Error ? error.message : 'That move did not go through.',
+        reason: error instanceof Error ? error.message : "That move didn't go through.",
       });
     } finally {
       setPending(null);
@@ -527,7 +527,7 @@ export function BoardView({
           type="button"
           className={`mono link${compact ? ' on' : ''}`}
           aria-pressed={compact}
-          title="Compact rows: a title of up to two lines, with its worker and age beside it"
+          title="Show compact task rows"
           onClick={() => setCompact(!compact)}
         >
           compact
@@ -648,7 +648,7 @@ export function BoardView({
                 <button type="submit" className="go" disabled={queueBusy}>
                   {pausing === 'all' ? 'Pause all queues' : 'Pause'}
                 </button>
-                <span className="mono">Running work keeps running; Stop ends it.</span>
+                <span className="mono">Use Stop to end work already running.</span>
               </form>
             )}
           </div>
@@ -1181,7 +1181,7 @@ function TaskRow({
             type="button"
             className="verb light"
             disabled={busy || startBlocked || !!pending}
-            title={startBlocked ? 'One run at a time in this version' : undefined}
+            title={startBlocked ? 'Finish or stop the current job first' : undefined}
             onClick={onToggleStart}
           >
             {startLabel}

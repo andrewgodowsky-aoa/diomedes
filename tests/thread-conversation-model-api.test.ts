@@ -447,7 +447,7 @@ describe('a project thread on AWS through its tier', () => {
     const view = await readThreadRoute(project.id, thread.id);
     expect(view.route).toBe('azure-openai');
     expect(view.refusal).toBe(
-      'Azure OpenAI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.',
+      'Azure OpenAI is unavailable right now. Check your connection and credits, then contact support if it still fails.',
     );
     for (const mode of ['ask', 'plan', 'build', 'fix'] as const)
       expect(planThreadSend(view, mode)).toEqual({ kind: 'refuse', reason: view.refusal });

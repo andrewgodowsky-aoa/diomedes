@@ -23,7 +23,7 @@ const CLOUD_ROUTES = ROUTES.filter((route) => route !== 'sample');
 
 function messageOf(error: unknown): string {
   if (error instanceof ApiError) return error.message;
-  return error instanceof Error ? error.message : 'The request could not be completed.';
+  return error instanceof Error ? error.message : "The request couldn't be completed.";
 }
 
 export function CloudSharing({
@@ -121,19 +121,19 @@ export function CloudSharing({
     <Modal title="Cloud sharing" onClose={onClose}>
       <div className="cloud-sharing">
       <p className="caption muted">
-        {projectName}: cloud routes and project files start off. Your typed text and task instructions
-        can be sent when you start an enabled route.
+        Cloud connections and file sharing start off for {projectName}. When enabled, a connection
+        receives the messages and task instructions you send.
       </p>
       <p className="caption">
-        Native CLI helpers may read outside the selected documents, so cloud sharing must be used
-        cautiously.
+        Connected coding tools may read files beyond those selected here. Check the tool’s own
+        permissions before sharing.
       </p>
       {loading ? (
         <p className="caption muted">Loading sharing policy…</p>
       ) : (
         <>
-          <section aria-label="Cloud routes" className="cloud-routes">
-            <h3>Cloud routes</h3>
+          <section aria-label="Cloud connections" className="cloud-routes">
+            <h3>Cloud connections</h3>
             {CLOUD_ROUTES.map((route) => (
               <label key={route} className="check">
                 <input
@@ -191,8 +191,7 @@ export function CloudSharing({
               checked={shareReviews}
               onChange={(e) => setShareReviews(e.target.checked)}
             />
-            Share proposed changes with the AI reviewer, including task details, scope and excerpts
-            from the document paths selected above
+            Share proposed changes, task details, allowed work and selected file excerpts with the AI reviewer
           </label>
         </>
       )}

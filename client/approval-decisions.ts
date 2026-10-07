@@ -21,7 +21,7 @@ const invalid = () => new Error('Stored approval command is invalid; the request
 const unavailable = () => new Error('Approval storage is unavailable; the request was not sent.');
 const unresolved = () =>
   new Error(
-    'Approval could not be confirmed. The request may have been accepted; ' +
+    'Approval couldn\'t be confirmed. The request may have been accepted; ' +
       'retrying the same approval checks the original request.',
   );
 
@@ -128,8 +128,8 @@ function clearPending(storage: Storage, key: string, accepted: boolean) {
   } catch {
     throw new Error(
       accepted
-        ? 'Approval was accepted, but this browser could not clear its saved request. Check approvals before deciding again.'
-        : 'The approval request was refused, but this browser could not clear its saved request.',
+        ? 'Approval was accepted, but this browser couldn\'t clear its saved request. Check approvals before deciding again.'
+        : 'The approval request was refused, but this browser couldn\'t clear its saved request.',
     );
   }
 }
@@ -181,7 +181,7 @@ export function reconcileApprovals(projectId: string, needs: readonly Need[]): E
     }
   } catch {
     return new Error(
-      'Saved approval requests could not be checked because browser storage is unavailable. Check approvals before deciding again.',
+      'Saved approval requests couldn\'t be checked because browser storage is unavailable. Check approvals before deciding again.',
     );
   }
   if (!keys.length) return;
@@ -204,14 +204,14 @@ export function reconcileApprovals(projectId: string, needs: readonly Need[]): E
         clearPending(storage, key, true);
       } else {
         issue ??= new Error(
-          'A saved approval request could not be checked. It has been kept; check approvals before deciding again.',
+          'A saved approval request couldn\'t be checked. It has been kept; check approvals before deciding again.',
         );
       }
     } catch (error) {
       // Keep the damaged record and report it. Independent confirmed records can
       // still reconcile, and a storage fault must not block unrelated state UI.
       issue ??= new Error(
-        'A saved approval request could not be checked. It has been kept; check approvals before deciding again.',
+        'A saved approval request couldn\'t be checked. It has been kept; check approvals before deciding again.',
         { cause: error },
       );
     }
@@ -292,7 +292,7 @@ export async function decideApproval(
     typeof approval.baseDigest !== 'string' ||
     !digestPattern.test(approval.baseDigest)
   )
-    throw new Error('Provide a valid version 1 exact approval identity.');
+    throw new Error('This approval request is invalid. Refresh the proposal before deciding.');
 
   let storage: Storage;
   try {

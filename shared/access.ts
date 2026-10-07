@@ -323,10 +323,10 @@ export interface AccessView {
 
 /** The sentence a person reads when the Agent is not part of their workspace. */
 export const AGENT_NOT_INCLUDED_REASON =
-  'The Nectovia Agent is part of a Business plan. You can still use your workspace and your own AI tools directly.';
+  'The Nectovia Agent is part of a Business plan.';
 /** Personal work, for a person with no plan and no credits of their own (DIO-219, pay as you go). */
 export const AGENT_PERSONAL_REASON =
-  'Buy credits or get a plan to use the Nectovia Agent here. Your own AI tools work without either.';
+  'Buy credits or get a plan to use the Nectovia Agent here.';
 
 // --- pay as you go (DIO-219, Model B section 4) ----------------------------------
 

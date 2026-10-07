@@ -85,7 +85,7 @@ export function AgentProfiles() {
   }, [projectId]);
   useEffect(() => {
     void load().catch((e: unknown) =>
-      setError(e instanceof Error ? e.message : 'Profiles could not be read.'),
+      setError(e instanceof Error ? e.message : "Profiles couldn't be read."),
     );
   }, [load]);
 
@@ -93,7 +93,7 @@ export function AgentProfiles() {
     setError('');
     void step()
       .then(load)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'That did not save.'));
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "That didn't save."));
   };
   function save(value: Draft) {
     const body = {
@@ -128,8 +128,8 @@ export function AgentProfiles() {
   return (
     <div className="agent-profiles">
       <p className="prose">
-        A profile is one exact model on one route, the Agent it works as, and your rules for it.
-        Saving an edit makes a new revision; a run that already started keeps the one it used.
+        Save a model and worker with the rules for using them. Changes apply to new jobs;
+        work already running keeps its original settings.
       </p>
       {error && <p role="alert">{error}</p>}
       {!draft && (
@@ -201,8 +201,7 @@ export function AgentProfiles() {
             </select>
           </label>
           <p className="caption">
-            Runs in this project use the first profile listed, unless a thread picks its own
-            profile, model or tier.
+            The first profile is the project default. A thread can choose its own settings.
           </p>
           <ol className="profile-order">
             {order.map((id, index) => (
@@ -246,12 +245,12 @@ export function AgentProfiles() {
               checked={fallback}
               onChange={(e) => setFallback(e.target.checked)}
             />
-            Fall back to the next profile when one cannot run
+            Try the next profile when one can't run
           </label>
           <p className="caption">
             {fallback
-              ? 'Every fallback is recorded on the run with the profile it skipped and why.'
-              : 'Off: when the first profile cannot run, the run is refused by name.'}
+              ? 'The job record shows skipped profiles and the reason for each.'
+              : "The job stops if the first profile can't run."}
           </p>
           <Button
             onClick={() =>
@@ -292,7 +291,7 @@ function ProfileEditor({
         <input value={draft.name} onChange={(e) => set({ name: e.target.value })} maxLength={60} />
       </label>
       <label className="field">
-        Route
+        Connection
         <select value={draft.engine} onChange={(e) => set({ engine: e.target.value })}>
           {ROUTE_CHOICES.map((route) => (
             <option key={route} value={route}>
@@ -302,7 +301,7 @@ function ProfileEditor({
         </select>
       </label>
       <label className="field">
-        Model id, exactly as the route lists it
+        Exact model ID from this connection
         <input
           className="code"
           value={draft.model}

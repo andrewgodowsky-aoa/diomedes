@@ -388,8 +388,8 @@ describe('task phase approval identity', () => {
     const fields = needFromWaitingStep(waiting, step);
     expect(fields.what).toBe('Continue this task to Build?');
     expect(fields.files).toEqual([]);
-    expect(fields.consequence).toMatch(/existing file, service and spend permissions/i);
-    expect(fields.consequence).toMatch(/grants nothing new/i);
+    expect(fields.consequence).toMatch(/within its existing permissions and spending limit/i);
+    expect(fields.consequence).toMatch(/History records the phase change\./i);
     expect(fields.consequence).not.toMatch(/only reads/i);
   });
 });

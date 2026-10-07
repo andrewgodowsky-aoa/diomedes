@@ -91,7 +91,7 @@ export function LoopStart({
         setNotIncluded(notIncludedReason ?? null);
         setRoute((current) => current || routes.find((offer) => offer.admitted)?.route || '');
       },
-      (failure) => live && setError(failure instanceof Error ? failure.message : 'The routes could not be read.'),
+      (failure) => live && setError(failure instanceof Error ? failure.message : "The connections couldn't be read."),
     );
     listDocuments(projectId).then(
       ({ documents: listed }) => {
@@ -112,7 +112,7 @@ export function LoopStart({
       (options) => live && setCollaboration(options),
       (failure) => live && setCollaboration({
         leads: [], members: [], helpers: [], reviews: [],
-        reason: failure instanceof Error ? failure.message : 'Collaboration choices could not be read.',
+        reason: failure instanceof Error ? failure.message : "Team choices couldn't be read.",
       }),
     );
     // A host without this read starts as it always has.
@@ -208,7 +208,7 @@ export function LoopStart({
         setAskedAgain(refusal);
         setConsent(false);
         consentBox.current?.focus();
-      } else setError(failure instanceof Error ? failure.message : 'The loop could not be started.');
+      } else setError(failure instanceof Error ? failure.message : "The job couldn't be started.");
     } finally {
       starting.current = false;
       setBusy(false);
@@ -230,7 +230,7 @@ export function LoopStart({
         </p>
         {notIncluded && <p className="trigger-rules-reach">{notIncluded}</p>}
         {offers && admitted.length === 0 && !leads.some(offer => offer.admitted) && (
-          <p className="trigger-rules-reach">No route can run a work loop here yet.</p>
+          <p className="trigger-rules-reach">No connection can start this work.</p>
         )}
         {admitted.length > 0 && (
           <label className="field">
@@ -338,7 +338,7 @@ export function LoopStart({
           </select>
         </label>
         <label className="field">
-          <span id={`${labelId}-jev-review`}>Jev review</span>
+          <span id={`${labelId}-jev-review`}>AI review</span>
           <select aria-labelledby={`${labelId}-jev-review`} value={reviewConnectionId} onChange={event => setReviewConnectionId(event.target.value)}
             disabled={busy || !reviews.some(offer => offer.admitted)}>
             <option value="">None</option>

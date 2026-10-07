@@ -250,17 +250,17 @@ export function previewGate() {
 }
 
 const BLOCKED: Record<BlockReason, string> = {
-  'above-ceiling': 'This conversation is limited, so nothing was started.',
-  'needs-target': 'Say which project this is for, and Diomedes can propose it there.',
+  'above-ceiling': 'This work exceeds the conversation’s permission limit.',
+  'needs-target': 'Choose a project for this proposal.',
   'home-is-not-a-target': 'Work starts inside a project, not in this conversation.',
   'unknown-target': 'That project was not found.',
   'cross-project-read': 'This conversation can only read its own project.',
   'build-not-reachable': 'Building a new capability from a conversation is not available yet.',
   'send-not-reachable': 'Sending anything outside the app from a conversation is not available yet.',
   'control-not-reachable': 'Use the run’s own controls to stop or resume it.',
-  'stale-selection': 'That choice was for a different proposal. Nothing was started.',
-  'stale-request': 'The original request no longer matches this work. Nothing was started.',
-  'request-out-of-scope': 'This work exceeds the original request. Nothing was started.',
+  'stale-selection': 'That choice was for a different proposal.',
+  'stale-request': 'The original request no longer matches this work.',
+  'request-out-of-scope': 'This work exceeds the original request.',
 };
 export const blockedMessage = (reason: BlockReason) => BLOCKED[reason];
 

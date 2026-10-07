@@ -193,7 +193,7 @@ test('Settings lists profiles with their reason, and an edit saves a new revisio
   await page.getByRole('button', { name: 'New profile', exact: true }).click();
   const editor = page.getByRole('form', { name: 'New profile' });
   await editor.getByLabel('Name').fill('Fixture writer');
-  await editor.getByLabel('Model id, exactly as the route lists it').fill('fixture-model-a');
+  await editor.getByLabel('Exact model ID from this connection').fill('fixture-model-a');
   await editor.getByLabel('Reasoning level (optional)').fill('medium');
   await editor.getByLabel('Works as').selectOption({ label: 'Change Builder' });
   await editor.getByLabel(/Rules, one per line/).fill('Keep British spelling.');
@@ -205,7 +205,7 @@ test('Settings lists profiles with their reason, and an edit saves a new revisio
 
   await writer.getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('form', { name: 'Edit profile' });
-  await edit.getByLabel('Model id, exactly as the route lists it').fill('fixture-model-b');
+  await edit.getByLabel('Exact model ID from this connection').fill('fixture-model-b');
   await edit.getByLabel('Reasoning level (optional)').fill('low');
   await edit.getByRole('button', { name: 'Save as revision 2' }).click();
   await expect(writer).toContainText('Revision 2');
@@ -262,7 +262,7 @@ test('run details name the pinned revision and the model the runtime reported', 
   await expect(details).toContainText('Fixture writer · revision 2');
   await expect(details).toContainText("This thread's profile. Fallback off.");
   await expect(details).toContainText(
-    'Ran on fixture-model-b-0924, as the runtime reported. Requested fixture-model-b.',
+    'Reported fixture-model-b-0924. Requested fixture-model-b.',
   );
   await page.screenshot({ path: path.join(shots, 'profiles-run-details.png') });
 });

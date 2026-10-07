@@ -499,7 +499,7 @@ describe('Devin ACP text route', () => {
     const { adapter, sent } = await fixture('missing-model');
     await expect(adapter.generate(request)).rejects.toMatchObject({
       code: 'MODEL_UNAVAILABLE',
-      message: expect.stringContaining('No substitute'),
+      message: expect.stringContaining('no longer offers the requested model'),
     });
     expect(sent.some((frame) => frame.method === 'session/prompt')).toBe(false);
   });

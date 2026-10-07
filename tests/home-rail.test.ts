@@ -108,7 +108,7 @@ describe('a project scope lists its jobs by name', () => {
     });
   });
 
-  it('puts an open Need under Needs your input and opens it where it is decided', () => {
+  it("puts an open Need under Needs you and opens it where it is decided", () => {
     const state = stateFixture(kestrel, {
       tasks: [taskFixture({ state: 'waiting', reason: 'needs-ok' })],
       sessions: [sessionFixture({ state: 'waiting', startedAt: ago(120_000) })],
@@ -116,7 +116,7 @@ describe('a project scope lists its jobs by name', () => {
       conversations: [threadFixture()],
     });
     const [needs] = railGroups({ projects: [kestrel], scopeId: 'kestrel', state, now: NOW });
-    expect(needs.heading).toBe('Needs your input');
+    expect(needs.heading).toBe("Needs you");
     expect(needs.rows[0].target).toEqual({ projectId: 'kestrel', taskId: 'task', needId: 'need-1' });
     expect(needs.rows[0].tone).toBe('attn');
   });
@@ -156,7 +156,7 @@ describe('All projects lists only what the records hold across projects', () => 
       projectFixture('quiet', 'Quiet'),
     ]);
     expect(groups.map((g) => [g.heading, g.count])).toEqual([
-      ['Needs your input', 4],
+      ["Needs you", 4],
       ['Working', 3],
     ]);
     expect(groups[0].rows[0]).toMatchObject({

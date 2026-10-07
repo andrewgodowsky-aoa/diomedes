@@ -56,7 +56,7 @@ export async function readThreadRoute(
     signal,
   );
   if (typeof view?.route !== 'string' || !view.route)
-    throw new Error('Nectovia could not tell which route this thread uses. Nothing was sent.');
+    throw new Error("Nectovia couldn't identify this thread's connection.");
   return {
     route: view.route,
     refusal: typeof view.refusal === 'string' && view.refusal ? view.refusal : null,
@@ -79,13 +79,13 @@ export function planThreadSend(view: ThreadRouteView, mode: Mode, skill?: string
       if (isKeptSessionRoute(view.route)) return { kind: 'direct', route: view.route };
       return {
         kind: 'refuse',
-        reason: `Playbooks do not run in ${MODEL_API_NAMES[view.route]} conversations yet. Remove the playbook to send this message.`,
+        reason: `${MODEL_API_NAMES[view.route]} conversations can't use playbooks. Remove the playbook to send this message.`,
       };
     }
     return { kind: 'conversation', route: view.route, mode: conversational };
   }
   if (!isRoute(view.route))
-    return { kind: 'refuse', reason: `${view.route} is not available in this build. Nothing was sent.` };
+    return { kind: 'refuse', reason: `${view.route} is unavailable.` };
   return { kind: 'direct', route: view.route };
 }
 

@@ -237,7 +237,7 @@ describe('kept Cursor conversation over the native conversation driver', () => {
     expect(resumed.response?.text).toBe('answer after 1 earlier turns');
     expect(resumed.nativeSession).toEqual(first.nativeSession);
     expect(resumed.continuity).toMatchObject({
-      detail: expect.stringMatching(/restarted while an earlier message was being answered.*not completed or resent/),
+      detail: expect.stringMatching(/restarted while an earlier message was being answered.*wasn't completed or resent/),
     });
     // The interrupted command is never answered from the record, and never sent again.
     expect(await after.driver.turnResult('p1', runId, 'lost')).toBeNull();
@@ -260,7 +260,7 @@ describe('kept Cursor conversation over the native conversation driver', () => {
     await lost.catch(() => undefined);
     const ended = await after.runs.get(runId);
     expect(ended.state).toBe('cancelled');
-    expect(ended.cancelReason).toMatch(/cannot continue a saved session, so this conversation couldn't resume\. Start again\./);
+    expect(ended.cancelReason).toMatch(/can't continue a saved session, so this conversation couldn't resume\. Start again\./);
     await expect(
       after.driver.request(f.turn('resume', runId, input('resumed'))),
     ).rejects.toMatchObject({ code: 'RECONCILE_REQUIRED' });

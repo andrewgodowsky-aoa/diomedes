@@ -28,15 +28,15 @@ function Receipt({ receipt }: { receipt: RoutingReceipt }) {
       <p>{credits(receipt.allowanceDebitMicroUsd)} credits used
         {receipt.heldMicroUsd > 0 && <>; up to {credits(receipt.heldMicroUsd)} credits were still reserved when this result was recorded</>}.</p>
       <ol>{receipt.attempts.map(attempt => <li key={attempt.attemptId} style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-        <strong>{attempt.routing ? `${attempt.routing.provider} / ${attempt.routing.model}` : 'Route not recorded'}</strong>
-        <span> - {attempt.state}. {attempt.state === 'written-off' ? 'No charge; provider evidence closed this attempt.'
+        <strong>{attempt.routing ? `${attempt.routing.provider} / ${attempt.routing.model}` : 'Connection not recorded'}</strong>
+        <span> - {attempt.state}. {attempt.state === 'written-off' ? 'No charge. Closed using provider records.'
           : attempt.allowanceDebitMicroUsd === null ? 'Final usage not recorded.' : `${credits(attempt.allowanceDebitMicroUsd)} credits used.`}</span>
         {attempt.routing && <small style={{ display: 'block' }}>
           Policy {attempt.routing.policyRevision}; global {attempt.routing.globalRevision}; account {attempt.routing.scopeRevision}; privacy {attempt.routing.preferenceRevision}.
           {' '}Route {attempt.routing.routeId} revision {attempt.routing.routeRevision}; price {attempt.routing.priceVersion}.
-          {attempt.routing.upstreamEndpoint && <> Downstream: {attempt.routing.upstreamEndpoint}.</>}
+          {attempt.routing.upstreamEndpoint && <> Service address: {attempt.routing.upstreamEndpoint}.</>}
           {attempt.routing.fallbackReason === 'ranked_by_profile' ? <> Chosen by the routing preference.</>
-            : attempt.routing.fallbackReason && <> Backup reason: {attempt.routing.fallbackReason}.</>}
+            : attempt.routing.fallbackReason && <> Reason for using a backup: {attempt.routing.fallbackReason}.</>}
         </small>}
       </li>)}</ol>
     </div>;
@@ -56,7 +56,7 @@ export function ThreadManagedRoutingDetails({ projectId, threadId, refreshKey }:
     const endpoint = `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/routing-attempts`;
     void api<unknown>(`${endpoint}${before ? `?before=${encodeURIComponent(before)}` : ''}`, 'GET', undefined, controller.signal)
       .then(value => { if (!controller.signal.aborted) setPage(routingReceiptPageSchema.parse(value)); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Run details could not be read.'); });
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Job details couldn't be read."); });
     return () => controller.abort();
   }, [open, projectId, threadId, before, refreshKey, refresh]);
   return <details className="run-inspector" onToggle={event => setOpen(event.currentTarget.open)}>

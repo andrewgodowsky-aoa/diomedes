@@ -89,11 +89,11 @@ export interface CodexSessionTuning {
 }
 
 const ACCOUNT_CHANGED =
-  "Codex is signed in to a different ChatGPT account than this conversation started with, so it can't continue here. Nothing was sent. Sign in to the earlier account, or start a new conversation.";
+  "Codex is signed in to a different ChatGPT account than this conversation started with, so it can't continue here. Sign in to the earlier account, or start a new conversation.";
 
 const continuityDetail = (origin: CodexSessionOrigin, interrupted: boolean): string | null => {
   const restart = interrupted
-    ? "Diomedes restarted while an earlier message was being answered. That message wasn't completed or sent again. "
+    ? "Nectovia restarted while an earlier message was being answered. That message wasn't completed or sent again. "
     : '';
   if (origin === 'restarted-fresh')
     return `${restart}Codex no longer had this conversation's thread, so this message started a new one. Earlier messages weren't carried into it.`;
@@ -509,6 +509,6 @@ export function recoverCodexCheckpoint(
     return { resume: { ...saved, state: 'idle', origin: 'recovered', interruptedRequestId } };
   return {
     refuse:
-      "Diomedes restarted while Codex was answering, and no Codex thread was confirmed to continue, so this conversation couldn't resume. Start again.",
+      "Nectovia restarted while Codex was answering. The saved thread couldn't be confirmed, so this conversation couldn't resume. Start again.",
   };
 }

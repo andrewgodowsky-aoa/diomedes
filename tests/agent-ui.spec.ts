@@ -203,7 +203,7 @@ test('the menu says plainly that choosing a worker grants nothing', async ({ pag
   await open(page);
   await agentButton(page).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByText('Choosing a worker does not change what it may do.')).toBeVisible();
+  await expect(menu.getByText("Permissions apply to every worker. Some workers have further limits.")).toBeVisible();
   await expect(menu.getByText(/Permissions decide that/)).toBeVisible();
   // Job identities, not skills, rule ids or system prompts.
   await expect(menu.getByRole('menuitemradio', { name: /^Code Reviewer/ })).toBeVisible();

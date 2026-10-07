@@ -175,10 +175,10 @@ describe('permission choices are capability-driven', () => {
     const auto = choices.find((item) => item.id === 'auto-review')!;
     expect(auto.available).toBe(true);
     const text = auto.points.join(' ');
-    expect(text).toContain('never widen what is allowed');
-    expect(text).toContain('does not increase file, tool, command or network permission');
-    expect(text).toContain('waits for you');
-    expect(text).toContain('never recorded as your approval');
+    expect(text).toContain('within your existing scope');
+    expect(text).toContain('Your file, tool, command and network permissions remain the limit');
+    expect(text).toContain('Review the change yourself if the reviewer fails, times out or gives an unclear answer');
+    expect(text).toContain('Human approval requires your own decision');
   });
   test('Approve for me is unavailable with its actual reason when no reviewer exists', () => {
     const { choices } = describePermissionChoices({

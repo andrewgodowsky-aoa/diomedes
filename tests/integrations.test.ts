@@ -823,7 +823,7 @@ describe('ChatGPT route speed and streaming', () => {
     const failing = new FakeNative();
     failing.turnStatus = 'failed';
     const integration = warmSetup([failing]);
-    await expect(integration.askCodex(request)).rejects.toThrow('did not complete');
+    await expect(integration.askCodex(request)).rejects.toThrow('couldn\'t finish the answer');
     expect(failing.closed).toBe(true);
 
     process.env[team.tokenEnv] = 'test-token-value';

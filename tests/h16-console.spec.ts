@@ -195,7 +195,7 @@ test('a project rule written in the editor holds the loop run started from the t
     'Project rule reports-read-first v1: Every report is read by a person before it is written.',
   );
   await expect(firing).toContainText('Matched the proposed propose_write call on Harness report.md, before it was admitted.');
-  await expect(firing.locator('[data-trigger-outcome]')).toHaveText('Held before it ran. It waits for your answer.');
+  await expect(firing.locator('[data-trigger-outcome]')).toHaveText('Approve this step to continue.');
   expect(errors).toEqual([]);
 });
 

@@ -54,7 +54,7 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
   const open = useCallback(() => {
     setError('');
     load().catch((e) => {
-      setError(e instanceof Error ? e.message : 'This setup could not be opened.');
+      setError(e instanceof Error ? e.message : "This setup couldn't be opened.");
       report(e);
     });
   }, [load, report]);
@@ -95,7 +95,7 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
       try {
         setSetup(await call());
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'That answer could not be saved.');
+        setError(e instanceof Error ? e.message : "That answer couldn't be saved.");
         report(e);
         // Someone else saved first, the service went away, or the setup was
         // saved under other questions than this screen showed: show it as it is now.
@@ -199,13 +199,11 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
         ) : setup.state === 'not-started' ? (
           <>
             <p className="prose">
-              A short set of questions about how the business works, asked once. Answers are
-              recorded as facts. They do not connect anything, grant access, approve spending or
-              invite anyone.
+              Answer questions about your business to prepare its setup. Connections and permissions
+              need separate approval.
             </p>
             <p className="caption">
-              You can stop at any point and pick it up here later. Anything you do not know can be
-              left unanswered.
+              Resume later or skip an answer you don't know.
             </p>
             {problem}
             <div className="ws-actions">
@@ -248,7 +246,7 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
                   <div key={`drop-${note.id}`}>
                     <dt>No longer asked: {label(note.id)}</dt>
                     <dd>
-                      {note.why} The answer stays in this setup's history and is not carried.
+                      {note.why} The answer stays in this setup's history and isn't carried into the current setup.
                     </dd>
                   </div>
                 ))}
@@ -399,9 +397,9 @@ export function BusinessSetup({ organizationId, onClose, onDone, report }: Props
           </>
         ) : (
           <>
-            <h3 className="ws-question">Here is what you told us</h3>
+            <h3 className="ws-question">Your answers</h3>
             <p className="caption ws-reason">
-              Change any answer before this becomes a proposal. Nothing here has been applied.
+              Check your answers before preparing the setup.
             </p>
             <dl className="ws-facts">
               {setup.facts.map((fact) => (

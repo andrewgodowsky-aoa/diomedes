@@ -108,7 +108,7 @@ function SessionInspector({
         if (!controller.signal.aborted)
           setSnapshot({
             state: 'error',
-            message: error instanceof Error ? error.message : 'Run evidence could not be loaded.',
+            message: error instanceof Error ? error.message : 'Task records couldn\'t be loaded.',
           });
       },
     );
@@ -136,7 +136,7 @@ function SessionInspector({
             <dt>Account route</dt>
             <dd>{displayName(origin?.accountRoute) || 'Not recorded'}</dd>
             <dt>Environment</dt>
-            <dd>Isolation and execution host are not recorded in this session.</dd>
+            <dd>The computer and its isolation controls aren't recorded for this session.</dd>
             {governance.map((item) => (
               <Fragment key={item.label}>
                 <dt>{item.label}</dt>
@@ -164,7 +164,7 @@ function SessionInspector({
                 <dt>Model</dt>
                 <dd className="run-inspector-code">
                   {modelDifference
-                    ? `Ran on ${modelDifference.reported}, as the runtime reported. Requested ${modelDifference.requested}.`
+                    ? `Reported ${modelDifference.reported}. Requested ${modelDifference.requested}.`
                     : `${profile!.model}${profile!.effort ? ` · ${profile!.effort}` : ''}`}
                 </dd>
               </>
@@ -172,8 +172,8 @@ function SessionInspector({
             <dt>Authority</dt>
             <dd>
               {session.agent
-                ? `${session.agent.policy.effective}. See the recorded authorization below. A thread preference is not a grant.`
-                : 'See the recorded authorization below. A thread preference is not a grant.'}
+                ? `${session.agent.policy.effective}. Thread settings choose how it runs. Permission is checked before each action. See the recorded authorization below.`
+                : 'Thread settings choose how it runs. Permission is checked before each action. See the recorded authorization below.'}
             </dd>
             <dt>Controls</dt>
             <dd>
@@ -223,7 +223,7 @@ function SessionInspector({
                     : session.nativeThread.origin === 'forked'
                       ? ' · a fork'
                       : session.nativeThread.origin === 'restarted-fresh'
-                        ? ' · new, resume not possible'
+                        ? ' · new session, can\'t resume'
                         : session.nativeThread.kept
                           ? ' · kept for resume'
                           : ' · not kept'}
@@ -244,7 +244,7 @@ function SessionInspector({
           <section aria-label="Recorded authorization">
             <h3>Recorded authorization</h3>
             {evidence.needs.length === 0 && authorizations.length === 0 && (
-              <p>No effect authorization record yet.</p>
+              <p>No action approval is recorded.</p>
             )}
             {authorizations.map((authorization) =>
               authorization.kind === 'remembered-approval' ? (
@@ -281,8 +281,7 @@ function SessionInspector({
                   <dd className="run-inspector-code">{authorization.eventId}</dd>
                 </dl>
                 <p>
-                  This records past authorization; current grant validity is checked before each
-                  effect.
+                  Past approval. Permission is checked again before each action.
                 </p>
               </div>
               ),
@@ -309,7 +308,7 @@ function SessionInspector({
                       ? 'Task scope grant (recorded above)'
                       : need.approvalReceipt
                         ? `Exact decision: ${need.approvalReceipt.decision}`
-                        : 'No effect authorization record yet'}
+                        : 'No action approval is recorded'}
                   </dd>
                   <dt>Execution</dt>
                   <dd>{need.execution?.state ?? 'No execution receipt'}</dd>
@@ -366,7 +365,7 @@ function SessionInspector({
                 Refresh
               </button>
             </div>
-            {snapshot.state === 'loading' && <p role="status">Loading run evidence...</p>}
+            {snapshot.state === 'loading' && <p role="status">Loading task records...</p>}
             {snapshot.state === 'error' && <p role="alert">{snapshot.message}</p>}
             {snapshot.state === 'loaded' && (
               <>
@@ -375,8 +374,7 @@ function SessionInspector({
                   <><ManagedRoutingReceipt run={snapshot.run} /><HarnessEvidence run={snapshot.run} projectId={projectId} revision={revision} /></>
                 ) : (
                   <p>
-                    No detailed Runtime record is linked to this session. Tool and budget evidence
-                    is unavailable.
+                    No detailed task record is linked to this session. Tool use and spending limits aren't recorded here.
                   </p>
                 )}
               </>
@@ -424,7 +422,7 @@ function HarnessEvidence({ run, projectId, revision }: { run: HarnessRun; projec
             : `${run.budget.wallMs} ms recorded; not enforced`}
         </dd>
         <dt>Tokens / spend</dt>
-        <dd>Unknown; call counts are not provider charges.</dd>
+        <dd>Unknown. Call counts don't show the billed cost.</dd>
         <dt>Context revision</dt>
         <dd>{run.contextRevision}</dd>
         <dt>Event cursor</dt>

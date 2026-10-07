@@ -114,7 +114,7 @@ export function NativeSessionControls({ projectId, threadId, mode, answering, on
                   {item.text}
                 </span>
                 <span className="dio-session-note">
-                  {item.error ?? (known ? queuedLabel(known) : 'Queued: sent when the current answer finishes')}
+                  {item.error ?? (known ? queuedLabel(known) : 'Sends after the current answer')}
                 </span>
                 {pending ? (
                   <button type="button" className="send" onClick={() => withdraw(item.commandId)}>
@@ -141,7 +141,7 @@ export function NativeSessionControls({ projectId, threadId, mode, answering, on
           <input
             type="text"
             aria-label="Queue a message"
-            placeholder="Queue a message for when this answer finishes"
+            placeholder="Your next message"
             value={text}
             maxLength={32000}
             onChange={(event) => setText(event.target.value)}

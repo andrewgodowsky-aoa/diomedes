@@ -19,9 +19,9 @@ const STATE_WORD: Record<ChangeSetEntryView['state'], string> = {
   applied: 'applied, in Review',
   kept: 'kept by you',
   discarded: 'discarded',
-  conflict: 'not applied: changed since',
-  waiting: 'waits for you',
-  pending: 'waits for you',
+  conflict: 'changed since the proposal; review the current file',
+  waiting: 'needs review',
+  pending: 'needs review',
 };
 const OP_WORD = { created: 'new', modified: 'changed', deleted: 'deleted' } as const;
 
@@ -53,7 +53,7 @@ function Entry({
     try {
       setDiff((await api<{ diff: TextDiff }>(`${base}/entries/${entry.index}/diff`)).diff);
     } catch (reason) {
-      setProblem(reason instanceof Error ? reason.message : 'The change could not be read.');
+      setProblem(reason instanceof Error ? reason.message : "The change couldn't be read.");
     }
   };
   const decide = async (decision: 'keep' | 'discard', hunks?: number[]) => {
@@ -67,7 +67,7 @@ function Entry({
       });
       onDecided(answer.changeSet);
     } catch (reason) {
-      setProblem(reason instanceof Error ? reason.message : 'That could not be done.');
+      setProblem(reason instanceof Error ? reason.message : "That couldn't be done.");
     } finally {
       setBusy(false);
     }

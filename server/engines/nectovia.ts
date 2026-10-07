@@ -56,7 +56,7 @@ export const NECTOVIA_CONTRACT = 'nectovia-managed/1';
 
 /** Said wherever this route finds nobody signed in. */
 export const NECTOVIA_SIGN_IN = 'Sign in to use the Nectovia Agent.';
-export const NECTOVIA_UNAVAILABLE = "Nectovia's model service isn't available right now. Nothing was charged.";
+export const NECTOVIA_UNAVAILABLE = "Nectovia's AI service isn't available right now.";
 
 /** The model each tier runs, as the account service published it. */
 export interface NectoviaPolicy {
@@ -145,7 +145,7 @@ export function nectoviaConnectionId(organizationId: string, at: Date, billingCy
   if (billingCycle) {
     const cycle = verifiedIndividualCycle(billingCycle);
     if (!cycle || !cycleContains(cycle, at.getTime()))
-      throw new ModelApiError('nectovia_admission_invalid', 'Your Individual billing period could not be confirmed. Nothing was sent.', false);
+      throw new ModelApiError('nectovia_admission_invalid', 'Your Individual billing period couldn\'t be confirmed.', false);
     return `${NECTOVIA_ROUTE}-${digest(organizationId).slice(0, 12)}-individual-${digest(individualCycleId(cycle)).slice(0, 16)}`;
   }
   const month = `${at.getUTCFullYear()}${String(at.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -222,7 +222,7 @@ export function nectoviaRateCard(model: string, policy?: NectoviaPolicy | null):
   if (model !== legacy.model)
     throw new ModelApiError(
       'nectovia_rate_card_missing',
-      'Nectovia published a model this version of the app has no price for. Nothing was sent. Update Nectovia to use it.',
+      'Nectovia changed its AI, and this app needs updated pricing. Update Nectovia to continue.',
       false,
     );
   return {
@@ -288,12 +288,12 @@ export function gatewayRefusal(
     case 'agent_not_included':
       return {
         code: 'nectovia_agent_not_included',
-        message: said ?? 'This business does not include the Nectovia Agent. Nothing was charged.',
+        message: said ?? 'This business doesn\'t include the Nectovia Agent.',
       };
     case 'admission_invalid':
       return {
         code: 'nectovia_admission_invalid',
-        message: 'Nectovia could not confirm this message was admitted. Nothing was charged. Send it again.',
+        message: 'Nectovia couldn\'t confirm this message started. Send it again to check.',
       };
     case 'insufficient_allowance':
     case 'no_period':
@@ -306,7 +306,7 @@ export function gatewayRefusal(
     case 'cap_request_required':
       return {
         code: 'nectovia_cap_request_required',
-        message: said ?? `This job has reached the ${tierName(tier)} cap. Nothing was charged.`,
+        message: said ?? `This job has reached the ${tierName(tier)} cap.`,
       };
     case MEMBER_LIMIT_REACHED:
       // A member's own monthly limit stopped this step (Andrew, 2026-10-01). The service's sentence says
@@ -319,12 +319,12 @@ export function gatewayRefusal(
     case 'policy_changed':
       return {
         code: 'nectovia_policy_changed',
-        message: `Nectovia changed the model ${tierName(tier)} runs on. Nothing was charged. Send your message again.`,
+        message: `Nectovia changed the AI used for ${tierName(tier)}. Send your message again.`,
       };
     case 'tier_unrouted':
       return {
         code: 'nectovia_tier_unrouted',
-        message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+        message: `${tierName(tier)} is unavailable right now. Choose another tier.`,
       };
     case 'tier_unpriced':
     case 'over_cost_ceiling':
@@ -332,18 +332,18 @@ export function gatewayRefusal(
       // price. Either way the tier cannot answer now, which is what the person needs to know.
       return {
         code: `nectovia_${error.code}`,
-        message: `${tierName(tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+        message: `${tierName(tier)} is unavailable right now. Choose another tier.`,
       };
     case 'context_too_long':
     case 'request_too_large':
       return {
         code: 'nectovia_too_long',
-        message: 'This message and its sources are longer than Nectovia accepts. Nothing was charged. Choose fewer or shorter sources.',
+        message: 'This message and its sources are longer than Nectovia accepts. Choose fewer or shorter sources.',
       };
     case 'provider_busy':
       return {
         code: 'nectovia_provider_busy',
-        message: "Nectovia's model service is busy. Nothing was charged. Try again in a minute.",
+        message: "Nectovia's AI service is busy. Try again in a minute.",
       };
     case 'route_unavailable':
       return { code: 'nectovia_route_unavailable', message: NECTOVIA_UNAVAILABLE };
@@ -360,7 +360,7 @@ export function gatewayRefusal(
     case 'attempt_conflict':
       return {
         code: `nectovia_${error.code}`,
-        message: `Nectovia refused this message${said ? `: ${said}` : '.'} Nothing was charged.`,
+        message: `Nectovia refused this message${said ? `: ${said}` : '.'}`,
       };
   }
   // A 503 without the gateway's own body is not known to have held nothing.
@@ -418,7 +418,7 @@ export function nectoviaBinding(input: {
     headers.set('x-nectovia-policy-revision', String(managed.policyRevision));
     const snapshot = input.routing ?? managed.routing;
     if (managed.sourceRestrictions?.length && !snapshot)
-      throw new ModelApiError('nectovia_source_policy_unverified', 'These sources need a versioned routing policy with verified privacy evidence. Nothing was sent.', false);
+      throw new ModelApiError('nectovia_source_policy_unverified', 'These sources need a versioned routing policy with verified privacy evidence.', false);
     if (snapshot) {
       if (snapshot.scope.kind !== scope.kind || snapshot.scope.id !== scope.id || Date.parse(snapshot.validUntil) <= Date.now())
         throw new ModelApiError('nectovia_policy_changed', 'The routing snapshot is expired or belongs to another account.', false);
@@ -604,8 +604,8 @@ export async function respondNectovia(
     throw withReceipt(new ModelApiError(
       error.code,
       now
-        ? `Nectovia now runs ${tierName(managed.tier)} on ${now.label}. Nothing was charged. Send your message again to use it.`
-        : `${tierName(managed.tier)} has no Nectovia model right now. Nothing was charged. Choose another tier.`,
+        ? `Nectovia now runs ${tierName(managed.tier)} on ${now.label}. Send your message again to use it.`
+        : `${tierName(managed.tier)} is unavailable right now. Choose another tier.`,
       error.dispatched,
       error.evidence,
     ));
@@ -639,7 +639,7 @@ export function nectoviaTier(input: {
   if (!input.signedIn) return refuse(NECTOVIA_SIGN_IN);
   if (!input.policy) return refuse(NECTOVIA_UNAVAILABLE);
   const published = input.policy.tiers[style];
-  if (!published) return refuse(`${tierName(style)} has no Nectovia model right now. Nothing was sent. Choose another tier.`);
+  if (!published) return refuse(`${tierName(style)} is unavailable right now. Choose another tier.`);
   return {
     outcome: 'run',
     style,
@@ -654,10 +654,10 @@ export function nectoviaTier(input: {
 
 /** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
 export const NECTOVIA_WORK_REFUSED =
-  'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';
+  'Build and Fix aren\'t available for the Nectovia Agent in this conversation.';
 
 /**
  * Managed loops require one stable root job and fresh admission before every model step.
  * Delegates and teams are not admitted on this route; they have separate jobs.
  */
-export const NECTOVIA_LOOP_REFUSED = 'This Nectovia loop needs its own managed job. Delegates and teams are unavailable on this route. Nothing was sent.';
+export const NECTOVIA_LOOP_REFUSED = 'This Nectovia loop needs its own managed job. Delegates and teams are unavailable on this route.';

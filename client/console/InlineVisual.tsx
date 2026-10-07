@@ -625,7 +625,7 @@ export function UpdateProgressView({
   let body: ReactNode;
   if (loading && !status) body = <p className="iv-detail">Reading the update status.</p>;
   else if (!status || failed)
-    body = <p className="iv-detail">The update status could not be read here.</p>;
+    body = <p className="iv-detail">The update status couldn't be read here.</p>;
   else {
     const latest = status.check.latestVersion;
     const installed = `Installed ${status.installedVersion}`;
@@ -637,7 +637,7 @@ export function UpdateProgressView({
     else if (status.install.phase === 'launched')
       body = (
         <p className="iv-detail">
-          {`Installer for ${status.install.version ?? latest ?? 'the update'} started. The app closes and the installer opens after it exits.`}
+          {`Closing Nectovia to install ${status.install.version ?? latest ?? 'the update'}.`}
         </p>
       );
     else if (status.check.outcome === 'available' && status.download.ready)
@@ -678,7 +678,7 @@ function UpdateProgressCard({ title }: { title?: string }) {
 const RUN_WORD: Record<Session['state'], string> = {
   queued: 'Queued',
   working: 'Working',
-  waiting: 'Waiting for you',
+  waiting: 'Needs you',
   done: 'Done',
   stopped: 'Stopped',
   failed: 'Failed',
@@ -726,7 +726,7 @@ function AppCard({ spec, session }: { spec: AppSpec; session: Session | null }) 
 
 /** A spec that could not be drawn, said once in plain words. The reply around it still reads. */
 export function VisualNote({ reason }: { reason: string }) {
-  return <p className="iv-note">A visual could not be shown: {reason}.</p>;
+  return <p className="iv-note">Couldn't show a visual: {reason}.</p>;
 }
 
 interface VisualBoundaryProps {
@@ -750,7 +750,7 @@ export class VisualBoundary extends Component<VisualBoundaryProps, { failed: boo
 
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
-    return this.props.fallback ?? <VisualNote reason="something in it could not be drawn" />;
+    return this.props.fallback ?? <VisualNote reason="part of it couldn't be drawn" />;
   }
 }
 
@@ -793,7 +793,7 @@ export function InlineVisual({
     case 'app':
       return <AppCard spec={spec} session={session} />;
     default:
-      return <VisualNote reason="this kind of visual is not supported" />;
+      return <VisualNote reason="this kind of visual isn't supported" />;
   }
 }
 

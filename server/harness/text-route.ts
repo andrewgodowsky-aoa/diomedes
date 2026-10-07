@@ -154,7 +154,7 @@ export class TextRouteRuntime {
     const principal = localHarnessPrincipal(projectId);
     const intentHash = digest(request.intent);
     if (request.signal?.aborted)
-      throw new HarnessError('run_cancelled', 'This run was cancelled: the caller cancelled.');
+      throw new HarnessError('run_cancelled', 'The caller canceled this job.');
 
     let run = await this.find(runId);
     if (!run) {
@@ -202,12 +202,12 @@ export class TextRouteRuntime {
     if (run.state === 'reconcile_required')
       throw new HarnessError(
         'reconcile_required',
-        'This request is parked: its provider outcome was never confirmed.',
+        'The provider request has an unconfirmed result. Check what happened before trying again.',
       );
     if (run.state === 'failed')
       throw new HarnessError(
         'request_failed',
-        run.failure?.message ?? 'This request failed. Its record is kept.',
+        run.failure?.message ?? 'This request failed.',
       );
 
     // Caller cancellation cancels the run, never just the local await: the
@@ -233,7 +233,7 @@ export class TextRouteRuntime {
       );
       if (request.signal?.aborted) {
         await this.runs.cancel(runId, 'the caller cancelled', principal);
-        throw new HarnessError('run_cancelled', 'This run was cancelled: the caller cancelled.');
+        throw new HarnessError('run_cancelled', 'The caller canceled this job.');
       }
       const result = await this.runs.step<R>(
         runId,
@@ -252,7 +252,7 @@ export class TextRouteRuntime {
       if (current?.state === 'reconcile_required')
         throw new HarnessError(
           'reconcile_required',
-          `The run is parked for reconciliation: ${
+          `The request needs an outcome check: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );

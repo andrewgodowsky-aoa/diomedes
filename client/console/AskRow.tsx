@@ -677,7 +677,7 @@ export function AskRow({
     setStartError(null);
     void api<unknown>('/ai/local-models/wake', 'POST', { model: slug })
       .catch((e: unknown) => {
-        if (alive.current) setStartError(e instanceof Error ? e.message : 'The local model could not start.');
+        if (alive.current) setStartError(e instanceof Error ? e.message : "The local model couldn't start.");
       })
       .then(readLocal)
       .finally(() => {
@@ -807,7 +807,7 @@ export function AskRow({
             )}
             <p className="ask-head">{LOCAL_MODEL}</p>
             {models.length === 0 && !catalogs[local.route] && (
-              <p className="ask-note">The local model has not listed its profiles yet.</p>
+              <p className="ask-note">Local model profiles are unavailable.</p>
             )}
             {localProfileEntries(local, models, names).map((entry) => (
               <Item
@@ -850,7 +850,7 @@ export function AskRow({
           waiting={waiting}
           locked={locked}
           head={named ? `Effort for ${named}` : 'Effort'}
-          unlisted="The local model has not listed this profile's levels yet."
+          unlisted="This profile's effort settings are unavailable."
           defaultLine={fallback ? (named ? `The default for ${named} is ${fallback}.` : `The default is ${fallback}.`) : null}
           onPick={(level) => {
             if (level === effort.wanted && slug === current.slug) return;
@@ -965,7 +965,7 @@ export function AskRow({
           <Menu label="Model" onOpen={() => void readCatalog(route)}>
             {catalogs[route]?.detail && <p className="ask-head">{catalogs[route].detail}</p>}
             {models.length === 0 && !catalogs[route] && (
-              <p className="ask-note">{engine} has not listed its models yet.</p>
+              <p className="ask-note">The model list for {engine} is unavailable.</p>
             )}
             {models.map((model) => (
               <Item
@@ -992,7 +992,7 @@ export function AskRow({
         waiting={waiting}
         locked={locked}
         head={current?.model ? `Effort for ${current.model.name}` : 'Effort'}
-        unlisted={`${engine} has not listed this model's levels yet.`}
+        unlisted={`This model's effort settings are unavailable from ${engine}.`}
         defaultLine={
           current?.model?.defaultEffort
             ? `${engine}’s default for ${current.model.name} is ${effortWord(current.model.defaultEffort)}.`
@@ -1009,7 +1009,7 @@ export function AskRow({
   }
 
   return (
-    <div className="ask-row" role="group" aria-label="Engine, model and agent">
+    <div className="ask-row" role="group" aria-label="AI settings for this thread">
       {engineBox}
       {modelBox}
       {effortBox}

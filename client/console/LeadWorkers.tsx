@@ -75,7 +75,7 @@ function seconds(ms: number | null) {
 }
 
 function modelsLine(list: readonly LoopModel[], route: string | null) {
-  if (!list.length) return route === 'native-fixture' ? 'None: a fixed local script' : null;
+  if (!list.length) return route === 'native-fixture' ? 'Fixed local script' : null;
   return list
     .map((model) => `${displayName(model.reported) || 'model not reported'}${model.engine ? ` via ${routeDisplayName(model.engine)}` : ''}`)
     .join('; ');
@@ -222,7 +222,7 @@ function Lead({
           {team.retryOf ? <span className="loop-code" title={team.retryOf.runId}> · attempt {team.retryOf.attempt}</span> : null}
         </dd>
         <dt>Reads</dt>
-        <dd className="loop-code">{team.scope ? team.scope.join(', ') : 'The whole project, as its route allows'}</dd>
+        <dd className="loop-code">{team.scope ? team.scope.join(', ') : 'Project files this connection permits'}</dd>
         <dt>Workers</dt>
         <dd>
           {roleLine(team.worker)} · at most {team.limits.concurrentWorkers} at once, {team.limits.workersPerRun} per run, one level
@@ -282,7 +282,7 @@ export function LeadWorkers({ projectId, revision }: { projectId: string; revisi
         }
       },
       (reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'The team could not be read.');
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "The team couldn't be read.");
       },
     );
     return () => controller.abort();

@@ -95,7 +95,7 @@ const answers = (page: Page) => page.locator('.turn.dio .body');
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
 /** The ask row's tier box (round 2 reskin, slice 2): the conversation's one model control on Nectovia. */
 const tierControl = (page: Page) =>
-  page.getByRole('group', { name: 'Engine, model and agent' }).locator('.ask-tier .ask-pick');
+  page.getByRole('group', { name: "AI settings for this thread" }).locator('.ask-tier .ask-pick');
 const tierMenu = (page: Page) => page.getByRole('menu', { name: 'How much care' });
 /** What the caption names a Nectovia conversation by: the route and the model its policy publishes. */
 const NECTOVIA_CAPTION = 'Nectovia (GPT-5.6 Luna)';
@@ -947,14 +947,14 @@ test('"Update this conversation" moves a conversation opened before this build, 
   try {
     await dialog.getByRole('button', { name: 'Update', exact: true }).click();
     await expect(dialog.getByRole('alert')).toHaveText(
-      "The update's answer didn't arrive. Press Update again to check whether it went through; it's never done twice.",
+      "The update's answer didn't arrive. Press Update again to check the original request.",
     );
     // Closed and opened again: the menu is still there, and asks about that same update.
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
     await page.getByRole('button', { name: 'Conversation menu' }).click();
     await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
-    await expect(dialog).toContainText('Your last update may have gone through already. Press Update to check; nothing is done twice.');
+    await expect(dialog).toContainText("Your last update may have gone through. Press Update to check the original request.");
     const posted = page.waitForResponse(updatePost);
     await dialog.getByRole('button', { name: 'Update', exact: true }).click();
     const answered = await posted;

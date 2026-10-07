@@ -5,7 +5,6 @@ import type {
   OpenRouterConnectionView,
 } from '../shared/model-api';
 import type { Settings } from '../shared/types';
-import { AGENT_NAME } from '../shared/agent-name';
 import { routeDisplayName } from '../shared/engines';
 import { ApiError, api } from './api';
 import { awsLimitBody, holdSentence, usd } from './aws-bedrock-view';
@@ -30,7 +29,7 @@ import { PromptCaching } from './PromptCaching';
 import { RouteChecks } from './RouteChecks';
 
 const messageOf = (error: unknown) =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
+  error instanceof ApiError || error instanceof Error ? error.message : "The request couldn't be completed.";
 
 interface CardProps {
   settings: Settings;
@@ -143,7 +142,7 @@ function ProviderCard<V extends ProviderView>({
       await load();
     });
   const disconnect = () => {
-    if (!window.confirm(`Forget the saved ${name} key and switch ${name} off? Spend records are kept.`)) return;
+    if (!window.confirm(`Forget the saved ${name} key and switch ${name} off?`)) return;
     void run(async () => {
       setReadiness(null);
       return api<V>(base, 'DELETE');
@@ -215,8 +214,7 @@ function ProviderCard<V extends ProviderView>({
           </label>
           <label className="check">
             <input type="checkbox" checked={limitConsent} onChange={(event) => setLimitConsent(event.target.checked)} />
-            Approve this as the most {AGENT_NAME} may send to {name} in total, estimated from the prices
-            you entered.
+            Allow Nectovia to spend up to this total on {name}, estimated from the prices you entered.
           </label>
           <div className="actions">
             <Button type="submit" disabled={disabled}>
@@ -438,7 +436,7 @@ export function AzureOpenAISetup(props: CardProps) {
       shortName="Azure"
       editing={editing}
       setEditing={setEditing}
-      caption="Your company’s own Azure AI Foundry or Azure OpenAI resource. Only the deployments you list are called, and every call is billed to that Azure subscription."
+      caption="Uses the deployments you list in your business's Azure resource. Azure bills your subscription for each request."
       facts={connection && <p className="caption">{connection.endpoint}</p>}
       checks={
         connection && (
@@ -495,7 +493,7 @@ export function AzureOpenAISetup(props: CardProps) {
                     spellCheck={false}
                     value={entry.model}
                     onChange={(event) => change(index, { model: event.target.value })}
-                    placeholder="gpt-6-luna"
+                    placeholder="model-name"
                   />
                 </label>
                 <label>
@@ -505,7 +503,7 @@ export function AzureOpenAISetup(props: CardProps) {
                     spellCheck={false}
                     value={entry.deployment}
                     onChange={(event) => change(index, { deployment: event.target.value })}
-                    placeholder="luna-prod-eastus2"
+                    placeholder="deployment-name"
                   />
                 </label>
                 <label className="check">
@@ -514,7 +512,7 @@ export function AzureOpenAISetup(props: CardProps) {
                     checked={entry.reasoning}
                     onChange={(event) => change(index, { reasoning: event.target.checked })}
                   />
-                  This is a reasoning model
+                  Supports reasoning
                 </label>
                 {entry.reasoning && (
                   <label className="check">
@@ -523,7 +521,7 @@ export function AzureOpenAISetup(props: CardProps) {
                       checked={entry.xhigh === true}
                       onChange={(event) => change(index, { xhigh: event.target.checked })}
                     />
-                    It takes the extra-high reasoning level
+                    Supports extra-high reasoning
                   </label>
                 )}
                 <RatesFields label={label} rates={entry.rates} onChange={(rates) => change(index, { rates })} />
@@ -618,7 +616,7 @@ export function OpenRouterSetup(props: CardProps) {
       shortName="OpenRouter"
       editing={editing}
       setEditing={setEditing}
-      caption="Your own OpenRouter account. Only the models and endpoints you list are used; provider data collection is refused and fallbacks are off. Every call is billed to that account."
+      caption="Uses the AI and addresses you list in your OpenRouter account. Data collection and fallbacks are refused. OpenRouter bills that account."
       form={
         <form
           className="ai-aws-connect ai-provider-connect"

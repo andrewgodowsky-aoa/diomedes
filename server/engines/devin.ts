@@ -426,7 +426,7 @@ export class DevinAdapter implements PersistentTextAdapter<AcpSessionCheckpoint>
           if ((!keep || listed) && !modelsFrom(created).some((model) => model.slug === input.model))
             throw new EngineError(
               'MODEL_UNAVAILABLE',
-              'Devin no longer offers the requested model. No substitute was selected.',
+              'Devin no longer offers the requested model. Choose another model.',
               false,
               'model-list',
             );

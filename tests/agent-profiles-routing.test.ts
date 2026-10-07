@@ -241,7 +241,7 @@ describe('routing preferences and fallback', () => {
     const refused = await start();
     expect(refused.status).toBe(409);
     expect((refused.data as any).error ?? JSON.stringify(refused.data)).toMatch(
-      /OpenCode writer cannot run: OpenCode is off in Settings > Engines\. Fallback is off/,
+      /OpenCode writer can't run\. OpenCode is off in Settings > Engines\. Fallback is off/,
     );
     // Nothing ran and nothing was left behind.
     expect(generate).not.toHaveBeenCalled();

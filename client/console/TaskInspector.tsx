@@ -152,7 +152,7 @@ export function TaskInspector(props: TaskInspectorProps) {
       setViewIssue('');
     } catch (error) {
       if (signal?.aborted || mine !== read.current) return;
-      setViewIssue(error instanceof Error ? error.message : 'How this task runs could not be read.');
+      setViewIssue(error instanceof Error ? error.message : "This task's settings couldn't be read.");
     }
   }
   useEffect(() => {
@@ -172,7 +172,7 @@ export function TaskInspector(props: TaskInspectorProps) {
         value ?? { clear: true },
       );
     } catch (error) {
-      setRoutingIssue(error instanceof Error ? error.message : 'The routing could not be saved.');
+      setRoutingIssue(error instanceof Error ? error.message : "The connection choices couldn't be saved.");
     } finally {
       setRoutingBusy(false);
       await refresh();
@@ -208,7 +208,7 @@ export function TaskInspector(props: TaskInspectorProps) {
           <section className="ti-work" aria-label="The work">
             <h3>Objective</h3>
             <p className="ti-objective">
-              {task.description.trim() || 'No description. The task name is the instruction.'}
+              {task.description.trim() || 'Use the task name as the instruction.'}
             </p>
             <h3>Default document</h3>
             <p title={task.sourceDocument}>
@@ -222,7 +222,7 @@ export function TaskInspector(props: TaskInspectorProps) {
                 ? `${checks.length} completion ${checks.length === 1 ? 'check' : 'checks'}: ${[
                     ...new Set(checks.map((check) => CHECK_KINDS[check.kind] ?? check.kind)),
                   ].join(', ')}.`
-                : 'No completion checks are declared, so a finished run reads Not verified.'}
+                : 'Add completion checks to verify the result.'}
             </p>
             {verification && (
               <p className="ti-result">
@@ -234,8 +234,8 @@ export function TaskInspector(props: TaskInspectorProps) {
               <div className="ti-waiting" role="status">
                 <span>
                   {openNeeds.length > 0
-                    ? `${openNeeds.length === 1 ? 'A decision waits' : `${openNeeds.length} decisions wait`} on you.`
-                    : `${props.changesWaiting} ${props.changesWaiting === 1 ? 'change waits' : 'changes wait'} for review.`}
+                    ? `${openNeeds.length === 1 ? 'A decision needs' : `${openNeeds.length} decisions need`} your review.`
+                    : `${props.changesWaiting} ${props.changesWaiting === 1 ? 'change needs' : 'changes need'} review.`}
                 </span>
                 <button type="button" className="verb light" onClick={props.onReview}>
                   Review
@@ -253,7 +253,7 @@ export function TaskInspector(props: TaskInspectorProps) {
                 ))}
               </ol>
             ) : (
-              <p className="ti-quiet">{latest ? 'This run has not reported anything yet.' : 'It has not run yet.'}</p>
+              <p className="ti-quiet">{latest ? "No activity reported for this job." : "No job history."}</p>
             )}
           </section>
           <aside className="ti-controls" aria-label="How it runs">
@@ -283,7 +283,7 @@ export function TaskInspector(props: TaskInspectorProps) {
                       <small>{view.worker.note ?? 'Not resolved.'}</small>
                     )}
                   </dd>
-                  <dt>Route</dt>
+                  <dt>Connection</dt>
                   <dd>
                     {view.route.name}
                     <small>
@@ -295,14 +295,14 @@ export function TaskInspector(props: TaskInspectorProps) {
                   <dd>
                     {view.model ? (
                       <>
-                        <span className="ti-machine">{view.model.requested ?? 'The route’s own default'}</span>
+                        <span className="ti-machine">{view.model.requested ?? 'Connection default'}</span>
                         <small>
                           {view.model.effort ? `${view.model.effort} reasoning · ` : ''}
                           {view.model.selection === 'manual'
                             ? 'chosen'
                             : view.model.selection === 'automatic'
                               ? 'chosen automatically'
-                              : 'the runtime decides'}
+                              : 'chosen by the service'}
                         </small>
                       </>
                     ) : (
@@ -319,7 +319,7 @@ export function TaskInspector(props: TaskInspectorProps) {
                         ? `${THREAD_PERMISSION[view.permission.thread]} · worker cap ${
                             PERMISSION_NAMES[view.permission.agentCeiling ?? ''] ?? view.permission.agentCeiling
                           }`
-                        : 'Choosing a worker never changes this.'}
+                        : 'Permissions apply to every worker.'}
                     </small>
                   </dd>
                   {view.queue && (
@@ -353,7 +353,7 @@ export function TaskInspector(props: TaskInspectorProps) {
                       <option value="">
                         {view.routing.project?.order.length
                           ? 'Follow the project’s list'
-                          : 'None: the route and model above'}
+                          : 'Use this connection and model'}
                       </option>
                       {(profiles ?? []).map((profile) => (
                         <option key={profile.profileId} value={profile.profileId} disabled={!profile.available}>
@@ -371,12 +371,12 @@ export function TaskInspector(props: TaskInspectorProps) {
                             void saveRouting({ order: [taskChoice], fallback: event.target.checked })
                           }
                         />
-                        Fall back to the project’s list if it cannot run
+                        Try the project’s list if this profile can’t run
                       </label>
                     )}
                     {view.routing.inert && <p className="ti-note">{view.routing.inert}</p>}
                     {!profiles?.length && (
-                      <p className="ti-note">No profiles yet. Settings › Agent profiles makes one.</p>
+                      <p className="ti-note">Create a profile in Settings › Agent profiles.</p>
                     )}
                     {routingIssue && (
                       <p className="ti-issue" role="alert">
@@ -386,8 +386,8 @@ export function TaskInspector(props: TaskInspectorProps) {
                   </fieldset>
                 )}
                 {view.blockers.length > 0 && (
-                  <div className="ti-blockers" role="status" aria-label="Why a Start would stop now">
-                    <h4>A Start now would stop here</h4>
+                  <div className="ti-blockers" role="status" aria-label="Resolve before starting">
+                    <h4>Resolve before starting</h4>
                     <ul>
                       {view.blockers.map((reason) => (
                         <li key={reason}>{reason}</li>

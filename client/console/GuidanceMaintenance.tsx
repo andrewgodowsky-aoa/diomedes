@@ -46,7 +46,7 @@ export function GuidanceMaintenance({ projectId }: { projectId: string }) {
     try {
       setView(await api<GuidanceView>(`/projects/${projectId}/guidance`));
     } catch (failure) {
-      setProblem(failure instanceof Error ? failure.message : 'Guidance could not be read.');
+      setProblem(failure instanceof Error ? failure.message : "Guidance couldn't be read.");
     }
   }, [projectId]);
   useEffect(() => {
@@ -60,7 +60,7 @@ export function GuidanceMaintenance({ projectId }: { projectId: string }) {
       await api(path, 'POST', body);
       setReviewing(null);
     } catch (failure) {
-      setProblem(failure instanceof Error ? failure.message : 'That could not be done.');
+      setProblem(failure instanceof Error ? failure.message : "That couldn't be done.");
     } finally {
       setWorking(false);
       await load();
@@ -149,11 +149,11 @@ export function GuidanceMaintenance({ projectId }: { projectId: string }) {
       {(revisions.length > 0 || !chain.ok) && (
         <section className="instructions-run guidance" aria-label="Revisions">
           <div className="mono lc instructions-run-head">
-            revisions · {chain.ok ? `chain intact · ${chain.length}` : `chain broken at ${chain.brokenAt}`}
+            revisions · {chain.ok ? `${chain.length} linked revisions` : `missing link at ${chain.brokenAt}`}
           </div>
           {!chain.ok && (
             <p className="guidance-problem" role="alert">
-              {chain.reason} Nothing more can be applied or rolled back until it is looked into.
+              {chain.reason} Resolve this before applying or rolling back another revision.
             </p>
           )}
           <ol className="instructions-list">

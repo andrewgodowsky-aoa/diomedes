@@ -45,7 +45,7 @@ const KIND_MARK: Record<ChangedFile['kind'], string> = {
   'type-changed': 'T',
 };
 const RUN_WORDS: Record<CommandRunRecord['state'], string> = {
-  'waiting-approval': 'Waiting for your OK',
+  'waiting-approval': 'Needs your OK',
   running: 'Running',
   passed: 'Passed',
   failed: 'Failed',
@@ -86,7 +86,7 @@ export function Repository({
       setView(await softwarePackApi.view(projectId));
       setFailure(null);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'The repository could not be read.');
+      setFailure(error instanceof Error ? error.message : "The repository couldn't be read.");
     }
   }, [projectId]);
   useEffect(() => {
@@ -110,7 +110,7 @@ export function Repository({
     try {
       await action();
     } catch (error) {
-      setProblem(error instanceof Error ? error.message : 'That did not work.');
+      setProblem(error instanceof Error ? error.message : "That didn't work.");
     } finally {
       setWorking(false);
       await refresh();
@@ -314,16 +314,16 @@ export function Repository({
       {waitingRun && (
         <Approval
           question={`Run ${waitingRun.command} in ${where(waitingRun.cwd)}?`}
-          detail={`It runs as exactly these words, without a shell, with a minimal environment and a ${Math.round(
+          detail={`Runs these exact arguments without a shell, with a minimal environment. A ${Math.round(
             waitingRun.timeoutMs / 1000,
-          )} s limit that ends everything it starts. Nothing runs until you say go ahead, and your OK covers this one run.`}
+          )} s limit ends everything it starts. Approval covers this command only.`}
           working={working}
           onAnswer={(decision) =>
             act(() => softwarePackApi.answerRun(projectId, waitingRun.id, decision, waitingRun.intentHash))
           }
         />
       )}
-      {view.commands.length === 0 && <p className="caption repo-caption">No commands declared. Declaring one runs nothing.</p>}
+      {view.commands.length === 0 && <p className="caption repo-caption">Add a command, then approve it to run.</p>}
       <ul className="repo-list" aria-label="Declared commands">
         {view.commands.map((command) => (
           <CommandRow
@@ -388,8 +388,8 @@ export function Repository({
               }
               detail={
                 waitingTree.operation === 'add'
-                  ? 'Work there happens on its own branch; your checkout is not touched.'
-                  : 'It is removed only if nothing in it is uncommitted. Its branch and commits are kept.'
+                  ? 'Work in a separate folder on its own branch.'
+                  : "Removal requires a clean worktree. The branch and commits remain available."
               }
               working={working}
               onAnswer={(decision) =>

@@ -119,7 +119,7 @@ const textBox = (page: Page) =>
   page.getByRole('textbox', { name: 'The text in this file', exact: true });
 const editorState = (page: Page) => page.locator('.docedit .de-state');
 const asking = (page: Page) =>
-  page.getByRole('alert', { name: 'You have writing that is not saved', exact: true });
+  page.getByRole('alert', { name: "You have unsaved writing", exact: true });
 const settingsNav = (page: Page) => page.getByRole('navigation', { name: 'Settings', exact: true });
 
 /** Into the sample project's Console, by name, from a fresh page. */
@@ -213,7 +213,7 @@ test('DIO-85: with no backup to keep the writing, every exit from the editor ask
 
   // The palette's view navigation.
   await page.keyboard.press('Control+k');
-  const find = page.getByRole('textbox', { name: 'Find a task, worker, model, project or action' });
+  const find = page.getByRole('textbox', { name: "Find and act" });
   await expect(find).toBeVisible();
   await find.fill('Board');
   await page
@@ -279,7 +279,7 @@ test('DIO-85: with the backup working, leaving keeps the writing and brings it b
   const back = await writeIn(page, ALPHA);
   await expect(back).toHaveValue(draft);
   await expect(page.locator('.docedit [role="status"]')).toHaveText(
-    'We brought back writing you had not saved.',
+    "Restored your unsaved writing.",
   );
   // Leave the file as the next test expects to find it.
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();

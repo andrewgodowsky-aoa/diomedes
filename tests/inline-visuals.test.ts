@@ -349,7 +349,7 @@ describe('a visual never throws, hangs or draws NaN, whatever finite numbers it 
     expect(renderToStaticMarkup(createElement('div', null, boundary.render()))).toBe('<div><p>the chart</p></div>');
     boundary.state = VisualBoundary.getDerivedStateFromError();
     expect(renderToStaticMarkup(createElement('div', null, boundary.render()))).toBe(
-      '<div><p class="iv-note">A visual could not be shown: something in it could not be drawn.</p></div>',
+      "<div><p class=\"iv-note\">Couldn&#x27;t show a visual: part of it couldn&#x27;t be drawn.</p></div>",
     );
     const hosted = new VisualBoundary({ children: null, fallback: createElement('p', null, 'Host words.') });
     hosted.state = VisualBoundary.getDerivedStateFromError();
@@ -426,7 +426,7 @@ describe('app cards read live client state, never the spec', () => {
     expect(checking).toContain('aria-label="Checking for updates"');
     expect(checking).toContain('seg-scan');
     expect(checking).not.toContain('aria-valuenow');
-    expect(card(null, true)).toContain('could not be read');
+    expect(card(null, true)).toContain('couldn&#x27;t be read');
   });
 
   test('update-progress draws bytes as a share only while the host reports them', () => {
@@ -461,7 +461,7 @@ describe('app cards read live client state, never the spec', () => {
     expect(open).not.toContain(' of ');
     // Handed to the installer: said, not drawn as a whole bar.
     const launched = card({ ...snapshot, install: { phase: 'launched', version: '0.1.7' } });
-    expect(launched).toContain('Installer for 0.1.7 started.');
+    expect(launched).toContain('Closing Nectovia to install 0.1.7.');
     expect(launched).not.toContain('role="progressbar"');
   });
 
@@ -528,7 +528,7 @@ describe('ReplyBody and the reply renderers', () => {
   });
 
   it('shows an invalid block as a short plain note', () => {
-    expect(body(fence({ kind: 'bar', labels: [] }))).toContain('A visual could not be shown:');
+    expect(body(fence({ kind: 'bar', labels: [] }))).toContain("Couldn&#x27;t show a visual:");
   });
 
   it('ThreadView draws visuals in replies and leaves the person\'s own text as text', () => {

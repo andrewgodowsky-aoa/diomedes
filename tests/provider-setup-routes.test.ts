@@ -419,7 +419,7 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
     const thorough = await styled(project, thread, 'thorough');
     expect(thorough.resolution.outcome).toBe('ask');
-    expect(thorough.resolution.reason).toBe('OpenRouter is unavailable right now. Please contact support and check that your account is connected and has credits remaining.');
+    expect(thorough.resolution.reason).toBe('OpenRouter is unavailable right now. Check your connection and credits, then contact support if it still fails.');
     expect(thorough.resolution.reason).not.toContain('vendor/gpt-6-sol');
   });
 });

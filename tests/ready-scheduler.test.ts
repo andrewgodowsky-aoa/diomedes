@@ -145,8 +145,8 @@ describe('opt-in, default off', () => {
     expect(store().workCommand(projectId, claim.commandId)?.id).toBe(session.id);
     expect(current.history.map((entry) => entry.sentence)).toEqual(
       expect.arrayContaining([
-        'You turned on starting Ready work automatically.',
-        'Diomedes started First from the Ready queue.',
+        'You enabled automatic starts from Ready.',
+        'Nectovia started First automatically from Ready.',
       ]),
     );
     expect(current.history.find((entry) => entry.kind === 'ready-start')?.actor).toBe('diomedes');
@@ -343,7 +343,7 @@ describe('pause', () => {
     await configure(projectId, { paused: false });
     await until(projectId, (s) => s.sessions.length === 1);
     expect(state(projectId).history.map((entry) => entry.sentence)).toEqual(
-      expect.arrayContaining(['You paused the Ready queue: Stocktake.', 'You resumed the Ready queue.']),
+      expect.arrayContaining(['You paused starts from Ready. Stocktake', 'You resumed starts from Ready.']),
     );
   });
 

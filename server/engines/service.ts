@@ -380,7 +380,7 @@ function repairDetail(
   installation: 'missing' | 'corrupt' | 'found',
 ): string {
   if (reason === 'record-unreadable')
-    return 'Diomedes cannot read which installation you chose for this service. Choose one again to continue; the record it could not read is kept.';
+    return 'Nectovia can\'t read your choice of installation. Choose one again to continue.';
   if (reason === 'selected-missing')
     return 'The installation you chose is no longer on this computer. Choose another or install a compatible copy.';
   if (reason === 'selected-changed')
@@ -388,9 +388,9 @@ function repairDetail(
   if (reason === 'selected-unverified')
     return 'The installation you chose could not be verified. It was not run.';
   if (installation === 'corrupt')
-    return 'The private copy Diomedes installed no longer matches its reviewed release. It was not run. Repair it to continue.';
+    return 'The copy Nectovia installed no longer matches its checked release. Repair it to continue.';
   if (installation === 'missing') return 'Install this tool to connect it.';
-  return `${ENGINE_NAMES[engine]} is installed, but it did not answer when Diomedes checked it. Reinstall or update it, or choose another installation.`;
+  return `${ENGINE_NAMES[engine]} is installed, but didn't answer when Nectovia checked it. Update it or choose another installation.`;
 }
 
 /**
@@ -1337,7 +1337,7 @@ export class EngineService {
     if (state.routeIssue)
       throw new EngineError(
         'ACCOUNT_ROUTE',
-        `This installation is signed in to a different account. Diomedes uses ${state.routeIssue.required} for this route.`,
+        `This installation is signed in to a different account. Nectovia needs ${state.routeIssue.required} for this connection.`,
         false,
         'provider-auth',
       );
@@ -1428,7 +1428,7 @@ export class EngineService {
     if (decision.kind !== 'candidate')
       throw new EngineError(
         'CANDIDATE_UNUSABLE',
-        candidate.issue ?? 'That installation did not answer when Diomedes checked it.',
+        candidate.issue ?? 'That installation didn\'t answer when Nectovia checked it.',
         false,
         'runtime-verification',
       );
@@ -1522,7 +1522,7 @@ export class EngineService {
       if (!answer.text.trim())
         throw new EngineError(
           'EMPTY_ANSWER',
-          'The service accepted the request and returned nothing. Nothing was verified.',
+          'The service accepted the request but returned an empty answer. The connection check failed.',
           true,
         );
       const receipt: ConnectionReceipt = {
@@ -1541,7 +1541,7 @@ export class EngineService {
         // belongs. The support diagnostic carries the stage and the code.
         throw new EngineError(
           'RECEIPT_UNSAVED',
-          'The service answered, but Diomedes could not record the proof. Nothing was verified.',
+          'The service answered, but Nectovia couldn\'t save the connection check.',
           false,
           'cleanup',
         );
@@ -2355,7 +2355,7 @@ export class EngineService {
     if (route !== LOCAL_MODEL_ROUTE && (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0))
       throw new EngineError(
         'SPEND_LIMIT',
-        `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
+        `The approved ${short} spending limit has been reached. The owner can review usage and approve more in AI setup.`,
         true,
       );
     // A loop's observation belongs to its actual run, separately from the shared spend job.
@@ -2410,13 +2410,13 @@ export class EngineService {
       throw new EngineError(
         'ROUTE_REFUSED',
         input.projectId === HOST_TEST_PROJECT
-          ? 'Nectovia is checked by sending it a message. Nothing was sent.'
+          ? 'Send Nectovia a message to check the connection.'
           : NECTOVIA_UNAVAILABLE,
         true,
       );
     const rootJobId = agent?.rootJobId ?? null;
     if (!rootJobId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(rootJobId))
-      throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can meter it under. Nothing was sent.', true);
+      throw new EngineError('ROUTE_REFUSED', 'This work has no job Nectovia can charge usage to.', true);
     const tier = await this.managedTier(input);
     // The job's record exists now (the tier was pinned above), so the id it is metered under can be kept on it.
     if (this.jobCaps?.noteMetered && input.projectId && input.requestId)
@@ -2428,11 +2428,11 @@ export class EngineService {
     if (!policy) throw new EngineError('ROUTE_REFUSED', NECTOVIA_UNAVAILABLE, true);
     const published = policy.tiers[tier];
     if (!published)
-      throw new EngineError('ROUTE_REFUSED', `${label} has no Nectovia model right now. Nothing was sent. Choose another tier.`, true);
+      throw new EngineError('ROUTE_REFUSED', `${label} is unavailable right now. Choose another tier.`, true);
     if (published.model !== input.model)
       throw new EngineError(
         'ROUTE_REFUSED',
-        `Nectovia now runs ${label} on ${published.label}. Nothing was sent. Send your message again to use it.`,
+        `Nectovia now runs ${label} on ${published.label}. Send your message again to use it.`,
         true,
       );
     // The gateway's legacy account field carries an explicit billing scope for Personal work.
@@ -2524,7 +2524,7 @@ export class EngineService {
     if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
       throw new EngineError(
         'ACCOUNT_CHANGED',
-        `The ${handle.names.short} connection changed after this message was admitted. Nothing was sent.`,
+        `The ${handle.names.short} connection changed before this message could start.`,
       );
     return handle;
   }
@@ -2868,7 +2868,7 @@ export class EngineService {
       { runId: request.runId, ownedTeam: ownedTeamObservation },
     );
     if (admission.model !== request.model || admission.accountRoute !== request.accountRoute)
-      throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed after this role was admitted. Nothing was sent.', true);
+      throw new EngineError('ACCOUNT_CHANGED', 'The selected connection changed before this worker could start.', true);
     let adapter: ModelAdapter;
     if (route === GOOGLE_VERTEX_ROUTE) {
       // Setup needs the exact current descriptor/profile, not a token. Every
@@ -2909,7 +2909,7 @@ export class EngineService {
           false,
         );
         if (fresh.model !== pinned.model || fresh.accountRoute !== pinned.accountRoute)
-          throw new EngineError('ACCOUNT_CHANGED', 'The selected route changed after this role was admitted. Nothing was sent.', true);
+          throw new EngineError('ACCOUNT_CHANGED', 'The selected connection changed before this worker could start.', true);
         const opened = await this.openModelApi(fresh);
         const step = opened.handle.adapter({
           model: fresh.model,
@@ -3405,13 +3405,13 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
               } catch {
                 // Missing or unreadable: said below.
               }
-              return 'The saved Google Vertex AI key is missing or not the one connected. Connect it again in AI setup. Nothing was sent.';
+              return 'The saved Google Vertex AI key is missing or doesn\'t match the connection. Connect it again in AI setup.';
             }
             const identity = await readAdcIdentity(services.env);
             if (!identity)
-              return 'No Google Application Default Credentials were found on this computer. Run `gcloud auth application-default login`, then verify Google Vertex AI in AI setup. Nothing was sent.';
+              return 'No Google Application Default Credentials were found on this computer. Run `gcloud auth application-default login`, then verify Google Vertex AI in AI setup.';
             if (identity.fingerprint !== connection.credential.fingerprint)
-              return 'The Google credential on this computer is not the one Google Vertex AI was verified with. Verify it again in AI setup. Nothing was sent.';
+              return 'The Google credential on this computer doesn\'t match the one checked for Google Vertex AI. Verify it again in AI setup.';
             return null;
           },
           open: async () => {

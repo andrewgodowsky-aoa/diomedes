@@ -122,10 +122,10 @@ describe('a rule and its resolution, in words', () => {
 
   test('which runs rules watch is said from the server answer', () => {
     expect(watchesSentence(['diomedes-loop'])).toBe(
-      `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`,
+      `Trigger rules check only ${AGENT_NAME} jobs. Tools run by external connections aren't checked.`,
     );
     expect(watchesSentence(['diomedes-loop', 'external-work'])).toBe(
-      `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`,
+      `Text rules check AI output from ${AGENT_NAME} jobs and task work on every connection. Claude Code, OpenCode and ACP output has secrets removed first; rules looking for secrets may miss them. Tool rules check only tools ${AGENT_NAME} runs itself. External tools aren't checked.`,
     );
   });
 });

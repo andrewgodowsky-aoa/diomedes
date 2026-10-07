@@ -62,7 +62,7 @@ export function Ledger({
         ? 'You'
         : item.id === task?.id && taskWorker
           ? taskWorker
-          : 'Assistant - model not recorded';
+          : 'AI model not recorded';
   const board = workBoard(state, worker);
   const open = (card: BoardCard) => {
     const need = cardNeed(card, openNeeds);
@@ -132,7 +132,7 @@ export function Ledger({
       )}
       <section id="secNeeds" aria-labelledby="secNeedsH">
         <h3 id="secNeedsH">
-          Needs your input <span className="mono">{board.needs.length}</span>
+          Needs you <span className="mono">{board.needs.length}</span>
         </h3>
         {board.needs.length ? <ul className="bcs">{cards(board.needs, 'Review')}</ul> : <p className="quiet">Nothing right now</p>}
       </section>

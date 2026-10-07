@@ -60,7 +60,7 @@ export function SupervisionSection({
       (error: unknown) => {
         if (!controller.signal.aborted)
           setFailed(
-            error instanceof Error ? error.message : 'Supervision records could not be loaded.',
+            error instanceof Error ? error.message : "Supervision records couldn't be loaded.",
           );
       },
     );
@@ -71,7 +71,7 @@ export function SupervisionSection({
       <h3>Supervision</h3>
       {failed && <p role="alert">{failed}</p>}
       {!failed && records === null && <p role="status">Loading supervision records...</p>}
-      {records?.length === 0 && triggers.length === 0 && <p>Supervision has recorded nothing on this run.</p>}
+      {records?.length === 0 && triggers.length === 0 && <p>No supervision events for this job.</p>}
       {records && records.length + triggers.length > 0 && (
         <ol className="supervision-records">
           {rows(records, triggers).map((row) =>
@@ -233,9 +233,9 @@ export function EscalationBlock({
         },
       );
       if (result.need.state === 'open')
-        setSaid(`Not done: ${result.receipt?.detail ?? 'the route did not accept it.'}`);
+        setSaid(`Not done: ${result.receipt?.detail ?? "the connection didn't accept it."}`);
     } catch (error) {
-      setSaid(error instanceof Error ? error.message : 'The answer could not be sent.');
+      setSaid(error instanceof Error ? error.message : "The answer couldn't be sent.");
     } finally {
       setBusy(false);
     }
@@ -247,7 +247,7 @@ export function EscalationBlock({
         <span>supervision · application action · needs you</span>
       </div>
       <p className="ask">
-        {AGENT_NAME} paused this run: {finding} — continue, redirect, or stop?
+        {AGENT_NAME} paused this job. {finding}
       </p>
       {need.why && <p className="why">{need.why}</p>}
       <p className="why">{need.consequence}</p>

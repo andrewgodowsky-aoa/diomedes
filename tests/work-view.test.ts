@@ -100,7 +100,7 @@ describe('the two views', () => {
   it('calls Automations Routines wherever a person reads them', () => {
     expect(PAID_ABILITIES).toContain('Routines');
     expect(PAID_ABILITIES).not.toContain('Automations');
-    expect(ROUTINES_FREE_VERSION).toMatch(/^Routines are part of a paid plan/);
+    expect(ROUTINES_FREE_VERSION).toMatch(/^Choose a paid plan to use Routines/);
   });
 
   it('keeps the copy free of dashes, italics and exclamation marks', () => {
@@ -121,7 +121,7 @@ describe('the board beside a thread', () => {
   const sessions = [session('s1', 'waiting', 'waiting'), session('s2', 'working', 'working')];
   const records = { tasks, sessions, needs: [need('n1', 'waiting', 's1')], changes: [] };
 
-  it('sorts tasks into Needs your input, Working, Up next and Finished today', () => {
+  it("sorts tasks into Needs you, Working, Up next and Finished today", () => {
     const board = workBoard(records, worker, now);
     expect(board.needs.map((card) => card.taskId)).toEqual(['waiting']);
     expect(board.needs[0]).toMatchObject({ needId: 'n1', meta: 'ran s-model', tone: 'attn' });
@@ -153,7 +153,7 @@ describe('the board beside a thread', () => {
     );
     expect(html).toContain('>Board</h2>');
     expect(html).toContain('Open full board');
-    for (const heading of ['Needs your input', 'Working', 'Up next', 'Finished today']) expect(html).toContain(heading);
+    for (const heading of ["Needs you", 'Working', 'Up next', 'Finished today']) expect(html).toContain(heading);
     expect(html).toContain('Kestrel, 3 open');
   });
 });

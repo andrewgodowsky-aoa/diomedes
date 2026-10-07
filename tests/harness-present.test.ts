@@ -131,7 +131,7 @@ describe('presenting a harness run in the existing vocabulary', () => {
     expect(files.consequence).toMatch(/undo it in Review/);
     const other = needFromWaitingStep(run(), local({ order: 'A-17' }));
     expect(other.consequence).not.toMatch(/so you can undo/i);
-    expect(other.consequence).toMatch(/cannot promise/);
+    expect(other.consequence).toMatch(/Undo isn't guaranteed/);
     const external = needFromWaitingStep(run(), step());
     expect(external.consequence).not.toMatch(/undo/i);
   });
@@ -144,9 +144,9 @@ describe('presenting a harness run in the existing vocabulary', () => {
       }),
     );
     expect(shown.sessionState).toBe('failed');
-    expect(shown.sentence).toMatch(/^Waiting for data/);
+    expect(shown.sentence).toMatch(/^A required file is missing/);
     expect(shown.sentence).not.toContain('a.csv');
-    expect(presentRun(run({ state: 'failed' })).sentence).toMatch(/something went wrong/);
+    expect(presentRun(run({ state: 'failed' })).sentence).toMatch(/The job failed/);
   });
 });
 

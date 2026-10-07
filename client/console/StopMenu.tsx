@@ -136,9 +136,9 @@ export function StopReceiptLine({ receipt }: { receipt: StopReceipt }) {
   return (
     <p className="caption stop-receipt">
       Stopped {SUBJECT[receipt.scope]}.{' '}
-      {receipt.acknowledged ? 'It reached what was running.' : 'Nothing was running to reach.'}
+      {receipt.acknowledged ? 'Active work received the stop request.' : 'No active work.'}
       {cancelled
-        ? ` ${cancelled} queued ${cancelled === 1 ? 'follow-up was' : 'follow-ups were'} cancelled.`
+        ? ` ${cancelled} queued ${cancelled === 1 ? 'follow-up was' : 'follow-ups were'} canceled.`
         : ''}
       {receipt.uncertainEffects.map((sentence) => ` ${sentence}`).join('')}
     </p>
@@ -168,7 +168,7 @@ const CONFIRM: Record<'resume' | 'retry', (route: string, support: string | null
   // A resume the route cannot continue natively is a fresh start, and it is named as one (H02).
   resume: (route, support) =>
     support === 'host'
-      ? `Sends the same request to ${route} in a new thread; ${route} cannot continue this one.`
+      ? `Sends the same request to ${route} in a new thread; ${route} can't continue this one.`
       : `Continues this run on ${route} from where it stopped.`,
   retry: (route) => `Sends the same request to ${route} again, as a new attempt.`,
 };

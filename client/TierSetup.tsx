@@ -73,9 +73,7 @@ export function TierSetup({
         <span className="caption push-right">Owner</span>
       </div>
       <p className="caption ai-route">
-        People choose Efficient, Focused or Thorough, never a route or a model. Choose which of your
-        company accounts, and which model, serves each one. A tier whose account is not connected is
-        refused by name; it never moves to another account.
+        Choose the business AI account and model for each tier. A tier needs its chosen account connected before it can run.
       </p>
       <form
         className="ai-aws-connect ai-provider-connect"
@@ -128,9 +126,7 @@ export function TierSetup({
       <details className="ai-connection-details">
         <summary>Advanced: owner testing</summary>
         <p className="caption">
-          For the owner and technical staff only. Pins one route, and optionally one model, for every
-          tier on this computer while you test it. People still see only the tiers. Clear it when you
-          are done.
+          Test every tier on one connection on this computer, with an optional model choice. Clear the test setting when you're done.
         </p>
         <form
           className="ai-aws-connect ai-provider-connect"

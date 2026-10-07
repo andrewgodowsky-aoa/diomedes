@@ -81,7 +81,7 @@ const body = (req: Request): Record<string, unknown> =>
 const organizationId = (req: Request) => String(req.params.organizationId ?? '');
 
 export const NOT_CONNECTED_REASON =
-  'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
+  'Sign in to Nectovia to read this business\'s credit usage.';
 
 /** Personal work's bought credits, when this app isn't signed in to read them. */
 const NOT_CONNECTED_PERSONAL = 'Sign in to see the credits you bought.';
@@ -310,7 +310,7 @@ export function mountManagedUsageRoutes(
         return {
           state: 'unavailable',
           organizationId: id,
-          reason: 'The account service couldn’t say what this business has bought, so nothing is shown. Nothing is estimated in its place.',
+          reason: 'The account service couldn\'t confirm this business\'s purchases.',
         } satisfies PurchasedUsageState;
       }
     }, false),
@@ -476,7 +476,7 @@ export function mountManagedUsageRoutes(
         return {
           state: 'unavailable',
           organizationId: id,
-          reason: 'The account service couldn’t say what this business has used, so nothing is shown. Nothing is estimated in its place.',
+          reason: 'The account service couldn\'t confirm this business\'s usage.',
         } satisfies UsageState;
       }
       if (answer.organizationId !== id || (answer.state === 'ready' && answer.projection.organizationId !== id))

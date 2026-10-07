@@ -66,7 +66,7 @@ export function awsStateRows(view: AwsConnectionView, nowMs = Date.now()): AwsSt
       text: !spend
         ? 'Not set'
         : spend.capMicroUsd === 0
-          ? 'Not approved: nothing can be sent'
+          ? 'Approval required'
           : `${usd(spend.capMicroUsd)} approved, ${usd(spend.availableMicroUsd)} left`,
       value: !spend || spend.capMicroUsd === 0 ? 'waiting' : spend.availableMicroUsd > 0 ? 'ok' : 'blocked',
     },

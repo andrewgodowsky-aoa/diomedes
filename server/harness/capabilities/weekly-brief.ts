@@ -52,7 +52,7 @@ export const WEEKLY_BRIEF = {
   version: 'v1',
   label: 'Prepare the weekly brief',
   description:
-    'Read the approved exports, compose a source-linked draft and save it for review. Nothing is sent.',
+    'Read the approved exports and save a draft with sources for review.',
   tools: ['read_brief_sources', 'compose_brief', 'save_brief_draft'],
   requestedPermissions: ['write-project-file'],
   approvalPolicy: 'show-first',
@@ -90,7 +90,7 @@ export const WAITING_FOR_DATA = 'waiting_for_data';
 export class WaitingForData extends Error {
   constructor(readonly missing: readonly string[]) {
     super(
-      `Waiting for data: ${missing.join(', ')} could not be read, so nothing was written.`,
+      `These required files couldn't be read: ${missing.join(', ')}. Check them before starting again.`,
     );
     this.name = WAITING_FOR_DATA;
   }
@@ -196,7 +196,7 @@ export function registerWeeklyBrief(
     if (!manifest)
       throw new ApiError(
         409,
-        'The setup revision this run was admitted under is no longer recorded, so nothing was written.',
+        'The setup version for this job is missing. Check the business setup before starting again.',
         { code: 'configuration_revision_missing' },
       );
     return manifest;
@@ -317,7 +317,7 @@ export function registerWeeklyBrief(
   tools.register({
     ...base,
     name: 'save_brief_draft',
-    description: 'Save the draft to the pinned destination for review. Nothing is sent.',
+    description: 'Save the draft to the approved destination for review.',
     effect: 'idempotent',
     effectClass: 'idempotent-write',
     permission: 'write-project-file',

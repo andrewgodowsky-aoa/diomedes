@@ -101,7 +101,7 @@ export class ReadyScheduler {
     assertReadable(READY_QUEUE, saved);
     const parsed = globalFileSchema.safeParse(saved);
     if (!parsed.success)
-      throw new Error('The saved Ready queue pause is unreadable. Nothing was rewritten.');
+      throw new Error('The saved Ready queue pause couldn\'t be read.');
     this.allPaused = parsed.data.paused;
     this.store.on('change', this.onChange);
     this.store.on('settings', this.onChange);
@@ -344,7 +344,7 @@ export class ReadyScheduler {
         current.sessionId = outcome.sessionId;
         this.store.addEntry(state, {
           kind: 'ready-start',
-          sentence: `Diomedes started ${name} from the Ready queue.`,
+          sentence: `Nectovia started ${name} automatically from Ready.`,
           actor: 'diomedes',
           taskId: current.taskId,
           sessionId: outcome.sessionId,
@@ -354,7 +354,7 @@ export class ReadyScheduler {
         current.reason = outcome.reason;
         this.store.addEntry(state, {
           kind: 'ready-start',
-          sentence: `Diomedes did not start ${name} from the Ready queue: ${outcome.reason}`,
+          sentence: `Nectovia couldn't start ${name} from Ready. ${outcome.reason}`,
           actor: 'diomedes',
           taskId: current.taskId,
         });
@@ -407,8 +407,8 @@ export class ReadyScheduler {
         this.store.addEntry(state, {
           kind: 'ready-queue',
           sentence: autoStart
-            ? 'You turned on starting Ready work automatically.'
-            : 'You turned off starting Ready work automatically.',
+            ? 'You enabled automatic starts from Ready.'
+            : 'You disabled automatic starts from Ready.',
           actor: 'you',
         });
         changed = true;
@@ -417,7 +417,7 @@ export class ReadyScheduler {
         queue.paused = pauseOf(reason, at);
         this.store.addEntry(state, {
           kind: 'ready-queue',
-          sentence: `You paused the Ready queue: ${queue.paused.reason}.`,
+          sentence: `You paused starts from Ready. ${queue.paused.reason}`,
           actor: 'you',
         });
         changed = true;
@@ -425,7 +425,7 @@ export class ReadyScheduler {
         queue.paused = null;
         this.store.addEntry(state, {
           kind: 'ready-queue',
-          sentence: 'You resumed the Ready queue.',
+          sentence: 'You resumed starts from Ready.',
           actor: 'you',
         });
         changed = true;

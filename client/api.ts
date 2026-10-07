@@ -61,7 +61,7 @@ export async function api<T>(
     throw new ApiError(
       payload.error?.message ??
         payload.message ??
-        (typeof payload.error === 'string' ? payload.error : 'The request could not be completed.'),
+        (typeof payload.error === 'string' ? payload.error : "The request couldn't be completed."),
       response.status,
       payload,
     );
@@ -257,7 +257,7 @@ export class SettingsConflict extends Error {
     readonly settings: Settings,
     readonly etag: string,
   ) {
-    super('Settings changed while this screen was saving. The saved settings were reloaded.');
+    super('Settings changed during saving. Review the latest settings before saving again.');
   }
 }
 
@@ -274,7 +274,7 @@ function failure(payload: Record<string, unknown>, status: number): ApiError {
   return new ApiError(
     (typeof nested === 'object' ? nested?.message : undefined) ??
       (typeof payload.message === 'string' ? payload.message : undefined) ??
-      (typeof nested === 'string' ? nested : 'The request could not be completed.'),
+      (typeof nested === 'string' ? nested : "The request couldn't be completed."),
     status,
     payload,
   );

@@ -523,7 +523,7 @@ export function triggerViews(
 ): StreamTriggerView[] {
   return firings.map((firing): StreamTriggerView => {
     if (firing.handling === 'recorded')
-      return { firing, state: 'recorded', outcome: 'Recorded. Nothing else was done.' };
+      return { firing, state: 'recorded', outcome: 'Recorded.' };
     if (firing.handling === 'held-for-you') {
       const need = needs.find(
         (item) =>
@@ -531,14 +531,14 @@ export function triggerViews(
           item.harness?.runId === firing.runId &&
           item.harness.intent.stepId === firing.stepId,
       );
-      if (!need) return { firing, state: 'pending', outcome: 'Held before it ran; asking you.' };
+      if (!need) return { firing, state: 'pending', outcome: 'Approval request pending.' };
       return need.state === 'open'
-        ? { firing, state: 'waiting', outcome: 'Held before it ran. It waits for your answer.' }
+        ? { firing, state: 'waiting', outcome: 'Approve this step to continue.' }
         : need.state === 'go-ahead'
-          ? { firing, state: 'released', outcome: 'Held before it ran, then you said go ahead.' }
+          ? { firing, state: 'released', outcome: 'You approved this step.' }
           : need.state === 'declined'
-            ? { firing, state: 'declined', outcome: 'Held before it ran; you declined, so it never ran.' }
-            : { firing, state: 'expired', outcome: 'Held before it ran; the run ended before you answered, so it never ran.' };
+            ? { firing, state: 'declined', outcome: 'You declined this step.' }
+            : { firing, state: 'expired', outcome: 'The job ended before this step was approved.' };
     }
     const handled = supervision.find(
       (record) =>

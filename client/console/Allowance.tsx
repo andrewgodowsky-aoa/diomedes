@@ -81,7 +81,7 @@ export function Allowance({
 
   return (
     <section className="ws-section">
-      <h3>Managed model access</h3>
+      <h3>Nectovia AI usage</h3>
 
       {summary ? (
         <>
@@ -92,7 +92,7 @@ export function Allowance({
               <dd className="mono">{formatMoney(summary.availableMicroUsd)}</dd>
             </div>
             <div>
-              <dt>Held for work in flight</dt>
+              <dt>Reserved for ongoing work</dt>
               <dd className="mono">{formatMoney(summary.pendingMicroUsd)}</dd>
             </div>
             {summary.uncertainMicroUsd > 0 && (
@@ -101,8 +101,8 @@ export function Allowance({
                 <dd className="mono">{formatMoney(summary.uncertainMicroUsd)}</dd>
                 {/* The one number people ask about. Say why it is not back. */}
                 <dd className="ws-why">
-                  These calls may already have cost money upstream. The hold stays until the
-                  provider says what happened, so nothing is spent twice and counted once.
+                  These requests may have been charged. This amount stays reserved until the
+                  service confirms the outcome.
                 </dd>
               </div>
             )}
@@ -129,9 +129,9 @@ export function Allowance({
 
       {summary?.exhausted && (
         <p className="ws-error" role="status">
-          This period’s allowance is used up. New managed calls stop here. Waiting for the next
-          period, a purchase, or a route this business already permits are the choices — nothing
-          switches on its own.
+          This period’s allowance is used up. New Nectovia requests are stopped.
+          Buy more usage or choose a connection this business
+          permits to continue before the next period.
         </p>
       )}
 
@@ -141,12 +141,11 @@ export function Allowance({
           <dd>{included}.</dd>
         </div>
         <div>
-          <dt>Does not</dt>
+          <dt>Excluded</dt>
           <dd>{excluded}.</dd>
           <dd className="ws-why">
-            A provider-run tool has no price anyone can know before the call, so it cannot be held
-            against a limit. It stays available on a business’s own provider key, where the business
-            holds a risk it can see.
+            These tools have no known price before use. Use your business’s own provider account
+            and accept the charges there.
           </dd>
         </div>
       </dl>
@@ -164,4 +163,4 @@ export function Allowance({
 
 /** The host's reason when it has no allowance surface to ask. */
 const UNREACHABLE_TEXT =
-  'This installation has no entitlement service, so there is no allowance to show and no managed usage to bill. What follows is what such an allowance would cover, so it can be read before there is anything to buy.';
+  "This installation can't show or bill Nectovia AI usage. The plan details describe what it would cover.";

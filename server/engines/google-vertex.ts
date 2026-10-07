@@ -198,13 +198,13 @@ export function vertexRateCard(at: Date): ModelRateCard {
   if (!entry)
     throw new ModelApiError(
       'vertex_rate_card_missing',
-      'No Gemini 3.8 Flash price is recorded for this date. Nothing was sent.',
+      'No Gemini 3.8 Flash price is recorded for this date.',
       false,
     );
   if (time >= Date.parse(entry.verifiedUntil))
     throw new ModelApiError(
       'vertex_rate_card_stale',
-      `The recorded Gemini 3.8 Flash price (${entry.card.version}) needs re-checking against Google’s pricing page before more calls are priced. Nothing was sent.`,
+      `The recorded Gemini 3.8 Flash price (${entry.card.version}) needs re-checking against Google’s pricing page before more calls are priced.`,
       false,
     );
   return entry.card;
@@ -216,7 +216,7 @@ export function requireCurrentVertexCard(card: ModelRateCard, at: Date) {
   if (card.version !== current.version)
     throw new ModelApiError(
       'vertex_rate_card_expired',
-      `The price this call was prepared with (${card.version}) is no longer in force. Nothing was sent.`,
+      `The price this call was prepared with (${card.version}) is no longer in force.`,
       false,
     );
 }
@@ -323,13 +323,13 @@ export async function mintVertexToken(
   if (!identity)
     throw new ModelApiError(
       'vertex_credential_missing',
-      'No Google Application Default Credentials were found. Run `gcloud auth application-default login` and verify the connection in AI setup. Nothing was sent.',
+      'No Google Application Default Credentials were found. Run `gcloud auth application-default login` and verify the connection in AI setup.',
       false,
     );
   if (identity.fingerprint !== connection.credential.fingerprint)
     throw new ModelApiError(
       'vertex_credential_changed',
-      'The Google credential on this computer is not the one this connection was verified with. Verify it again in AI setup. Nothing was sent.',
+      'The Google credential on this computer isn\'t the one this connection was verified with. Verify it again in AI setup.',
       false,
     );
   const auth = new GoogleAuth({
@@ -345,12 +345,12 @@ export async function mintVertexToken(
     // The library's message can quote the file; only the fact is reported.
     throw new ModelApiError(
       'vertex_credential_refused',
-      'Google did not issue an access token for the saved credential. Sign in again with `gcloud auth application-default login`. Nothing was sent.',
+      'Google didn\'t issue an access token for the saved credential. Sign in again with `gcloud auth application-default login`.',
       false,
     );
   }
   if (!result.token)
-    throw new ModelApiError('vertex_credential_refused', 'Google issued no access token. Nothing was sent.', false);
+    throw new ModelApiError('vertex_credential_refused', 'Google issued no access token.', false);
   const expiry = result.res?.data?.expiry_date;
   return { token: result.token, expiresAt: typeof expiry === 'number' ? new Date(expiry).toISOString() : null };
 }
@@ -629,7 +629,7 @@ export function inspectVertexBody(text: string) {
     body = null;
   }
   const refuse = (why: string) => {
-    throw new ModelApiError('vertex_request_refused', `The request ${why}. Nothing was sent.`, false);
+    throw new ModelApiError('vertex_request_refused', `The request ${why}.`, false);
   };
   if (!body || !Array.isArray(body.contents)) return refuse('was not a Vertex generateContent body');
   if (body.cachedContent !== undefined) return refuse('named an explicit cache');

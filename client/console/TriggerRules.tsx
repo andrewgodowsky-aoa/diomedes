@@ -43,7 +43,7 @@ const WHAT_IT_DOES: Record<(typeof STREAM_INTERVENTIONS)[number], string> = {
   stop: 'stop the run and ask you',
 };
 
-const errorText = (failure: unknown) => (failure instanceof Error ? failure.message : 'The rules could not be saved.');
+const errorText = (failure: unknown) => (failure instanceof Error ? failure.message : "The rules couldn't be saved.");
 
 export function TriggerRules({
   authority,
@@ -162,7 +162,7 @@ export function TriggerRules({
         {decision && <p className="trigger-rule-decision">{decisionLine(decision)}</p>}
         {deleting === rule.id && (
           <div className="trigger-rule-confirm" role="group" aria-label={`Delete ${rule.id}`}>
-            <span>Delete {rule.id}? Firings it already recorded stay in the run records.</span>
+            <span>Delete {rule.id}? Previous matches remain in the job records.</span>
             <button
               type="button"
               className="verb"
@@ -443,8 +443,8 @@ function RuleForm({
         <summary>Requirement key</summary>
         <label className="field">
           <span>
-            Two rules meet only on the same key, and one of them governs it; a project rule on an organization
-            rule&apos;s key can tighten it and never loosen it. Empty means trigger:{draft.id || '<id>'}.
+            Rules with the same key share one requirement. A project rule can only make a business requirement stricter.
+            Leave empty to use trigger:{draft.id || '<id>'}.
           </span>
           <input
             value={draft.constrains}

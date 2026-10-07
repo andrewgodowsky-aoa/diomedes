@@ -154,7 +154,7 @@ export class SoftwarePackService {
       if (item.state !== 'running' || this.live.has(item.id)) continue;
       item.state = 'uncertain';
       item.endedAt = at;
-      item.detail = 'Diomedes stopped while this was running, so what it did is not confirmed. It will not run it again on its own.';
+      item.detail = 'Nectovia stopped during this action. Its result isn\'t confirmed. Check what happened before trying again.';
       this.store.addEntry(state, { actor: 'diomedes', kind: 'pack-interrupted', origin: SOFTWARE_PACK_ORIGIN, sentence: item.detail });
       changed = true;
     }
@@ -305,7 +305,7 @@ export class SoftwarePackService {
       sentence: declared.length
         ? `You declared ${declared.length === 1 ? '1 project command' : `${declared.length} project commands`}: ${declared
             .map((command) => command.command)
-            .join(', ')}. Declaring runs nothing; each run asks first.`
+            .join(', ')}.`
         : 'You cleared the declared project commands.',
     });
     await this.store.persist(state);
@@ -343,7 +343,7 @@ export class SoftwarePackService {
     }
     const waiting = (await this.runs.get(run.id)).steps.find((step) => step.intent.stepId === STEP);
     if (waiting?.state !== 'waiting_approval')
-      throw new ApiError(500, 'The request did not stop for its approval, so nothing was run.');
+      throw new ApiError(500, 'The request couldn\'t reach its approval step.');
     return { runId: run.id, intentHash: waiting.intentHash };
   }
 
@@ -432,7 +432,7 @@ export class SoftwarePackService {
         stderrTail: '',
         fingerprint: null,
         historyMark: null,
-        detail: `Waiting for your OK to run ${command.command}${command.cwd ? ` in ${command.cwd}` : ''}. Nothing runs until you say go ahead.`,
+        detail: `Approve to run ${command.command}${command.cwd ? ` in ${command.cwd}` : ''}.`,
       };
       const record = this.record(state);
       record.runs.push(entry);
@@ -464,7 +464,7 @@ export class SoftwarePackService {
       if (answer.decision === 'declined') {
         found.state = 'declined';
         found.endedAt = found.decidedAt;
-        found.detail = 'You declined. Nothing ran.';
+        found.detail = 'You declined.';
       } else {
         found.state = 'running';
         this.live.add(found.id);
@@ -479,7 +479,7 @@ export class SoftwarePackService {
         sentence:
           answer.decision === 'go-ahead'
             ? `You approved running ${found.command}${where}, once.`
-            : `You declined running ${found.command}${where}. Nothing ran.`,
+            : `You declined running ${found.command}${where}.`,
       });
       await this.store.persist(state);
       return structuredClone(found);
@@ -524,7 +524,7 @@ export class SoftwarePackService {
         // Something unforeseen: H12 recorded the effect as uncertain, and nothing re-runs it.
         found.state = 'uncertain';
         found.endedAt = now();
-        found.detail = `Diomedes could not confirm how this ended (${failure}). It will not run it again on its own.`;
+        found.detail = `Nectovia couldn't confirm the result (${failure}). Check what happened before trying again.`;
       }
       this.store.addEntry(state, {
         actor: 'diomedes',
@@ -600,8 +600,8 @@ export class SoftwarePackService {
         endedAt: null,
         detail:
           operation === 'add'
-            ? `Waiting for your OK to add ${WORKTREE_FOLDER}/${name} on a new branch ${branch}.`
-            : `Waiting for your OK to remove ${WORKTREE_FOLDER}/${name}. It is removed only if nothing in it is uncommitted.`,
+            ? `Approve to add ${WORKTREE_FOLDER}/${name} on a new branch ${branch}.`
+            : `Approve to remove ${WORKTREE_FOLDER}/${name}. Commit or discard any uncommitted changes first.`,
       };
       this.record(state).worktreeRequests.push(request);
       await this.store.persist(state);
@@ -628,7 +628,7 @@ export class SoftwarePackService {
       if (answer.decision === 'declined') {
         found.state = 'declined';
         found.endedAt = found.decidedAt;
-        found.detail = 'You declined. Nothing changed.';
+        found.detail = 'You declined.';
       } else {
         found.state = 'running';
         this.live.add(found.id);
@@ -639,7 +639,7 @@ export class SoftwarePackService {
         kind: 'pack-worktree-approval',
         origin: SOFTWARE_PACK_ORIGIN,
         taskId: found.taskId,
-        sentence: answer.decision === 'go-ahead' ? `You approved ${what}, once.` : `You declined ${what}. Nothing changed.`,
+        sentence: answer.decision === 'go-ahead' ? `You approved ${what}, once.` : `You declined ${what}.`,
       });
       await this.store.persist(state);
       return structuredClone(found);
@@ -675,7 +675,7 @@ export class SoftwarePackService {
       found.endedAt = now();
       if (!outcome) {
         found.state = 'uncertain';
-        found.detail = `Diomedes could not confirm what happened (${failure}). Check ${found.path} before trying again.`;
+        found.detail = `Nectovia couldn't confirm what happened (${failure}). Check ${found.path} before trying again.`;
       } else {
         found.state = outcome.outcome;
         found.detail = outcome.detail;

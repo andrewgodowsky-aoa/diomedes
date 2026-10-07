@@ -24,7 +24,7 @@ import { renderDiagram, type DiagramResult } from './mermaid-render';
 // a static page a person can scroll and read at the width they choose.
 
 /** Why a source whose links cannot be made inert is not shown. */
-const UNSETTLED = 'Its links could not be switched off: its markup reads differently each time it is read.';
+const UNSETTLED = "Can't show this file safely. Its links couldn't be disabled.";
 
 /** The artifact as written: mono, unwrapped, scrollable, focusable. */
 export function SourceView({ source, label = 'Source' }: { source: string; label?: string }) {
@@ -159,7 +159,7 @@ function DiagramView({ source, title }: { source: string; title: string }) {
       ) : result.ok ? (
         <StillFrame kind="diagram" svg={result.svg} source={source} tokens={tokens} label={`Diagram: ${title}`} />
       ) : (
-        <ArtifactError heading="This diagram could not be drawn." problem={result.problem} source={source} />
+        <ArtifactError heading="Couldn't draw this diagram." problem={result.problem} source={source} />
       )}
     </div>
   );

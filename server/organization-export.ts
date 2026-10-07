@@ -98,7 +98,7 @@ function split<T>(items: readonly T[], overhead: number, limit: number, what: st
     const text = JSON.stringify(item, null, 2);
     const cost = bytes(text) + 4 * (text.split('\n').length) + 2;
     if (overhead + cost > limit)
-      throw new ApiError(413, `One of the business's ${what} is too large to write to a file, so the export stopped. Nothing was written.`, {
+      throw new ApiError(413, `One of the business's ${what} is too large to write to a file, so the export stopped.`, {
         code: 'export_too_large',
       });
     if (size + cost > limit && chunks.at(-1)!.length > 0) {
@@ -148,7 +148,7 @@ export function assembleArchive(payload: ReadOrganizationExport, local: LocalRec
       const value = envelope(chunk, index + 1, chunks.length);
       const text = json(value);
       if (bytes(text) > Math.min(limit, MAX_TEXT_BYTES))
-        throw new ApiError(413, `The business's ${name} records are too large to write to one file, so the export stopped. Nothing was written.`, {
+        throw new ApiError(413, `The business's ${name} records are too large to write to one file, so the export stopped.`, {
           code: 'export_too_large',
         });
       files.push({ path: `${options.folder}/${path}`, text, value });

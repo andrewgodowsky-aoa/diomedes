@@ -41,10 +41,10 @@ import type { IndividualBillingCycle } from '../../shared/individual-period.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
-export const AGENT_PROJECT_UNLINKED = 'This project is not linked to one business. An owner or administrator must link it before the Nectovia Agent can work here. Nothing was sent.';
+export const AGENT_PROJECT_UNLINKED = 'This project isn\'t linked to one business. An owner or administrator must link it before the Nectovia Agent can work here.';
 const MANAGED_INFERENCE: AccessFeature = 'managed-inference';
 /** Why Diomedes-funded work is refused for a business whose plan has the Agent but not included usage. */
-export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS[MANAGED_INFERENCE]} isn't part of this business's plan, so the Nectovia Agent can't answer here. Nothing was sent.`;
+export const MANAGED_USAGE_NOT_INCLUDED = `${FEATURE_LABELS[MANAGED_INFERENCE]} isn't part of this business's plan, so the Nectovia Agent can't answer here.`;
 
 export interface AgentWork {
   phase: 'admit' | 'dispatch';

@@ -86,7 +86,7 @@ function rowFor(project: Project, named: number): BriefRow | null {
       ...base,
       state: 'attn',
       label: 'Needs you',
-      sentence: `${countWord(unnamed)} ${named > 0 ? 'more ' : ''}${unnamed === 1 ? 'thing is' : 'things are'} waiting on you.`,
+      sentence: `${countWord(unnamed)} ${named > 0 ? 'more ' : ''}${unnamed === 1 ? 'item needs' : 'items need'} your review.`,
     };
   if (status.working > 0)
     return {
@@ -168,7 +168,7 @@ export function homeBrief(
         ? `${countWord(running)} ${running === 1 ? 'run is' : 'runs are'} working.`
         : allDone
           ? 'Every task on your lists is done.'
-          : 'Nothing is waiting on you.';
+          : 'No items need your review.';
   return {
     date: briefDate(now, locale),
     greeting: greetingFor(now.getHours()),
@@ -192,7 +192,7 @@ export function quietLine(model: Pick<HomeBriefModel, 'more' | 'quiet'>): string
     );
   if (model.quiet > 0)
     parts.push(
-      `${countWord(model.quiet)} ${model.more > 0 ? 'other ' : ''}${model.quiet === 1 ? 'project is' : 'projects are'} quiet.`,
+      `${countWord(model.quiet)} ${model.more > 0 ? 'other ' : ''}${model.quiet === 1 ? 'project has' : 'projects have'} no activity to report.`,
     );
   return parts.length ? parts.join(' ') : null;
 }

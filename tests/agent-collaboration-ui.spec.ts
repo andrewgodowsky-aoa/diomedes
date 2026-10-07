@@ -145,7 +145,7 @@ async function openStart(page: Page, value: Task) {
   await page.getByRole('complementary', { name: 'This project' }).getByRole('button', { name: 'Loop run' }).click();
   const form = page.getByRole('form', { name: `Start a ${AGENT_NAME} work loop` });
   await expect(form).toBeVisible();
-  for (const label of ['Route', 'Team lead', 'Team member', 'Helper profile', 'Jev review', 'Goal'])
+  for (const label of ['Route', 'Team lead', 'Team member', 'Helper profile', "AI review", 'Goal'])
     await expect(form.getByLabel(label, { exact: true })).toHaveAccessibleName(label);
   await form.getByLabel('Route', { exact: true }).selectOption('google-vertex');
   return form;
@@ -166,7 +166,7 @@ async function choose(form: Locator) {
   await form.getByLabel('Team lead', { exact: true }).selectOption(SCRIPTED_LEAD);
   await form.getByLabel('Team member', { exact: true }).selectOption(SCRIPTED_MEMBER);
   await form.getByLabel('Helper profile', { exact: true }).selectOption(helperProfileId);
-  await form.getByLabel('Jev review', { exact: true }).selectOption(SCRIPTED_REVIEW);
+  await form.getByLabel("AI review", { exact: true }).selectOption(SCRIPTED_REVIEW);
   await form.getByLabel(/^Turns/).fill('12');
   await form.getByRole('checkbox', { name: /^Send the goal and the files it reads/ }).check();
   await expect(form.getByRole('checkbox', { name: 'inventory.txt', exact: true })).toBeChecked();
@@ -250,9 +250,9 @@ test('selection: only the fixed inventory review is offered and clearing choices
     ],
   } }));
   const form = await openStart(page, value);
-  await expect(form.getByLabel('Jev review', { exact: true }).locator('option[value="forged-review-connection"]')).toHaveCount(0);
+  await expect(form.getByLabel("AI review", { exact: true }).locator('option[value="forged-review-connection"]')).toHaveCount(0);
   await choose(form);
-  for (const label of ['Team lead', 'Team member', 'Helper profile', 'Jev review'])
+  for (const label of ['Team lead', 'Team member', 'Helper profile', "AI review"])
     await form.getByLabel(label, { exact: true }).selectOption('');
   const requests: Record<string, any>[] = [];
   await page.route(startPattern, route => {
@@ -339,7 +339,7 @@ test('selection: unavailable host qualification never creates ready choices or b
   } }));
   const form = await openStart(page, value);
   await expect(form.getByText('Collaboration is unavailable: no billing-qualified host is configured.', { exact: true })).toBeVisible();
-  for (const label of ['Team lead', 'Team member', 'Helper profile', 'Jev review']) await expect(form.getByLabel(label, { exact: true })).toBeDisabled();
+  for (const label of ['Team lead', 'Team member', 'Helper profile', "AI review"]) await expect(form.getByLabel(label, { exact: true })).toBeDisabled();
   await expect(form.getByRole('button', { name: 'Start loop run' })).toBeEnabled();
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
 });

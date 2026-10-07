@@ -1097,7 +1097,7 @@ export class FundingService {
           throw new FundingError(409, 'A retry or child names an attempt under the same job.', 'parent_attempt_mismatch');
       }
       if (cycle && !cycleContains(cycle, at))
-        throw new FundingError(409, 'This billing period has ended, so its credits fund nothing new. Nothing was reserved.', 'period_ended');
+        throw new FundingError(409, 'This billing period has ended. Its credits can\'t fund new work.', 'period_ended');
       const periodId = cycle ? individualCycleId(cycle) : periodIdFor(at);
       let period = await tx.period(tenantId, organizationId, periodId);
       // No billing period, and the person pays as they go: bought credits only, on the scope's bought-credits row.
@@ -1215,7 +1215,7 @@ export class FundingService {
       return { expired: false as const, attempt: { ...attempt, dispatchedAt: at } };
     });
     if (outcome.expired)
-      throw new FundingError(409, 'This billing period ended before the request was sent. Nothing was sent, and its hold was released.', 'period_ended');
+      throw new FundingError(409, 'This billing period ended before the request could be sent. Its usage hold was released.', 'period_ended');
     return outcome.attempt;
   }
 

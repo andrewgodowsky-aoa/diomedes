@@ -542,7 +542,7 @@ export class VerificationService {
         };
       const verdict = parseVerificationVerdict(answer.text);
       if (!verdict)
-        return { ...base, outcome: 'incomplete', sentence: 'The reviewer answered without a readable verdict; prose is never a verdict.' };
+        return { ...base, outcome: 'incomplete', sentence: 'The reviewer answered without a readable verdict.' };
       const note = verdict.note || 'No reason given.';
       return {
         ...base,

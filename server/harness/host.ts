@@ -328,7 +328,7 @@ class ProjectRunStore implements RunStore {
     if (this.duplicates.has(runId))
       throw new HarnessError(
         'duplicate_run',
-        'This run id appears in more than one project. Its files were left unchanged.',
+        'This run id appears in more than one project.',
       );
     const projectId = this.locations.get(runId);
     if (!projectId) return null;

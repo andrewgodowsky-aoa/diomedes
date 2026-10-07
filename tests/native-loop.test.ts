@@ -347,7 +347,7 @@ describe('approval, replay and restart', () => {
     await expect(loop().run('loop-5', 'host', 'Write the report.', principal)).rejects.toBeInstanceOf(Suspended);
     let run = await runs.get('loop-5');
     expect(run.state).toBe('waiting');
-    expect(loopOutcome(loopView(run), null)).toMatchObject({ state: 'waiting', label: 'Waiting for your OK' });
+    expect(loopOutcome(loopView(run), null)).toMatchObject({ state: 'waiting', label: 'Needs your OK' });
     expect(writes).toEqual([]);
     // The write's scope was bound by the host, not chosen by the model.
     expect(run.steps.find((step) => step.intent.stepId === 'tool:1')?.intent.input).toEqual({ path: 'report.md', text: '# Report\n\nOrder 1182.' });

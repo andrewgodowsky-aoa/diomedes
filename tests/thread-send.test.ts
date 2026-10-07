@@ -42,7 +42,7 @@ describe('planThreadSend', () => {
   test('a playbook is refused on a model-API conversation rather than dropped', () => {
     const planned = planThreadSend(on('openrouter'), 'ask', 'weekly-brief');
     expect(planned).toMatchObject({ kind: 'refuse' });
-    if (planned.kind === 'refuse') expect(planned.reason).toMatch(/^Playbooks do not run in OpenRouter/);
+    if (planned.kind === 'refuse') expect(planned.reason).toMatch(/^OpenRouter conversations can't use playbooks\./);
     // A kept-session engine ran playbooks on the direct request path before its conversation
     // existed. The conversation takes no playbook yet, so that message keeps the direct path
     // rather than being refused.
@@ -109,7 +109,7 @@ describe('the host is asked, and Stop names the command', () => {
     expect(await readThreadRoute('P 1', 'T1')).toEqual({ route: 'aws-bedrock', refusal: null });
     expect(fetchMock.mock.calls[0][0]).toBe('/api/projects/P%201/threads/T1/work-style');
     fetchMock.mockResolvedValueOnce(reply(200, { style: null }));
-    await expect(readThreadRoute('P1', 'T1')).rejects.toThrow(/Nothing was sent/);
+    await expect(readThreadRoute('P1', 'T1')).rejects.toThrow("Nectovia couldn't identify this thread's connection.");
   });
 
   const issued = { projectId: 'P1', threadId: 'T1', commandId: 'cmd-1' };

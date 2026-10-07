@@ -318,7 +318,7 @@ describe('approval-decisions client', () => {
   test('both responses lost keeps pending and stops at two attempts', async () => {
     fetchMock.mockRejectedValue(new TypeError('down'));
     await expect(decideApproval(PROJECT, baseNeed(), 'go-ahead')).rejects.toThrow(
-      'could not be confirmed',
+      'couldn\'t be confirmed',
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(readPending()?.command.commandId).toBe('test-uuid-1');
@@ -371,7 +371,7 @@ describe('approval-decisions client', () => {
   test('mere 200 without matching receipt stays uncertain', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => baseNeed() });
     await expect(decideApproval(PROJECT, baseNeed(), 'go-ahead')).rejects.toThrow(
-      'could not be confirmed',
+      'couldn\'t be confirmed',
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(readPending()).not.toBeNull();
@@ -620,7 +620,7 @@ describe('approval-decisions client', () => {
     const badKey = pendingKey(PROJECT, 'need-bad');
     storage.setItem(badKey, '{broken');
     const err = reconcileApprovals(PROJECT, [decidedNeed(goodId)]);
-    expect(err?.message).toContain('could not be checked');
+    expect(err?.message).toContain('couldn\'t be checked');
     expect(storage.getItem(badKey)).toBe('{broken');
     expect(readPending()).toBeNull();
   });
@@ -631,7 +631,7 @@ describe('approval-decisions client', () => {
     const commandId = readPending()?.command.commandId as string;
     const mismatched = decidedNeed(commandId, 'go-ahead', { scope: 'other-scope' });
     const err = reconcileApprovals(PROJECT, [mismatched]);
-    expect(err?.message).toContain('could not be checked');
+    expect(err?.message).toContain('couldn\'t be checked');
     expect(readPending()).not.toBeNull();
   });
 
@@ -666,7 +666,7 @@ describe('approval-decisions client', () => {
         );
       });
       await expect(decideApproval(PROJECT, baseNeed(), 'go-ahead')).rejects.toThrow(
-        'could not be confirmed',
+        'couldn\'t be confirmed',
       );
       expect(readPending()).not.toBeNull();
     },

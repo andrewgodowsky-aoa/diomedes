@@ -62,7 +62,7 @@ test('every Work route offers what its contract declares and nothing it does not
   expect(unknown.controls.retry).toEqual({
     control: 'retry',
     support: null,
-    note: 'No route contract is registered for this route.',
+    note: 'This connection doesn\'t support this control.',
   });
   expect(unknown.stopScopes).toEqual(['task', 'queued']);
 });

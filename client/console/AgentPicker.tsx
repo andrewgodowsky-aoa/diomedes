@@ -151,7 +151,7 @@ export function AgentPicker({
         <small>
           {gap ??
             (blocked
-              ? (item.compatibility.unmet[0]?.detail ?? 'This engine cannot support this worker.')
+              ? (item.compatibility.unmet[0]?.detail ?? "This connection can't use this worker.")
               : item.summary)}
         </small>
       </button>
@@ -167,7 +167,7 @@ export function AgentPicker({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Worker for this thread"
-        title="Which worker does this. It does not change what the worker may do."
+        title="Choose the worker for this thread"
         onClick={() => setOpen(!open)}
       >
         <span className="eng">{profileId ? 'Profile' : 'Agent'}</span>
@@ -193,8 +193,8 @@ export function AgentPicker({
                 <span className="id">{AUTO_AGENT}</span>
                 <small>
                   {autoName
-                    ? `Nectovia picks the worker for the mode. In ${mode} that is ${autoName}.`
-                    : 'Nectovia picks the worker for the mode.'}
+                    ? `${autoName} is the default for ${mode}.`
+                    : 'Use the default worker for this mode.'}
                 </small>
               </button>
               {onPickProfile && profiles.length > 0 && (
@@ -248,8 +248,7 @@ export function AgentPicker({
               )}
               {agents.length === 0 && <p className="note">No workers are available here.</p>}
               <div className="note">
-                <b>Choosing a worker does not change what it may do.</b> Permissions decide that,
-                and each worker may be narrower still.
+                Permissions apply to every worker. Some workers have further limits.
               </div>
             </>
           )}

@@ -222,10 +222,10 @@ export function decisionLine(decision: StreamRuleDecision): string {
 export function watchesSentence(watches: readonly string[] | undefined): string {
   const loop = !watches || watches.includes('diomedes-loop');
   if (loop && watches?.includes('external-work'))
-    return `Text rules watch what the model writes, on ${AGENT_NAME} work loop runs and on task work on every engine; on Claude Code, OpenCode and the ACP engines they read it after secrets are removed, so a rule looking for a secret may not fire there. Tool rules watch the tool calls ${AGENT_NAME} runs itself. Codex, Claude Code, OpenCode and other external engines run their own tools, and those are not watched.`;
+    return `Text rules check AI output from ${AGENT_NAME} jobs and task work on every connection. Claude Code, OpenCode and ACP output has secrets removed first; rules looking for secrets may miss them. Tool rules check only tools ${AGENT_NAME} runs itself. External tools aren't checked.`;
   return loop
-    ? `Trigger rules watch ${AGENT_NAME} work loop runs only. Runs on Codex, Claude Code, OpenCode and other external engines use their own tools and are not watched.`
-    : 'Trigger rules watch no runs in this build.';
+    ? `Trigger rules check only ${AGENT_NAME} jobs. Tools run by external connections aren't checked.`
+    : "Trigger rules aren't available for these jobs.";
 }
 
 export const RULE_TEXT_LIMIT = STREAM_RULE_LIMITS.text;

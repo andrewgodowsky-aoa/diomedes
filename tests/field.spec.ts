@@ -156,8 +156,8 @@ test('C03: the Board shows the Ready task, and Show-me-first confirms instead of
   await expect(board).toBeVisible();
   // The board starts compact, which hides the column captions; expand it first.
   await board.getByRole('button', { name: 'compact', exact: true }).click();
-  await expect(board.getByText('Start explicitly to run', { exact: true })).toBeVisible();
-  await expect(board.getByText('waits on you', { exact: true })).toBeVisible();
+  await expect(board.getByText("Start the task", { exact: true })).toBeVisible();
+  await expect(board.getByText('Review the result', { exact: true })).toBeVisible();
   // The board states the thread's policy read-only; it is not a grant control.
   await expect(board.locator('[data-board-policy="first"]')).toHaveText('Confirm each start');
   await expect(board.getByRole('radio')).toHaveCount(0);
@@ -184,7 +184,7 @@ test('C04: the palette finds and filters, Escape closes, and outside a project C
   await page.keyboard.press('Control+K');
   const palette = page.getByRole('dialog', { name: 'Find and act' });
   await expect(palette).toBeVisible();
-  const find = palette.getByLabel('Find a task, worker, model, project or action');
+  const find = palette.getByLabel("Find and act");
   await expect(find).toBeVisible();
   await find.fill('field notes');
   await expect(palette.getByText(READY_TASK)).toBeVisible();

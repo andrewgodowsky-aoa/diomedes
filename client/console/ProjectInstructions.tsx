@@ -42,14 +42,14 @@ const kb = (size: number | null | undefined) =>
       : `${Math.max(1, Math.round(size / 1024))} KB`;
 
 const EXCLUSION: Record<InstructionExclusion, string> = {
-  'over-file-limit': 'left out whole · over the file limit',
-  'no-room': 'left out whole · no room left',
+  'over-file-limit': 'excluded · file too large',
+  'no-room': 'excluded · input limit reached',
   refused: 'refused',
   missing: 'missing',
   'out-of-scope': 'out of scope',
   'not-shared': 'not shared',
   'not-loaded': 'not loaded',
-  'not-included': 'kept, not sent',
+  'not-included': 'not sent',
 };
 
 /** The folder a file governs, as a person reads it. */
@@ -177,7 +177,7 @@ export function ProjectInstructions({
         ),
       );
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'This file could not be opened.');
+      setError(failure instanceof Error ? failure.message : "This file couldn't be opened.");
     }
   }
 
@@ -187,7 +187,7 @@ export function ProjectInstructions({
         {ranked && (
           <span
             className="mono lc instructions-rank"
-            title={item.precedence === null ? 'Did not take part in the run' : 'Precedence; 1 governs'}
+            title={item.precedence === null ? "Didn't take part in this job" : 'Priority; 1 takes precedence'}
           >
             {item.precedence ?? '–'}
           </span>

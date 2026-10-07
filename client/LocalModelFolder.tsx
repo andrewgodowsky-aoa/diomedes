@@ -54,8 +54,7 @@ export function LocalModelFolder({
         {view?.name && <span className="caption push-right">{view.name}</span>}
       </div>
       <p>
-        The folder a local model is installed in. Nectovia reads its nectovia-connection.json for the
-        model&apos;s name, server and profiles. The model starts only when you press Start.
+        Choose the folder that holds your local AI and its nectovia-connection.json file. Press Start to use it.
       </p>
       <div className="row choice-row">
         <input

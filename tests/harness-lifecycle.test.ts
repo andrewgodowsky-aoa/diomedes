@@ -267,7 +267,7 @@ describe('what a correction may do', () => {
       changes: [{ target: 'attempt', what: 'Try once more.' }],
     });
     expect(answer.allowed).toBe(false);
-    expect(answer.reason).toContain('tried');
+    expect(answer.reason).toContain('stopped after');
   });
 
   test('persistent failure produces a candidate for review, never an activation', () => {
