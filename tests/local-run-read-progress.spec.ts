@@ -231,7 +231,8 @@ test("a Work run's long local read shows on its run card until the read ends", a
   await step();
   // The run ends waiting for the person's OK on its proposal, and nothing of the read stays.
   await expect.poll(() => workEnded(session.id)).toBe('waiting on Count.md');
-  await expect(page.locator('#scrThread .record.live')).toHaveCount(0);
+  // Its card stays live while the run waits on the person, beside the decision it asks for.
+  await expect(page.locator('#scrThread').getByRole('region', { name: 'Needs your OK' })).toBeVisible();
   await expect(page.locator('#scrThread')).not.toContainText('Reading the document.');
   expect(calls).toEqual(['work']);
   expect(errors).toEqual([]);
