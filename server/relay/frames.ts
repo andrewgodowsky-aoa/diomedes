@@ -1,7 +1,7 @@
 /**
  * The frames this computer sends a phone (relay plan steps 3 and 4), built from the desktop's own
- * records. Pure: no store, no clock, no socket. Every frame built here fits RELAY_MAX_MESSAGE_BYTES,
- * and none carries a document's contents, an answer's reasoning, a setting or an account. A file is
+ * records. Pure: no store, no clock, no socket. Every frame built here fits RELAY_MAX_MESSAGE_BYTES
+ * with RELAY_SOURCE_RESERVE_BYTES left for the hub's `source` stamp, and none carries a document's contents, an answer's reasoning, a setting or an account. A file is
  * named in words: its last part only. Text that names a path keeps only the path's last part, so
  * `C:\Users\Pat\Q3 plan.docx` reads `Q3 plan.docx` and `notes/winter/menu.md` reads `menu.md` on the
  * phone. A folder written without a root keeps its words only with one separator (`notes/winter`) or
@@ -12,6 +12,7 @@ import type { Change, Need, Session, Task } from '../../shared/types.js';
 import { WORK_ROWS_RELAY_LIMIT, WORK_ROW_TITLE_LIMIT, type WorkerRowPayer, type WorkRowsSnapshot } from '../../shared/work-rows.js';
 import {
   RELAY_MAX_MESSAGE_BYTES,
+  RELAY_SOURCE_RESERVE_BYTES,
   type BoardCard,
   type BoardCountsMessage,
   type ConversationRef,
@@ -24,8 +25,8 @@ import {
 } from '../../services/control-plane/src/relay/protocol.js';
 
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
-/** Whether a message, written as one frame, stays within the relay's cap. */
-export const fitsFrame = (message: object) => bytes(JSON.stringify(message)) <= RELAY_MAX_MESSAGE_BYTES;
+/** Whether a message, written as one frame, stays within the relay's cap with room for the hub's `source` stamp. */
+export const fitsFrame = (message: object) => bytes(JSON.stringify(message)) <= RELAY_MAX_MESSAGE_BYTES - RELAY_SOURCE_RESERVE_BYTES;
 
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 const PROSE_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
