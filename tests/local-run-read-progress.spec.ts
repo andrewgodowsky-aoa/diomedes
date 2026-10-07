@@ -10,7 +10,7 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import { EngineService } from '../server/engines/service';
 import type { LocalModelHost } from '../server/bonsai/runtime';
 import { LOCAL_MODEL_ACCOUNT, type LocalModelStatus } from '../shared/local-model';
-import type { Conversation, Project, Session, Task } from '../shared/types';
+import type { Conversation, Project, ProjectState, Session, Task } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 import { FixedLocalModel, localAnswerStream, MEADOW_FOLDER, MEADOW_MODEL, meadowDescriptor } from './fixtures/local-model';
 
@@ -38,8 +38,9 @@ const ADVISE = { question: 'Is the order complete?' };
 const PROPOSAL = JSON.stringify({ summary: 'Counted the napkins.',
   changes: [{ path: 'Count.md', text: 'Order 1182 lists 100 napkins.\n', summary: 'The count' }] });
 const TOTAL = 117_536;
+/** A read's progress, sent under its answer's id: the app refuses a stream whose id changes. */
 const progress = (processed: number, total = TOTAL) => ({
-  id: 'local-read', model: MEADOW_MODEL,
+  model: MEADOW_MODEL,
   choices: [{ index: 0, delta: { role: 'assistant', content: null }, finish_reason: null }],
   prompt_progress: { total, cache: 0, processed, time_ms: Math.round(processed / 9) },
 });
@@ -94,7 +95,7 @@ function localServer(): Promise<string> {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       for (const item of long ? LONG_READ : SHORT_READ) {
         if (item === 'hold') await new Promise<void>((resolve) => holds.push(resolve));
-        else res.write(`data: ${JSON.stringify(item)}\n\n`);
+        else res.write(`data: ${JSON.stringify({ id: `local-${n}`, ...item })}\n\n`);
       }
       const usage = { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 };
       res.end(await localAnswerStream({ id: `local-${n}`, model: MEADOW_MODEL, usage, choices: [choice] }).text());
@@ -108,6 +109,13 @@ function localServer(): Promise<string> {
 async function step() {
   await expect.poll(() => holds.length).toBe(1);
   holds.shift()!();
+}
+
+/** How the task's runs ended: 'done' once every one finished well, else each one's state. */
+async function runsEnded() {
+  const states = (await api<ProjectState>(`/projects/${project.id}/state`)).sessions
+    .filter((session) => session.taskId === task.id).map((session) => session.state);
+  return states.length && states.every((state) => state === 'done') ? 'done' : states.join(', ');
 }
 
 test.beforeEach(async () => {
@@ -214,6 +222,7 @@ test("a Work run's long local read shows on its run card until the read ends", a
   await expect(card.getByText(/is on it/)).toHaveCount(1);
   await step();
   // The run ends with its proposal, and nothing of the read stays.
+  await expect.poll(runsEnded).toBe('done');
   await expect(page.locator('#scrThread .record.live')).toHaveCount(0);
   await expect(page.locator('#scrThread')).not.toContainText('Reading the document.');
   expect(calls).toEqual(['work']);
@@ -231,6 +240,8 @@ test("an Agent loop's worker read shows on the loop's run card, named by the wor
   });
   await readOnCard(page);
   await step();
+  // The loop finishes well: every run on the task is done.
+  await expect.poll(runsEnded).toBe('done');
   // The advisor's and the lead's later calls are short and show nothing; the loop ends.
   await expect(page.locator('#scrThread .record.live')).toHaveCount(0);
   await expect(page.locator('#scrThread')).not.toContainText('Reading the document.');
