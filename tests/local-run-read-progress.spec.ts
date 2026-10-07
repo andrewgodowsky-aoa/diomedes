@@ -118,6 +118,14 @@ async function runsEnded() {
   return states.length && states.every((state) => state === 'done') ? 'done' : states.join(', ');
 }
 
+/** How a Work run ended: its state, and the files of the decision it waits on, if any. */
+async function workEnded(sessionId: string) {
+  const state = await api<ProjectState>(`/projects/${project.id}/state`);
+  const need = state.needs.find((item) => item.sessionId === sessionId && item.state === 'open');
+  const session = state.sessions.find((item) => item.id === sessionId);
+  return `${session?.state ?? 'no run'}${need ? ` on ${need.files.join(', ')}` : ''}`;
+}
+
 test.beforeEach(async () => {
   calls = [];
   holds = [];
@@ -215,14 +223,14 @@ test("a Work run's long local read shows on its run card until the read ends", a
   kind = 'work';
   const errors: string[] = [];
   await openThread(page, errors);
-  await api<Session>(`/projects/${project.id}/work/start`, 'POST', { protocolVersion: 1, commandId: randomUUID(),
+  const session = await api<Session>(`/projects/${project.id}/work/start`, 'POST', { protocolVersion: 1, commandId: randomUUID(),
     taskId: task.id, threadId: thread.id, route: 'bonsai', consent: true, sources: [] });
   const card = await readOnCard(page);
   // Until the answer comes, the working line is back.
   await expect(card.getByText(/is on it/)).toHaveCount(1);
   await step();
-  // The run ends with its proposal, and nothing of the read stays.
-  await expect.poll(runsEnded).toBe('done');
+  // The run ends waiting for the person's OK on its proposal, and nothing of the read stays.
+  await expect.poll(() => workEnded(session.id)).toBe('waiting on Count.md');
   await expect(page.locator('#scrThread .record.live')).toHaveCount(0);
   await expect(page.locator('#scrThread')).not.toContainText('Reading the document.');
   expect(calls).toEqual(['work']);
