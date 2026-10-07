@@ -75,6 +75,7 @@ import {
   sendThreadConversation,
   stopThreadMessage,
 } from './thread-send';
+import { readThreadAttachments, saveThreadAttachments } from './thread-attachments';
 import {
   acceptActivity,
   activityTarget,
@@ -372,8 +373,19 @@ export function Shell({
   const [openPath, setOpenPath] = useState<string | null>(null);
   // One exact version open in Files by identity (a Thread reference or a file's version list).
   const [openVersion, setOpenVersion] = useState<{ path: string; sha: string } | null>(null);
-  // Files attached to one thread's next message. They go with that thread only.
-  const [attached, setAttached] = useState<{ threadId: string; files: DocumentInfo[] } | null>(null);
+  // Files attached to each thread. They stay on that thread's composer, and go with every message
+  // it sends, until the person removes one; this browser keeps them per project and thread.
+  const [attached, setAttached] = useState<Record<string, DocumentInfo[]>>({});
+  const attachedFiles = (threadId: string) => attached[threadId] ?? readThreadAttachments(projectId, threadId);
+  const changeAttached = (threadId: string, change: (files: DocumentInfo[]) => DocumentInfo[]) =>
+    setAttached((prev) => ({
+      ...prev,
+      [threadId]: saveThreadAttachments(
+        projectId,
+        threadId,
+        change(prev[threadId] ?? readThreadAttachments(projectId, threadId)),
+      ),
+    }));
   // Text added to one thread's next message from Files > Repository (P07). It goes with that thread only.
   const [inserted, setInserted] = useState<{ threadId: string; text: string; n: number } | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
@@ -537,7 +549,7 @@ export function Shell({
     setView('Thread');
     setOpenPath(null);
     setOpenVersion(null);
-    setAttached(null);
+    setAttached({});
     setDocuments([]);
     setDocumentsFailure(null);
     void load().catch(report);
@@ -2042,16 +2054,13 @@ export function Shell({
     setViewNotice(false);
     if (consoleView !== next) void saveSettings({ ...settings, view: next });
   };
-  // Attach a project file to the open thread's next message; offered only while a thread is open.
+  // Attach a project file to the open thread; offered only while a thread is open.
   const attachToThread =
     selected && view === 'Thread'
       ? (path: string) => {
           const file = documents.find((item) => item.path === path);
           if (!file) return;
-          setAttached((prev) => {
-            const current = prev?.threadId === selected.id ? prev.files : [];
-            return current.some((item) => item.path === path) ? prev : { threadId: selected.id, files: [...current, file] };
-          });
+          changeAttached(selected.id, (current) => (current.some((item) => item.path === path) ? current : [...current, file]));
         }
       : undefined;
 
@@ -2374,8 +2383,8 @@ export function Shell({
               }
               onClearSkill={() => setSkillDraft(null)}
               insert={inserted?.threadId === selected.id ? { text: inserted.text, n: inserted.n } : null}
-              attachments={attached?.threadId === selected.id ? attached.files : []}
-              onAttachments={(files) => setAttached({ threadId: selected.id, files })}
+              attachments={attachedFiles(selected.id)}
+              onAttachments={(files) => changeAttached(selected.id, () => files)}
               attachable={async () => (await listDocuments(projectId)).documents}
               onOpenFile={openDocument}
               onOpenReference={openReference}
