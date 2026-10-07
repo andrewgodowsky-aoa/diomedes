@@ -1,8 +1,10 @@
 /**
  * The frames this computer sends a phone (relay plan steps 3 and 4), built from the desktop's own
  * records. Pure: no store, no clock, no socket. Every frame built here fits RELAY_MAX_MESSAGE_BYTES
- * with RELAY_SOURCE_RESERVE_BYTES left for the hub's `source` stamp, and none carries a document's contents, an answer's reasoning, a setting or an account. A file is
- * named in words: its last part only. Text that names a path keeps only the path's last part, so
+ * with RELAY_SOURCE_RESERVE_BYTES left for the hub's `source` stamp, and none carries a document's
+ * contents, an answer's reasoning, a setting or an account. No text in one holds half a surrogate
+ * pair, which a phone's JSON reader refuses: a lone surrogate reads as U+FFFD. A file is named in
+ * words: its last part only. Text that names a path keeps only the path's last part, so
  * `C:\Users\Pat\Q3 plan.docx` reads `Q3 plan.docx` and `notes/winter/menu.md` reads `menu.md` on the
  * phone. A folder written without a root keeps its words only with one separator (`notes/winter`) or
  * when every part is a short word (`and/or/not`); any other is cut to its last part (withoutPaths).
@@ -31,6 +33,10 @@ export const fitsFrame = (message: object) => bytes(JSON.stringify(message)) <= 
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 const PROSE_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 const isHigh = (code: number) => code >= 0xd800 && code <= 0xdbff;
+/** Half a surrogate pair. In Unicode mode a whole pair is one code point, outside this range. */
+const LONE_SURROGATE = /[\ud800-\udfff]/gu;
+/** Text with each lone surrogate as U+FFFD: an engine's title cut at a fixed length can end on half an emoji. */
+const wellFormed = (text: string) => text.replace(LONE_SURROGATE, '\ufffd');
 
 /** The last part of a path, in either separator: `C:\menus\winter.md` and `menus/winter.md` read `winter.md`. */
 export function lastPart(value: string): string {
@@ -246,14 +252,14 @@ function cut(text: string, max: number): string {
   return text.length <= max ? text : `${slice(text, max - 1)}…`;
 }
 
-/** One line of words for a title or a label: no control characters, no paths, at most `max` characters. */
+/** One line of words for a title or a label: whole characters, no control characters, no paths, at most `max` characters. */
 export function words(text: string, max: number): string {
-  return cut(withoutPaths(text.replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()), max);
+  return cut(withoutPaths(wellFormed(text).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()), max);
 }
 
-/** Person or assistant text: line breaks kept, other control characters and paths gone. */
+/** Person or assistant text: whole characters, line breaks kept, other control characters and paths gone. */
 export function prose(text: string): string {
-  return withoutPaths(text.replace(/\r\n?/g, '\n').replace(PROSE_CONTROL, ''));
+  return withoutPaths(wellFormed(text).replace(/\r\n?/g, '\n').replace(PROSE_CONTROL, ''));
 }
 
 /** A file named in words, or '' when nothing is left of it. */
