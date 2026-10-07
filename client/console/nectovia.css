@@ -39,6 +39,10 @@
      duration below is multiplied by it, so nothing moves then. Reduced motion
      (the setting and the media query) is styles.css's global kill. */
   --nv-on: min(1, calc(var(--dm-motion-intensity, 0.5) * 1000));
+  /* text on the live colour, for the one filled action */
+  --nv-on-light: var(--chrome);
+  /* the chevron a group or a detail folds under */
+  --nv-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* ---- the strip's rule and its registration mark (contract §3, SEAM) ----
@@ -1263,9 +1267,9 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
    Settings, Setup, dialogs and the error bar keep the Workbook's own styling
    and wear Nectovia through its tokens and fonts. These three places carry
    meaning, so they take the scheme's devices (PROGRESS.md lists them):
-   W1 the status mark is the glyph; W2 the primary action (the person's
-   hand-off) and the consent action (needs you) take the send control's 8 px
-   bevel on a layer; W3 a notice that needs the person is an amber plate.
+   W1 the status mark is the glyph; W3 a notice that needs the person is an
+   amber plate. W2, the bevelled primary and consent actions, gave way to the
+   round 2 controls (DIO-252), drawn below.
    The Design Center's preview draws marks and buttons too, so W1 and W2 use
    the stage-aware form described at the top of this file. */
 :is(html, .dc-stage)[data-package='nectovia'] .mark:not(.dc-stage:not([data-package='nectovia']) *) {
@@ -1295,44 +1299,181 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
   background: var(--dm-fault);
 }
 
-:is(html, .dc-stage)[data-package='nectovia']
-  :is(.button.primary, .button.signal):not(.dc-stage:not([data-package='nectovia']) *) {
-  --nv-edge: var(--dm-glacier);
-  position: relative;
-  isolation: isolate;
+/* ---- round 2 controls on every screen (DIO-252) ----
+   The boards' three buttons at the app's own sizes. The one decisive action on
+   a screen is filled in the live colour (the boards' btn pri), every other
+   action is a hairline box (btn sec), and a way out is its words alone (btn
+   ghost). The consent action keeps its amber, as a hairline. These replace the
+   Workbook's W2 bevel: round 2 draws no bevel on a button. */
+html[data-package='nectovia'] .button {
   border-color: transparent;
-  border-radius: 0;
-}
-:is(html, .dc-stage)[data-package='nectovia']
-  .button.signal:not(.dc-stage:not([data-package='nectovia']) *) {
-  --nv-edge: var(--dm-signal);
-}
-:is(html, .dc-stage)[data-package='nectovia']
-  :is(.button.primary, .button.signal):not(.dc-stage:not([data-package='nectovia']) *)::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  z-index: -1;
   border-radius: var(--rb);
-  background: linear-gradient(
-      to top right,
-      transparent calc(50% - 1px),
-      var(--nv-edge) calc(50% - 1px) 50%,
-      transparent 50%
-    )
-    right top / 8px 8px no-repeat;
-  box-shadow: inset 0 0 0 1px var(--nv-edge);
-  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
-  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+  color: var(--t1);
+  font-weight: 600;
 }
-:is(html, .dc-stage)[data-package='nectovia']
-  :is(.button.primary, .button.signal):hover:not(:disabled):not(.dc-stage:not([data-package='nectovia']) *) {
+html[data-package='nectovia'] .button:hover:not(:disabled) {
   border-color: transparent;
-  background: none;
+  background: color-mix(in srgb, var(--t1) 6%, transparent);
 }
-:is(html, .dc-stage)[data-package='nectovia']
-  :is(.button.primary, .button.signal):hover:not(:disabled):not(.dc-stage:not([data-package='nectovia']) *)::before {
-  background-color: color-mix(in srgb, var(--nv-edge) 10%, transparent);
+html[data-package='nectovia'] .button.primary {
+  background: var(--light);
+  color: var(--nv-on-light);
+  box-shadow: none;
+}
+html[data-package='nectovia'] .button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--light) 86%, var(--t1));
+}
+html[data-package='nectovia'] .button.signal {
+  color: var(--attn);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--attn) 60%, transparent);
+}
+html[data-package='nectovia'] .button.signal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--attn) 10%, transparent);
+}
+html[data-package='nectovia'] .button.quiet {
+  box-shadow: none;
+  color: var(--t2);
+}
+html[data-package='nectovia'] .button.quiet:hover:not(:disabled) {
+  color: var(--t1);
+}
+html[data-package='nectovia'] .button:disabled,
+html[data-package='nectovia'] .button.primary:disabled {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--t3);
+}
+
+/* The Console strips every button to its text (console.css) and lets each of
+   its own controls draw a box. The shared .button has no rule of its own there,
+   so it takes the boards' box back here, at the weight of two classes: a rule
+   for one particular button still wins. */
+:where(html[data-package='nectovia']) .console .button {
+  min-height: 36px;
+  padding: 5px 12px;
+}
+
+/* Choices. A radio is a hollow square that takes the status point when chosen,
+   and a checkbox fills with the live colour and its check: the boards' square
+   points, at a size a finger can find. Both stay real inputs with their labels. */
+html[data-package='nectovia'] input:is([type='radio'], [type='checkbox']) {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--t3) 85%, transparent);
+  vertical-align: middle;
+}
+html[data-package='nectovia'] input:is([type='radio'], [type='checkbox']):hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1.5px var(--t2);
+}
+html[data-package='nectovia'] input[type='radio']:checked {
+  box-shadow: inset 0 0 0 1.5px var(--light);
+}
+html[data-package='nectovia'] input[type='radio']:checked::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--light);
+}
+html[data-package='nectovia'] input[type='checkbox']:checked {
+  background: var(--light);
+  box-shadow: none;
+}
+html[data-package='nectovia'] input[type='checkbox']:checked::before {
+  width: 10px;
+  height: 10px;
+  background: var(--nv-on-light);
+}
+
+/* A list of choices reads as the boards' menu rows: no box, a wash under the
+   row a pointer is on, and a firmer one under the chosen row. */
+html[data-package='nectovia'] .radio-list {
+  gap: 2px;
+}
+html[data-package='nectovia'] .radio-row {
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--rb);
+}
+html[data-package='nectovia'] .radio-row:hover {
+  background: color-mix(in srgb, var(--t1) 5%, transparent);
+}
+html[data-package='nectovia'] .radio-row.selected {
+  background: color-mix(in srgb, var(--t1) 8%, transparent);
+}
+html[data-package='nectovia'] .radio-row input {
+  margin-top: 3px;
+}
+html[data-package='nectovia'] .radio-row strong {
+  font-size: var(--dm-type-ui);
+  color: var(--t1);
+}
+html[data-package='nectovia'] .radio-row .caption {
+  color: var(--t2);
+}
+
+/* A group of controls is a heading and its rows, never a ruled box. */
+html[data-package='nectovia'] fieldset {
+  margin: 16px 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+html[data-package='nectovia'] legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--dm-type-ui);
+  font-weight: 600;
+  color: var(--t1);
+}
+
+/* More detail opens under a chevron, as the boards' groups do, never the
+   browser's triangle. Summaries that draw their own marker keep it: this
+   reaches only the plain ones on the screens that still have them. */
+html[data-package='nectovia'] :is(.settings-layout, .setup, .dialog, .account-gate) summary:not([class]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+html[data-package='nectovia'] :is(.settings-layout, .setup, .dialog, .account-gate) summary:not([class])::-webkit-details-marker {
+  display: none;
+}
+html[data-package='nectovia'] :is(.settings-layout, .setup, .dialog, .account-gate) summary:not([class])::before {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--t3);
+  -webkit-mask: var(--nv-chevron) center / 10px 10px no-repeat;
+  mask: var(--nv-chevron) center / 10px 10px no-repeat;
+  transform: rotate(-90deg);
+  transition: transform calc(var(--quick) * var(--nv-on)) var(--nv-ease);
+}
+html[data-package='nectovia'] :is(.settings-layout, .setup, .dialog, .account-gate) details[open] > summary:not([class])::before {
+  transform: none;
+}
+
+/* A dialog is the boards' popover at a larger size: the raised ground, one
+   hairline and the container radius. Its title carries the boards' weight. */
+html[data-package='nectovia'] .dialog {
+  background: var(--raised);
+  border-color: var(--hair-2);
+}
+html[data-package='nectovia'] :is(.dialog-heading h2, .page-header h1) {
+  font-weight: 700;
 }
 
 :is(html, .dc-stage)[data-package='nectovia'] .notice.needs {
