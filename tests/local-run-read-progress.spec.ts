@@ -171,7 +171,8 @@ async function openThread(page: Page, errors: string[]) {
   const listening = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/events');
   await page.goto(url);
   await reopenLastProject(page);
-  await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Check the order/ }).first().click();
+  // A thread made for a task is named after it.
+  await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Thread for Check the order/ }).click();
   await expect(page.locator('#scrThread')).toBeVisible();
   await listening;
 }
