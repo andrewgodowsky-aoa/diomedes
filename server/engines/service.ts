@@ -2443,6 +2443,7 @@ export class EngineService {
       admissionId: admitted.admissionId,
       organizationId,
       scope: admitted.scope,
+      billingCycle: admitted.billingCycle,
       // Read here, so a refusal for want of credits can say who can buy more. Never a credential.
       role: account.roleFor?.(organizationId) ?? null,
       routing: policy.resolved,
@@ -3437,7 +3438,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
       const organizationId = work.managed?.organizationId ?? account?.organizationFor(work.projectId ?? null) ?? null;
       if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
       const now = services.now ?? (() => new Date());
-      const connectionId = nectoviaConnectionId(organizationId, now());
+      const connectionId = nectoviaConnectionId(organizationId, now(), work.managed?.billingCycle);
       const policy = work.managed?.routing ? { revision: work.managed.routing.revision, tiers: work.managed.routing.tiers, resolved: work.managed.routing }
         : account.policy(work.projectId ?? null);
       const scopedAccount = { policy: () => account.policy(work.projectId ?? null), refreshPolicy: () => account.refreshPolicy(work.projectId ?? null) };

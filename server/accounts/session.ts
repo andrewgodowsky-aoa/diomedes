@@ -203,6 +203,7 @@ function admissionAnswer(answer: unknown, organizationId: string | null, personI
 
 /** Admission refusals that say the business is not paid, as opposed to unknown, unreadable or membership. */
 const UNPAID_REFUSAL_CODES = new Set(['entitlement_revoked', 'entitlement_expired', 'agent_not_included']);
+const UNPAID_PERSONAL_REFUSAL_CODES = new Set([...UNPAID_REFUSAL_CODES, 'personal_workspace', 'entitlement_none']);
 
 const UNREADABLE_ADMISSION_REASON =
   'The account service answered in a way this app could not read, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.';
@@ -266,11 +267,15 @@ interface Current {
   access: Map<string, AccessView | null>;
   /** The person's own Individual access. Null: not read yet, or the read failed. */
   personAccess: PersonAccessView | null;
+  /** Orders Personal access and balance reads within this sign-in. */
+  personAccessRead?: number;
   /**
    * Pay as you go (DIO-245): the credits this person bought for their own Personal work are above zero. Read only while the
    * plan reads free; absent until then, and false when the read failed.
    */
   boughtOpen?: boolean;
+  /** Orders balance reads so an older answer cannot reopen credits a later read found exhausted. */
+  boughtRead?: number;
   /** Businesses whose access read the service refused because the person is not a member. */
   notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
@@ -987,6 +992,7 @@ export class AccountSessionService {
     // never answered as inactive: `entitlement()` reports it as `unknown` (PH-07 R3-1). The one
     // failure that is an answer is the service's own membership refusal (R3-2).
     const notMember = new Set<string>();
+    const read = current.personAccessRead = (current.personAccessRead ?? 0) + 1;
     const person = this.readPersonAccess(current);
     const answers = await Promise.all(
       active.map(async (row) => {
@@ -999,10 +1005,8 @@ export class AccountSessionService {
       }),
     );
     current.access = new Map(answers);
-    current.personAccess = await person;
     current.notMember = notMember;
-    // Pay as you go (DIO-245): asked only of a person the plan reads as free, so a plan holder costs no extra read.
-    current.boughtOpen = this.planOf(current) === 'free' ? await this.readBoughtOpen(current) : false;
+    await this.updatePersonalAccess(current, read, await person, false);
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
     await this.resetNoticeWhilePaid(current);
   }
@@ -1072,6 +1076,46 @@ export class AccountSessionService {
     } catch {
       return false;
     }
+  }
+
+  /** Read a confirmed Personal lapse again without treating a failed read as a downgrade. */
+  async confirmPersonalDowngrade(refusalCode: string) {
+    if (!this.current || !UNPAID_PERSONAL_REFUSAL_CODES.has(refusalCode)) return;
+    await this.rereadPersonAccess(this.current);
+  }
+
+  /** Refresh the person's cached Individual access after a confirmed re-grant. */
+  async confirmPersonalAdmitted() {
+    const current = this.current;
+    if (!current || this.personalIncludes()) return;
+    await this.rereadPersonAccess(current);
+  }
+
+  private async rereadPersonAccess(current: Current) {
+    const read = current.personAccessRead = (current.personAccessRead ?? 0) + 1;
+    try {
+      const answer = personAccessAnswer(await this.backend.client.personAccess(current.accessToken), current.personId);
+      if (!answer || this.current !== current) return;
+      await this.updatePersonalAccess(current, read, answer, true);
+      if (this.current !== current) return;
+      await this.resetNoticeWhilePaid(current);
+    } catch {
+      // An unreachable or unreadable answer keeps the last confirmed access.
+    }
+  }
+
+  private async updatePersonalAccess(current: Current, read: number, answer: PersonAccessView | null, requireCurrent: boolean) {
+    const unchanged = () => (!requireCurrent || this.current === current) && current.personAccessRead === read &&
+      (!answer || !current.personAccess || answer.revision >= current.personAccess.revision);
+    if (!unchanged()) return;
+    const balanceRead = current.boughtRead = (current.boughtRead ?? 0) + 1;
+    const free = this.planOf({ ...current, personAccess: answer }) === 'free';
+    const boughtOpen = free ? await this.readBoughtOpen(current) : false;
+    if (!unchanged()) return;
+    current.personAccess = answer;
+    // A newer balance answer still applies to this person even when this access read is current.
+    if (!free || current.boughtRead === balanceRead) current.boughtOpen = boughtOpen;
+    this.personalUsageCache = null;
   }
 
   /**
@@ -1366,9 +1410,19 @@ export class AccountSessionService {
     if (!answer.admitted) {
       this.admissions.delete(key);
       if (input.organizationId !== null) await this.confirmDowngrade(input.organizationId, answer.code);
+      else {
+        this.assertCurrent(current);
+        await this.confirmPersonalDowngrade(answer.code);
+        this.assertCurrent(current);
+      }
       return { admitted: false, code: answer.code, reason: answer.reason };
     }
     if (input.organizationId !== null) await this.confirmAdmitted(input.organizationId);
+    else {
+      this.assertCurrent(current);
+      await this.confirmPersonalAdmitted();
+      this.assertCurrent(current);
+    }
     const until = Math.min(Date.parse(answer.validUntil), this.now() + ADMISSION_CACHE_MAX_MS);
     const decision = {
       admitted: true as const,
