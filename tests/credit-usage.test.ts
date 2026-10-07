@@ -111,13 +111,14 @@ describe('the published grant table keeps approval and proposal apart', () => {
     }
   });
 
-  test('job check-ins are the owner-approved 100, 250 and 500 credits by tier', () => {
+  test('job check-ins retain 100, 250 and 500 credits and the Expert floor of 750', () => {
     expect(JOB_CHECK_IN_CREDITS.status).toBe('approved');
-    expect(JOB_CHECK_IN_CREDITS.decidedOn).toBe('2026-10-05');
-    expect(JOB_CHECK_IN_CREDITS.credits).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(JOB_CHECK_IN_CREDITS.decidedOn).toBe('2026-10-06');
+    expect(JOB_CHECK_IN_CREDITS.credits).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
     expect(approvedJobCap('efficient')).toBe(c(100));
     expect(approvedJobCap('focused')).toBe(c(250));
     expect(approvedJobCap('thorough')).toBe(c(500));
+    expect(approvedJobCap('expert')).toBe(c(750));
   });
 });
 

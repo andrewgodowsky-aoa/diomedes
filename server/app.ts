@@ -159,6 +159,7 @@ import { effortFor } from '../shared/effort.js';
 import {
   DEFAULT_WORK_STYLE,
   chooseWorkStyleSentence,
+  classifyTask,
   isWorkStyle,
   resolveWorkStyle,
   WORK_STYLE_LABELS,
@@ -318,7 +319,7 @@ import {
   type ModelApiRoute,
   type NectoviaRouteView,
 } from '../shared/model-api.js';
-import { AGENT_FREE_VERSION_REASON, freeVersionRefusal, OWNER_RULES_FEATURE } from '../shared/access.js';
+import { AGENT_FREE_VERSION_REASON, freeVersionRefusal, OWNER_RULES_FEATURE, EXPERT_FEATURE, EXPERT_NOT_INCLUDED, EXPERT_MANAGED_ROUTE_ONLY } from '../shared/access.js';
 import {
   NECTOVIA_SIGN_IN,
   NECTOVIA_UNAVAILABLE,
@@ -3968,6 +3969,11 @@ export async function createApp(options: AppOptions) {
     const saved = store.settings.services?.workStyle;
     return isWorkStyle(saved) ? saved : DEFAULT_WORK_STYLE;
   };
+  const expertAccess = (projectId: string) => {
+    const scope = accountRouting?.scopeFor(projectId);
+    const available = scope?.kind === 'organization' && accountRouting?.includes(scope, EXPERT_FEATURE) === true;
+    return { available, reason: available ? null : EXPERT_NOT_INCLUDED };
+  };
   /** API routes offer only their current connection; inspected engines keep their own catalogue. */
   const routeModels = (engine: string): EngineModel[] => {
     // The descriptor's profiles, named for the model its server listed at the last check.
@@ -4040,8 +4046,11 @@ export async function createApp(options: AppOptions) {
     }
     if (!payg && !accountRouting!.includes(scope, 'managed-inference'))
       throw new EngineError(AGENT_NOT_INCLUDED, 'This account does not include managed AI usage.', false);
+    const selectedStyle = style();
+    if (selectedStyle === 'expert' && !expertAccess(projectId).available)
+      throw new EngineError(AGENT_NOT_INCLUDED, EXPERT_NOT_INCLUDED, false);
     const tier = nectoviaTier({
-      style: style(),
+      style: selectedStyle,
       signedIn: nectoviaAccount?.signedIn() ?? false,
       policy: nectoviaAccount?.policy(projectId) ?? null,
     });
@@ -4143,6 +4152,13 @@ export async function createApp(options: AppOptions) {
     options: RunHints = {},
   ): TierResolution | null => {
     const conversation = routed(projectId, unrouted);
+    // Check before direct-engine, local-model and manual-pin shortcuts.
+    if (styleOf(unrouted) === 'expert') {
+      const reason = !expertAccess(projectId).available ? EXPERT_NOT_INCLUDED
+        : conversation?.engine !== NECTOVIA_ROUTE ? EXPERT_MANAGED_ROUTE_ONLY : null;
+      if (reason) return { outcome: 'refuse', style: 'expert', route: conversation?.engine ?? NECTOVIA_ROUTE,
+        model: null, reason, ownerPin: false, kind: classifyTask(options.text) };
+    }
     // A local selection is never handed to the cloud tier map, even if its saved profile is missing.
     if (conversation?.engine === LOCAL_MODEL_ROUTE) return null;
     // A tier routes to Nectovia's policy or to a model-API route; both are the Agent. Where no
@@ -4450,6 +4466,7 @@ export async function createApp(options: AppOptions) {
               efficient: policy.tiers.efficient && { model: policy.tiers.efficient.model, label: policy.tiers.efficient.label },
               focused: policy.tiers.focused && { model: policy.tiers.focused.model, label: policy.tiers.focused.label },
               thorough: policy.tiers.thorough && { model: policy.tiers.thorough.model, label: policy.tiers.thorough.label },
+              expert: policy.tiers.expert && { model: policy.tiers.expert.model, label: policy.tiers.expert.label },
             }
           : null,
         policyRevision: policy?.revision ?? null,
@@ -4478,7 +4495,8 @@ export async function createApp(options: AppOptions) {
       // What the next request would be refused with before anything is sent, in the host's own
       // words: a tier whose route cannot run. A client refuses by this, never by its own guess.
       const refusal = tier?.outcome === 'refuse' ? tier.reason : null;
-      if (engine === 'sample') return { route: engine, style, source, refusal, resolution: null };
+      const expert = expertAccess(projectId);
+      if (engine === 'sample') return { route: engine, style, source, refusal, expert, resolution: null };
       if (tier)
         return {
           route: engine,
@@ -4486,6 +4504,7 @@ export async function createApp(options: AppOptions) {
           source,
           refusal,
           ownerPin: tier.ownerPin,
+          expert,
           resolution: {
             outcome: tier.outcome === 'run' ? 'run' : 'ask',
             model: tier.outcome === 'run' ? tier.model : null,
@@ -4515,7 +4534,7 @@ export async function createApp(options: AppOptions) {
         routeDefaultAllowed: engine === 'codex',
         stableEffort: isModelApiRoute(engine),
       });
-      return { route: engine, style, source, refusal, resolution };
+      return { route: engine, style, source, refusal, expert, resolution };
     }),
   );
   // A preview of the Jev preflight for a thread's next message, beside the resolution above.

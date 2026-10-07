@@ -137,7 +137,7 @@ export interface NectoviaRouteView {
   /** Null when a message would be sent; otherwise why it would be refused, in words. */
   refusal: { code: string; reason: string } | null;
   /** The published model for each tier, or null for a tier with no route. */
-  tiers: Record<'efficient' | 'focused' | 'thorough', { model: string; label: string } | null> | null;
+  tiers: (Record<'efficient' | 'focused' | 'thorough', { model: string; label: string } | null> & { expert?: { model: string; label: string } | null }) | null;
   policyRevision: number | null;
 }
 

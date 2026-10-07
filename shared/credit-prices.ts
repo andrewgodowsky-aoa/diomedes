@@ -85,6 +85,7 @@ const tiersSchema = z.strictObject({
   efficient: tierChargeSchema.nullable(),
   focused: tierChargeSchema.nullable(),
   thorough: tierChargeSchema.nullable(),
+  expert: tierChargeSchema.nullable().optional(),
 });
 
 /** One published version of the price table. Versions are immutable; a change is a new version. */
@@ -99,7 +100,9 @@ export const creditPriceTableSchema = z.strictObject({
   publishedBy: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
 });
 /** A published table. Its tiers are typed as `TierCharge`, so a charge built in code goes in as it is. */
-export type CreditPriceTable = Omit<z.infer<typeof creditPriceTableSchema>, 'tiers'> & { tiers: Record<JobTier, TierCharge | null> };
+export type CreditPriceTable = Omit<z.infer<typeof creditPriceTableSchema>, 'tiers'> & {
+  tiers: Record<Exclude<JobTier, 'expert'>, TierCharge | null> & { expert?: TierCharge | null };
+};
 
 /** What staff send to publish a version. `baseVersion` is the version they read (0 for none). */
 export const publishCreditPricesInput = z.strictObject({
@@ -171,7 +174,7 @@ export type TokenClass = (typeof TOKEN_CLASSES)[number];
 const CLASS_LABEL: Readonly<Record<TokenClass, string>> = {
   input: 'fresh input', output: 'output', reasoning: 'reasoning', cacheRead: 'cache reads', cacheWrite: 'cache writes', requestFee: 'the per-request fee',
 };
-const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough' };
+const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough', expert: 'Expert' };
 
 /** The band `usageCost` would price a request of `inputTokens` at: the highest threshold below it, else the base. */
 function bandAt(price: PriceFields, inputTokens: number): Band {

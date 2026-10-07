@@ -11,6 +11,7 @@ import {
 import { routeDisplayName } from '../../shared/engines';
 import { api } from '../api';
 import type { PickerProps } from './Picker';
+import { EXPERT_NOT_INCLUDED } from '../../shared/access';
 
 /** What `GET /projects/:id/threads/:threadId/work-style` answers. */
 export interface WorkStyleView {
@@ -20,6 +21,7 @@ export interface WorkStyleView {
   /** The host's sentence when the next request would be refused before anything is sent. */
   refusal?: string | null;
   resolution: WorkStyleResolution | null;
+  expert?: { available: boolean; reason: string | null };
 }
 
 /** The style a thread follows: its own, else the Settings default, else none. */
@@ -134,6 +136,7 @@ export function WorkStylePicker({
 
   function choose(style: WorkStyle) {
     if (live || busy) return;
+    if (style === 'expert' && !view?.expert?.available) return;
     onStyle(style);
     setOpen(false);
   }
@@ -163,11 +166,12 @@ export function WorkStylePicker({
                   className={`m ${current === style ? 'on' : ''}`}
                   role="menuitemradio"
                   aria-checked={current === style}
+                  disabled={style === 'expert' && !view?.expert?.available}
                   onClick={() => choose(style)}
                 >
                   <span>{WORK_STYLE_LABELS[style]}</span>
                   <span className="id" />
-                  <small>{WORK_STYLE_DESCRIPTIONS[style]}</small>
+                  <small>{style === 'expert' && !view?.expert?.available ? view?.expert?.reason ?? EXPERT_NOT_INCLUDED : WORK_STYLE_DESCRIPTIONS[style]}</small>
                 </button>
               ))}
               {pinned && (

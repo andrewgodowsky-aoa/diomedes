@@ -545,7 +545,7 @@ export function mountNativeLoopRoutes(
       // lead a role names its tier and runs at it, on the account's credits (DIO-216 slice C).
       if (lead.route === NECTOVIA_ROUTE || !ids || profile) throw refuse(NECTOVIA_LOOP_TEAM_REFUSED, 'team_route_unsupported');
       if (!spec.tier)
-        throw new ApiError(400, 'A Nectovia role names its tier: efficient, focused or thorough.', { code: 'team_role_invalid', role: kind });
+        throw new ApiError(400, 'A Nectovia role names its tier: efficient, focused, thorough or expert.', { code: 'team_role_invalid', role: kind });
       if (spec.model != null) throw refuse('The Nectovia model is managed. Send without choosing one.', 'route_refused');
       if (spec.accountRoute != null) throw refuse('The Nectovia account is managed. Send without choosing one.', 'route_refused');
       tier = spec.tier;

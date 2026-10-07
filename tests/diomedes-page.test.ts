@@ -32,7 +32,7 @@ describe('the route caption', () => {
 
 describe('the Home composer offers tiers, never routes or models', () => {
   const noAction = () => {};
-  const render = (workStyle: 'efficient' | 'focused' | 'thorough' | null) =>
+  const render = (workStyle: 'efficient' | 'focused' | 'thorough' | 'expert' | null) =>
     renderToStaticMarkup(
       createElement(Diomedes, {
         projects: [], scopeId: null, onScope: noAction, turns: [], pending: false,
@@ -45,18 +45,19 @@ describe('the Home composer offers tiers, never routes or models', () => {
       }),
     );
 
-  it('has no Route control, and its only model control lists the three tiers', () => {
+  it('has no Route control, and its only model control lists the four tiers', () => {
     const html = render('focused');
     expect(html).not.toContain('aria-label="Route"');
     const style = html.match(/<select aria-label="Style"[\s\S]*?<\/select>/)?.[0] ?? '';
     const options = [...style.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
-    expect(options).toEqual(['', 'efficient', 'focused', 'thorough']);
+    expect(options).toEqual(['', 'efficient', 'focused', 'thorough', 'expert']);
     for (const name of ['AWS', 'Bedrock', 'Azure', 'OpenRouter', 'Claude', 'Vertex', 'gpt-', 'gemini', 'luna'])
       expect(style.toLowerCase()).not.toContain(name.toLowerCase());
   });
 
   it('names a tiered conversation by its tier, and names the route only without one', () => {
     expect(render('thorough')).toContain('<span class="dio-route">Thorough</span>');
+    expect(render('expert')).toContain('<span class="dio-route">Expert</span>');
     expect(render(null)).toContain('<span class="dio-route">AWS Bedrock (Luna)</span>');
   });
 });

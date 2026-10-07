@@ -982,7 +982,7 @@ export class FundingService {
         return { ...root, inherited: true };
       }
       if (!isJobTier(input.tier))
-        throw new FundingError(422, 'A root job names its tier: efficient, focused or thorough.', 'invalid_tier');
+        throw new FundingError(422, 'A root job names its tier: efficient, focused, thorough or expert.', 'invalid_tier');
       const tierCap = input.checkInMicroUsd === undefined || input.checkInMicroUsd === null
         ? approvedJobCap(input.tier) : requireMoney(input.checkInMicroUsd, 'the check-in amount');
       const cap = input.capMicroUsd === null ? tierCap : requireMoney(input.capMicroUsd, 'the job cap');

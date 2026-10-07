@@ -41,10 +41,17 @@ export const ACCESS_CONTRACT_VERSION = 1 as const;
  */
 /** The supervising Nectovia Agent: native model-API work where Nectovia owns the loop. */
 export const AGENT_FEATURE = 'nectovia-agent' as const;
+export const EXPERT_FEATURE = 'expert' as const;
+export const EXPERT_NOT_INCLUDED = 'Expert is included with Managed plans for this business. Choose another tier or ask about Managed.';
+export const EXPERT_MANAGED_ROUTE_ONLY = 'Expert runs on Nectovia managed routing. Choose Nectovia to use it.';
+export const MANAGED_PLAN_IDS = ['managed-small', 'managed-standard', 'managed-plus'] as const;
+export const isManagedPlan = (id: string | null | undefined): boolean =>
+  MANAGED_PLAN_IDS.some((plan) => plan === id);
 export const OWNER_RULES_FEATURE = 'owner-rules' as const;
 export const PHONE_RELAY_FEATURE = 'phone-relay' as const;
 export const ACCESS_FEATURES = [
   AGENT_FEATURE,
+  EXPERT_FEATURE,
   /** Maintained Agent profiles from the Nectovia catalog. */
   'maintained-profiles',
   /** Diomedes-funded model calls, within the organization's funding. */
@@ -58,6 +65,7 @@ export type AccessFeature = (typeof ACCESS_FEATURES)[number];
 
 export const FEATURE_LABELS: Record<AccessFeature, string> = {
   'nectovia-agent': 'Nectovia Agent',
+  expert: 'Expert for Agent and Bot',
   'maintained-profiles': 'Maintained Agent profiles',
   'managed-inference': 'Included AI usage',
   'owner-rules': 'Business rules',
@@ -107,7 +115,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-small',
     label: 'Managed Small',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay', EXPERT_FEATURE],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -115,7 +123,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-standard',
     label: 'Managed Standard',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay', EXPERT_FEATURE],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -123,7 +131,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
   {
     id: 'managed-plus',
     label: 'Managed Plus',
-    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay'],
+    features: ['nectovia-agent', 'maintained-profiles', 'managed-inference', 'owner-rules', 'phone-relay', EXPERT_FEATURE],
     termDays: 31,
     customerVisible: true,
     note: 'Business included.',
@@ -148,6 +156,25 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = Object.freeze([
 
 export function planTemplate(id: string | null | undefined): PlanTemplate | undefined {
   return PLAN_TEMPLATES.find((plan) => plan.id === id);
+}
+
+/**
+ * Project the approved benefit onto complete Managed grants issued before Expert existed.
+ * A limited custom grant is never broadened just because it names a Managed plan. An explicit
+ * Expert grant still requires the same grant to include Agent and managed inference.
+ * Callers apply the grant's current state and dates before using these features.
+ */
+export function managedGrantFeatures(grant: { planId: string | null; features: readonly string[] }): string[] {
+  const features = grant.features.filter((feature) => feature !== EXPERT_FEATURE);
+  const managed = isManagedPlan(grant.planId) && features.includes(AGENT_FEATURE) && features.includes('managed-inference');
+  const completeLegacy = ['maintained-profiles', 'owner-rules', 'phone-relay'].every((feature) => features.includes(feature));
+  if (managed && (grant.features.includes(EXPERT_FEATURE) || completeLegacy)) features.push(EXPERT_FEATURE);
+  return features;
+}
+
+/** Presentation hint only; dispatch rechecks the account service's current grants. */
+export function hasExpertAccess(view: { state: string; features: readonly string[]; source: string } | null | undefined): boolean {
+  return view?.source === 'account-service' && view.state === 'active' && view.features.includes(EXPERT_FEATURE);
 }
 
 /** A plan's customer-facing name, or a neutral one for plans customers do not see. */

@@ -52,9 +52,9 @@ function binding(deployment: string): ModelBinding {
       inputMicroUsdPerMillion: 100_000, outputMicroUsdPerMillion: 200_000, reasoningMicroUsdPerMillion: 200_000,
       cacheReadMicroUsdPerMillion: 10_000, cacheWriteMicroUsdPerMillion: 125_000, requestFeeMicroUsd: 1, longContext: [] } };
 }
-async function call(method: string, pathname: string, token?: string, body?: unknown) {
+async function call(method: string, pathname: string, token?: string, body?: unknown, expert = false) {
   const response = await cloud.handle(new Request(`http://127.0.0.1:8795${pathname}`, { method,
-    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(expert ? { 'X-Nectovia-Expert-Tier': '1' } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body) }));
   return { status: response.status, body: await response.json() as any };
 }
@@ -83,7 +83,7 @@ async function editRoute(id: string, change: (b: ModelBinding) => void) {
   const row = cloud.store.snapshot().commercial.routes.find(r => r.id === id)!;
   const b = structuredClone(row.binding!); change(b);
   const { v: _v, revision, updatedAt: _at, updatedBy: _by, ...fields } = row;
-  const result = await call('POST', '/ops/routes', routing, { ...fields, binding: b, baseRevision: revision });
+  const result = await call('POST', '/ops/routes', routing, { ...fields, binding: b, baseRevision: revision }, true);
   expect(result.status, JSON.stringify(result.body)).toBe(200);
 }
 async function addAwsRoute(id: string, model: string, protocol: ModelBinding['protocol'] = 'responses') {
@@ -96,9 +96,9 @@ async function addAwsRoute(id: string, model: string, protocol: ModelBinding['pr
     region: 'us', processing: 'Transport fixture only', status: 'qualified', evidence: 'Transport fixture only', binding: b });
   expect(result.status, JSON.stringify(result.body)).toBe(200);
 }
-async function request(scope: AccountScope = { kind: 'organization', id: orgA }, opts: { job?: string; attempt?: string; token?: string; headers?: Record<string, string> } = {}) {
+async function request(scope: AccountScope = { kind: 'organization', id: orgA }, opts: { job?: string; attempt?: string; token?: string; surface?: 'conversation' | 'loop'; headers?: Record<string, string> } = {}) {
   const token = opts.token ?? owner, job = opts.job ?? 'routing-job';
-  const admission = await call('POST', `/account/routing/${scopePath(scope)}/admit`, token, { surface: 'conversation', routeKind: 'managed', rootJobId: job });
+  const admission = await call('POST', `/account/routing/${scopePath(scope)}/admit`, token, { surface: opts.surface ?? 'conversation', routeKind: 'managed', rootJobId: job });
   const snapshot = await call('GET', `/account/routing/${scopePath(scope)}/policy`, token);
   expect(admission.status, JSON.stringify(admission.body)).toBe(200); expect(snapshot.status).toBe(200);
   const p = snapshot.body;
@@ -131,6 +131,119 @@ beforeEach(async () => {
   await preference({ kind: 'organization', id: orgA }); await preference({ kind: 'organization', id: orgB });
 });
 afterEach(async () => { await cloud.idle(); vi.restoreAllMocks(); });
+
+describe('Expert Managed routing and enforcement', () => {
+  async function setup(planId = 'managed-small') {
+    const grant = await call('POST', `/ops/customers/${orgA}/grants`, billing,
+      { planId, source: 'internal-test', reference: 'Expert fixture', note: 'Offline acceptance' }, true);
+    expect(grant.status, JSON.stringify(grant.body)).toBe(201);
+    await editRoute('primary', b => { b.qualification!.tiers.push('expert'); });
+    const prices = cloud.store.snapshot().commercial.priceTables.at(-1)!;
+    expect((await call('POST', '/ops/credit-prices/publish', routing, { baseVersion: prices.version,
+      ceilingMicroUsdPerCredit: prices.ceilingMicroUsdPerCredit, tiers: { ...prices.tiers, expert: FAUX_CREDIT_CHARGE }, note: 'Synthetic Expert charge' }, true)).status).toBe(201);
+    expect((await call('POST', '/ops/routing/scopes/publish', routing, { scope: { kind: 'global' }, baseRevision: 1, baseGlobalRevision: 1,
+      routing: { ...configuration(), expert: tier() }, note: 'Synthetic Expert route' }, true)).status).toBe(201);
+    return grant.body.grant.id as string;
+  }
+  const expertRequest = (surface: 'conversation' | 'loop' = 'conversation') => request(undefined, { surface, headers: { 'x-nectovia-tier': 'expert' } });
+  for (const [plan, amount] of [['managed-small', 750], ['managed-standard', 850], ['managed-plus', 1_000]] as const)
+    for (const surface of ['conversation', 'loop'] as const) it(`${plan} ${surface} uses the published Expert route and checks in at ${amount}`, async () => {
+      await setup(plan);
+      const snapshot = await call('GET', `/account/routing/organization/${orgA}/policy`, owner, undefined, true);
+      expect(snapshot.body.tiers.expert).toMatchObject({ entryId: 'primary' });
+      await completed(await expertRequest(surface));
+      expect(sends).toHaveLength(1);
+      const funding = cloud.store.snapshot().funding;
+      expect(funding.jobs).toMatchObject([{ tier: 'expert', capMicroUsd: amount * 100_000 }]);
+      expect(funding.attempts[0].chargeSnapshot).toMatchObject({ tier: 'expert' });
+    });
+  it.each(['business', 'workflow-starter', 'internal-test', 'service-agreement'])('refuses forged Expert on %s before a hold or provider call', async plan => {
+    const id = await setup();
+    const req = await expertRequest();
+    await cloud.store.run(async draft => { draft.commercial.grants.find(g => g.id === id)!.planId = plan; });
+    const before = cloud.store.snapshot().funding;
+    const response = await cloud.handle(req);
+    expect(response.status).toBe(403); expect(await response.json()).toMatchObject({ error: { code: 'expert_not_included' } });
+    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding).toEqual(before);
+  });
+  it.each(['revoked', 'expired', 'future'])('rechecks a %s Managed grant after admission', async state => {
+    const id = await setup(); const req = await expertRequest('loop');
+    await cloud.store.run(async draft => {
+      const grant = draft.commercial.grants.find(g => g.id === id)!;
+      if (state === 'revoked') grant.state = 'revoked';
+      else if (state === 'expired') grant.validUntil = at;
+      else grant.validFrom = until;
+    });
+    expect((await cloud.handle(req)).status).toBe(403);
+    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+  it('refuses Personal Expert even with an Individual plan', async () => {
+    await setup(); await personPlan();
+    const account = (await call('POST', '/account/individual', owner, {})).body;
+    const scope: AccountScope = { kind: 'individual', id: account.id }; await preference(scope);
+    const req = await request(scope, { headers: { 'x-nectovia-tier': 'expert' } });
+    const response = await cloud.handle(req);
+    expect(response.status).toBe(403); expect(await response.json()).toMatchObject({ error: { code: 'expert_not_included' } });
+    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+  it('preserves Expert across old Operations writes and hides it only on old wire replies', async () => {
+    await setup();
+    expect((await publish('primary', false, { kind: 'global' }, 2, 2)).status).toBe(201);
+    const global = cloud.store.snapshot().commercial.policies.filter(p => !p.scope || p.scope.kind === 'global').at(-1)!;
+    expect(global.routing?.expert?.primary).toBe('primary');
+    const legacy = await call('GET', `/account/routing/organization/${orgA}/policy`, owner);
+    expect(legacy.body.tiers).not.toHaveProperty('expert');
+    const modern = await call('GET', `/account/routing/organization/${orgA}/policy`, owner, undefined, true);
+    expect(modern.body.tiers.expert).toMatchObject({ entryId: 'primary' });
+    const price = cloud.store.snapshot().commercial.priceTables.at(-1)!;
+    const { expert: _expert, ...oldTiers } = price.tiers;
+    expect((await call('POST', '/ops/credit-prices/publish', routing, { baseVersion: price.version,
+      ceilingMicroUsdPerCredit: price.ceilingMicroUsdPerCredit, tiers: oldTiers, note: 'Old Operations write' })).status).toBe(201);
+    expect(cloud.store.snapshot().commercial.priceTables.at(-1)!.tiers.expert).toEqual(FAUX_CREDIT_CHARGE);
+    expect((await call('POST', '/ops/job-check-ins/publish', routing, { baseVersion: 0, amounts: { efficient: 100, focused: 250, thorough: 500, expert: 900 }, note: 'Staff override' }, true)).status).toBe(201);
+    expect((await call('POST', '/ops/job-check-ins/publish', routing, { baseVersion: 1, amounts: { efficient: 101, focused: 250, thorough: 500 }, note: 'Old writer' })).status).toBe(201);
+    const checks = await call('GET', `/account/routing/organization/${orgA}/check-ins`, owner, undefined, true);
+    expect(checks.body.amounts.expert).toBe(900);
+  });
+  it('refuses missing Expert price without falling back to Thorough', async () => {
+    await setup();
+    const price = cloud.store.snapshot().commercial.priceTables.at(-1)!;
+    await call('POST', '/ops/credit-prices/publish', routing, { baseVersion: price.version,
+      ceilingMicroUsdPerCredit: price.ceilingMicroUsdPerCredit, tiers: { ...price.tiers, expert: null }, note: 'Disable Expert' }, true);
+    const response = await cloud.handle(await expertRequest());
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ error: { code: 'tier_unpriced' } });
+    expect(sends).toHaveLength(0); expect(cloud.store.snapshot().funding.attempts).toHaveLength(0);
+  });
+  it('withdraws Expert qualification and refuses old editors that cannot see it', async () => {
+    await setup();
+    const old = (await call('GET', '/ops/routing', routing)).body.routes.find((r: any) => r.id === 'primary');
+    const { v: _v, revision, updatedAt: _at, updatedBy: _by, ...fields } = old;
+    expect((await call('POST', '/ops/routes', routing, { ...fields, baseRevision: revision })).body.code).toBe('operations_update_required');
+    await editRoute('primary', b => { b.qualification!.tiers = ['efficient', 'focused', 'thorough']; });
+    const snapshot = await call('GET', `/account/routing/organization/${orgA}/policy`, owner, undefined, true);
+    expect(snapshot.body.tiers.expert).toBeNull();
+    expect((await cloud.handle(await expertRequest())).status).toBe(409);
+    expect(sends).toHaveLength(0);
+  });
+  it('keeps explicit business check-ins above staff and restores the plan default on null', async () => {
+    await setup('managed-plus');
+    await call('POST', '/ops/job-check-ins/publish', routing, { baseVersion: 0, amounts: { efficient: 100, focused: 250, thorough: 500, expert: 875 }, note: 'Staff fixture' }, true);
+    const settings = `/account/organizations/${orgA}/job-check-ins`;
+    expect((await call('POST', settings, owner, { amounts: { efficient: null, focused: null, thorough: null, expert: 950 } }, true)).status).toBe(200);
+    // A legacy business settings writer cannot erase Expert either.
+    await call('POST', settings, owner, { amounts: { efficient: 90, focused: null, thorough: null } });
+    expect((await call('GET', settings, owner, undefined, true)).body.effective.amounts.expert).toBe(950);
+    await call('POST', settings, owner, { amounts: { efficient: null, focused: null, thorough: null, expert: null } }, true);
+    await call('POST', '/ops/job-check-ins/publish', routing, { baseVersion: 1, amounts: { efficient: 100, focused: 250, thorough: 500, expert: null }, note: 'Restore plan fixture' }, true);
+    expect((await call('GET', settings, owner, undefined, true)).body.effective).toMatchObject({ amounts: { expert: 1_000 }, source: { expert: 'plan' } });
+  });
+  it('requires Routing staff to set the price and check-in defaults', async () => {
+    for (const token of [owner, billing]) {
+      expect((await call('GET', '/ops/credit-prices', token, undefined, true)).status).toBe(403);
+      expect((await call('POST', '/ops/job-check-ins/publish', token, { baseVersion: 0, amounts: { efficient: 100, focused: 250, thorough: 500, expert: 999 }, note: 'Refused fixture' }, true)).status).toBe(403);
+    }
+  });
+});
 
 describe('recurring Individual funding through scoped managed dispatch', () => {
   /** Keep the synthetic route qualified past the first term, so only the billing period changes. */
@@ -602,6 +715,13 @@ describe('Operations publication through authenticated funded dispatch', () => {
     const first = await cloud.handle(await request(undefined, { headers: { 'x-nectovia-source-restrictions': JSON.stringify([restriction]) } }));
     expect(first.status).toBe(409);
     const second = await cloud.handle(await request(undefined, { attempt: 'second' })); expect(second.status).toBe(409); expect(sends).toHaveLength(0);
+    // Select an advisor explicitly; its evidence still cannot override a source's connection restriction.
+    await cloud.commercial.publishSystemOne(routing, { baseRevision: 2, note: 'Offline advisor privacy fixture', selection: {
+      provider: 'openrouter', protocol: 'decisions', model: 'fixture/advisor',
+      rate: { version: 'fixture', inputMicroUsdPerMillion: 1, outputMicroUsdPerMillion: 0, cacheReadMicroUsdPerMillion: 1, cacheWriteMicroUsdPerMillion: 1 },
+      evidence: 'Offline fixture', observedAt: '2026-01-01T00:00:00Z', validUntil: '2099-01-01T00:00:00Z',
+      privacy: { noTraining: true, zeroRetention: false, ingressCountries: ['ZZ'], processingCountries: ['ZZ'], retentionPolicy: 'fixture', transientCache: false },
+    } });
     const req = await request(undefined, { attempt: 'advisor' });
     const advisor = await cloud.handle(new Request('http://127.0.0.1:8795/managed/v1/evaluations', { method: 'POST', headers: req.headers, body: '{}' }));
     expect(advisor.status).toBe(422); expect(await advisor.text()).toContain('helper_privacy_unverified');

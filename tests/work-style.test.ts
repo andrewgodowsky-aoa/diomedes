@@ -71,10 +71,10 @@ function resolve(overrides: Partial<WorkStyleInput> & Pick<WorkStyleInput, 'rout
 }
 
 describe('the WorkStyle vocabulary', () => {
-  it('has three styles, each with one label and one plain line', () => {
-    expect(WORK_STYLES).toEqual(['efficient', 'focused', 'thorough']);
+  it('has four styles, each with one label and one plain line', () => {
+    expect(WORK_STYLES).toEqual(['efficient', 'focused', 'thorough', 'expert']);
     // Labels are the owner's to rename; each style has exactly one, and they are distinct.
-    expect(new Set(WORK_STYLES.map((style) => WORK_STYLE_LABELS[style])).size).toBe(3);
+    expect(new Set(WORK_STYLES.map((style) => WORK_STYLE_LABELS[style])).size).toBe(4);
     const sentence = chooseWorkStyleSentence();
     for (const style of WORK_STYLES) expect(sentence).toContain(WORK_STYLE_LABELS[style]);
     for (const style of WORK_STYLES) {
@@ -197,6 +197,7 @@ describe('reasoning level', () => {
   it('holds Fix to its ceiling in every style', () => {
     for (const style of WORK_STYLES) {
       const r = resolve({ route: 'codex', style, mode: 'fix', hints: { text: 'x'.repeat(2000) } });
+      if (style === 'expert') { expect(r.outcome).toBe('ask'); continue; }
       expect(['low', 'medium']).toContain(r.effort);
     }
     expect(resolve({ route: 'codex', style: 'thorough', mode: 'fix' }).effort).toBe('medium');
@@ -230,6 +231,7 @@ describe('pins and missing models', () => {
   it('an explicit pin always wins and is labelled as all calls', () => {
     for (const style of WORK_STYLES) {
       const r = resolve({ route: 'codex', style, pin: { model: 'gpt-5.5', effort: 'xhigh' }, hints: { text: 'hi' } });
+      if (style === 'expert') { expect(r.outcome).toBe('ask'); continue; }
       expect(r).toMatchObject({ outcome: 'run', model: 'gpt-5.5', effort: 'xhigh', pinScope: 'all-calls', selection: 'manual', substituted: false });
     }
     // Fix's ceiling still applies to a pin.

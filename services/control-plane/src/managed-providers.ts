@@ -293,6 +293,7 @@ export interface EvaluationProviderRow {
  * one endpoint (TypeSafe), 32,000 tokens of context, $0.000000042 per prompt
  * token and nothing per completion token.
  */
+/** Offline seed/fixture only. Runtime selection must come from a published Operations policy. */
 export const EVALUATION_PROVIDER: EvaluationProviderRow = Object.freeze<EvaluationProviderRow>({
   id: 'openrouter-jev-1.13',
   provider: 'openrouter',
@@ -308,6 +309,13 @@ export const EVALUATION_PROVIDER: EvaluationProviderRow = Object.freeze<Evaluati
   credential: 'OPENROUTER_API_KEY',
   requestIdHeaders: Object.freeze(['x-request-id', 'cf-ray']),
 });
+
+export function evaluationProvider(selection: import('../../../shared/evaluation-policy.js').EvaluationSelection, policyRevision: number): EvaluationProviderRow {
+  // The immutable global revision identifies the selected model and evidence on every funded attempt.
+  return { id: `openrouter-decisions:r${policyRevision}`, provider: 'openrouter', model: selection.model,
+    rate: selection.rate, endpoint: 'https://openrouter.ai/api/alpha/decisions',
+    credential: 'OPENROUTER_API_KEY', requestIdHeaders: ['x-request-id', 'cf-ray'] };
+}
 
 export interface EvaluationProviderCall {
   row: EvaluationProviderRow;

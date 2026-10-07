@@ -68,13 +68,14 @@ afterEach(async () => {
 });
 
 /** A host whose account service says each tier's amount, and whose threads carry a style the test can change. */
-function host(amounts: { current: Record<JobTier, number> | null | 'throws' } = { current: null }) {
+function host(amounts: { current: Partial<Record<JobTier, number>> | null | 'throws' } = { current: null }) {
   const styles = new Map<string, JobTier>();
   const caps = new JobCaps(path.join(dir, 'data'), {
     tierOf: (_projectId, threadId) => jobTierOf(threadId ? (styles.get(threadId) ?? null) : null),
     checkInOf: async (_projectId, tier) => {
       if (amounts.current === 'throws') throw new Error('The account service did not answer.');
-      return amounts.current ? credits(amounts.current[tier]) : null;
+      const amount = amounts.current?.[tier];
+      return amount === undefined ? null : credits(amount);
     },
   });
   return { caps, styles, amounts };
@@ -123,13 +124,13 @@ describe('where the amount comes from', () => {
   });
 
   test('the shared rule: a business\'s own amount, else staff\'s default, else the code default', () => {
-    expect(codeCheckIns().credits).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(codeCheckIns().credits).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
     const staff = { version: 3, amounts: { efficient: 120, focused: 260, thorough: 520 } };
     const resolved = resolveCheckIns(staff, { efficient: 30, focused: null, thorough: null });
-    expect(resolved.credits).toEqual({ efficient: 30, focused: 260, thorough: 520 });
-    expect(resolved.source).toEqual({ efficient: 'business', focused: 'staff', thorough: 'staff' });
+    expect(resolved.credits).toEqual({ efficient: 30, focused: 260, thorough: 520, expert: 750 });
+    expect(resolved.source).toEqual({ efficient: 'business', focused: 'staff', thorough: 'staff', expert: 'code' });
     expect(checkInAmount(resolved, 'efficient')).toBe(credits(30));
-    expect(resolveCheckIns(null, null).source).toEqual({ efficient: 'code', focused: 'code', thorough: 'code' });
+    expect(resolveCheckIns(null, null).source).toEqual({ efficient: 'code', focused: 'code', thorough: 'code', expert: 'code' });
   });
 
   test('an amount is whole credits from 1 up, and a request names nothing else', () => {
@@ -662,7 +663,7 @@ describe('the Settings boxes', () => {
   });
 
   test('the boxes are filled with the business\'s own amounts, and empty where it has none', () => {
-    expect(amountsText(full)).toEqual({ efficient: '40', focused: '', thorough: '' });
+    expect(amountsText(full)).toEqual({ efficient: '40', focused: '', thorough: '', expert: '' });
   });
 
   test('the read is one call for this business, and never throws; a save sends the amounts and nothing else', async () => {

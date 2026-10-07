@@ -27,7 +27,8 @@ import {
 } from '../../shared/evaluation-wire.js';
 import type { EvaluationProfile } from '../../shared/evaluation.js';
 import { approvedJobCap } from '../../shared/job-caps.js';
-import type { JobTier } from '../../shared/managed-usage.js';
+import { micro, usageCost as meteredCost, type JobTier } from '../../shared/managed-usage.js';
+import { evaluationRouteSchema, type EvaluationRoute } from '../../shared/evaluation-policy.js';
 import { NECTOVIA_ROUTE } from '../../shared/model-api.js';
 import { inputTokenBound } from '../../shared/token-bound.js';
 import { AGENT_SIGN_IN_REQUIRED, type AdmittedAgentWork, type AgentGatePort } from '../accounts/agent-gate.js';
@@ -42,7 +43,6 @@ import {
 import { jobKeyFor } from '../job-caps.js';
 import {
   ceilingCost,
-  usageCost,
   type ExposureReservation,
   type ModelRateCard,
   type SpendExposure,
@@ -53,7 +53,6 @@ import {
   type EvaluationReceipt,
   type EvaluationTransportCode,
 } from './evaluation-adapter.js';
-import { EVALUATION_PRICE_JEV_113_OPENROUTER } from './evaluation-price.js';
 import {
   createJevAdvisor,
   type JevAdvisor,
@@ -89,27 +88,29 @@ const UNCERTAIN = {
 } as const;
 
 /**
- * This computer's price for a managed evaluation: the gateway's own terms for the model it
- * sends to (services/control-plane/src/managed-providers.ts, EVALUATION_PROVIDER), which are
- * the desktop's published OpenRouter terms for Jev 1.13. Input, cache reads and cache writes at
- * one rate; output at nothing. One band: the route's context is 32,000 tokens.
+ * Conservative local hold prices from the authenticated gateway snapshot. The original
+ * tier price, including every band and fee, is retained for receipt reconciliation.
  */
-export function managedEvaluationRateCard(): ModelRateCard {
-  const price = EVALUATION_PRICE_JEV_113_OPENROUTER;
+type EvaluationRateCard = ModelRateCard & { price: EvaluationRoute['price'] };
+export function managedEvaluationRateCard(selection: EvaluationRoute): EvaluationRateCard {
+  const price = selection.price;
+  const bands = [price, ...price.longContext];
   const rates = {
-    input: price.inputMicroUsdPerMillion,
-    cacheWrite: price.inputMicroUsdPerMillion,
-    cacheRead: price.inputMicroUsdPerMillion,
-    output: price.outputMicroUsdPerMillion,
+    input: Math.max(...bands.map(b => b.inputMicroUsdPerMillion)),
+    cacheWrite: Math.max(...bands.map(b => b.cacheWriteMicroUsdPerMillion)),
+    cacheRead: Math.max(...bands.map(b => b.cacheReadMicroUsdPerMillion)),
+    output: Math.max(...bands.map(b => b.outputMicroUsdPerMillion)),
   };
   return {
+    price,
     version: price.version,
     route: NECTOVIA_ROUTE,
-    modelId: price.modelId,
-    source: `${price.source}. Nectovia's local guard; the account service's ledger is the authority.`,
+    modelId: selection.model,
+    source: 'Authenticated Operations selection and credit price table. The account ledger settles the actual charge.',
     shortContextMaxInputTokens: EVALUATION_ROUTE_LIMITS.maxStateTokens,
     short: rates,
     long: { ...rates },
+    requestFeeMicroUsd: Math.max(...bands.map(b => b.requestFeeMicroUsd)),
   };
 }
 
@@ -229,16 +230,17 @@ function preDispatchCode(code: string): EvaluationTransportCode {
 
 /**
  * The evaluation port for a business conversation on company-managed inference. It asks for the
- * route's model (Jev 1.13); what answered comes back in the reply, named by the provider.
+ * Operations-selected model; what answered comes back in the reply, named by the provider.
  */
-export function managedEvaluationPort(options: ManagedEvaluationOptions): EvaluationPort {
+export function managedEvaluationPort(options: ManagedEvaluationOptions): EvaluationPort & { takeRateCard(id: string): EvaluationRateCard | undefined } {
   const now = options.now ?? (() => new Date());
   const newJob = options.jobId ?? (() => `preflight-${randomUUID()}`);
-  const card = managedEvaluationRateCard();
+  const cards = new Map<string, EvaluationRateCard>();
   return {
     id: MANAGED_EVALUATION_PORT_ID,
     version: '1',
-    requestedModel: card.modelId,
+    requestedModel: 'operations-system-one',
+    takeRateCard(id) { const card = cards.get(id); cards.delete(id); return card; },
     scripted: false,
     supports: ['choice', 'score', 'boolean'],
     limits: UNPROVEN_ROUTE_LIMITS,
@@ -282,6 +284,30 @@ export function managedEvaluationPort(options: ManagedEvaluationOptions): Evalua
       if (call.signal.aborted) throw refuse('transport_unavailable', NOT_SENT.cancelled);
 
       const tier = options.tierOf(scope.project, scope.thread);
+      let token: string;
+      let selection: EvaluationRoute;
+      const gatewayHeaders = {
+        'x-nectovia-organization': organizationId,
+        'x-nectovia-admission': admitted.admissionId,
+        'x-nectovia-job': rootJobId,
+        'x-nectovia-attempt': `${rootJobId}:selection`,
+        'x-nectovia-tier': tier,
+        'x-nectovia-usage-class': usageClassFor('conversation'),
+      };
+      try {
+        token = await unlessCancelled(options.account.token(), call.signal);
+        const response = await (options.account.fetch ?? globalThis.fetch)(`${options.account.base}/managed/v1/evaluations/route`, {
+          headers: { ...gatewayHeaders, authorization: `Bearer ${token}` }, signal: call.signal, redirect: 'manual',
+        });
+        const text = await readCapped(response, MAX_ANSWER_BYTES);
+        if (!response.ok) throw refuse(preDispatchCode(readError(text)?.code ?? ''), readError(text)?.message ?? NOT_SENT.busy);
+        selection = evaluationRouteSchema.parse(JSON.parse(text));
+        if (Date.parse(selection.validUntil) <= now().getTime()) throw new Error('System One selection expired. Refresh before continuing.');
+      } catch (error) {
+        if (error instanceof EvaluationTransportError) throw error;
+        throw refuse('transport_unavailable', error instanceof Error ? error.message : NOT_SENT.busy);
+      }
+      const card = managedEvaluationRateCard(selection);
       const body = JSON.stringify({ state: call.state, questions: call.questions });
       const questions = Object.keys(call.questions).length;
       const connectionId = nectoviaConnectionId(organizationId, now());
@@ -303,17 +329,17 @@ export function managedEvaluationPort(options: ManagedEvaluationOptions): Evalua
           // The gateway's own bound: every input token the body can carry at the dearest input
           // rate, and a few output tokens a question at the output rate.
           maxMicroUsd: ceilingCost(card, {
-            maxInputTokens: inputTokenBound(Buffer.byteLength(body), questions),
+            maxInputTokens: inputTokenBound(Buffer.byteLength(body) + Buffer.byteLength(selection.model) + 256, questions),
             maxOutputTokens: questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION,
           }),
           job: { id: jobKeyFor(scope.project, rootJobId), capMicroUsd: approvedJobCap(tier) },
         });
+        cards.set(hold.id, card);
       } catch (error) {
         if (error instanceof EvaluationTransportError) throw error;
         throw refuse('transport_unavailable', error instanceof Error && error.message ? error.message : NOT_SENT.hold);
       }
-      const release = (reason: string) => options.exposure.release(hold.id, reason).then(() => undefined, () => undefined);
-      let token: string;
+      const release = (reason: string) => { cards.delete(hold.id); return options.exposure.release(hold.id, reason).then(() => undefined, () => undefined); };
       try {
         token = await unlessCancelled(options.account.token(), call.signal);
       } catch (error) {
@@ -343,6 +369,7 @@ export function managedEvaluationPort(options: ManagedEvaluationOptions): Evalua
             'x-nectovia-attempt': hold.id,
             'x-nectovia-tier': tier,
             'x-nectovia-usage-class': usageClassFor('conversation'),
+            'x-nectovia-evaluation-policy': `${selection.policyRevision}:${selection.tableVersion}`,
           },
           body,
           signal: call.signal,
@@ -405,28 +432,21 @@ export function managedEvaluationPort(options: ManagedEvaluationOptions): Evalua
  * the reason, never settled at a figure the two ledgers disagree on. Released holds were already
  * released by the port.
  */
-export async function recordManagedCharge(exposure: SpendExposure, record: PreflightChargeRecord): Promise<void> {
+export async function recordManagedCharge(exposure: SpendExposure, record: PreflightChargeRecord, card?: EvaluationRateCard): Promise<void> {
   const receipt = record.receipt;
   if (!receipt || receipt.state === 'released') return;
   const hold = exposure.get(receipt.attemptId);
   if (!hold || hold.state !== 'pending') return;
-  const card = managedEvaluationRateCard();
   const park = (reason: string) => exposure.markUncertain(hold.id, reason).then(() => undefined);
   if (receipt.state === 'uncertain') return park(receipt.reason);
-  const usage = {
-    inputTokens: receipt.usage.inputTokens,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    outputTokens: receipt.usage.outputTokens,
-    reasoningTokens: 0,
-  };
-  if (receipt.rateCard !== card.version)
+  if (!card || receipt.rateCard !== card.version || card.version !== hold.rateCardVersion || card.modelId !== hold.modelId || !hold.jobId)
     return park(`The service charged this preflight under ${receipt.rateCard}, which this version of the app does not price.`);
   try {
-    const local = usageCost(card, usage).microUsd;
-    if (local !== receipt.microUsd)
-      return park(`The service charged ${receipt.microUsd} micro-USD and this computer prices the same usage at ${local}.`);
-    await exposure.settle(hold.id, { usage, card, providerRequestId: record.provenance?.providerRequestId ?? receipt.attemptId });
+    const expected = meteredCost(card.price, { inputTokens: receipt.usage.inputTokens, outputTokens: receipt.usage.outputTokens,
+      cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 });
+    if (expected !== receipt.microUsd) return park('The receipt does not match the credit price snapshot reserved for this call.');
+    await exposure.settleReportedCost(hold.id, { jobId: hold.jobId, microUsd: micro(receipt.microUsd), card,
+      providerRequestId: record.provenance?.providerRequestId ?? receipt.attemptId });
   } catch (error) {
     await park(
       `The service's receipt could not be settled here: ${error instanceof Error ? error.message : String(error)}`,
@@ -452,14 +472,15 @@ export function createManagedJevAdvisor(options: ManagedJevAdvisorOptions): JevA
   const advisor = createJevAdvisor({
     port,
     recordCharge: (record) => {
-      const write: Promise<void> = recordManagedCharge(options.exposure, record)
+      const write: Promise<void> = recordManagedCharge(options.exposure, record, record.receipt ? port.takeRateCard(record.receipt.attemptId) : undefined)
         .catch(() => undefined)
         .finally(() => writes.delete(write));
       writes.add(write);
     },
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-    ...(options.cacheTtlMs !== undefined ? { cacheTtlMs: options.cacheTtlMs } : {}),
+    // A cached decision must not hide a newly selected or disabled Operations model.
+    cacheTtlMs: 0,
     ...(options.clock ? { clock: options.clock } : {}),
   });
   return {

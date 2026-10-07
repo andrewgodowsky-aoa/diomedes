@@ -61,8 +61,8 @@ function picker(props: Partial<Parameters<typeof WorkStylePicker>[0]> = {}) {
 }
 
 describe('the style picker', () => {
-  it('offers the three styles with one plain line each, and nothing else to choose', () => {
-    const html = picker({ thread: thread({ workStyle: 'focused' }) });
+  it('offers the four styles with one plain line each for a Managed account', () => {
+    const html = picker({ thread: thread({ workStyle: 'focused' }), view: { ...view(), route: 'nectovia', expert: { available: true, reason: null } } });
     for (const style of WORK_STYLES) {
       expect(html).toContain(`<span>${WORK_STYLE_LABELS[style]}</span>`);
       expect(html).toContain(WORK_STYLE_DESCRIPTIONS[style]);

@@ -63,7 +63,7 @@ export function TierSetup({
       setWorking(false);
     }
   };
-  const change = (style: (typeof WORK_STYLES)[number], next: Partial<TierDraft[typeof style]>) =>
+  const change = (style: keyof TierDraft, next: Partial<TierDraft[typeof style]>) =>
     setDraft({ ...draft, [style]: { ...draft[style], ...next } });
 
   return (
@@ -84,7 +84,7 @@ export function TierSetup({
           void run(withTierDraft(services, draft), 'Tiers saved.');
         }}
       >
-        {WORK_STYLES.map((style) => (
+        {WORK_STYLES.filter(style => style !== 'expert').map((style) => (
           <fieldset key={style} className="ai-provider-model">
             <legend>{WORK_STYLE_LABELS[style]}</legend>
             <p className="caption">{WORK_STYLE_DESCRIPTIONS[style]}</p>
@@ -118,6 +118,7 @@ export function TierSetup({
             <p className="caption">Default: {TIER_DEFAULT_NOTES[style]}</p>
           </fieldset>
         ))}
+        <p className="caption">Expert uses the Managed route selected in Operations.</p>
         <div className="actions">
           <Button tone="primary" type="submit" disabled={disabled}>
             Save tiers

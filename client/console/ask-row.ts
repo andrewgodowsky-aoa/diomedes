@@ -301,13 +301,14 @@ export function tierEntries(
   localName: string | null,
   names: boolean,
   onLocal = false,
+  expertAvailable = false,
 ): TierEntry[] {
   const entries: TierEntry[] = WORK_STYLES.map((style, index) => ({
     id: style,
     name: WORK_STYLE_LABELS[style],
     sub: WORK_STYLE_DESCRIPTIONS[style],
     bars: index + 1,
-    disabled: false,
+    disabled: style === 'expert' && !expertAvailable,
   }));
   if (local && (local.found || onLocal))
     entries.push({

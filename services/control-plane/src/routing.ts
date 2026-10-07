@@ -1,6 +1,6 @@
 /** Scoped extensions of the existing commercial policy, catalogue and customer setup authority. */
 import { z } from 'zod';
-import { staffCan, type StaffPermission } from '../../../shared/access.js';
+import { staffCan, hasExpertAccess, EXPERT_NOT_INCLUDED, type StaffPermission } from '../../../shared/access.js';
 import { CREDIT_MICRO_USD, micro, periodIdFor } from '../../../shared/managed-usage.js';
 import { decideAgentAdmission, snapshotFromView } from '../contract/contract.js';
 import {
@@ -122,11 +122,17 @@ export async function routesWithCircuits(tx: CommercialTransaction, now: number)
 }
 
 export function legacyRouting(policy: TierPolicy | undefined): RoutingConfiguration {
-  const tierRouting = (tier: typeof ROUTING_TIERS[number]): RoutingConfiguration[typeof tier] => ({
+  const tierRouting = (tier: typeof ROUTING_TIERS[number]): NonNullable<RoutingConfiguration[typeof tier]> => ({
     primary: policy?.tiers[tier]?.entryId ?? null, backups: [], fallbackEnabled: false, maxAttempts: 1,
     cost: { sameOrLower: true, maxAttemptMicroUsd: null, qualityFloor: 0 },
   });
-  return { efficient: tierRouting('efficient'), focused: tierRouting('focused'), thorough: tierRouting('thorough') };
+  return { efficient: tierRouting('efficient'), focused: tierRouting('focused'), thorough: tierRouting('thorough'), expert: tierRouting('expert') };
+}
+
+/** Old Operations clients omit Expert. Only an explicit new value changes its route. */
+function preserveExpert(input: ScopedPublicationInput, current: TierPolicy | undefined): ScopedPublicationInput {
+  return input.routing && input.routing.expert === undefined && current?.routing?.expert
+    ? { ...input, routing: { ...input.routing, expert: current.routing.expert } } : input;
 }
 
 export class RoutingService {
@@ -353,8 +359,15 @@ export class RoutingService {
       const connections = approvedConnections(env).filter(c => connectionCredential(c, env));
       const tiers = {} as ResolvedRoutingSnapshot['tiers'], exclusions = {} as ResolvedRoutingSnapshot['exclusions'];
       const validUntil = new Date(this.now() + 60_000).toISOString();
+      const expert = scope.kind === 'organization' && hasExpertAccess(entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at()));
       for (const tier of ROUTING_TIERS) {
         const configured = (state.effective?.routing ?? legacyRouting(state.effective))[tier];
+        if (tier === 'expert' && !expert) {
+          tiers[tier] = null; exclusions[tier] = [{ routeId: '', reasons: [{ code: 'expert_not_included', message: EXPERT_NOT_INCLUDED }] }]; continue;
+        }
+        if (!configured) {
+          tiers[tier] = null; exclusions[tier] = [{ routeId: '', reasons: [{ code: 'tier_unrouted', message: 'This tier has no configured route.' }] }]; continue;
+        }
         if (!state.effective?.routing || !state.preference) {
           tiers[tier] = null; exclusions[tier] = [{ routeId: configured.primary ?? '', reasons: [{ code: 'routing_setup_required', message: 'A versioned route policy and accepted account privacy profile are required.' }] }]; continue;
         }
@@ -383,9 +396,10 @@ export class RoutingService {
         validUntil, tiers, exclusions };
     });
   }
-  private async previewIn(tx: CommercialTransaction, input: ScopedPublicationInput, env: Readonly<Record<string, unknown>>) {
+  private async previewIn(tx: CommercialTransaction, input: ScopedPublicationInput, env: Readonly<Record<string, unknown>>, keepExpert = true) {
     await this.exists(tx, input.scope);
     const global = await tx.policy(), current = await tx.policy(undefined, routingScopeKey(input.scope));
+    if (keepExpert) input = preserveExpert(input, current);
     if ((current?.revision ?? 0) !== input.baseRevision || (global?.revision ?? 0) !== input.baseGlobalRevision)
       throw new AccountError(409, 'The scope or global policy changed. Refresh and preview again.');
     if (input.scope.kind === 'global' && input.routing === null) throw new AccountError(422, 'Global policy cannot inherit.');
@@ -393,7 +407,7 @@ export class RoutingService {
     const priceTable = (await tx.priceTable()) ?? null;
     // Route evidence is checked whenever the routing changes, a legacy record becoming versioned included.
     const changed = !keepsOwnRouting(current, input.routing);
-    for (const tier of ROUTING_TIERS) for (const id of input.routing && changed ? [input.routing[tier].primary, ...input.routing[tier].backups] : []) {
+    for (const tier of ROUTING_TIERS) for (const id of input.routing?.[tier] && changed ? [input.routing[tier]!.primary, ...input.routing[tier]!.backups] : []) {
       if (id === null) continue;
       const r = routes.find(r => r.id === id), c = connections.find(c => c.id === r?.binding?.connectionId);
       if (!r || r.status !== 'qualified' || !r.binding || !c || !connectionCredential(c, env) || bindingProblems(r, c).length)
@@ -415,7 +429,9 @@ export class RoutingService {
       if (input.scope.kind === 'global' && override && !override.inherit) continue;
       const access = entitlementFromGrants(await tx.grants(scope.id), await tx.accessRevision(scope.id), this.at());
       const preference = await tx.routingPreference(key), routing = input.routing ?? global?.routing;
-      const tiers = Object.fromEntries(ROUTING_TIERS.map(tier => [tier, preference && routing
+      const tiers = Object.fromEntries(ROUTING_TIERS.map(tier => [tier, tier === 'expert' && (scope.kind !== 'organization' || !hasExpertAccess(access))
+        ? { candidates: [], ranked: [], excluded: [{ routeId: '', reasons: [{ code: 'expert_not_included', message: EXPERT_NOT_INCLUDED }] }] }
+        : preference && routing
         ? resolveRoutingCandidates({ routes, connections, preference, mandatory: global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS,
           sourceRestrictions: [], tier, policy: routing[tier], envelope: defaultEnvelope(), now: this.now(), costCeiling: tierCeiling(priceTable, tier) })
         : { candidates: [], ranked: [], excluded: [{ routeId: '', reasons: [{ code: 'routing_setup_required', message: 'Accepted customer privacy settings are missing.' }] }] }]));
@@ -444,18 +460,20 @@ export class RoutingService {
       const publication = 'toRevision' in request ? (() => { const { toRevision: _target, ...rest } = request;
         // A rollback restores the whole record, its escalation control included.
         return { ...rest, routing: restored!.inherit ? null : restored!.routing, escalation: restored!.escalation ?? null }; })() : request;
-      const input = scopedPublicationInput.parse(publication);
-      const preview = await this.previewIn(tx, input, env);
+      const parsed = scopedPublicationInput.parse(publication);
+      const input = rollback ? parsed : preserveExpert(parsed, await tx.policy(undefined, key));
+      const preview = await this.previewIn(tx, input, env, !rollback);
       // A scope-specific override must have a primary permitted by its actual customer's profile. Checked when the
       // override changes; one kept exactly changes no route, and its routes' evidence must not block the escalation control.
-      if (input.scope.kind !== 'global' && input.routing !== null && !keepsOwnRouting(await tx.policy(undefined, key), input.routing) && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t].primary !== null && !a.tiers[t].eligible.includes(input.routing![t].primary!))))
+      if (input.scope.kind !== 'global' && input.routing !== null && !keepsOwnRouting(await tx.policy(undefined, key), input.routing) && preview.affected.some(a => ROUTING_TIERS.some(t => input.routing![t]?.primary != null && !a.tiers[t].eligible.includes(input.routing![t]!.primary!))))
         throw new AccountError(422, 'The override primary conflicts with this account privacy or capability requirements. Review the exclusions.');
       const routes = await tx.routes(), global = await tx.policy();
       const row: TierPolicy = { v: 1, scope: input.scope, revision: input.baseRevision + 1, routing: input.routing ?? undefined,
         inherit: input.routing === null, mandatory: input.scope.kind === 'global' ? global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS : undefined,
-        tiers: Object.fromEntries(ROUTING_TIERS.map(t => { const r = routes.find(r => r.id === input.routing?.[t].primary); return [t, r ? { entryId: r.id, provider: r.provider, model: r.model, label: r.label, entryRevision: r.revision } : null]; })) as TierPolicy['tiers'],
+        tiers: Object.fromEntries(ROUTING_TIERS.map(t => { const r = routes.find(r => r.id === input.routing?.[t]?.primary); return [t, r ? { entryId: r.id, provider: r.provider, model: r.model, label: r.label, entryRevision: r.revision } : null]; })) as TierPolicy['tiers'],
         kind: rollback ? 'rollback' : 'publish', basedOn: restored?.revision ?? input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id,
-        ...(preview.escalation ? { escalation: preview.escalation } : {}) };
+        ...(preview.escalation ? { escalation: preview.escalation } : {}),
+        ...(input.scope.kind === 'global' ? { systemOne: (rollback ? restored : global)?.systemOne ?? null } : {}) };
       // A routing record may not bind a route over the credit price table's ceiling that was not over it before.
       await withinCeiling(tx, () => tx.savePolicy(row));
       await tx.audit({ id: `audit_${crypto.randomUUID()}`, at: this.at(), actorPersonId: actor.person.id, actorRole: operator.role,

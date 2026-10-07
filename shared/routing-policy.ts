@@ -17,7 +17,9 @@ const country = z.string().regex(/^[A-Z]{2}$/);
 /** Recorded for a route whose provider may process anywhere, so no honest country fits (E7). */
 export const UNPINNED_REGION = 'ZZ';
 export const ROUTING_PROVIDERS = ['aws-bedrock', 'azure-openai', 'google-vertex', 'openrouter'] as const;
-export const ROUTING_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export const ROUTING_TIERS = ['efficient', 'focused', 'thorough', 'expert'] as const;
+/** Older desktops strictly parse three-tier replies. New clients opt in explicitly. */
+export const EXPERT_TIER_HEADER = 'X-Nectovia-Expert-Tier';
 export const ROUTING_PROFILES = ['lowest-cost', 'balanced', 'strict'] as const;
 export const routingScopeSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('global') }),
@@ -231,6 +233,8 @@ export type TierRouting = z.infer<typeof tierRoutingSchema>;
 
 export const routingConfigurationSchema = z.strictObject({
   efficient: tierRoutingSchema, focused: tierRoutingSchema, thorough: tierRoutingSchema,
+  // Absent on historical records. Absence never selects a route or clears an existing publication.
+  expert: tierRoutingSchema.optional(),
 });
 export type RoutingConfiguration = z.infer<typeof routingConfigurationSchema>;
 export const scopedPublicationSchema = z.strictObject({
@@ -263,8 +267,8 @@ export const resolvedRoutingSnapshotSchema = z.strictObject({
   revision: count, globalRevision: count, scopeRevision: count, preferenceRevision: count,
   inherited: z.boolean(), checkedAt: instant, validUntil: instant,
   profile: routingPreferenceSchema.shape.profile.nullable(),
-  tiers: z.strictObject({ efficient: resolvedTierSchema, focused: resolvedTierSchema, thorough: resolvedTierSchema }),
-  exclusions: z.strictObject({ efficient: exclusionsSchema, focused: exclusionsSchema, thorough: exclusionsSchema }),
+  tiers: z.strictObject({ efficient: resolvedTierSchema, focused: resolvedTierSchema, thorough: resolvedTierSchema, expert: resolvedTierSchema.optional() }),
+  exclusions: z.strictObject({ efficient: exclusionsSchema, focused: exclusionsSchema, thorough: exclusionsSchema, expert: exclusionsSchema.optional() }),
 });
 export type ResolvedRoutingSnapshot = z.infer<typeof resolvedRoutingSnapshotSchema>;
 export type RoutingPreferenceWrite = z.infer<typeof routingPreferenceWriteSchema>;
@@ -439,7 +443,7 @@ export type FailureKind = 'credential' | 'configuration' | 'quota' | 'capacity' 
 
 export interface EligibleCandidate { route: CatalogRoute; connection: ProviderConnection; estimateMicroUsd: MicroUsd }
 export function resolveRoutingCandidates(input: {
-  policy: TierRouting; routes: readonly CatalogRoute[]; connections: readonly ProviderConnection[];
+  policy: TierRouting | undefined; routes: readonly CatalogRoute[]; connections: readonly ProviderConnection[];
   preference: RoutingPreference; mandatory: HardRestrictions; sourceRestrictions: readonly HardRestrictions[];
   tier: typeof ROUTING_TIERS[number]; envelope: RequestEnvelope; now: number;
   /** Pin the approved primary price for the entire request, including its backups. */
@@ -459,7 +463,10 @@ export function resolveRoutingCandidates(input: {
   excluded: { routeId: string; reasons: EligibilityReason[] }[]; referenceCost: MicroUsd | null;
 } {
   const excluded: { routeId: string; reasons: EligibilityReason[] }[] = [];
-  const primary = input.routes.find(r => r.id === input.policy.primary);
+  if (!input.policy) return { candidates: [], ranked: [], referenceCost: null,
+    excluded: [{ routeId: '', reasons: [{ code: 'tier_unrouted', message: 'This tier has no configured route.' }] }] };
+  const policy = input.policy;
+  const primary = input.routes.find(r => r.id === policy.primary);
   const price = input.referencePrice === undefined ? primary?.binding?.price : input.referencePrice;
   const referenceCost = price && fresh(price.validUntil, input.now) && Date.parse(price.observedAt) <= input.now
     ? estimateRouteCost(price, input.envelope) : null;

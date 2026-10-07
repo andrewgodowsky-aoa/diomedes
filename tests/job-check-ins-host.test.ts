@@ -196,20 +196,20 @@ describe('the amount a business\'s jobs check in at', () => {
   test('an owner or admin reads it with its defaults and sets the business\'s own; a member does neither', async () => {
     await signIn(EMAIL.owner);
     const before = await api<any>(checkInsPath());
-    expect(before.effective.amounts).toEqual({ efficient: 100, focused: 250, thorough: 500 });
-    expect(before.defaults).toEqual({ efficient: 100, focused: 250, thorough: 500 });
-    expect(before.override).toEqual({ efficient: null, focused: null, thorough: null });
+    expect(before.effective.amounts).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
+    expect(before.defaults).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
+    expect(before.override).toEqual({ efficient: null, focused: null, thorough: null, expert: null });
     const saved = await api<any>(checkInsPath(), 'POST', { amounts: { efficient: 40, focused: null, thorough: 80 } });
-    expect(saved.effective.amounts).toEqual({ efficient: 40, focused: 250, thorough: 80 });
-    expect(saved.effective.source).toEqual({ efficient: 'business', focused: 'code', thorough: 'business' });
+    expect(saved.effective.amounts).toEqual({ efficient: 40, focused: 250, thorough: 80, expert: 750 });
+    expect(saved.effective.source).toEqual({ efficient: 'business', focused: 'code', thorough: 'business', expert: 'code' });
     // The defaults beside it do not move: the setting is this business's alone.
-    expect(saved.defaults).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(saved.defaults).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
 
     // An admin may change it too; the amount that was a business's own goes back with an empty box.
     await signIn(EMAIL.admin);
     expect((await api<any>(checkInsPath())).effective.amounts.efficient).toBe(40);
     const cleared = await api<any>(checkInsPath(), 'POST', { amounts: { efficient: null, focused: null, thorough: null } });
-    expect(cleared.effective.amounts).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(cleared.effective.amounts).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
 
     await signIn(EMAIL.member);
     expect((await request(checkInsPath())).status).toBe(403);
