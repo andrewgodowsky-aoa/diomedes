@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { AccountStateView } from '../shared/accounts';
 import type { Project, Settings } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 
@@ -254,16 +255,20 @@ test('Nectovia view: the home and a thread', async ({ page, request }) => {
 });
 
 test('First run: each setup step', async ({ page, request }) => {
+  // A new person's answers: nothing finished yet, settings at Guided, files asked about first.
+  const step = async (resumeAt: string) => {
+    const put = await request.put('/api/settings', {
+      headers: HEADERS,
+      data: { detail: 'guided', onboarding: { ...saved.onboarding, resumeAt, completedAt: null, detail: null } },
+    });
+    expect(put.ok(), await put.text()).toBe(true);
+  };
   try {
-    for (const step of ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready']) {
-      const put = await request.put('/api/settings', {
-        headers: HEADERS,
-        data: { onboarding: { ...saved.onboarding, resumeAt: step } },
-      });
-      expect(put.ok(), await put.text()).toBe(true);
+    for (const resumeAt of ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready']) {
+      await step(resumeAt);
       await screen(
         page,
-        `setup-${step}`,
+        `setup-${resumeAt}`,
         async () => {
           await page.goto('/');
           await expect(page.locator('.setup').first()).toBeVisible();
@@ -271,6 +276,18 @@ test('First run: each setup step', async ({ page, request }) => {
         true,
       );
     }
+    // The free version's summary (board D06): nothing of Nectovia's own, and Work to start in.
+    await page.route('**/api/account', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const response = await route.fetch();
+      const view = (await response.json()) as AccountStateView;
+      await route.fulfill({ response, json: { ...view, workspaces: [], plan: { ...view.plan, agent: 'free', payAsYouGo: undefined } } });
+    });
+    await screen(page, 'setup-ready-free', async () => {
+      await page.goto('/');
+      await expect(page.getByText('None yet, so Nectovia shows sample work until you sign in to one.')).toBeVisible();
+    });
+    await page.unroute('**/api/account');
   } finally {
     await settle(request, 'architect');
   }
@@ -278,10 +295,68 @@ test('First run: each setup step', async ({ page, request }) => {
 
 test('The waking screen', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  // The wake runs on the page's timers. Hold them still from the first paint, then step to where
+  // board D07 is drawn: the letters resolved and the field saying ready.
+  const start = new Date('2026-10-07T12:00:00Z');
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(new Date(start.getTime() + 1_000));
   await screen(page, 'overlay-02-wake', async () => {
     await page.goto('/');
     await expect(page.locator('.dm-wake').first()).toBeVisible({ timeout: 3_000 });
+    await page.clock.runFor(2_700);
+    await expect(page.locator('.dm-wake-status')).toHaveText('ready');
   });
+});
+
+test("The waking screen when the first load doesn't finish", async ({ page }) => {
+  await page.route('**/api/projects', (route) => route.abort());
+  await page.route('**/api/events', (route) => route.abort());
+  await screen(page, 'overlay-03-wake-failed', async () => {
+    await page.goto('/');
+    await expect(page.locator('.dm-wake.failed')).toBeVisible();
+  });
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+test('Sign-in through the browser, each state (board D08)', async ({ page, request }) => {
+  const real = (await (await request.get('/api/account')).json()) as AccountStateView;
+  // What the host says today in each state (server/accounts/session.ts). The screen draws its own
+  // line while a sign-in is under way, and the host's sentence otherwise.
+  const states: [string, NonNullable<AccountStateView['browser']>][] = [
+    ['gate-02-browser-ready', { status: 'ready', message: '' }],
+    ['gate-03-browser-waiting', { status: 'waiting', message: 'Finish signing in in your browser.' }],
+    ['gate-04-browser-accepting', { status: 'accepting', message: 'Signing you in.' }],
+    ['gate-05-browser-failed', { status: 'failed', message: 'Sign-in could not finish. Try again.' }],
+    [
+      'gate-06-browser-no-safe-storage',
+      { status: 'unavailable', message: "This computer can't keep a sign-in in protected storage, so you can't sign in here." },
+    ],
+  ];
+  for (const [name, browser] of states) {
+    const view: AccountStateView = {
+      ...real,
+      signedIn: false,
+      person: null,
+      workspaces: [],
+      backend: { kind: 'cloud', label: 'Nectovia accounts', url: null, reason: null, signIn: 'browser', demo: null },
+      browser,
+    };
+    await page.route('**/api/account', (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ json: view }) : route.fallback(),
+    );
+    await screen(page, name, async () => {
+      await page.goto('/');
+      await expect(page.getByRole('heading', { name: 'Sign in to Nectovia', exact: true })).toBeVisible();
+    });
+    await page.unroute('**/api/account');
+  }
+  // The local service doesn't answer before sign-in: the waking screen's card (board D07).
+  await page.route('**/api/account', (route) => route.abort());
+  await screen(page, 'gate-07-service-unreachable', async () => {
+    await page.goto('/');
+    await expect(page.locator('.dm-wake.failed')).toBeVisible();
+  });
+  await page.unroute('**/api/account');
 });
 
 // Last: signing out ends this server's session for the rest of the run.

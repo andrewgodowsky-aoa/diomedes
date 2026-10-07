@@ -4,6 +4,7 @@ import './wake.css';
 export interface WakeProps {
   short?: boolean;
   failed?: boolean;
+  /** Still passed by the app. The waking screen no longer counts projects (board D07): a new person has none. */
   projects?: number;
   workers?: number;
   reduced?: boolean;
@@ -13,28 +14,21 @@ export interface WakeProps {
 
 const LETTERS = ['N', 'E', 'C', 'T', 'O', 'V', 'I', 'A'];
 
-function plural(n: number, one: string, many: string) {
-  return `${n} ${n === 1 ? one : many}`;
+/** One of the field's words. A word that gives way to the next fades in, holds and fades out. */
+interface Line {
+  text: string;
+  hold?: 'mid' | 'mid slow';
 }
 
-// Full wake, 1:1 with `playWake(false)` in the prototype: point at 200 ms,
-// thread from 500 ms, letters from 1000 ms (one every 60 ms), status lines at
-// 1200 / 1900 / 2600 ms, end at 3200 ms. Short form: letters resolved,
-// `restoring context` at 200 ms, `field established` at 1000 ms, end at
-// 1400 ms. Any key (capturing) or pointerdown ends early with the landing.
-export function Wake({
-  short = false,
-  failed = false,
-  projects = 0,
-  workers,
-  reduced = false,
-  onDone,
-  onRetry,
-}: WakeProps) {
+// Full wake, on the approved prototype's timings: point at 200 ms, thread from 500 ms, letters
+// from 1000 ms (one every 60 ms), the field's words at 1200 / 1900 / 2600 ms, end at 3200 ms.
+// Short form after a reconnect: letters resolved, `reconnecting` at 200 ms, `ready` at 1000 ms,
+// end at 1400 ms. Any key (capturing) or pointerdown ends early with the landing. When the first
+// load fails, the field stops and says so (board D07, Didn't start).
+export function Wake({ short = false, failed = false, reduced = false, onDone, onRetry }: WakeProps) {
   const [lit, setLit] = useState<boolean[]>(() => LETTERS.map(() => short));
   const [resolved, setResolved] = useState(short);
-  const [status, setStatus] = useState('');
-  const [statusShown, setStatusShown] = useState(false);
+  const [line, setLine] = useState<Line | null>(null);
   const [skipShown, setSkipShown] = useState(false);
   const [ending, setEnding] = useState(false);
   const gpRef = useRef<HTMLSpanElement>(null);
@@ -75,8 +69,7 @@ export function Wake({
     if (failed) {
       setLit(LETTERS.map(() => true));
       setResolved(true);
-      setStatus('field not reached');
-      setStatusShown(true);
+      setLine(null);
       setSkipShown(false);
       return () => {
         timers.current.forEach(clearTimeout);
@@ -89,11 +82,8 @@ export function Wake({
     if (short) {
       setLit(LETTERS.map(() => true));
       setResolved(true);
-      at(200, () => {
-        setStatus('restoring context');
-        setStatusShown(true);
-      });
-      at(1000, () => setStatus('field established'));
+      at(200, () => setLine({ text: 'reconnecting', hold: 'mid slow' }));
+      at(1000, () => setLine({ text: 'ready' }));
       at(1400, () => endRef.current());
       return () => {
         timers.current.forEach(clearTimeout);
@@ -112,24 +102,17 @@ export function Wake({
     );
     at(1050, () => setResolved(true));
     at(1200, () => {
-      setStatus('recovering the field');
-      setStatusShown(true);
+      setLine({ text: 'opening nectovia', hold: 'mid' });
       setSkipShown(true);
     });
-    at(1900, () => {
-      const ctx =
-        workers === undefined
-          ? `${plural(projects, 'project', 'projects')}`
-          : `${plural(projects, 'project', 'projects')}   ${plural(workers, 'worker', 'workers')}`;
-      setStatus(`restoring context   ${ctx}`);
-    });
-    at(2600, () => setStatus('field established'));
+    at(1900, () => setLine({ text: 'loading your projects', hold: 'mid' }));
+    at(2600, () => setLine({ text: 'ready' }));
     at(3200, () => endRef.current());
     return () => {
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
-  }, [short, failed, projects, workers, reduced]);
+  }, [short, failed, reduced]);
 
   useEffect(() => {
     if (failed) return;
@@ -146,35 +129,58 @@ export function Wake({
     [],
   );
 
-  // Reduced motion: no wake at all unless the field failed to reach.
+  // Reduced motion: no wake at all unless the first load didn't finish.
   if (reduced && !failed) return null;
+
+  const letters = (
+    <div className={resolved ? 'dm-wake-letters resolved' : 'dm-wake-letters'} aria-hidden="true">
+      {LETTERS.map((l, i) => (
+        <span key={i} className={lit[i] ? 'on' : undefined}>
+          {l}
+        </span>
+      ))}
+    </div>
+  );
+
+  if (failed)
+    return (
+      <div className="dm-wake failed" aria-label="Nectovia didn't finish opening">
+        <div className="dm-wake-field">
+          <span className="dm-wake-gp" ref={gpRef} />
+          <span className="dm-wake-thread" />
+          {letters}
+          <p className="dm-wake-message" role="alert">
+            Nectovia didn&apos;t finish opening.
+          </p>
+          <div className="dm-wake-actions">
+            <button type="button" className="button dm-wake-retry" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+          <p className="dm-wake-hint">If it happens again, close Nectovia and open it again.</p>
+        </div>
+      </div>
+    );
 
   return (
     <div
       className={ending ? 'dm-wake gone' : 'dm-wake playing'}
-      aria-label="Nectovia is waking"
+      aria-label={short ? 'Nectovia is reconnecting' : 'Nectovia is opening'}
       onPointerDown={() => endRef.current()}
     >
       <div className="dm-wake-field">
         <span className="dm-wake-gp" ref={gpRef} />
         <span className="dm-wake-thread" />
-        <div className={resolved ? 'dm-wake-letters resolved' : 'dm-wake-letters'} aria-hidden="true">
-          {LETTERS.map((l, i) => (
-            <span key={i} className={lit[i] ? 'on' : undefined}>
-              {l}
+        {letters}
+        <div className="dm-wake-status" role="status">
+          {line && (
+            <span key={line.text} className={line.hold ? `dm-wake-line ${line.hold}` : 'dm-wake-line'}>
+              {line.text}
             </span>
-          ))}
+          )}
         </div>
-        <div className={statusShown ? 'dm-wake-status show' : 'dm-wake-status'} role="status">
-          {status}
-        </div>
-        {failed && (
-          <button type="button" className="dm-wake-retry" onClick={onRetry}>
-            Try again
-          </button>
-        )}
       </div>
-      <span className={skipShown ? 'dm-wake-skip show' : 'dm-wake-skip'}>any key skips</span>
+      <span className={skipShown ? 'dm-wake-skip show' : 'dm-wake-skip'}>Press any key to skip</span>
     </div>
   );
 }

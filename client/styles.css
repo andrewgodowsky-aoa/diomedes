@@ -23,6 +23,8 @@
   --quick: 140ms;
   --move: 200ms;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* One pixel of the round 2 boards, which draw at an 18px root to the app's 16px. */
+  --board-px: calc(1rem / 18);
   --dm-frame: var(--chrome);
   --dm-page: var(--surface);
   --dm-raised: var(--raised);
@@ -1223,10 +1225,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .error-bar .button {
   flex: none;
 }
-.setup {
-  height: 100%;
-  overflow: auto;
-}
 /* The first-run header is the window's top edge, so it moves the window, and on
    macOS its wordmark starts after the traffic lights (see `.console .top`). */
 .setup-top {
@@ -1237,19 +1235,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   height: 64px;
   -webkit-app-region: drag;
   app-region: drag;
-}
-.setup-content {
-  max-width: 720px;
-  margin: 72px auto;
-  padding: 0 32px 64px;
-}
-.setup-content > h1 {
-  margin: 8px 0 24px;
-  font-size: var(--dm-type-title);
-  line-height: 1.28;
-}
-.setup-content .intro {
-  margin-bottom: 28px;
 }
 .setup-actions {
   display: flex;
@@ -1792,13 +1777,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .project-row strong {
     font-size: var(--dm-type-caption);
-  }
-  .setup-content {
-    margin: 40px auto;
-    padding: 0 24px 40px;
-  }
-  .setup-content > h1 {
-    font-size: var(--dm-type-title);
   }
   .setup-actions {
     flex-wrap: wrap;

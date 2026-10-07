@@ -1,0 +1,243 @@
+/* First run, as the round 2 boards draw it (D01 to D06). Lengths are the boards' own numbers in
+   board pixels (--board-px), so the column sits at the boards' place and width and a bigger
+   window adds margin. Type keeps the app's tokens: the nearest one to each board size. */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--chrome);
+  color: var(--t1);
+}
+
+/* The header is the window's top edge. styles.css keeps its drag region and the macOS inset;
+   the boards draw no rule under it and set the mark 40 board pixels in. */
+.setup .setup-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: auto;
+  min-height: calc(68 * var(--board-px));
+  padding-top: calc(24 * var(--board-px));
+  padding-bottom: 0;
+  border: 0;
+}
+.setup-mark {
+  display: flex;
+  margin-left: calc(40 * var(--board-px) - 24px);
+}
+.setup-mark svg {
+  width: calc(28 * var(--board-px));
+  height: calc(28 * var(--board-px));
+}
+
+.setup-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: calc(80 * var(--board-px)) 24px calc(24 * var(--board-px));
+}
+/* The welcome carries its mark in the column and sits lower (D01). */
+.setup.step-welcome .setup-body {
+  padding-top: calc(162 * var(--board-px));
+}
+.setup-column {
+  width: 100%;
+  max-width: calc(640 * var(--board-px));
+  margin: 0 auto;
+}
+.setup-column h1 {
+  margin: calc(8 * var(--board-px)) 0 0;
+  font-size: calc(38 * var(--board-px));
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.setup-welcome-mark {
+  display: flex;
+}
+.setup-welcome-mark svg {
+  width: calc(56 * var(--board-px));
+  height: calc(56 * var(--board-px));
+}
+.setup-welcome-mark + h1 {
+  margin-top: calc(30 * var(--board-px));
+}
+
+.setup-count {
+  margin: 0;
+  font-size: var(--dm-type-ui);
+  line-height: 1.4;
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.setup-lede {
+  margin: calc(14 * var(--board-px)) 0 0;
+  max-width: 56ch;
+  font-size: var(--dm-type-body);
+  line-height: 1.5;
+  color: var(--t2);
+}
+.setup-caption {
+  margin: calc(16 * var(--board-px)) 0 0;
+  font-size: var(--dm-type-caption);
+  line-height: 1.45;
+  color: var(--t2);
+}
+.setup-who {
+  margin-top: calc(22 * var(--board-px));
+}
+.setup-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--light);
+  cursor: pointer;
+}
+.setup-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* A question's answers: the boards' rows, with the live colour's check on the chosen one. */
+.setup-choices {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--board-px));
+  margin-top: calc(26 * var(--board-px));
+}
+.setup-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: calc(12 * var(--board-px));
+  padding: calc(10 * var(--board-px)) calc(12 * var(--board-px));
+  border-radius: var(--r);
+  cursor: pointer;
+}
+.setup-choice:hover,
+.setup-choice.on {
+  background: var(--raised);
+}
+.setup-choice.on {
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+.setup-choice:has(input:focus-visible) {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+/* The radio stays the real control under the whole row, for keys, clicks and screen readers;
+   the row draws it. */
+.setup .setup-choice input[type='radio'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.setup-check {
+  flex: none;
+  width: calc(18 * var(--board-px));
+  height: calc(18 * var(--board-px));
+  margin-top: calc(3 * var(--board-px));
+  color: var(--light);
+}
+.setup-check svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.setup-choice-text strong {
+  display: block;
+  font-size: var(--dm-type-ui);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.setup-choice-note {
+  display: block;
+  margin-top: calc(2 * var(--board-px));
+  font-size: var(--dm-type-caption);
+  line-height: 1.4;
+  color: var(--t2);
+}
+
+/* How a finished job reads at the level picked (D03). */
+.setup-sample {
+  margin-top: calc(20 * var(--board-px));
+  padding: calc(14 * var(--board-px)) calc(16 * var(--board-px));
+  border-radius: calc(8 * var(--board-px));
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+.setup-sample-head {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--board-px));
+  margin: 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.setup-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(26 * var(--board-px));
+  padding: 0 calc(9 * var(--board-px));
+  border-radius: var(--rb);
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+  font-size: var(--dm-type-meta);
+  color: var(--t2);
+  white-space: nowrap;
+}
+.setup-sample-line {
+  margin: calc(8 * var(--board-px)) 0 0;
+  font-size: var(--dm-type-ui);
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+/* The answers, summed up (D06). */
+.setup-summary {
+  display: grid;
+  grid-template-columns: calc(140 * var(--board-px)) minmax(0, 1fr);
+  column-gap: calc(20 * var(--board-px));
+  margin: calc(26 * var(--board-px)) 0 0;
+}
+.setup-summary dt,
+.setup-summary dd {
+  margin: 0;
+  padding: calc(13 * var(--board-px)) 0;
+  border-top: 1px solid var(--hair);
+  font-size: var(--dm-type-conversation);
+  line-height: 1.45;
+}
+.setup-summary dt {
+  color: var(--t2);
+}
+
+/* The step's actions, on the column's edges at the foot of the window. */
+.setup-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--board-px));
+  width: calc(100% - 48px);
+  max-width: calc(640 * var(--board-px));
+  margin: 0 auto;
+  padding: calc(16 * var(--board-px)) 0 calc(40 * var(--board-px));
+}
+.setup-foot .button {
+  min-width: 0;
+  min-height: calc(44 * var(--board-px));
+  padding: 0 calc(18 * var(--board-px));
+  font-size: var(--dm-type-ui);
+}
+.setup-foot .button.quiet {
+  padding: 0 calc(10 * var(--board-px));
+}

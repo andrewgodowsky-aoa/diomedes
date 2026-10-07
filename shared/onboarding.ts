@@ -16,9 +16,6 @@ export function hasUsableService(settings: Settings): boolean {
   return services[def] === true;
 }
 
-/** What the ready page says when the business this person is acting in includes the Agent. */
-export const AGENT_READY_SENTENCE = 'The Nectovia Agent is ready and included with your plan.';
-
 /**
  * Whether the business this person is acting in includes the Nectovia Agent, as the account
  * service last answered. It reads the active workspace because the Agent gate does

@@ -221,7 +221,8 @@ describe('the brand', () => {
     expect(renderToStaticMarkup(createElement(Brand))).toContain('NECTOVIA');
     const wake = read('client/console/Wake.tsx');
     expect(wake).toContain("const LETTERS = ['N', 'E', 'C', 'T', 'O', 'V', 'I', 'A'];");
-    expect(wake).toContain('aria-label="Nectovia is waking"');
+    expect(wake).toContain("'Nectovia is opening'");
+    expect(wake).toContain(`aria-label="Nectovia didn't finish opening"`);
   });
 
   // The third place was the Workbook's own top bar, which went with the Workbook.

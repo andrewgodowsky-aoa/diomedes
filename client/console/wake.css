@@ -49,12 +49,14 @@
   white-space: nowrap;
 }
 
-/* ---- wake ---- */
+/* ---- wake (round 2 board D07) ----
+   Lengths are the board's own numbers in board pixels (--board-px); the field's type keeps the
+   app's tokens. */
 .dm-wake {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: var(--chrome, #121417);
+  background: var(--surface, #16191d);
   display: grid;
   place-items: center;
   transition: opacity 320ms ease-out;
@@ -68,28 +70,28 @@
 
 .dm-wake-field {
   position: relative;
-  width: 420px;
-  height: 120px;
+  width: calc(520 * var(--board-px));
+  height: calc(220 * var(--board-px));
 }
 
 .dm-wake-gp {
   position: absolute;
   left: 50%;
-  top: 36px;
-  width: 6px;
-  height: 6px;
-  margin-left: 150px;
+  top: calc(41 * var(--board-px));
+  width: calc(7 * var(--board-px));
+  height: calc(7 * var(--board-px));
+  margin-left: calc(180 * var(--board-px));
   border-radius: 50%;
   background: var(--light, #3fd6df);
-  box-shadow: 0 0 5px color-mix(in srgb, var(--light) 40%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--light) 45%, transparent);
   transform: scale(0);
 }
 
 .dm-wake-thread {
   position: absolute;
-  top: 39px;
+  top: calc(44 * var(--board-px));
   right: 50%;
-  margin-right: -150px;
+  margin-right: calc(-180 * var(--board-px));
   height: 1px;
   width: 0;
   background: var(--hair-2, rgba(255, 255, 255, 0.12));
@@ -99,7 +101,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 24px;
+  top: calc(28 * var(--board-px));
   text-align: center;
   font-family: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   font-weight: 400;
@@ -125,11 +127,13 @@
   opacity: 1;
 }
 
+/* The field's words: each one fades in where the last one was. */
 .dm-wake-status {
   position: absolute;
   left: 0;
   right: 0;
-  top: 86px;
+  top: calc(96 * var(--board-px));
+  height: calc(24 * var(--board-px));
   text-align: center;
   font-family: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
   font-weight: 400;
@@ -138,40 +142,26 @@
   color: var(--t3, #808b97);
   letter-spacing: 0.04em;
   white-space: pre;
+}
+
+.dm-wake-line {
+  display: block;
+  animation: dm-wake-on 240ms forwards;
   opacity: 0;
-  transition: opacity 240ms;
 }
 
-.dm-wake-status.show {
-  opacity: 1;
+.dm-wake-line.mid {
+  animation: dm-wake-mid 700ms both;
 }
 
-.dm-wake-retry {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 108px;
-  text-align: center;
-  font-family: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
-  font-size: var(--dm-type-meta);
-  letter-spacing: 0.04em;
-  color: var(--t1, #e6e9ed);
-  cursor: pointer;
-}
-
-.dm-wake-retry:hover {
-  text-decoration: underline;
-}
-
-.dm-wake-retry:focus-visible {
-  outline: 2px solid var(--light, #3fd6df);
-  outline-offset: 2px;
+.dm-wake-line.mid.slow {
+  animation-duration: 800ms;
 }
 
 .dm-wake-skip {
   position: absolute;
-  right: 22px;
-  bottom: 18px;
+  right: calc(26 * var(--board-px));
+  bottom: calc(22 * var(--board-px));
   font-family: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
   font-weight: 400;
   font-size: var(--dm-type-meta);
@@ -179,7 +169,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   opacity: 0;
-  transition: opacity 400ms 1400ms;
+  transition: opacity 400ms 200ms;
 }
 
 .dm-wake-skip.show {
@@ -194,6 +184,59 @@
   animation: dm-th 600ms cubic-bezier(0.2, 0.8, 0.2, 1) 500ms forwards;
 }
 
+/* Didn't start: the field stands still in amber, says so, and offers the way on. */
+.dm-wake.failed .dm-wake-gp {
+  transform: scale(1);
+  background: var(--attn, #e0a94a);
+  box-shadow: none;
+}
+
+.dm-wake.failed .dm-wake-thread {
+  width: calc(360 * var(--board-px));
+}
+
+.dm-wake.failed .dm-wake-letters {
+  color: var(--t2, #a4acb6);
+}
+
+.dm-wake-message,
+.dm-wake-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.dm-wake-message {
+  top: calc(94 * var(--board-px));
+  font-size: var(--dm-type-body);
+  color: var(--t1, #e6e9ed);
+}
+
+.dm-wake-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(138 * var(--board-px));
+  display: flex;
+  justify-content: center;
+}
+
+.dm-wake .dm-wake-retry {
+  min-width: 0;
+  min-height: calc(44 * var(--board-px));
+  padding: 0 calc(18 * var(--board-px));
+  font-size: var(--dm-type-ui);
+}
+
+.dm-wake-hint {
+  top: calc(194 * var(--board-px));
+  font-size: var(--dm-type-caption);
+  color: var(--t2, #a4acb6);
+}
+
 @keyframes dm-gp {
   to {
     transform: scale(1);
@@ -202,7 +245,28 @@
 
 @keyframes dm-th {
   to {
-    width: 300px;
+    width: calc(360 * var(--board-px));
+  }
+}
+
+@keyframes dm-wake-on {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dm-wake-mid {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 

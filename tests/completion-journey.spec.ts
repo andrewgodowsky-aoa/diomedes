@@ -326,14 +326,14 @@ test('Completion journey: fresh install to a reviewed, verified change that surv
     await page.getByRole('radio', { name: /^Guided/ }).click();
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(
-      page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
+      page.getByRole('radio', { name: /^Ask me first/ }),
     ).toBeChecked();
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Connect an AI service', exact: true }),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Skip AI setup' }).click();
-    await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: "You're set up", exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Open Nectovia' }).click();
     await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
     const settings = await api<Settings>('/settings');

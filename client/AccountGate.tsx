@@ -2,6 +2,8 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useRef, us
 import { browserSignInPending, type AccountStateView, type AccountsOffView } from '../shared/accounts';
 import { api } from './api';
 import { Brand, Button } from './components';
+import { NectoviaMark } from './console/NectoviaMark';
+import { Wake } from './console/Wake';
 import './accounts.css';
 
 /**
@@ -60,12 +62,13 @@ export function AccountGate({ children }: { children: ReactNode }) {
 
   // A host without accounts (an embedded test server) asks no one to sign in, so neither does this.
   if (off) return <>{children}</>;
+  // The local service didn't answer: the same card the waking screen shows when it can't open (board D07).
+  if (!state && error) return <Wake failed onDone={() => undefined} onRetry={() => void load()} />;
   if (!state)
     return (
       <div className="initial-state">
         <Brand />
-        <p className="prose">{error || 'Opening Nectovia...'}</p>
-        {error && <Button onClick={() => void load()}>Try again</Button>}
+        <p className="prose">Opening Nectovia...</p>
       </div>
     );
   if (!state.signedIn || !state.person) return <SignIn state={state} onSignedIn={setState} onRetry={load} />;
@@ -108,7 +111,7 @@ function SignIn({
     try {
       onSignedIn(await action());
     } catch (e) {
-      setError(message(e, 'Signing in did not work. Try again.'));
+      setError(message(e, "Signing in didn't work. Try again."));
     } finally {
       setBusy(false);
     }
@@ -136,14 +139,16 @@ function SignIn({
       const next = await api<AccountStateView>('/account/forget', 'POST', { personId });
       setRemembered(next.remembered);
     } catch (e) {
-      setError(message(e, 'That account could not be removed from this computer.'));
+      setError(message(e, "That account couldn't be removed from this computer."));
     }
   };
 
   return (
     <div className="account-screen">
       <div className="account-card">
-        <Brand />
+        <span className="account-mark" role="img" aria-label="Nectovia">
+          <NectoviaMark word={false} size={44} />
+        </span>
         <h1>{mode === 'create' ? 'Create your Nectovia account' : 'Sign in to Nectovia'}</h1>
         {backend.kind === 'faux' && (
           <p className="account-banner" role="note">
@@ -153,10 +158,12 @@ function SignIn({
         )}
         {backend.kind === 'unavailable' ? (
           <>
-            <p className="prose" role="alert">
+            <p className="account-message" role="alert">
               {backend.reason ?? 'The account service is not available.'}
             </p>
-            <Button onClick={() => void onRetry()}>Try again</Button>
+            <div className="account-row">
+              <Button onClick={() => void onRetry()}>Try again</Button>
+            </div>
           </>
         ) : backend.signIn === 'browser' ? (
           <BrowserSignIn state={state} onChange={onSignedIn} />
@@ -229,7 +236,7 @@ function SignIn({
                   <span className="caption">
                     {state.protectedStorage
                       ? "Your sign-in is sealed by this computer's protected storage and never kept as text. Sign out to end it."
-                      : 'This copy of Nectovia cannot protect a kept sign-in, so you will enter your password next time.'}
+                      : "This copy of Nectovia can't protect a kept sign-in, so you'll enter your password next time."}
                   </span>
                 </span>
               </label>
@@ -284,10 +291,29 @@ function SignIn({
   );
 }
 
+/** The spinner the boards draw beside a line that's still going. */
+const SPIN = (
+  <svg
+    className="account-spin"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle cx="12" cy="12" r="8" strokeOpacity=".28" />
+    <path d="M20 12a8 8 0 0 0-8-8" />
+  </svg>
+);
+
 /**
  * The deployed account service signs people in through WorkOS in the system browser. This asks the
  * desktop to open it, and looks for the sign-in to arrive. The screen keeps asking while the browser is
- * open and while the account service is accepting a sign-in the browser finished.
+ * open and while the account service is accepting a sign-in the browser finished. While one is under
+ * way it says so in the words of board D08; every other state reads the host's own sentence.
  */
 function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange: (state: AccountStateView) => void }) {
   const [busy, setBusy] = useState(false);
@@ -315,44 +341,48 @@ function BrowserSignIn({ state, onChange }: { state: AccountStateView; onChange:
     try {
       onChange(await api<AccountStateView>(route, 'POST', {}));
     } catch (e) {
-      setError(message(e, 'Signing in did not work. Try again.'));
+      setError(message(e, "Signing in didn't work. Try again."));
     } finally {
       setBusy(false);
     }
   };
   if (browser.status === 'unavailable')
     return (
-      <p className="prose" role="alert">
+      <p className="account-message" role="alert">
         {browser.message}
       </p>
     );
   return (
     <>
       {pending ? (
-        <>
-          <p className="prose" role="status">
+        <p className="account-note" role="status">
+          {SPIN}
+          {browser.status === 'waiting' ? 'Finish signing in on the page that opened in your browser.' : 'Signing you in.'}
+        </p>
+      ) : (
+        browser.message && (
+          <p className="account-message" role="alert">
             {browser.message}
           </p>
-          <Button disabled={busy} onClick={() => void act('/account/sign-out')}>
-            Cancel
-          </Button>
-        </>
-      ) : (
-        <>
-          {browser.message && (
-            <p className="prose" role="alert">
-              {browser.message}
-            </p>
-          )}
-          <Button disabled={busy} onClick={() => void act('/account/browser-sign-in')}>
-            Sign in with your browser
-          </Button>
-        </>
+        )
       )}
       {error && (
-        <p className="prose" role="alert">
+        <p className="account-message" role="alert">
           {error}
         </p>
+      )}
+      {browser.status !== 'accepting' && (
+        <div className="account-row">
+          {browser.status === 'waiting' ? (
+            <Button tone="quiet" disabled={busy} onClick={() => void act('/account/sign-out')}>
+              Cancel
+            </Button>
+          ) : (
+            <Button tone="primary" disabled={busy} onClick={() => void act('/account/browser-sign-in')}>
+              Sign in with your browser
+            </Button>
+          )}
+        </div>
       )}
     </>
   );

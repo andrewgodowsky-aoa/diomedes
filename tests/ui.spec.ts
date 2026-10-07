@@ -244,7 +244,7 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('radio', { name: /^Guided/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(
-    page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
+    page.getByRole('radio', { name: /^Ask me first/ }),
   ).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(
@@ -261,11 +261,11 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await expect(page.getByRole('link', { name: 'Continue to OpenAI' })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('first-run-ai.png'), fullPage: true });
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
-  await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
-  // The test account's business includes the Agent, so the ready page says so rather than
+  await expect(page.getByRole('heading', { name: "You're set up", exact: true })).toBeVisible();
+  // The test account's business includes Nectovia's own AI, so the ready page says so rather than
   // offering sample work.
-  await expect(page.getByText('The Nectovia Agent is ready and included with your plan.')).toBeVisible();
-  await expect(page.getByText(/uses sample work on this computer/)).toHaveCount(0);
+  await expect(page.getByText("Nectovia's own AI, included with your plan.")).toBeVisible();
+  await expect(page.getByText(/shows sample work/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // The app opens to Nectovia. The Projects page is where it always was, one click away.
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
@@ -316,12 +316,12 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('radio', { name: /^Technical/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(
-    page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
+    page.getByRole('radio', { name: /^Ask me first/ }),
   ).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Your workspace is ready', exact: true }),
+    page.getByRole('heading', { name: "You're set up", exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // First run now ends on Nectovia's own page too; the Projects page is one click away.

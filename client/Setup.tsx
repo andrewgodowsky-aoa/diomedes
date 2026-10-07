@@ -1,49 +1,154 @@
-import type { AccountWorkspaceView } from '../shared/accounts';
-import type { Settings } from '../shared/types';
-import { Brand, Button, detailDescriptions, titleCase } from './components';
+import { useId, type ReactNode } from 'react';
+import type { AccountStateView } from '../shared/accounts';
+import { routeDisplayName } from '../shared/engines';
 import {
-  AGENT_READY_SENTENCE,
+  SETUP_ORDER,
   activeBusinessIncludesAgent,
   advanceSetup,
   hasUsableService,
+  type SetupStep,
 } from '../shared/onboarding';
+import type { Detail, Settings } from '../shared/types';
+import type { MemberRole } from '../shared/workspaces';
 import AISetup from './AISetup';
 import { useAccount } from './AccountGate';
-import { VIEW_LABELS, shownView } from './console/work-view';
+import { Button } from './components';
+import { NectoviaMark } from './console/NectoviaMark';
+import { nectoviaLockedBy } from './console/FreePlanNotice';
+import { shownView } from './console/work-view';
+import { DETAIL_LABELS, DETAIL_WORDS, detailSample } from './detail-words';
+import './setup.css';
 
 /**
- * What will answer once setup ends. A business that includes the Agent has it ready whether or
- * not the person connected a tool of their own; the sample sentence is only for someone with
- * neither.
+ * First run, as the round 2 boards draw it (D01 to D06): a welcome that says who is signed in,
+ * three questions, AI setup and a summary of the answers. Every step reads and writes the same
+ * settings record, so a reload resumes where the person left off.
  */
-export function ReadyNote({
-  settings,
-  workspaces,
-}: {
-  settings: Settings;
-  workspaces: readonly AccountWorkspaceView[] | null;
-}) {
-  const agent = activeBusinessIncludesAgent(settings, workspaces);
-  const usable = hasUsableService(settings);
-  const engine =
-    typeof settings.services?.['defaultEngine'] === 'string'
-      ? (settings.services['defaultEngine'] as string)
+
+const ROLE_WORDS: Readonly<Record<MemberRole, string>> = {
+  owner: 'owner',
+  admin: 'manager',
+  member: 'employee',
+};
+
+/** Who is signed in, as the welcome says it, or null when there is no account to name. */
+export function signedInLine(
+  state: AccountStateView | null | undefined,
+  settings: Settings,
+): string | null {
+  const person = state?.person;
+  if (!person) return null;
+  const name = person.name || person.email;
+  const active = settings.activeWorkspace;
+  const business =
+    active?.kind === 'business'
+      ? state.workspaces.find((entry) => entry.organization.id === active.organizationId)
+      : undefined;
+  return business
+    ? `Signed in as ${name}, ${ROLE_WORDS[business.role]} of ${business.organization.name}.`
+    : `Signed in as ${name}.`;
+}
+
+export interface ReadyLines {
+  ai: string;
+  view: string;
+  detail: string;
+  files: string;
+}
+
+/**
+ * The ready page's summary. AI names what will answer: Nectovia's own AI when the business this
+ * person is acting in includes it or credits they bought open it, and their own default engine
+ * beside it. The page never promises Nectovia's AI on a guess, so a plan the account service
+ * hasn't answered for reads as none. Starts in is the view finishing opens: the first finish
+ * moves a person to the Nectovia view (advanceSetup), and the free version always opens Work.
+ */
+export function readyLines(
+  settings: Settings,
+  account: AccountStateView | null | undefined,
+): ReadyLines {
+  const nectovia = activeBusinessIncludesAgent(settings, account?.workspaces)
+    ? "Nectovia's own AI, included with your plan."
+    : account?.plan.payAsYouGo === true
+      ? "Nectovia's own AI, for your Personal work, on the credits you bought."
       : '';
+  const own = hasUsableService(settings)
+    ? `${routeDisplayName(settings.services?.['defaultEngine'] as string)} is your default.`
+    : '';
+  const locked = nectoviaLockedBy(account?.plan) !== null;
+  const opens = shownView(settings.onboarding.completedAt ? settings.view : 'conversation', locked);
+  const words = DETAIL_WORDS[settings.detail];
+  return {
+    ai:
+      [nectovia, own].filter(Boolean).join(' ') ||
+      'None yet, so Nectovia shows sample work until you sign in to one.',
+    view:
+      opens === 'conversation'
+        ? 'The Nectovia view. The switch at the top moves to Work.'
+        : locked
+          ? 'The Work view. The Nectovia view comes with a paid plan.'
+          : 'The Work view. The switch at the top moves to Nectovia.',
+    detail: `${DETAIL_LABELS[settings.detail]}: ${words.charAt(0).toLowerCase()}${words.slice(1)}`,
+    files: settings.permissions.changingFiles
+      ? 'A job waits for your OK before it changes files.'
+      : 'A job changes files without waiting. Changes it proposes still wait for your review.',
+  };
+}
+
+const WORK_KINDS = [
+  { value: 'business', label: 'Business' },
+  { value: 'school', label: 'School and research' },
+  { value: 'software', label: 'Software and technical work' },
+  { value: 'personal', label: 'Personal projects' },
+  { value: 'mix', label: 'A mix' },
+] as const;
+
+const CHECK = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    focusable="false"
+  >
+    <path d="M5 12.5l4.5 4.5L19 7.5" />
+  </svg>
+);
+
+/** One question's answers: real radios, drawn as the boards' rows with a check on the chosen one. */
+function Choices<T extends string>({
+  name,
+  labelledBy,
+  value,
+  options,
+  onPick,
+}: {
+  name: string;
+  labelledBy: string;
+  value: T | null;
+  options: readonly { value: T; label: string; note?: string }[];
+  onPick: (value: T) => void;
+}) {
   return (
-    <>
-      {agent && <p className="prose">{AGENT_READY_SENTENCE}</p>}
-      {usable ? (
-        <p className="prose">
-          {titleCase(engine)} is your selected default. Nectovia checks its connection before
-          sending a request.
-        </p>
-      ) : agent ? null : (
-        <p className="prose">
-          {settings.onboarding.aiSkipped ? 'AI setup was skipped. ' : ''}No usable service is
-          connected, so Nectovia uses sample work on this computer.
-        </p>
-      )}
-    </>
+    <div className="setup-choices" role="radiogroup" aria-labelledby={labelledBy}>
+      {options.map((option) => {
+        const on = option.value === value;
+        return (
+          <label key={option.value} className={on ? 'setup-choice on' : 'setup-choice'}>
+            <input type="radio" name={name} checked={on} onChange={() => onPick(option.value)} />
+            <span className="setup-check" aria-hidden="true">
+              {on && CHECK}
+            </span>
+            <span className="setup-choice-text">
+              <strong>{option.label}</strong>
+              {option.note && <span className="setup-choice-note">{option.note}</span>}
+            </span>
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
@@ -57,164 +162,191 @@ export function Setup({
   busy: boolean;
 }) {
   const account = useAccount();
-  const step = settings.onboarding.resumeAt;
-  const order = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'] as const;
-  const index = (order as readonly string[]).indexOf(step);
+  const headingId = useId();
+  const step = settings.onboarding.resumeAt as SetupStep;
+  const index = (SETUP_ORDER as readonly string[]).indexOf(step);
   const update = (patch: Partial<Settings['onboarding']>) =>
     save({ ...settings, onboarding: { ...settings.onboarding, ...patch } });
   async function next(skip = false) {
     await save(advanceSetup(settings, skip));
   }
   if (step === 'done') return null;
-  return (
-    <div className="setup">
-      <header className="setup-top">
-        <Brand />
-      </header>
-      <main className="setup-content">
-        {step === 'welcome' ? (
-          <>
-            <h1>A place for your work</h1>
-            <p className="prose intro">
-              Nectovia is a place for your work: projects, documents, plans, tasks, and a history of
-              everything that changed.
-            </p>
-            <div className="actions">
-              <Button tone="primary" disabled={busy} onClick={() => void next()}>
-                Continue
-              </Button>
-            </div>
-          </>
-        ) : step === 'ai' ? (
-          <AISetup
-            settings={settings}
-            save={save}
-            busy={busy}
-            onContinue={() => void next()}
-            onBack={() => void update({ resumeAt: 'q3' })}
-          />
-        ) : step === 'ready' ? (
-          <>
-            <h1>Your workspace is ready</h1>
-            <p className="prose intro">
-              You&apos;ll start in the{' '}
-              {VIEW_LABELS[shownView(settings.view, account?.state.plan.agent === 'free' && account.state.plan.payAsYouGo !== true)]}{' '}
-              view, with{' '}
-              {titleCase(settings.detail)} detail: {detailDescriptions[settings.detail].toLowerCase()}{' '}
-              File proposals require review before Nectovia applies them. Your other approval
-              preferences are in Settings. The switch at the top moves between Nectovia and Work.
-            </p>
-            <ReadyNote settings={settings} workspaces={account?.state.workspaces ?? null} />
-            <div className="actions">
-              <Button tone="quiet" onClick={() => void update({ resumeAt: 'ai' })}>
-                Back
-              </Button>
-              <Button tone="primary" disabled={busy} onClick={() => void next()}>
-                Open Nectovia
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="caption">Question {index} of 3</p>
-            <h1>
-              {step === 'q1'
-                ? 'What are you here to work on?'
-                : step === 'q2'
-                  ? 'How much detail do you want?'
-                  : 'How should file changes work?'}
-            </h1>
-            {step === 'q1' && (
-              <div className="radio-list" role="radiogroup" aria-label="Kind of work">
-                {(
-                  [
-                    ['business', 'Business'],
-                    ['school', 'School and research'],
-                    ['software', 'Software and technical work'],
-                    ['personal', 'Personal projects'],
-                    ['mix', 'A mix'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label
-                    className={`radio-row ${settings.onboarding.work === value ? 'selected' : ''}`}
-                    key={value}
-                  >
-                    <input
-                      type="radio"
-                      name="work"
-                      checked={settings.onboarding.work === value}
-                      onChange={() => void update({ work: value })}
-                    />
-                    <strong>{label}</strong>
-                  </label>
-                ))}
-              </div>
-            )}
-            {step === 'q2' && (
-              <>
-                <div className="radio-list" role="radiogroup" aria-label="Detail preference">
-                  {(['guided', 'standard', 'technical'] as const).map((value) => (
-                    <label
-                      className={`radio-row ${settings.onboarding.detail === value ? 'selected' : ''}`}
-                      key={value}
-                    >
-                      <input
-                        type="radio"
-                        name="detail"
-                        checked={settings.onboarding.detail === value}
-                        onChange={() => void update({ detail: value })}
-                      />
-                      <span>
-                        <strong>{titleCase(value)}</strong>
-                        <span className="caption">{detailDescriptions[value]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <p className="caption">
-                  You can change this any time in Settings &gt; Interface detail.
-                </p>
-              </>
-            )}
-            {step === 'q3' && (
-              <>
-                <div className="setting-rows">
-                  <label className="setting-row">
-                    <span>Ask before changing files in a project</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.permissions.changingFiles}
-                      onChange={(e) =>
-                        void save({
-                          ...settings,
-                          permissions: {
-                            ...settings.permissions,
-                            changingFiles: e.target.checked,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <p className="caption">
-                  Exact proposals always require your review, even if you allow direct edits.
-                </p>
-              </>
-            )}
-            <div className="setup-actions">
-              <Button tone="quiet" onClick={() => void update({ resumeAt: order[index - 1] })}>
-                Back
-              </Button>
-              <Button tone="quiet push-right" disabled={busy} onClick={() => void next(true)}>
-                Skip for now
-              </Button>
-              <Button tone="primary" disabled={busy} onClick={() => void next()}>
-                Continue
-              </Button>
-            </div>
-          </>
+
+  const back = (to: SetupStep) => (
+    <Button tone="quiet" onClick={() => void update({ resumeAt: to })}>
+      Back
+    </Button>
+  );
+  const questionActions = (
+    <>
+      {back(SETUP_ORDER[index - 1])}
+      <Button tone="quiet push-right" disabled={busy} onClick={() => void next(true)}>
+        Skip for now
+      </Button>
+      <Button tone="primary" disabled={busy} onClick={() => void next()}>
+        Continue
+      </Button>
+    </>
+  );
+  const question = (title: string, body: ReactNode, caption?: string) => (
+    <>
+      <p className="setup-count">Question {index} of 3</p>
+      <h1 id={headingId}>{title}</h1>
+      {body}
+      {caption && <p className="setup-caption">{caption}</p>}
+    </>
+  );
+
+  let content: ReactNode;
+  let actions: ReactNode = null;
+  if (step === 'welcome') {
+    const who = signedInLine(account?.state, settings);
+    content = (
+      <>
+        <span className="setup-welcome-mark" role="img" aria-label="Nectovia">
+          <NectoviaMark word={false} size={56} />
+        </span>
+        <h1>Welcome to Nectovia</h1>
+        <p className="setup-lede">Hand it a problem, a job or a whole project, and it does the work.</p>
+        {who && (
+          <p className="setup-caption setup-who">
+            {who}{' '}
+            <button type="button" className="setup-link" onClick={() => void account?.signOut()}>
+              Sign out
+            </button>
+          </p>
         )}
+      </>
+    );
+    actions = (
+      <Button tone="primary push-right" disabled={busy} onClick={() => void next()}>
+        Continue
+      </Button>
+    );
+  } else if (step === 'q1') {
+    content = question(
+      'What are you here to work on?',
+      <Choices
+        name="work"
+        labelledBy={headingId}
+        value={settings.onboarding.work}
+        options={WORK_KINDS}
+        onPick={(work) => void update({ work })}
+      />,
+    );
+    actions = questionActions;
+  } else if (step === 'q2') {
+    // A new person's settings start at Guided, and skipping keeps what the settings hold, so the
+    // page shows that answer picked until another is chosen.
+    const level: Detail = settings.onboarding.detail ?? settings.detail;
+    const engine = hasUsableService(settings)
+      ? routeDisplayName(settings.services?.['defaultEngine'] as string)
+      : '';
+    content = question(
+      'How much detail do you want?',
+      <>
+        <Choices
+          name="detail"
+          labelledBy={headingId}
+          value={level}
+          options={(['guided', 'standard', 'technical'] as const).map((value) => ({
+            value,
+            label: DETAIL_LABELS[value],
+            note: DETAIL_WORDS[value],
+          }))}
+          onPick={(detail) => void update({ detail })}
+        />
+        <div className="setup-sample" role="region" aria-label="How a finished job reads">
+          <p className="setup-sample-head">
+            How a finished job reads<span className="setup-tag">Sample</span>
+          </p>
+          <p className="setup-sample-line">{detailSample(level, engine)}</p>
+        </div>
+      </>,
+      'Change it any time in Settings, under Interface detail.',
+    );
+    actions = questionActions;
+  } else if (step === 'q3') {
+    content = question(
+      'Should Nectovia ask before it changes files?',
+      <Choices
+        name="file-changes"
+        labelledBy={headingId}
+        value={settings.permissions.changingFiles ? 'ask' : 'go'}
+        options={[
+          {
+            value: 'ask',
+            label: 'Ask me first',
+            note: 'A job waits for your OK before it changes files in a project.',
+          },
+          {
+            value: 'go',
+            label: "Don't ask",
+            note: 'A job changes files without waiting. Changes it proposes still wait for your review.',
+          },
+        ]}
+        onPick={(answer) =>
+          void save({
+            ...settings,
+            permissions: { ...settings.permissions, changingFiles: answer === 'ask' },
+          })
+        }
+      />,
+      'Deleting files has its own switch in Settings, under Permissions.',
+    );
+    actions = questionActions;
+  } else if (step === 'ai') {
+    // AI setup keeps today's content inside the new frame until the engine sign-in flow lands.
+    content = (
+      <AISetup
+        settings={settings}
+        save={save}
+        busy={busy}
+        onContinue={() => void next()}
+        onBack={() => void update({ resumeAt: 'q3' })}
+      />
+    );
+  } else {
+    const lines = readyLines(settings, account?.state);
+    content = (
+      <>
+        <h1>You&apos;re set up</h1>
+        <dl className="setup-summary">
+          <dt>AI</dt>
+          <dd>{lines.ai}</dd>
+          <dt>Starts in</dt>
+          <dd>{lines.view}</dd>
+          <dt>Detail</dt>
+          <dd>{lines.detail}</dd>
+          <dt>File changes</dt>
+          <dd>{lines.files}</dd>
+        </dl>
+        <p className="setup-caption">You can change any of these in Settings.</p>
+      </>
+    );
+    actions = (
+      <>
+        {back('ai')}
+        <Button tone="primary push-right" disabled={busy} onClick={() => void next()}>
+          Open Nectovia
+        </Button>
+      </>
+    );
+  }
+
+  return (
+    <div className={`setup step-${step}`}>
+      <header className="setup-top">
+        {step !== 'welcome' && (
+          <span className="setup-mark" role="img" aria-label="Nectovia">
+            <NectoviaMark word={false} size={28} />
+          </span>
+        )}
+      </header>
+      <main className="setup-body">
+        <div className="setup-column">{content}</div>
       </main>
+      {actions && <footer className="setup-foot">{actions}</footer>}
     </div>
   );
 }
