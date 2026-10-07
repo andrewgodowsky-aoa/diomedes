@@ -359,9 +359,11 @@ describe("a phone's commands on this computer (relay plan steps 3 and 4)", () =>
     expect(await phone.opened()).toBe('open');
     phone.send({ v: 1, type: 'hello', deviceId: entry.deviceId });
     const summary = await phone.next((frame) => frame.type === 'need.summary', 'the summary');
+    // The hub names the computer each frame came from, so a phone holding two of them knows whose Need this is.
+    const source = { deviceId: entry.deviceId };
     expect(summary).toMatchObject({
       needId: need.id, projectId: project.id, taskTitle: 'Update the menu', what: need.what, why: need.why, consequence: need.consequence, part: 1, parts: 1,
-      files: [...new Set(need.files.map((file) => file.split(/[\\/]/).at(-1)))],
+      files: [...new Set(need.files.map((file) => file.split(/[\\/]/).at(-1)))], source,
     });
     expect(await phone.next((frame) => frame.type === 'board.counts', 'the Board')).toMatchObject({
       projectId: project.id, cards: [{ taskId: task.id, title: 'Update the menu', column: 'Review', workerLabel: 'Sample', payer: 'local' }],
@@ -373,7 +375,7 @@ describe("a phone's commands on this computer (relay plan steps 3 and 4)", () =>
     const decision = { v: 1, type: 'need.decision', deviceId: entry.deviceId, commandId: 'phone_command_0001', needId: need.id, decision: 'go-ahead' };
     phone.send(decision);
     expect(await phone.next((frame) => frame.type === 'result', 'the answer')).toEqual({
-      v: 1, type: 'result', commandId: 'phone_command_0001', outcome: 'accepted',
+      v: 1, type: 'result', commandId: 'phone_command_0001', outcome: 'accepted', source,
     });
     const decided = await projectState();
     expect(decided.needs.find((item) => item.id === need.id)).toMatchObject({ state: 'go-ahead', decidedFrom: 'phone', allowForTask: false });
@@ -392,7 +394,7 @@ describe("a phone's commands on this computer (relay plan steps 3 and 4)", () =>
     phone.send({ ...decision, commandId: 'phone_command_0002', decision: 'declined' });
     await until(async () => phone.results().length, (count) => count === 3, 'the second answer');
     expect(phone.results()[2]).toEqual({
-      v: 1, type: 'result', commandId: 'phone_command_0002', outcome: 'already-done', code: 'already_answered', message: ALREADY_ANSWERED,
+      v: 1, type: 'result', commandId: 'phone_command_0002', outcome: 'already-done', code: 'already_answered', message: ALREADY_ANSWERED, source,
     });
     expect((await projectState()).history.filter((item) => item.kind === 'phone-decision')).toHaveLength(1);
 

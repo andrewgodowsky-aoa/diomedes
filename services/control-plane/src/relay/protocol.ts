@@ -221,9 +221,11 @@ function relayUrl(base: string, organizationId: string, side: 'desktop' | 'phone
 //
 // A phone reaches a desktop through the hub and nothing else. A phone frame names the
 // desktop it is for; the hub forwards it only to a desktop registered by the same person,
-// stamped with who sent it (`from`). A desktop frame goes to that person's phones. The hub
-// reads each frame against these schemas and drops anything else, so a type either side
-// doesn't know never crosses. Every frame stays within RELAY_MAX_MESSAGE_BYTES.
+// stamped with who sent it (`from`). A desktop frame goes to that person's phones, stamped
+// with the computer it came from (`source`), so a phone holding several of that person's
+// computers knows whose Need or Board it reads. The hub reads each frame against these
+// schemas and drops anything else, so a type either side doesn't know never crosses. Every
+// frame stays within RELAY_MAX_MESSAGE_BYTES.
 
 /** Ids inside steps 3 and 4: up to 128 characters, no spaces. A phone's command id may lead with `_` or `-`. */
 export const RELAY_ID = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,127}$/;
@@ -248,6 +250,14 @@ export const RELAY_LIMITS = {
  * `too_large`, so a phone keeps each frame within RELAY_MAX_MESSAGE_BYTES minus this.
  */
 export const RELAY_STAMP_RESERVE_BYTES = 300;
+
+/**
+ * The most bytes the hub's `source` stamp adds to a desktop's frame for phones: one device id of
+ * up to 128 characters and its keys (153 bytes). A frame the stamp would push past
+ * RELAY_MAX_MESSAGE_BYTES goes out as sent, which a phone cannot attribute, so a desktop keeps
+ * each frame for phones within RELAY_MAX_MESSAGE_BYTES minus this.
+ */
+export const RELAY_SOURCE_RESERVE_BYTES = 160;
 
 /** Timings the desktop keeps for steps 3 and 4. The hub's own are RELAY_TIMINGS. */
 export const RELAY_MESSAGE_TIMINGS = {
@@ -362,63 +372,74 @@ export interface ResultMessage {
 }
 export type DesktopToPhoneMessage = WorkRowsMessage | BoardCountsMessage | NeedSummaryMessage | TurnUpdateMessage | ResultMessage;
 
+// Each desktop frame's fields, kept apart from its schema: a desktop sends them as they are, and a
+// phone reads them with the hub's `source` added (phoneBoundSchema, below).
+const workRowsFields = {
+  v: z.literal(1),
+  type: z.literal('work.rows'),
+  projectId: id,
+  rootRunId: id.nullable(),
+  taskTitle: words(WORK_ROW_TITLE_LIMIT).nullable(),
+  rows: z.array(workerRowSchema).max(WORK_ROWS_RELAY_LIMIT),
+  at: time,
+};
+const boardCountsFields = {
+  v: z.literal(1),
+  type: z.literal('board.counts'),
+  projectId: id,
+  columns: z.array(z.strictObject({ name: words(40, 1), count: z.number().int().min(0).max(1_000_000) })).max(8),
+  cards: z.array(z.strictObject({
+    taskId: id,
+    title: words(WORK_ROW_TITLE_LIMIT),
+    column: words(40, 1),
+    workerLabel: words(40, 1).nullable(),
+    payer,
+  })).max(10),
+  page: z.number().int().min(1).max(10_000),
+  pages: z.number().int().min(1).max(10_000),
+  at: time,
+};
+const needSummaryFields = {
+  v: z.literal(1),
+  type: z.literal('need.summary'),
+  needId: id,
+  projectId: id,
+  taskTitle: words(WORK_ROW_TITLE_LIMIT),
+  what: prose(300),
+  why: prose(300),
+  consequence: prose(600),
+  files: z.array(fileName).max(10),
+  expiresAt: time,
+  part: z.number().int().min(1).max(100),
+  parts: z.number().int().min(1).max(100),
+};
+const turnUpdateFields = {
+  v: z.literal(1),
+  type: z.literal('turn.update'),
+  conversation: conversationRefSchema,
+  turnId: id,
+  status: z.enum(['running', 'done', 'failed', 'stopped']),
+  text: prose(3_000),
+  seq: z.number().int().min(0).max(1_000_000),
+};
+const resultFields = {
+  v: z.literal(1),
+  type: z.literal('result'),
+  commandId: z.string().regex(RELAY_COMMAND_ID),
+  outcome: z.enum(['accepted', 'refused', 'already-done', 'expired']),
+  code: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,39}$/).optional(),
+  message: words(200, 1).optional(),
+};
+const pageWithinPages = (message: { page: number; pages: number }) => message.page <= message.pages;
+const partWithinParts = (message: { part: number; parts: number }) => message.part <= message.parts;
+
+/** A desktop's own frame for phones. A desktop cannot send `source`: the hub stamps it. */
 const desktopToPhoneSchema = z.discriminatedUnion('type', [
-  z.strictObject({
-    v: z.literal(1),
-    type: z.literal('work.rows'),
-    projectId: id,
-    rootRunId: id.nullable(),
-    taskTitle: words(WORK_ROW_TITLE_LIMIT).nullable(),
-    rows: z.array(workerRowSchema).max(WORK_ROWS_RELAY_LIMIT),
-    at: time,
-  }),
-  z.strictObject({
-    v: z.literal(1),
-    type: z.literal('board.counts'),
-    projectId: id,
-    columns: z.array(z.strictObject({ name: words(40, 1), count: z.number().int().min(0).max(1_000_000) })).max(8),
-    cards: z.array(z.strictObject({
-      taskId: id,
-      title: words(WORK_ROW_TITLE_LIMIT),
-      column: words(40, 1),
-      workerLabel: words(40, 1).nullable(),
-      payer,
-    })).max(10),
-    page: z.number().int().min(1).max(10_000),
-    pages: z.number().int().min(1).max(10_000),
-    at: time,
-  }).refine((message) => message.page <= message.pages),
-  z.strictObject({
-    v: z.literal(1),
-    type: z.literal('need.summary'),
-    needId: id,
-    projectId: id,
-    taskTitle: words(WORK_ROW_TITLE_LIMIT),
-    what: prose(300),
-    why: prose(300),
-    consequence: prose(600),
-    files: z.array(fileName).max(10),
-    expiresAt: time,
-    part: z.number().int().min(1).max(100),
-    parts: z.number().int().min(1).max(100),
-  }).refine((message) => message.part <= message.parts),
-  z.strictObject({
-    v: z.literal(1),
-    type: z.literal('turn.update'),
-    conversation: conversationRefSchema,
-    turnId: id,
-    status: z.enum(['running', 'done', 'failed', 'stopped']),
-    text: prose(3_000),
-    seq: z.number().int().min(0).max(1_000_000),
-  }),
-  z.strictObject({
-    v: z.literal(1),
-    type: z.literal('result'),
-    commandId: z.string().regex(RELAY_COMMAND_ID),
-    outcome: z.enum(['accepted', 'refused', 'already-done', 'expired']),
-    code: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,39}$/).optional(),
-    message: words(200, 1).optional(),
-  }),
+  z.strictObject(workRowsFields),
+  z.strictObject(boardCountsFields).refine(pageWithinPages),
+  z.strictObject(needSummaryFields).refine(partWithinParts),
+  z.strictObject(turnUpdateFields),
+  z.strictObject(resultFields),
 ]);
 
 // phone to desktop
@@ -441,8 +462,18 @@ export type PhoneCommand =
 export type RelayedPhoneMessage = PhoneCommand & { from: RelayFrom };
 /** What a phone may send the hub: a command for a desktop, or a heartbeat. */
 export type PhoneMessage = (PhoneCommand & { from?: RelayFrom }) | PingMessage;
-/** What a phone reads: desktop frames, the hub's refusals (a `result`) and heartbeats. */
-export type PhoneBoundMessage = DesktopToPhoneMessage | PongMessage;
+/**
+ * Which computer a frame for phones came from. The hub stamps it from that desktop's proven grant, over
+ * nothing a desktop sent: a desktop's own frame carrying `source` is refused.
+ */
+export interface RelaySource {
+  deviceId: string;
+}
+/**
+ * What a phone reads: desktop frames, each with the hub's `source` unless the stamp would not fit, the
+ * hub's refusals (a `result`, with no `source`) and heartbeats.
+ */
+export type PhoneBoundMessage = (DesktopToPhoneMessage & { source?: RelaySource }) | PongMessage;
 
 const fromSchema = z.strictObject({
   personId: z.string().regex(RELAY_ACCOUNT_ID),
@@ -479,7 +510,18 @@ const phoneSchema = z.union([
   phoneCommandSchema(fromSchema.optional()),
 ]);
 const relayedSchema = phoneCommandSchema(fromSchema);
-const phoneBoundSchema = z.union([desktopToPhoneSchema, z.strictObject({ v: z.literal(1), type: z.literal('pong') })]);
+/** A desktop frame as a phone reads it: the hub's `source` when the stamp fit, nothing else added. */
+const stamped = { source: z.strictObject({ deviceId }).optional() };
+const phoneBoundSchema = z.union([
+  z.discriminatedUnion('type', [
+    z.strictObject({ ...workRowsFields, ...stamped }),
+    z.strictObject({ ...boardCountsFields, ...stamped }).refine(pageWithinPages),
+    z.strictObject({ ...needSummaryFields, ...stamped }).refine(partWithinParts),
+    z.strictObject({ ...turnUpdateFields, ...stamped }),
+    z.strictObject({ ...resultFields, ...stamped }),
+  ]),
+  z.strictObject({ v: z.literal(1), type: z.literal('pong') }),
+]);
 
 /** A frame's text when it is a text frame within RELAY_MAX_MESSAGE_BYTES, else null. UTF-8 never takes fewer bytes than UTF-16 units. */
 export function relayFrameText(data: unknown): string | null {

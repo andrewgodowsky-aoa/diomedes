@@ -1,6 +1,8 @@
 # DIO-271 implementation and validation
 
-State: LOCAL_GATES_PASSED, REVIEW_CANDIDATE. This bounded pass is not audit-wide DONE or merged acceptance.
+Original candidate state: LOCAL_GATES_PASSED, REVIEW_CANDIDATE. This bounded pass is not audit-wide DONE or merged acceptance.
+
+This report preserves the original baseline evidence. See [the current-main reconciliation](DIO-271-reconciliation.md) for the combined PR #254 and PR #253 candidate, fresh validation, review findings and protected-test handoffs. The counts below do not verify that combined tree.
 
 The owner reopened the report-only audit for implementation. Edited quotations were checked against current source before replacement. The app's docs/reference/VOICE.md, the audit reference VOICE.md and AMENDMENT-01_job-first.md explain the change: remove repeated reassurance, waiting/yes narration, mechanism-first prose, cute loading text and unnecessary jargon. State the action or outcome once. Keep uncertainty, payer identity, approval boundaries and information people cannot infer.
 

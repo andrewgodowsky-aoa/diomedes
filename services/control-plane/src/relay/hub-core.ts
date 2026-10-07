@@ -25,7 +25,8 @@
  * connections per person (a newer one replaces the oldest, 4409), and routes:
  * a phone command goes only to the ready desktop it names when that desktop was
  * registered by the same person, stamped with the phone's verified `from`; a
- * desktop frame goes only to the phones of the person who registered it. Rate
+ * desktop frame goes only to the phones of the person who registered it,
+ * stamped with that desktop's proven device id as its `source`. Rate
  * limits and refusals answer the phone with a `result`; nothing is queued. A
  * frame from a phone already past one of its deadlines ends that phone instead
  * of being read, so nothing it sends reaches a desktop before the alarm runs.
@@ -388,7 +389,7 @@ export class RelayHubCore {
     // A second proof after ready changes nothing.
   }
 
-  /** A ready desktop's frame for phones: only to the phones of the person who registered it, within its rate. */
+  /** A ready desktop's frame for phones: only to the phones of the person who registered it, within its rate, with its `source`. */
   private toPhones(desktop: Connection, message: DesktopToPhoneMessage): void {
     const { grant } = desktop.state;
     const at = this.now();
@@ -396,7 +397,9 @@ export class RelayHubCore {
       this.record({ event: 'relay-frame-refused', organizationId: grant.organizationId, from: 'desktop', id: grant.deviceId, type: message.type, reason: 'rate_limited' });
       return;
     }
-    const text = serializeFrame(message);
+    // Which computer it came from, from this desktop's proven grant: `message` was parsed as a desktop's own frame,
+    // which cannot carry `source`. A frame the stamp would push past the cap goes out as sent, unattributed.
+    const text = serializeFrame({ ...message, source: { deviceId: grant.deviceId } }) ?? serializeFrame(message);
     if (text === null) return;
     for (const phone of [...this.phones.values()])
       if (phone.state.grant.personId === grant.personId && this.phoneLive(phone, at)) phone.transport.send(text);
