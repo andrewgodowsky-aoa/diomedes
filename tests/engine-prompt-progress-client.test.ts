@@ -2,8 +2,13 @@ import { describe, expect, test } from 'vitest';
 import {
   acceptReading,
   closeReading,
+  MAX_RUN_READINGS,
+  readingCaption,
   readingDetail,
+  readingPercent,
   READING_LINE_MIN_TOKENS,
+  rememberRunReading,
+  type RunReading,
 } from '../client/console/engine-prompt-progress';
 
 const id = { projectId: 'P1', threadId: 'T1', requestId: 'R1', runId: 'run-1', stepId: 'turn-1', attempt: 1, fence: 1 };
@@ -73,5 +78,49 @@ describe('a long local read', () => {
     expect(closeReading(closed)).toBe(closed);
     expect(closeReading(null)).toBeNull();
     expect(acceptReading(closed, frame(2, 60_000))).toMatchObject({ open: true, processed: 60_000 });
+  });
+
+  test('the line says the share read so far, and technical detail adds the counts', () => {
+    const state = acceptReading(null, frame(2, 65_536))!;
+    expect(readingPercent(state)).toBe(55);
+    expect(readingCaption(state)).toBe('Reading the document. 55% so far.');
+    expect(readingCaption(state, true)).toBe('Reading the document. 55% so far, 65,536 of 117,536 tokens.');
+    // Floored: one token short of the end still says 99%, and the line is still open.
+    const nearly = acceptReading(null, frame(1, 117_535))!;
+    expect(nearly.open).toBe(true);
+    expect(readingCaption(nearly)).toBe('Reading the document. 99% so far.');
+    // What the server took from its cache counts as read, as the bar fills it.
+    expect(readingPercent(acceptReading(null, frame(1, 58_768, 117_536, 58_768))!)).toBe(50);
+  });
+});
+
+describe("a run card's read (DIO-256)", () => {
+  const run = (seq: number, processed: number, extra: Record<string, unknown> = {}) =>
+    frame(seq, processed, 117_536, 0, { requestId: 'S1', runId: 'run-9', childRunId: null, seat: 'lead', ...extra });
+
+  test("keeps each run's read under its session, and a new call or a child's call starts it over", () => {
+    let runs = rememberRunReading({}, run(1, 10_000));
+    expect(runs.S1).toMatchObject({ key: 'run-9:turn-1', reading: { seq: 1, processed: 10_000, open: true } });
+    expect(rememberRunReading(runs, run(1, 10_000))).toBe(runs);
+    runs = rememberRunReading(runs, run(2, 60_000));
+    expect(runs.S1?.reading).toMatchObject({ seq: 2, processed: 60_000 });
+    expect(rememberRunReading(runs, run(1, 70_000))).toBe(runs);
+    // A worker's call is named by its child run, so its first frame is a new read.
+    runs = rememberRunReading(runs, run(1, 5_000, { childRunId: 'child-1', seat: 'worker', stepId: 'model:0' }));
+    expect(runs.S1).toMatchObject({ key: 'child-1:model:0', reading: { seq: 1, processed: 5_000, open: true } });
+    // The lead's next call takes the run card back.
+    runs = rememberRunReading(runs, run(1, 2_000, { stepId: 'model:1' }));
+    expect(runs.S1).toMatchObject({ key: 'run-9:model:1', reading: { processed: 2_000 } });
+  });
+
+  test('ignores a frame without its request, run or step, and keeps the latest eight runs', () => {
+    const none: Record<string, RunReading> = {};
+    expect(rememberRunReading(none, { ...run(1, 10_000), requestId: undefined })).toBe(none);
+    expect(rememberRunReading(none, { ...run(1, 10_000), runId: 7 })).toBe(none);
+    expect(rememberRunReading(none, { ...run(1, 10_000), stepId: undefined })).toBe(none);
+    expect(rememberRunReading(none, 'not a frame')).toBe(none);
+    let runs = none;
+    for (let n = 1; n <= MAX_RUN_READINGS + 2; n++) runs = rememberRunReading(runs, run(1, 10_000, { requestId: `S${n}` }));
+    expect(Object.keys(runs)).toEqual(Array.from({ length: MAX_RUN_READINGS }, (_, i) => `S${i + 3}`));
   });
 });

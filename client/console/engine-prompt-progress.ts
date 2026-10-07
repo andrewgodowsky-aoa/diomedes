@@ -76,8 +76,62 @@ export function closeReading(state: ReadingProgress | null): ReadingProgress | n
   return state && state.open ? { ...state, open: false } : state;
 }
 
+/**
+ * A run card's read (DIO-256): the call that last sent counters for that run, and its read. The key
+ * names the run, or the loop's child run, and the step, so a new call starts the read over.
+ */
+export interface RunReading {
+  key: string;
+  reading: ReadingProgress;
+}
+
+/** How many runs' reads a project view keeps at once; older ones are let go. */
+export const MAX_RUN_READINGS = 8;
+
+/**
+ * Applies a Work run's or an Agent loop's `engine-prompt-progress` frame to the map of runs' reads,
+ * by the frame's request, which is the run's session id. The caller has already matched the project
+ * and found the frame is not the ask's. A frame from another call (another child run or step)
+ * starts that run's read over, gated as it may be, so a read the next call took over never lingers;
+ * within one call, `acceptReading` orders the frames as it does for the ask.
+ */
+export function rememberRunReading(
+  runs: Readonly<Record<string, RunReading>>,
+  frame: unknown,
+): Record<string, RunReading> {
+  const data = frame as { requestId?: unknown; runId?: unknown; childRunId?: unknown; stepId?: unknown } | null;
+  if (typeof data?.requestId !== 'string' || typeof data.runId !== 'string' || typeof data.stepId !== 'string')
+    return runs as Record<string, RunReading>;
+  const requestId = data.requestId;
+  const key = `${typeof data.childRunId === 'string' ? data.childRunId : data.runId}:${data.stepId}`;
+  const before = Object.hasOwn(runs, requestId) ? runs[requestId] : null;
+  const reading = acceptReading(before?.key === key ? before.reading : null, frame);
+  if (!reading || reading === before?.reading) return runs as Record<string, RunReading>;
+  const kept = Object.entries(runs).filter(([id]) => id !== requestId);
+  return Object.fromEntries([...kept.slice(-(MAX_RUN_READINGS - 1)), [requestId, { key, reading }]]);
+}
+
 /** The counts as the server sent them, "45,312 of 117,536". Technical detail names the unit. */
 export function readingDetail(state: ReadingProgress, technical = false): string {
   const counts = `${state.processed.toLocaleString('en-US')} of ${state.total.toLocaleString('en-US')}`;
   return technical ? `${counts} tokens` : counts;
+}
+
+/**
+ * The share of the prompt the server has in hand, cache included, as a whole percent: the number
+ * the bar fills to, the line says and a screen reader hears. Floored, so a read still open never
+ * says 100%.
+ */
+export function readingPercent(state: ReadingProgress): number {
+  return state.total > 0 ? Math.floor((state.processed / state.total) * 100) : 0;
+}
+
+/**
+ * The line under the bar, "Reading the document. 38% so far." Technical detail adds the server's
+ * counts. The default line leaves them out: a count of tokens means nothing to an owner, and a
+ * local read has no credits to show in its place.
+ */
+export function readingCaption(state: ReadingProgress, technical = false): string {
+  const line = `${state.text} ${readingPercent(state)}% so far`;
+  return technical ? `${line}, ${readingDetail(state, true)}.` : `${line}.`;
 }

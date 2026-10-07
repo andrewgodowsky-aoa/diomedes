@@ -1,0 +1,46 @@
+/* The reading line (DIO-256): a local model's read of a long prompt, on the ask and on a run
+   card, shown only while the read is open. The fill steps with the server's counts. Between
+   counts, a highlight travels the part already read, the segment bar's own sign of a unit being
+   worked on (segment-bar.css, .seg.active), so a read of several minutes never looks stalled.
+   --seg-on (segment-bar.css) stills it when a theme's motion intensity is 0; the reduced-motion
+   setting, a motion preset of none and the media query are named at the end, as the bar's own
+   stylesheet names them. */
+.seg-bar.read-progress .seg-fill {
+  overflow: hidden;
+}
+
+/* Inside the fill, so it is scaled with it and travels only the part read. */
+.seg-bar.read-progress .seg-fill::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--seg-lead) 55%, #ffffff 45%),
+    transparent
+  );
+  transform: translateX(-100%);
+  opacity: var(--seg-on);
+  animation: seg-travel calc(1.6s * var(--seg-on)) linear infinite;
+}
+
+/* Technical detail adds the counts, so the line wraps rather than lose its end. */
+.seg-bar.read-progress .seg-caption {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+html[data-motion='reduced'] .seg-bar.read-progress .seg-fill::after,
+html[data-motion-preset='none'] .seg-bar.read-progress .seg-fill::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg-bar.read-progress .seg-fill::after {
+    display: none;
+  }
+}

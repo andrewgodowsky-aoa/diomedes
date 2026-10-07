@@ -53,8 +53,15 @@ import type { ReviewComment } from '../../shared/review-comments';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
-import { readingDetail, type ReadingProgress } from './engine-prompt-progress';
+import {
+  readingCaption,
+  readingDetail,
+  readingPercent,
+  type ReadingProgress,
+  type RunReading,
+} from './engine-prompt-progress';
 import { SegmentBar } from './SegmentBar';
+import './read-progress.css';
 import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
 import { PinnedChartView } from './InlineVisual';
@@ -152,6 +159,8 @@ interface ThreadViewProps {
   };
   /** Live tool calls for a work run, by the run's session id. Ephemeral, never saved. */
   runActivity?: Readonly<Record<string, ToolLine[]>>;
+  /** A local model's read on a run's card, by the run's session id (DIO-256). Ephemeral, never saved. */
+  runReading?: Readonly<Record<string, RunReading>>;
   onCancelText?(): void;
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
@@ -257,6 +266,7 @@ export function ThreadView({
   onOpenBoard,
   streaming,
   runActivity,
+  runReading,
   onCancelText,
   onError,
   skill = null,
@@ -546,6 +556,7 @@ export function ThreadView({
           key={s.id}
           session={s}
           activity={runActivity?.[s.id]}
+          reading={runReading?.[s.id]?.reading ?? null}
           technical={technical}
           onStop={() => onStopSession(s.id)}
           latest={s.id === last?.id}
@@ -831,15 +842,7 @@ export function ThreadView({
                   ) : (
                     streamWaiting && !reading && <p className="caption">{workingLine(streamWord)}</p>
                   )}
-                  {reading && (
-                    <SegmentBar
-                      className="read-progress"
-                      label={reading.text}
-                      fraction={reading.processed / reading.total}
-                      detail={readingDetail(reading, technical)}
-                      caption={`${reading.text} ${readingDetail(reading, technical)}`}
-                    />
-                  )}
+                  {reading && <ReadingLine reading={reading} technical={technical} />}
                 </div>
                 {onCancelText && (
                   <div>
@@ -945,9 +948,29 @@ export function ThreadView({
   );
 }
 
+/**
+ * A local model's read while it moves: the host's one sentence and the share read so far, with
+ * the server's counts in technical detail only. The bar fills to the whole percent the line says,
+ * so a screen reader hears that number too (the counts follow it in technical detail), and a
+ * highlight travels the part read (read-progress.css), so a read of several minutes never looks
+ * stalled between counts.
+ */
+function ReadingLine({ reading, technical }: { reading: ReadingProgress; technical: boolean }) {
+  return (
+    <SegmentBar
+      className="read-progress"
+      label={reading.text}
+      fraction={readingPercent(reading) / 100}
+      detail={technical ? readingDetail(reading, true) : undefined}
+      caption={readingCaption(reading, technical)}
+    />
+  );
+}
+
 function RunRecord({
   session,
   activity,
+  reading = null,
   technical,
   onStop,
   stop,
@@ -959,6 +982,8 @@ function RunRecord({
   session: Session;
   /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
   activity?: ToolLine[];
+  /** A local model's read for this run while it moves (DIO-256). Never saved. */
+  reading?: ReadingProgress | null;
   technical: boolean;
   onStop(): void;
   /**
@@ -1008,7 +1033,9 @@ function RunRecord({
         </div>
       ))}
       {live && <ToolActivityList lines={activity} technical={technical} />}
-      {waiting && (
+      {/* The read takes the working line's place, as on the ask. */}
+      {live && reading?.open && <ReadingLine reading={reading} technical={technical} />}
+      {waiting && !(live && reading?.open) && (
         <div className="caption" aria-hidden="true">
           {workingLine(word)}
         </div>

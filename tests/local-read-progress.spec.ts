@@ -95,7 +95,8 @@ test.beforeEach(async () => {
     localModel: { source: new FixedLocalModel(meadowDescriptor(), MEADOW_FOLDER), host } });
   const dist = path.resolve('dist');
   const built = (await fs.stat(path.join(dist, 'index.html'))).mtimeMs;
-  for (const name of ['client/console/Shell.tsx', 'client/console/ThreadView.tsx', 'client/console/engine-prompt-progress.ts'])
+  for (const name of ['client/console/Shell.tsx', 'client/console/ThreadView.tsx', 'client/console/engine-prompt-progress.ts',
+    'client/console/read-progress.css'])
     expect(built, 'Build the current UI before running this spec.').toBeGreaterThan((await fs.stat(name)).mtimeMs);
   app.use(express.static(dist));
   app.get('/{*path}', (_request, response) => response.sendFile(path.join(dist, 'index.html')));
@@ -151,13 +152,13 @@ test('a long local read shows one moving line until the read ends, then the answ
   const transcript = page.locator('.transcript');
   const bar = transcript.getByRole('progressbar', { name: 'Reading the document.' });
   await expect(bar).toHaveAttribute('aria-valuenow', '0');
-  await expect(transcript.locator('.read-progress')).toHaveText('Reading the document. 0 of 117,536');
+  await expect(transcript.locator('.read-progress')).toHaveText('Reading the document. 0% so far.');
   // The line takes the place of the waiting line; there is one of them.
   await expect(transcript.getByText(/is replying/)).toHaveCount(0);
   await expect(transcript.locator('.read-progress')).toHaveCount(1);
   await step();
-  await expect(bar).toHaveAttribute('aria-valuenow', '56');
-  await expect(transcript.locator('.read-progress')).toHaveText('Reading the document. 65,536 of 117,536');
+  await expect(bar).toHaveAttribute('aria-valuenow', '55');
+  await expect(transcript.locator('.read-progress')).toHaveText('Reading the document. 55% so far.');
   // The read ends: the line goes, and the waiting line is back until the answer comes.
   await step();
   await expect(transcript.locator('.read-progress')).toHaveCount(0);

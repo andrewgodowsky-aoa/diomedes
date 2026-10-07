@@ -57,7 +57,7 @@ import { ThreadView } from './ThreadView';
 import { ThreadMenu } from './ThreadMenu';
 import { readRecordedArtifacts } from './artifact-evidence';
 import { endThinking, stepThinking, type LiveThinking } from './engine-reasoning';
-import { acceptReading, closeReading, type ReadingProgress } from './engine-prompt-progress';
+import { acceptReading, closeReading, rememberRunReading, type ReadingProgress, type RunReading } from './engine-prompt-progress';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import {
   discardPendingMessage,
@@ -398,6 +398,8 @@ export function Shell({
   // Live tool calls for work runs in this project, by request id (a work run's
   // session id). Ephemeral: a run card shows them only while the run is live.
   const [runActivity, setRunActivity] = useState<Record<string, ActivityState>>({});
+  // A local model's read on a work run's card or a loop's, by its session id (DIO-256). Ephemeral.
+  const [runReading, setRunReading] = useState<Record<string, RunReading>>({});
   const askControl = useRef<AbortController | null>(null);
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
@@ -726,30 +728,39 @@ export function Shell({
       });
     };
     es.addEventListener('engine-reasoning', onEngineReasoning as EventListener);
-    // A local model's read on the ask on screen: counters and the host's one sentence, matched
-    // like its thinking. Narration only; nothing here is saved.
+    // A local model's read: the ask on screen owns frames with its exact request, run and thread,
+    // like its thinking; any other frame in this project may be a work run's or a loop's, found by
+    // its session id, like tool activity (DIO-256). Narration only; nothing here is saved.
     const onEnginePromptProgress = (ev: Event) => {
-      let data: { projectId?: unknown; threadId?: unknown; requestId?: unknown; runId?: unknown } | null;
+      let data: unknown;
       try {
         data = JSON.parse((ev as MessageEvent).data);
       } catch {
         return;
       }
-      if (
-        !data ||
-        data.projectId !== currentId.current ||
-        streamingId.current == null ||
-        data.requestId !== streamingId.current ||
-        data.runId !== streamingRunId.current ||
-        data.threadId !== askThreadId.current
-      )
-        return;
-      const requestId = streamingId.current;
-      setStreaming((prev) => {
-        if (!prev || prev.requestId !== requestId) return prev;
-        const reading = acceptReading(prev.reading, data);
-        return reading === prev.reading ? prev : { ...prev, reading };
+      const target = activityTarget(data, {
+        projectId: currentId.current,
+        ask:
+          streamingId.current != null &&
+          streamingRunId.current != null &&
+          askThreadId.current != null
+            ? {
+                requestId: streamingId.current,
+                runId: streamingRunId.current,
+                threadId: askThreadId.current,
+              }
+            : null,
       });
+      if (target.kind === 'ask') {
+        const requestId = target.requestId;
+        setStreaming((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          const reading = acceptReading(prev.reading, data);
+          return reading === prev.reading ? prev : { ...prev, reading };
+        });
+      } else if (target.kind === 'run') {
+        setRunReading((prev) => rememberRunReading(prev, data));
+      }
     };
     es.addEventListener('engine-prompt-progress', onEnginePromptProgress as EventListener);
     return () => {
@@ -770,6 +781,7 @@ export function Shell({
       streamingPosition.current = null;
       setStreaming(null);
       setRunActivity({});
+      setRunReading({});
     };
   }, [projectId]);
 
@@ -2390,6 +2402,7 @@ export function Shell({
               onOpenBoard={() => setView('Board')}
               streaming={streamingForSelected}
               runActivity={runActivityLines}
+              runReading={runReading}
               onCancelText={cancelAsk}
               unconfirmed={
                 unconfirmedMessage
