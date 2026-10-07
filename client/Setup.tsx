@@ -87,7 +87,7 @@ export function readyLines(
         ? 'The Nectovia view. The switch at the top moves to Work.'
         : locked
           ? 'The Work view. The Nectovia view comes with a paid plan.'
-          : 'The Work view. The switch at the top moves to Nectovia.',
+          : 'The Work view.',
     detail: `${DETAIL_LABELS[settings.detail]}: ${words.charAt(0).toLowerCase()}${words.slice(1)}`,
     files: settings.permissions.changingFiles
       ? 'A job waits for your OK before it changes files.'

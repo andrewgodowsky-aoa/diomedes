@@ -121,7 +121,7 @@ describe('the ready page names what will answer', () => {
     expect(readyLines(fresh, account([], { agent: 'paid' })).view).toBe(NECTOVIA_VIEW);
     // Someone running setup again keeps the view they chose.
     const again = { ...fresh, view: 'architect' as const, onboarding: { ...fresh.onboarding, completedAt: '2026-10-01T00:00:00.000Z' } };
-    expect(readyLines(again, account([], { agent: 'paid' })).view).toBe('The Work view. The switch at the top moves to Nectovia.');
+    expect(readyLines(again, account([], { agent: 'paid' })).view).toBe('The Work view.');
   });
 
   it("reads the detail and file answers back in the boards' words", () => {
