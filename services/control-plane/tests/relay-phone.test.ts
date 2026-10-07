@@ -18,7 +18,8 @@ import {
   RelayHubCore, type DesktopGrant, type HubAuthority, type HubEvent, type HubTransport, type PhoneConnectionState, type PhoneGrant, type PhoneTransport,
 } from '../src/relay/hub-core.js';
 import {
-  RELAY_CLOSE, RELAY_DEVICE_HEADER, RELAY_LIMITS, RELAY_MAX_MESSAGE_BYTES, RELAY_PING_FRAME, RELAY_PONG_FRAME, RELAY_STAMP_RESERVE_BYTES, RELAY_TIMINGS,
+  RELAY_CLOSE, RELAY_DEVICE_HEADER, RELAY_LIMITS, RELAY_MAX_MESSAGE_BYTES, RELAY_PING_FRAME, RELAY_PONG_FRAME, RELAY_SOURCE_RESERVE_BYTES,
+  RELAY_STAMP_RESERVE_BYTES, RELAY_TIMINGS,
   challengePayload, desktopRelayUrl, parseDesktopToPhone, parsePhoneBound, parsePhoneMessage, parseRelayedPhoneMessage, phoneRelayUrl,
   serializeFrame, type RelayRefusalCode,
 } from '../src/relay/protocol.js';
@@ -71,6 +72,14 @@ describe('the wire contract after ready (steps 3 and 4)', () => {
     expect(parsePhoneMessage(RELAY_PING_FRAME)).toEqual({ v: 1, type: 'ping' });
     expect(parsePhoneBound(RELAY_PONG_FRAME)).toEqual({ v: 1, type: 'pong' });
     expect(parsePhoneBound(frame(result))).toEqual(result);
+    // A phone reads each with the hub's `source`; a desktop can't send one, and nothing rides inside it.
+    for (const message of [workRows, boardCounts, needSummary, turnUpdate, result]) {
+      const stamped = { ...message, source: { deviceId: DEVICE } };
+      expect(parsePhoneBound(frame(stamped))).toEqual(stamped);
+      expect(parseDesktopToPhone(frame(stamped))).toBeNull();
+      expect(parsePhoneBound(frame({ ...message, source: { deviceId: DEVICE, personId: 'person_owner' } }))).toBeNull();
+      expect(parsePhoneBound(frame({ ...message, source: { deviceId: 'relay device' } }))).toBeNull();
+    }
     // A row may carry the provider's quota; nothing else.
     expect(parseDesktopToPhone(frame({ ...workRows, rows: [{ ...row, quota: { window: '5-hour window', remainingPercent: 62 } }] }))).not.toBeNull();
   });
@@ -329,8 +338,9 @@ describe('the relay hub: phones', () => {
     const managers = phone(core, { personId: 'person_manager', sessionId: 'session_manager' });
     await core.message(owners.id, frame(workRows));
     await core.message(owners.id, frame(needSummary));
-    expect(first.side.messages()).toEqual([workRows, needSummary]);
-    expect(second.side.messages()).toEqual([workRows, needSummary]);
+    const source = { deviceId: DEVICE };
+    expect(first.side.messages()).toEqual([{ ...workRows, source }, { ...needSummary, source }]);
+    expect(second.side.messages()).toEqual([{ ...workRows, source }, { ...needSummary, source }]);
     expect(managers.side.frames).toEqual([]);
 
     // Unknown types, phone commands and oversize frames go nowhere, and the desktop stays connected.
@@ -347,6 +357,52 @@ describe('the relay hub: phones', () => {
     await core.message(unprovenId, frame(workRows));
     expect(unproven.closes).toEqual([RELAY_CLOSE.protocolError]);
     expect(first.side.frames).toHaveLength(2);
+  });
+
+  it("stamps each frame for phones with the computer it came from, never one a desktop names, and only when it fits", async () => {
+    const bytes = (text: string) => new TextEncoder().encode(text).length;
+    const core = new RelayHubCore({ authority: authority().authority, now });
+    const front = await desktop(core);
+    const back = await desktop(core, { deviceId: 'relay_device_back' });
+    const mine = phone(core);
+
+    // Two of the owner's computers: each frame names the one that sent it.
+    await core.message(front.id, frame(needSummary));
+    await core.message(back.id, frame({ ...needSummary, needId: 'need_back' }));
+    expect(mine.side.messages()).toEqual([
+      { ...needSummary, source: { deviceId: DEVICE } },
+      { ...needSummary, needId: 'need_back', source: { deviceId: 'relay_device_back' } },
+    ]);
+
+    // A desktop that names a computer, its own or another, sends nothing.
+    await core.message(back.id, frame({ ...needSummary, source: { deviceId: DEVICE } }));
+    await core.message(back.id, frame({ ...needSummary, source: { deviceId: 'relay_device_back' } }));
+    expect(mine.side.frames).toHaveLength(2);
+    expect(back.side.closes).toEqual([]);
+
+    /** A turn.update frame of exactly `size` bytes. */
+    const sized = (size: number) => {
+      const room = size - bytes(frame({ ...turnUpdate, text: '' }));
+      const text = '€'.repeat(Math.floor(room / 3)) + 'a'.repeat(room % 3);
+      const full = frame({ ...turnUpdate, text });
+      expect(bytes(full)).toBe(size);
+      return full;
+    };
+    // The longest device id still fits a frame that leaves RELAY_SOURCE_RESERVE_BYTES.
+    const longest = `d${'x'.repeat(127)}`;
+    const long = await desktop(core, { deviceId: longest });
+    await core.message(long.id, sized(RELAY_MAX_MESSAGE_BYTES - RELAY_SOURCE_RESERVE_BYTES));
+    const stamped = mine.side.frames.at(-1)!;
+    expect(bytes(stamped)).toBeLessThanOrEqual(RELAY_MAX_MESSAGE_BYTES);
+    expect((parsePhoneBound(stamped) as { source?: unknown }).source).toEqual({ deviceId: longest });
+
+    // A frame inside the cap that the stamp would push past it goes out as sent, unattributed.
+    await core.message(long.id, sized(RELAY_MAX_MESSAGE_BYTES - 20));
+    const unstamped = mine.side.frames.at(-1)!;
+    expect(mine.side.frames).toHaveLength(4);
+    expect(bytes(unstamped)).toBe(RELAY_MAX_MESSAGE_BYTES - 20);
+    expect(parsePhoneBound(unstamped)).not.toBeNull();
+    expect((parsePhoneBound(unstamped) as { source?: unknown }).source).toBeUndefined();
   });
 
   it('holds phones to 30 commands a minute per person, answering the rest rate_limited', async () => {
@@ -629,7 +685,7 @@ describe('the RelayHub Durable Object with phones', () => {
     await woken.webSocketMessage(phoneServer, frame(hello));
     expect(JSON.parse(desktopServer.frames.at(-1)!)).toEqual({ ...hello, from: stamp });
     await woken.webSocketMessage(desktopServer, frame(workRows));
-    expect(JSON.parse(phoneServer.frames.at(-1)!)).toEqual(workRows);
+    expect(JSON.parse(phoneServer.frames.at(-1)!)).toEqual({ ...workRows, source: { deviceId: DEVICE } });
     expect(await (await woken.fetch(new Request('https://relay-hub.invalid/presence'))).json()).toEqual({ online: [DEVICE] });
 
     // The phone's recheck runs on the alarm.
@@ -896,7 +952,9 @@ describe('a phone and a desktop over the loopback relay', () => {
     expect(parseRelayedPhoneMessage(desktop.frames[2])).not.toBeNull();
 
     desktop.socket.send(frame(workRows));
-    expect(await side.frame(0)).toEqual(workRows);
+    expect(await side.frame(0)).toEqual({ ...workRows, source: { deviceId } });
+    // A desktop naming a computer itself sends nothing; the next frame the phone reads is the pong.
+    desktop.socket.send(frame({ ...workRows, source: { deviceId: 'relay_device_elsewhere' } }));
     side.socket.send(RELAY_PING_FRAME);
     await side.until(() => side.frames.length > 1, 'the pong');
     expect(side.frames[1]).toBe(RELAY_PONG_FRAME);
