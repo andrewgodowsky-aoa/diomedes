@@ -96,7 +96,8 @@ async function desktop(who: DemoAccount, options: { plan?: 'free' | 'paid'; owne
     consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
   const session = { personId: () => person.id, backend: { client }, call: <T>(fn: (value: string) => Promise<T>) => fn(token),
     agentPlan: () => options.plan ?? 'free', entitlement: () => ({ state: 'none' }), includes: () => false, roleIn: () => options.roleOf?.() ?? 'owner',
-    confirmDowngrade: async () => {}, confirmAdmitted: async () => {} } as unknown as AccountSessionService;
+    confirmDowngrade: async () => {}, confirmAdmitted: async () => {},
+    confirmPersonalDowngrade: async () => {}, confirmPersonalAdmitted: async () => {} } as unknown as AccountSessionService;
   const workspaces = { projectOwner: (projectId: string) => (options.owner && projectId === 'business-project' ? { organizationId: options.owner } : null),
     active: () => ({ kind: 'personal' }) } as unknown as WorkspaceService;
   const routing = new AccountRoutingSession(session, workspaces);

@@ -37,6 +37,7 @@ import type { WorkspaceService } from '../workspaces.js';
 import type { AccountSessionService, AgentRouteKind, AgentSurface } from './session.js';
 import type { AccountRoutingSession } from './routing-session.js';
 import type { AccountScope } from '../../shared/routing-policy.js';
+import type { IndividualBillingCycle } from '../../shared/individual-period.js';
 
 export const AGENT_NOT_INCLUDED = 'AGENT_NOT_INCLUDED';
 export const AGENT_SIGN_IN_REQUIRED = 'SIGN_IN_REQUIRED';
@@ -71,6 +72,8 @@ export interface AdmittedAgentWork {
   readonly scope?: AccountScope;
   readonly personId: string;
   readonly planId: string | null;
+  /** Current paid term from authenticated Individual managed admission, never a local clock or usage cache. */
+  readonly billingCycle?: IndividualBillingCycle;
   /**
    * Pay as you go only (DIO-223): the person's own bought balance in ledger units, as the account service reported it for this
    * admission. Set only for Personal work admitted with no plan while the service sent the amount; absent for a plan holder, for a

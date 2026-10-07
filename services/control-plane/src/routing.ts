@@ -15,7 +15,8 @@ import { AccountError } from './errors.js';
 import { approvedConnections, connectionCredential, connectionView, supportsReasoningSummaries } from './managed-bindings.js';
 import { canonicalJson } from './managed-normalization.js';
 import type { CommercialRepository, CommercialTransaction, Operator, TierPolicy } from './commercial.js';
-import { entitlementFromGrants, individualEntitlement, individualTerms, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
+import { entitlementFromGrants, individualEntitlement, individualTerms, currentIndividualCycle, grantState, agentAdmissionInput, featureGrantSchema, revokeGrantInput, ensureIndividualAccount } from './commercial.js';
+import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
 import type { FundingService } from './funding.js';
 import { effectiveEscalation, escalationControlSchema, type EscalationControl, type EscalationView } from '../../../shared/escalation-controls.js';
 import { chargeAsRoutingPrice, chargeSnapshot, type CreditPriceTable } from '../../../shared/credit-prices.js';
@@ -235,6 +236,18 @@ export class RoutingService {
         : payAsYouGo === null ? planned
         : payAsYouGo.admitted ? { admitted: true as const, planId: null, revision: view.revision, validUntil: null }
         : { admitted: false as const, code: payAsYouGo.code, reason: payAsYouGo.reason };
+      // Only this authenticated person's current complete grant can name the local guard's term.
+      // Neither the calling device nor a usage projection chooses or advances it.
+      const personGrants = scope.kind === 'individual' && decision.admitted && decision.planId === 'individual' && input.routeKind === 'managed'
+        ? await tx.personGrants(actor.person.id) : [];
+      const term = currentIndividualCycle(personGrants, Date.parse(at));
+      if (personGrants.some(grant => grant.billingCycle && individualIncludesMonthlyCredits(grant) && grantState(grant, Date.parse(at)) === 'active' &&
+            (grant.personId !== actor.person.id || grant.tenantId !== actor.tenantId)) ||
+          (term && (Date.parse(term.grant.validFrom) < Date.parse(term.cycle.startsAt) || Date.parse(term.grant.validUntil) > Date.parse(term.cycle.endsAt))) ||
+          (!term && personGrants.some(grant => grant.billingCycle && individualIncludesMonthlyCredits(grant) && grantState(grant, Date.parse(at)) === 'active')))
+        throw new AccountError(503, 'Your Individual billing period could not be confirmed. Nothing was sent.', 'entitlement_unknown');
+      const validUntil = term ? Math.min(Date.parse(at) + 60_000, Date.parse(term.cycle.endsAt), Date.parse(term.grant.validUntil),
+        Date.parse(decision.admitted && decision.validUntil ? decision.validUntil : term.cycle.endsAt)) : this.now() + 60_000;
       const record = { id: `agent_admission_${crypto.randomUUID()}`, at, tenantId: actor.tenantId,
         personId: actor.person.id, surface: input.surface, routeKind: input.routeKind, decision: decision.admitted ? 'admitted' as const : 'refused' as const,
         code: decision.admitted ? null : decision.code, planId: payAsYouGo?.admitted || view.plan === 'none' ? null : view.plan,
@@ -242,7 +255,8 @@ export class RoutingService {
       if (scope.kind === 'individual') await tx.savePersonalAdmission({ ...record, billingAccountId: scope.id });
       else await tx.saveAdmission({ ...record, organizationId: scope.id });
       return { admissionId: record.id, decision, pins: { scope, organizationId: scope.kind === 'organization' ? scope.id : null, tenantId: actor.tenantId, personId: actor.person.id,
-        planId: record.planId, accessRevision: revision, policyRevision: record.policyRevision, rootJobId: record.rootJobId }, validUntil: new Date(this.now() + 60_000).toISOString() };
+        planId: record.planId, accessRevision: revision, policyRevision: record.policyRevision, rootJobId: record.rootJobId },
+        ...(term ? { billingCycle: term.cycle } : {}), validUntil: new Date(validUntil).toISOString() };
     });
   }
   async individuals(token: string, query: string) {

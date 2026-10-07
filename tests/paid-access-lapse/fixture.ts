@@ -14,6 +14,7 @@ import { hash } from '../../server/store.js';
 import { testOnlySecretBox } from '../../server/connection-secrets.js';
 import { ControlPlaneClient } from '../../server/accounts/client.js';
 import type { AccountBackend } from '../../server/accounts/backend.js';
+import type { AccountSessionService } from '../../server/accounts/session.js';
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock.js';
 import { createFauxCloud, FAUX_BACKEND_LABEL } from '../../services/control-plane/src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../../services/control-plane/src/faux/seed.js';
@@ -36,12 +37,21 @@ export async function reviewFixture() {
   const calls = { direct: 0, model: 0, account: [] as string[] };
   let offline = false;
   let accessUnavailable = false;
+  let pendingPersonRead: { entered: (answer: unknown) => void; resume: Promise<void> } | null = null;
   const backend: AccountBackend = {
     client: new ControlPlaneClient('http://review-faux.local', async (request) => {
       calls.account.push(`${request.method} ${new URL(request.url).pathname}`);
       if (offline) throw new Error('Account service offline in review fixture');
       if (accessUnavailable && new URL(request.url).pathname.endsWith('/access'))
         return new Response('Account access unavailable in review fixture', { status: 503 });
+      if (pendingPersonRead && new URL(request.url).pathname === '/account/access') {
+        const pending = pendingPersonRead;
+        pendingPersonRead = null;
+        const answer = await cloud.handle(request);
+        pending.entered(await answer.clone().json());
+        await pending.resume;
+        return answer;
+      }
       return cloud.handle(request);
     }),
     view: () => ({ kind: 'faux', label: FAUX_BACKEND_LABEL, url: null, reason: null, signIn: 'password' }),
@@ -141,6 +151,24 @@ export async function reviewFixture() {
     const token = await staff();
     await cloud.commercial.issueGrant(token, organizationId, { planId: 'business', source: 'internal-test', reference: 'DIO-126 regrant', note: 'Granted again.' });
   }
+  const individualGrants = new Map<string, { id: string; anchorAt: string; index: number }>();
+  async function personIdOf(email: string) {
+    const pair = await cloud.store.run(draft => cloud.identity.signIn(draft.identity,
+      { email, password: FAUX_DEMO_PASSWORD, remember: false }));
+    return (await cloud.accounts.signIn(pair.accessToken)).person.id;
+  }
+  async function grantIndividual(email: string) {
+    const personId = await personIdOf(email), prior = individualGrants.get(personId);
+    const { grant } = await cloud.commercial.issuePersonGrant(await staff(), personId,
+      { planId: 'individual', source: 'subscription', reference: `DIO-128-${randomUUID()}`, note: '',
+        ...(prior ? { billingCycle: { anchorAt: prior.anchorAt, index: prior.index } } : {}) });
+    individualGrants.set(personId, { id: grant.id, anchorAt: grant.billingCycle!.anchorAt, index: grant.billingCycle!.index });
+  }
+  async function revokeIndividual(email: string) {
+    const personId = await personIdOf(email);
+    await cloud.commercial.revokePersonGrant(await staff(), personId, individualGrants.get(personId)!.id,
+      { reason: 'Individual lapse review' });
+  }
   async function ownEngine(binding: Binding) {
     await api('/ai/discover', 'POST', { consent: true });
     await api('/ai/check/claude-code', 'POST', {});
@@ -163,7 +191,14 @@ export async function reviewFixture() {
   const thread = async (binding: Binding) => (await api<{ conversations: Conversation[] }>(
     `/projects/${binding.projectId}/state`)).conversations.find((item) => item.id === binding.threadId)!;
   await open();
-  return { root, cloud, calls, request, api, signIn, staff, revoke, regrant, ownEngine, aws, say, home, thread,
+  return { root, cloud, calls, request, api, signIn, staff, revoke, regrant, grantIndividual, revokeIndividual, ownEngine, aws, say, home, thread,
+    session: () => app.locals.accounts as AccountSessionService,
+    holdNextPersonAccess: () => {
+      let entered!: (answer: unknown) => void, release!: () => void;
+      const captured = new Promise<unknown>(resolve => { entered = resolve; });
+      pendingPersonRead = { entered, resume: new Promise<void>(resolve => { release = resolve; }) };
+      return { captured, release };
+    },
     offline: (value: boolean) => { offline = value; },
     accessUnavailable: (value: boolean) => { accessUnavailable = value; },
     restart: async () => { await close(); await open(); },

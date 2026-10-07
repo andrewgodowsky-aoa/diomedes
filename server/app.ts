@@ -4116,6 +4116,12 @@ export async function createApp(options: AppOptions) {
     const own = store.settings.services?.defaultEngine;
     return isFreeConversationRoute(own) ? { ...conversation, engine: own } : conversation;
   };
+  /** Confirm an unpaid Personal cache before a Nectovia thread's route is selected. */
+  const confirmPersonalAccess = async (projectId: string, threadId: unknown) => {
+    if (!accountRouting || typeof threadId !== 'string') return;
+    const thread = store.state(projectId).conversations.find(item => item.id === threadId);
+    if (thread?.engine === NECTOVIA_ROUTE) await accountRouting.confirmedPersonalRefusal(projectId);
+  };
   /**
    * A route the free version holds a conversation on: a direct engine that runs its own loop. A
    * model-API route, on anyone's key, runs Nectovia's own loop, which is the Agent and is paid.
@@ -5111,6 +5117,7 @@ export async function createApp(options: AppOptions) {
   const interactionHost: InteractionHost = {
     resolve: async (projectId, threadId, command, options) => {
       const thread = store.state(projectId).conversations.find(item => item.id === threadId);
+      await confirmPersonalAccess(projectId, threadId);
       if (routed(projectId, thread)?.engine === NECTOVIA_ROUTE && nectoviaAccount?.signedIn())
         await nectoviaAccount.refreshPolicy(projectId);
       return store.locked(async () => {
@@ -6092,8 +6099,9 @@ export async function createApp(options: AppOptions) {
     route(async (req, res) => {
       const b = body(req),
         projectId = id(req),
-        text = asString(b.text, 'an instruction', 16000),
-        serviceRoute =
+        text = asString(b.text, 'an instruction', 16000);
+      if (b.route === undefined) await confirmPersonalAccess(projectId, b.threadId);
+      const serviceRoute =
           b.route === undefined
             ? threadRoute(
                 projectId,

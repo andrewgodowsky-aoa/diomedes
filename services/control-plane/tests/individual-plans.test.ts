@@ -22,6 +22,7 @@ import {
 } from '../../../shared/individual-plan.js';
 import { AGENT_FREE_VERSION_REASON, PLAN_TEMPLATES } from '../../../shared/access.js';
 import { validEnv } from './support/fixtures.js';
+import { individualCycle } from '../../../shared/individual-period.js';
 
 let cloud: FauxCloud;
 let orgs: { juniper: string; harbor: string };
@@ -240,6 +241,116 @@ describe('monthly Individual terms (DIO-128)', () => {
 });
 
 describe('Personal work under an Individual plan', () => {
+  async function scoped(who: DemoAccount = 'free', routeKind = 'managed') {
+    const bearer = await token(who);
+    const account = (await call('POST', '/account/individual', bearer, {})).body;
+    return call('POST', `/account/routing/individual/${account.id}/admit`, bearer,
+      { surface: 'conversation', routeKind, rootJobId: 'term-admission' });
+  }
+
+  it('carries only the currently paid term and clips admission at its exact end', async () => {
+    const first = await issue('free');
+    const cycle = first.body.grant.billingCycle;
+    await issue('free', { reference: 'next-paid-term', billingCycle: { anchorAt: cycle.anchorAt, index: 1 } });
+    clock = Date.parse(cycle.endsAt) - 500;
+    const admitted = await scoped();
+    expect(admitted.status).toBe(200);
+    expect(admitted.body).toMatchObject({ billingCycle: cycle, validUntil: cycle.endsAt,
+      decision: { admitted: true, planId: 'individual' } });
+    clock += 500;
+    const renewed = await scoped();
+    expect(renewed.body.billingCycle).toEqual(individualCycle(cycle.anchorAt, 1));
+    expect(renewed.body.validUntil).toBe(new Date(clock + 60_000).toISOString());
+    expect((await scoped('free', 'byo')).body).not.toHaveProperty('billingCycle');
+  });
+
+  it('keeps a recovery grant inside its original term and clips at its own earlier end', async () => {
+    const cycle = individualCycle('2026-09-15T00:00:00.000Z', 0);
+    const validUntil = new Date(clock + 500).toISOString();
+    expect((await issue('free', { billingCycle: { anchorAt: cycle.anchorAt, index: 0 },
+      validFrom: new Date(clock - 1000).toISOString(), validUntil })).status).toBe(201);
+    const admitted = await scoped();
+    expect(admitted).toMatchObject({ status: 200, body: { billingCycle: cycle, validUntil, decision: { admitted: true } } });
+    clock += 500;
+    expect((await scoped()).body.decision).toMatchObject({ admitted: false, code: 'entitlement_expired' });
+  });
+
+  it('refuses conflicting current terms rather than choosing a new allowance', async () => {
+    await issue('free');
+    await cloud.store.run(async draft => {
+      const grant = draft.commercial.personGrants[0];
+      const cycle = individualCycle('2026-09-20T00:00:00.000Z', 0);
+      draft.commercial.personGrants.push({ ...grant, id: 'grant_conflicting_term', reference: 'corrupt conflicting term',
+        validFrom: cycle.startsAt, validUntil: cycle.endsAt, billingCycle: cycle });
+    });
+    expect(await scoped()).toMatchObject({ status: 503, body: { code: 'entitlement_unknown' } });
+    expect(cloud.store.snapshot().commercial.personalAdmissions).toHaveLength(0);
+  });
+
+  it('keeps a same-term replacement on the same cycle and rejects another person scope', async () => {
+    const first = await issue('free'), cycle = first.body.grant.billingCycle;
+    await call('POST', `/ops/people/${await personOf('free')}/grants/${first.body.grant.id}/revoke`, await token('staffBilling'), { reason: 'Recovery fixture' });
+    expect((await issue('free', { reference: 'same-term-recovery', billingCycle: { anchorAt: cycle.anchorAt, index: cycle.index },
+      validFrom: new Date(clock).toISOString() })).status).toBe(201);
+    expect((await scoped()).body.billingCycle).toEqual(cycle);
+    const account = (await call('POST', '/account/individual', await token('free'), {})).body;
+    expect(await call('POST', `/account/routing/individual/${account.id}/admit`, await token('owner'),
+      { surface: 'conversation', routeKind: 'managed', rootJobId: 'wrong-person-term' }))
+      .toMatchObject({ status: 403 });
+  });
+
+  it('does not accept a caller-supplied billing period on admission', async () => {
+    const issued = await issue('free'), bearer = await token('free');
+    const account = (await call('POST', '/account/individual', bearer, {})).body;
+    expect(await call('POST', `/account/routing/individual/${account.id}/admit`, bearer,
+      { surface: 'conversation', routeKind: 'managed', rootJobId: 'device-term', billingCycle: issued.body.grant.billingCycle }))
+      .toMatchObject({ status: 422 });
+    expect(cloud.store.snapshot().commercial.personalAdmissions).toHaveLength(0);
+  });
+
+  it('refuses a current term whose grant names another tenant', async () => {
+    await issue('free');
+    await cloud.store.run(async draft => { draft.commercial.personGrants[0].tenantId = 'person_other_tenant'; });
+    expect(await scoped()).toMatchObject({ status: 503, body: { code: 'entitlement_unknown' } });
+    expect(cloud.store.snapshot().commercial.personalAdmissions).toHaveLength(0);
+  });
+
+  it('never advances a future or elapsed subscription term without a current paid grant', async () => {
+    const cycle = individualCycle('2026-10-15T00:00:00.000Z', 0);
+    await issue('free', { billingCycle: { anchorAt: cycle.anchorAt, index: 0 } });
+    const before = await scoped();
+    expect(before.body.decision.admitted).toBe(false);
+    expect(before.body).not.toHaveProperty('billingCycle');
+    clock = Date.parse(cycle.endsAt);
+    const after = await scoped();
+    expect(after.body.decision).toMatchObject({ admitted: false, code: 'entitlement_expired' });
+    expect(after.body).not.toHaveProperty('billingCycle');
+  });
+
+  it('preserves the legacy Individual and Business admission path without a term', async () => {
+    const personId = await personOf('free');
+    await cloud.store.run(async draft => {
+      draft.commercial.personGrants.push({ v: 1, id: 'grant_legacy_admission', personId, tenantId: personId, planId: 'individual',
+        features: ['nectovia-agent', 'maintained-profiles', 'owner-rules', 'phone-relay'], source: 'subscription', reference: 'legacy admission',
+        note: '', validFrom: '2026-09-20T00:00:00.000Z', validUntil: '2026-10-21T00:00:00.000Z', state: 'active',
+        issuedAt: '2026-09-20T00:00:00.000Z', issuedBy: personId, revokedAt: null, revokedBy: null, revokedReason: null });
+    });
+    const personal = await scoped();
+    expect(personal.body.decision.admitted).toBe(true);
+    expect(personal.body).not.toHaveProperty('billingCycle');
+    const business = await call('POST', `/account/routing/organization/${orgs.juniper}/admit`, await token('owner'),
+      { surface: 'conversation', routeKind: 'managed', rootJobId: 'business-calendar-term' });
+    expect(business.body.decision.admitted).toBe(true);
+    expect(business.body).not.toHaveProperty('billingCycle');
+  });
+
+  it.each(['revoked', 'expired', 'unknown'] as const)('keeps the specific Personal %s refusal', state => {
+    const view = { ...NO_ENTITLEMENT_VIEW, source: 'account-service' as const, plan: 'individual', state };
+    expect(decideAgentAdmission({ workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW),
+      individual: snapshotFromView(view), at: new Date(clock).toISOString() }))
+      .toMatchObject({ admitted: false, code: `entitlement_${state}` });
+  });
+
   it('requires scoped admission for managed work even when the legacy Personal endpoint sees an active plan', async () => {
     await issue('free');
     const refused = await admitPersonal('free', 'managed');
