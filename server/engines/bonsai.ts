@@ -188,7 +188,14 @@ function eligibleRead(messages: readonly ChatMessage[], policy?: LocalReadFoldPo
   return null;
 }
 
-/** At most three exact counts: original, completed reasoning removed, one eligible read folded. */
+/**
+ * At most four exact counts: the original; the newest completed turn's reasoning removed; every
+ * completed turn's reasoning removed; one eligible read folded. The newest turn goes first because it
+ * follows the document the lead read, so everything before it, the document included, is sent as it
+ * was and the local server still holds it in its cache. An older turn's reasoning can come before the
+ * document, and removing it means reading the whole document again, so it goes only when the newest
+ * turn's was not enough (DIO-254).
+ */
 async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMessage[]) => Promise<number>,
   budget: ReturnType<typeof localContextBudget>, counted: number, readFold?: LocalReadFoldPolicy
 ): Promise<{ messages: ChatMessage[]; record: ModelRoom } | null> {
@@ -200,17 +207,27 @@ async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMess
       protocolAndNextToolReserve, safetyMargin }, originalHash: projectionHash(messages), projectedHash: '',
     counted, room, sent: counted, reasoning: [], folded: [] };
   let needed = counted;
+  // The completed turns with reasoning (every call they made has its result), newest first.
+  const completed: number[] = [];
   for (let i = next.length - 1; i > 0; i--) {
-    const { reasoning_content: reasoning, ...rest } = next[i];
-    if (next[i].role !== 'assistant' || !reasoning) continue;
+    if (next[i].role !== 'assistant' || !next[i].reasoning_content) continue;
     const calls = callsIn(next[i]);
     const results: string[] = [];
     for (let j = i + 1; j < next.length && next[j].role === 'tool'; j++) results.push(next[j].tool_call_id ?? '');
     if (!calls.length || calls.some(call => !results.includes(call.id))) continue;
-    next[i] = rest;
-    record.reasoning.push({ message: i - 1, chars: reasoning.length });
+    completed.push(i);
   }
-  if (record.reasoning.length) { needed = await count(next); record.counts.push(needed); }
+  // The newest turn's reasoning, then the rest's, each stage counted once and only while still over.
+  for (const turns of [completed.slice(0, 1), completed.slice(1)]) {
+    if (!turns.length || needed <= room) continue;
+    for (const i of turns) {
+      const { reasoning_content: reasoning = '', ...rest } = next[i];
+      next[i] = rest;
+      record.reasoning.push({ message: i - 1, chars: reasoning.length });
+    }
+    needed = await count(next);
+    record.counts.push(needed);
+  }
   const eligible = needed > room ? eligibleRead(messages, readFold) : null;
   if (eligible) {
     const { message: i, read, matched, resultHash } = eligible;

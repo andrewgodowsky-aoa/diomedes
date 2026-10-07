@@ -238,3 +238,22 @@ implementation. This repair must preserve Runtime/Trust path scope, downstream
 sharing grants, child admission, account/payer binding, approvals, sandbox
 ownership and uncertain-effect reconciliation. A larger reader or deadline
 grants no effect authority. Canonical source transcripts remain durable.
+
+## Owner decision: the newest reasoning first, 2026-10-06
+
+Andrew chose to change the reasoning stage before the loop is run again on the GPU. The newest
+completed turn's reasoning is now removed first and the call counted again. Every completed turn's
+reasoning is removed only when that was not enough, and the eligible read is then folded as before,
+so a call is counted at most four times (`server/engines/bonsai.ts`, `makeRoom`).
+
+The newest turn follows the document the lead read. Removing only its reasoning sends everything up
+to and including the document exactly as before, so the local server keeps that prefix in its
+cache. An older turn's reasoning can come before the document, and removing it meant reading the
+whole document again before the first word of the answer. This supersedes the paragraph above on removing completed reasoning together; its note that projected
+calls need their own cache measurement still stands for a call that needs the second stage.
+
+Tests in `tests/local-make-room.test.ts`: the O2 shape now fits after the first stage and sends its
+first four messages unchanged, the read turn's reasoning included; a new case needs both stages and
+keeps the read whole; the folding case and the bound are four counts. A refused call whose read
+can't be folded is still counted at most three times. These are scripted counts, not a GPU
+measurement.

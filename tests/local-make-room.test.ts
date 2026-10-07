@@ -1,8 +1,9 @@
 /**
  * DIO-254: an Agent loop's call on the local model makes room only when it won't fit its window, in
- * three bounded stages: the original, completed reasoning removed, then one fully checked read
- * folded into a provenance stub for the lead after advice; a call that still won't fit is
- * refused with the same sentence as before. A call that fits is sent exactly as before, and the run's
+ * bounded stages counted at most four times: the original, the newest completed turn's reasoning
+ * removed, every completed turn's reasoning removed, then one fully checked read folded into a
+ * provenance stub for the lead after advice; a call that still won't fit is refused with the same
+ * sentence as before. The newest turn goes first so the document before it stays as it was sent. A call that fits is sent exactly as before, and the run's
  * model step records what each call left out.
  *
  * The local server is a scripted transport whose template joins every message and whose tokenizer
@@ -137,12 +138,12 @@ describe('a local loop call that won’t fit (DIO-254)', () => {
     for (let i = 0; i < 6; i++) messages.unshift({ role: 'assistant', content: [{ type: 'reasoning', text: 'r'.repeat(4_000) }] });
     const sent: Sent[] = [];
     await respond(messages, server(sent), true).catch(() => undefined);
-    expect(calls(sent, '/apply-template').length).toBeLessThanOrEqual(3);
-    expect(calls(sent, '/tokenize').length).toBeLessThanOrEqual(3);
+    expect(calls(sent, '/apply-template').length).toBeLessThanOrEqual(4);
+    expect(calls(sent, '/tokenize').length).toBeLessThanOrEqual(4);
     expect(calls(sent, '/chat/completions').length).toBeLessThanOrEqual(1);
   });
 
-  test('the O2 shape: completed reasoning goes in one stage and the full read, draft and advice stay', async () => {
+  test('the O2 shape: the newest reasoning goes first, and the read with the reasoning before it is sent as it was', async () => {
     // O2: a 118,000-token read and a lead turn with 3,867 tokens of reasoning, then the advice.
     const messages = o2([['ledger.txt', 'a'.repeat(472_000)]], [2_000, 15_468]);
     const sent: Sent[] = [];
@@ -152,19 +153,39 @@ describe('a local loop call that won’t fit (DIO-254)', () => {
     expect(counted).toBeGreaterThan(ROOM);
     const room = reply.room as ModelRoom;
     expect(room).toMatchObject({ v: 1, policy: 'local-post-advice-v1', stage: 'reasoning', counted, room: ROOM,
-      sent: tokensOf(render(chatOf(sent))), reasoning: [{ message: 3, chars: 15_468 }, { message: 1, chars: 2_000 }], folded: [] });
+      sent: tokensOf(render(chatOf(sent))), reasoning: [{ message: 3, chars: 15_468 }], folded: [] });
     expect(room.counts).toHaveLength(2);
     expect(room.budget).toMatchObject({ totalWindow: 131_072, outputReserve: 8_192, protocolAndNextToolReserve: 2_048, safetyMargin: 1_024 });
     expect(room.sent).toBeLessThanOrEqual(ROOM);
     const chat = chatOf(sent);
-    expect(chat.slice(0, 2)).toEqual(first.slice(0, 2));
-    expect(chat[2]).toEqual({ ...first[2], reasoning_content: undefined });
-    expect(chat[3]).toEqual(first[3]);
+    // Everything up to and including the document is sent as it was, the read turn's reasoning
+    // too, so the local server still holds that prefix in its cache.
+    expect(chat.slice(0, 4)).toEqual(first.slice(0, 4));
+    expect(chat[2].reasoning_content).toHaveLength(2_000);
     // The draft keeps its text and its call; only its reasoning was left out. The advice is unchanged.
     expect(chat[4]).toEqual({ ...first[4], reasoning_content: undefined, content: DRAFT });
     expect(chat[4]).not.toHaveProperty('reasoning_content');
     expect(chat[5]).toEqual(first[5]);
     expect(JSON.parse(String(chat[5].content))).toMatchObject(ADVICE);
+  });
+
+  test('when the newest reasoning is not enough, every completed turn’s goes, and the read stays whole', async () => {
+    // The read turn's reasoning is 2,000 tokens here, so the draft's 3,867 alone leave the call over.
+    const messages = o2([['ledger.txt', 'a'.repeat(472_000)]], [8_000, 15_468]);
+    const sent: Sent[] = [];
+    const reply = await respond(messages, server(sent), true);
+    const first = calls(sent, '/apply-template')[0].body.messages as Chat[];
+    const room = reply.room as ModelRoom;
+    expect(room).toMatchObject({ stage: 'reasoning', counted: tokensOf(render(first)), room: ROOM, sent: tokensOf(render(chatOf(sent))),
+      reasoning: [{ message: 3, chars: 15_468 }, { message: 1, chars: 8_000 }], folded: [] });
+    expect(room.counts).toHaveLength(3);
+    expect(room.counts[1]).toBeGreaterThan(ROOM);
+    expect(room.sent).toBeLessThanOrEqual(ROOM);
+    expect(calls(sent, '/tokenize')).toHaveLength(3);
+    const chat = chatOf(sent);
+    expect(chat.filter((message) => message.reasoning_content)).toEqual([]);
+    expect(JSON.parse(String(chat[3].content)).text).toBe('a'.repeat(472_000));
+    expect(chat[4]).toMatchObject({ role: 'assistant', content: DRAFT });
   });
 
   test('folding: with the reasoning gone and the call still too long, the newest read is folded and the draft and advice stay', async () => {
@@ -177,9 +198,10 @@ describe('a local loop call that won’t fit (DIO-254)', () => {
       reasoning: [{ message: 5, chars: 15_468 }, { message: 1, chars: 2_000 }],
       folded: [{ message: 4, path: 'april.txt', sha: hash(newer), chars: 240_000, bytes: 240_000,
         resultHash: hash(canonicalJson(readResult('april.txt', newer))), advisorRunId: 'advisor-1', advisorStepId: 'tool:1' }] });
-    expect(reply.room!.counts).toHaveLength(3);
-    expect(calls(sent, '/apply-template')).toHaveLength(3);
-    expect(calls(sent, '/tokenize')).toHaveLength(3);
+    // The newest reasoning, then the older, then the read: four counts.
+    expect(reply.room!.counts).toHaveLength(4);
+    expect(calls(sent, '/apply-template')).toHaveLength(4);
+    expect(calls(sent, '/tokenize')).toHaveLength(4);
     expect(calls(sent, '/chat/completions')).toHaveLength(1);
     const chat = chatOf(sent);
     // The newer read is a stub that names the file and its size; the older read is whole.
