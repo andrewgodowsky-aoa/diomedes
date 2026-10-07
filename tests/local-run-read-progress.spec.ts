@@ -183,6 +183,13 @@ async function readOnCard(page: Page) {
   const bar = card.getByRole('progressbar', { name: 'Reading the document.' });
   await expect(line).toHaveText('Reading the document. 0% so far.');
   await expect(bar).toHaveAttribute('aria-valuenow', '0');
+  // The working sign shows from the first moment: the fill is still empty, so it travels the track.
+  const sign = await bar.evaluate((track) => {
+    const after = getComputedStyle(track, '::after');
+    return { animation: after.animationName, display: after.display, opacity: Number(after.opacity) };
+  });
+  expect(sign).toMatchObject({ animation: 'seg-travel', display: 'block' });
+  expect(sign.opacity).toBeGreaterThan(0);
   // The line takes the working line's place, and the thread shows it once.
   await expect(card.getByText(/is on it/)).toHaveCount(0);
   await expect(page.locator('#scrThread .read-progress')).toHaveCount(1);
