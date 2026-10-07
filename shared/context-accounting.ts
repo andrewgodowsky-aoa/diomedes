@@ -73,7 +73,12 @@ export interface HistoryTurnRef {
 }
 
 export interface HistoryIncluded extends HistoryTurnRef {
-  /** Why it is in: among the newest, the conversation's opening message, or relevant to this one. */
+  /**
+   * Why it is in: among the newest, the conversation's opening message, or relevant to this one.
+   * Under `stepped+lexical/2`, `recent` is a kept message after the fold, `pinned` the lineage's
+   * opening message whole at the top, and `relevant` a summarised message this message recalls in
+   * full. `fits` is only on older records.
+   */
   reason: 'recent' | 'pinned' | 'relevant' | 'fits';
   /** Only its end is in the text: the history's character cut reached into it (`cutChars`). */
   truncated?: true;
@@ -84,16 +89,33 @@ export interface HistoryIncluded extends HistoryTurnRef {
 /**
  * How the history of one turn was chosen. Absent from a turn whose history fitted its budget: then
  * every earlier message within the bounds went, exactly as before H18.
+ *
+ * `stepped+lexical/2` (DIO-23, 2026-10-06) folds the oldest messages in steps, so the marker, the
+ * summary and the kept messages stay the same bytes from one message to the next until a step;
+ * `recency+lexical/1` chose the history again for every message and stays on older records.
  */
 export interface HistorySelection {
-  method: 'recency+lexical/1';
+  method: 'recency+lexical/1' | 'stepped+lexical/2';
+  /**
+   * The bounds. Under `stepped+lexical/2` the message bound covers the opening message and the
+   * kept messages; the recalled messages are at most two more, inside the character bound.
+   */
   budget: { turns: number; chars: number };
   /** Answered messages this turn could draw on, carried ones included. */
   available: number;
+  /** In the text, in message order. */
   included: HistoryIncluded[];
-  /** Left out of the text. A message of this lineage's own is summarised; a carried one gives way. */
+  /**
+   * Left out of the text, every one by number, in message order. A message of this lineage's own
+   * is summarised; a carried one gives way. A recalled message is in the text, so it is included
+   * rather than omitted, and the summary still has its line.
+   */
   omitted: (HistoryTurnRef & { carried: boolean })[];
-  /** The line the model reads where messages were left out. Null when none were. */
+  /**
+   * The line the model reads where messages were left out. Null when none were. Under
+   * `stepped+lexical/2` it names the folded range, so it is the same for every message between
+   * two steps; the record above names each message.
+   */
   marker: string | null;
   /** Characters cut from the oldest included message to keep the newest ones whole, or 0. */
   cutChars: number;

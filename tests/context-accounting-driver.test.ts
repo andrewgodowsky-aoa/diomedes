@@ -169,7 +169,10 @@ describe('context accounting on a model-API conversation', () => {
     expect(selection.included.filter((item) => item.reason === 'recent').map((item) => item.index)).toEqual([9, 10, 11, 12, 13, 14]);
     expect(selection.included.find((item) => item.index === 2)?.reason).toBe('relevant');
     const compaction = account.compaction!;
-    expect(compaction.turns.map((item) => item.index)).toEqual(selection.omitted.map((item) => item.index));
+    // DIO-23: the summary stands for every folded message, the recalled one included, so it does
+    // not change with what a message recalls; the record still names each message left out.
+    expect(compaction.turns.map((item) => item.index)).toEqual([2, 3, 4, 5, 6, 7, 8]);
+    expect(selection.omitted.map((item) => item.index)).toEqual([3, 4, 5, 6, 7, 8]);
     expect(compaction.author).toBe('diomedes-application');
     // What the model read: the marker, the summary, the recalled message and the newest one.
     const user = sent.at(-1)!.messages[0].text!;
@@ -177,6 +180,13 @@ describe('context accounting on a model-API conversation', () => {
     expect(user).toContain(compaction.text);
     expect(user).toContain('Person: Where is the Harbor Supply linen invoice?');
     expect(user).toContain('Person: Q14: how many chairs for table 14?');
+    // The recalled message follows the kept ones, and everything before it is what the previous
+    // message's history was, so a provider can reuse it.
+    expect(user.indexOf('Person: Where is the Harbor Supply linen invoice?')).toBeGreaterThan(
+      user.indexOf('Person: Q14: how many chairs for table 14?'),
+    );
+    const before = sent.at(-2)!.messages[0].text!;
+    expect(user.startsWith(before.slice(0, before.indexOf('\n\n---\n\nFiles attached')))).toBe(true);
     // The turn's own run carries the same record, as evidence of what was summarised.
     const child = await driver.turnRun('p', 'conv', 'm-15');
     expect(child!.input).toMatchObject({ historyShared: true, history: { selection, compaction } });
