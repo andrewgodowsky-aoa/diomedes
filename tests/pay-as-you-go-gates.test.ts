@@ -6,7 +6,7 @@
  * The account service is the real control-plane handler over the faux store, in this process, read through the desktop's own
  * client and session. Nothing leaves this process.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -67,6 +67,7 @@ async function holdTheRest(who: DemoAccount) {
     tier: 'thorough', capMicroUsd: null });
   await cloud.funding.reserve({ tenantId: personId, organizationId: scopeId, attemptId: 'other-hold', rootJobId: 'other-work', parentAttemptId: null,
     kind: 'generation', route: 'primary', requestDigest: 'digest_other', rateSnapshot: RATE, maxMicroUsd: micro(left), usageClass: 'metered-work', boughtOnly: true });
+  return { tenantId: personId, organizationId: scopeId, attemptId: 'other-hold', left };
 }
 /** Billing issues an Individual grant to the named person. */
 async function issueIndividual(who: DemoAccount) {
@@ -85,6 +86,7 @@ beforeEach(async () => {
   await seedDemo(cloud);
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await cloud?.idle();
   await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
@@ -122,6 +124,27 @@ describe('the plan view of a person paying as they go', () => {
     expect(nectoviaLockedBy(session.state().plan)).not.toBeNull();
   });
 
+  test('refreshes the bought-credit gate after final-credit consumption without reloading the account', async () => {
+    const session = await signedIn('free');
+    await buy('free', 100);
+    await session.reload({ project: false });
+    expect(nectoviaLockedBy(session.state().plan)).toBeNull();
+    const { left, ...ref } = await holdTheRest('free');
+    await cloud.funding.markDispatched(ref);
+    const settled = await cloud.funding.settle({ ...ref, receiptRef: 'final-credit-response', reconciledFrom: 'response',
+      usage: { inputTokens: left, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 } });
+    expect(settled.outcome).toBe('settled');
+    expect((await client.personalPurchasedBalance(await token('free'))).availableMicroUsd).toBe(0);
+    session.onProjection(async () => { throw new Error('A balance refresh must not project the account.'); });
+    const requests = sent.length;
+    const plan = await session.refreshPayAsYouGo();
+    expect(plan.agent).toBe('free');
+    expect(plan.payAsYouGo).toBeUndefined();
+    expect(nectoviaLockedBy(plan)).not.toBeNull();
+    expect(session.state().plan).toEqual(plan);
+    expect(sent.slice(requests)).toEqual(['GET /account/usage', 'GET /account/purchased-usage']);
+  });
+
   test('keeps it closed when the balance cannot be read, guessing nothing open', async () => {
     const session = await signedIn('free');
     await buy('free', 100);
@@ -138,6 +161,73 @@ describe('the plan view of a person paying as they go', () => {
     expect(session.state().plan.payAsYouGo).toBeUndefined();
     expect(balanceReads()).toBe(0);
     expect(usageReads()).toBe(0);
+    const requests = sent.length;
+    await session.refreshPayAsYouGo();
+    expect(sent).toHaveLength(requests);
+  });
+
+  test('a work notification never creates a billing scope for a person who has never bought', async () => {
+    const session = await signedIn('free');
+    await session.refreshPayAsYouGo();
+    expect(balanceReads()).toBe(0);
+    expect((await session.personalUsage()).accountId).toBeNull();
+  });
+
+  test('released holds reopen bought credits, and an unavailable balance closes them', async () => {
+    const session = await signedIn('free');
+    await buy('free', 100);
+    await session.reload({ project: false });
+    const { left: _left, ...ref } = await holdTheRest('free');
+    expect((await session.refreshPayAsYouGo()).payAsYouGo).toBeUndefined();
+    await cloud.funding.release(ref);
+    expect((await session.refreshPayAsYouGo()).payAsYouGo).toBe(true);
+    balanceFails = true;
+    expect((await session.refreshPayAsYouGo()).payAsYouGo).toBeUndefined();
+  });
+
+  test('an older positive read cannot overwrite a newer exhausted balance', async () => {
+    const session = await signedIn('free');
+    await buy('free', 100);
+    await session.reload({ project: false });
+    const balance = await client.personalPurchasedBalance(await token('free'));
+    let release!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const reading = new Promise<void>((resolve) => { started = resolve; });
+    vi.spyOn(client, 'personalPurchasedBalance').mockImplementationOnce(async () => {
+      started();
+      await pending;
+      return balance;
+    });
+    const older = session.refreshPayAsYouGo();
+    await reading;
+    await holdTheRest('free');
+    expect((await session.refreshPayAsYouGo()).payAsYouGo).toBeUndefined();
+    release();
+    expect((await older).payAsYouGo).toBeUndefined();
+  });
+
+  test('a balance read finishing after an account switch cannot change the next person', async () => {
+    const session = await signedIn('free');
+    await buy('free', 100);
+    await session.reload({ project: false });
+    const balance = await client.personalPurchasedBalance(await token('free'));
+    let release!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const reading = new Promise<void>((resolve) => { started = resolve; });
+    vi.spyOn(client, 'personalPurchasedBalance').mockImplementationOnce(async () => {
+      started();
+      await pending;
+      return balance;
+    });
+    const older = session.refreshPayAsYouGo().then(() => null, (error: unknown) => error);
+    await reading;
+    await session.signIn({ email: DEMO_ACCOUNTS.manager.email, password: FAUX_DEMO_PASSWORD, remember: false });
+    release();
+    expect(await older).toMatchObject({ status: 401 });
+    expect(session.state().person?.email).toBe(DEMO_ACCOUNTS.manager.email);
+    expect(session.state().plan.payAsYouGo).toBeUndefined();
   });
 });
 

@@ -1,5 +1,5 @@
 import { createContext, Fragment, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { browserSignInPending, type AccountStateView, type AccountsOffView } from '../shared/accounts';
+import { browserSignInPending, type AccountPlanView, type AccountStateView, type AccountsOffView } from '../shared/accounts';
 import { api } from './api';
 import { Brand, Button } from './components';
 import './accounts.css';
@@ -57,6 +57,42 @@ export function AccountGate({ children }: { children: ReactNode }) {
     window.addEventListener(SIGN_IN_REQUIRED_EVENT, ended);
     return () => window.removeEventListener(SIGN_IN_REQUIRED_EVENT, ended);
   }, [load]);
+
+  const personId = state?.person?.id;
+  const signedInAt = state?.signedInAt;
+  const agentPlan = state?.plan.agent;
+  useEffect(() => {
+    if (!personId || agentPlan !== 'free') return;
+    // The gateway settles before the host records a finished turn/run. These same notifications
+    // also cover refusal and released holds. Reconnection checks anything missed while offline.
+    const events = new EventSource('/api/events');
+    let live = true;
+    let reading = false;
+    let again = false;
+    const refreshPlan = async () => {
+      again = true;
+      if (reading) return;
+      reading = true;
+      try {
+        do {
+          again = false;
+          const plan = await api<AccountPlanView>('/account/pay-as-you-go/refresh', 'POST', {});
+          if (live) setState((previous) =>
+            previous?.person?.id === personId && previous.signedInAt === signedInAt && previous.plan.agent === 'free'
+              ? { ...previous, plan } : previous);
+        } while (live && again);
+      } catch (e) {
+        if (live) setError(message(e, 'The bought-credit balance could not be refreshed.'));
+      } finally {
+        reading = false;
+      }
+    };
+    for (const event of ['ready', 'state', 'session', 'usage']) events.addEventListener(event, refreshPlan);
+    return () => {
+      live = false;
+      events.close();
+    };
+  }, [personId, signedInAt, agentPlan]);
 
   // A host without accounts (an embedded test server) asks no one to sign in, so neither does this.
   if (off) return <>{children}</>;

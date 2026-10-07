@@ -271,6 +271,8 @@ interface Current {
    * plan reads free; absent until then, and false when the read failed.
    */
   boughtOpen?: boolean;
+  /** Orders balance reads so an older answer cannot reopen credits a later read found exhausted. */
+  boughtRead?: number;
   /** Businesses whose access read the service refused because the person is not a member. */
   notMember: Set<string>;
   policy: RoutingPolicyAnswer | null;
@@ -1002,7 +1004,7 @@ export class AccountSessionService {
     current.personAccess = await person;
     current.notMember = notMember;
     // Pay as you go (DIO-245): asked only of a person the plan reads as free, so a plan holder costs no extra read.
-    current.boughtOpen = this.planOf(current) === 'free' ? await this.readBoughtOpen(current) : false;
+    await this.loadBoughtOpen(current);
     current.policy = await this.backend.client.routingPolicy(current.accessToken).catch(() => current.policy);
     await this.resetNoticeWhilePaid(current);
   }
@@ -1072,6 +1074,29 @@ export class AccountSessionService {
     } catch {
       return false;
     }
+  }
+
+  private async loadBoughtOpen(current: Current) {
+    const revision = (current.boughtRead ?? 0) + 1;
+    current.boughtRead = revision;
+    const open = this.planOf(current) === 'free' ? await this.readBoughtOpen(current) : false;
+    if (current.boughtRead === revision) current.boughtOpen = open;
+  }
+
+  /**
+   * Work lifecycle notifications can follow a reservation, settlement or refusal. Re-read only the
+   * authoritative bought balance for the free version; projecting the account here would emit more
+   * work notifications. A paid plan costs no read and nothing here grants admission or a plan feature.
+   */
+  async refreshPayAsYouGo(): Promise<AccountPlanView> {
+    const current = this.requireCurrent();
+    if (this.planOf(current) === 'free') {
+      await this.token();
+      this.assertCurrent(current);
+      await this.loadBoughtOpen(current);
+      this.assertCurrent(current);
+    }
+    return this.planView();
   }
 
   /**

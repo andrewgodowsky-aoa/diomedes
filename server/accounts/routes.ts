@@ -79,6 +79,7 @@ export function mountAccountSessionRoutes(app: Express, session: AccountSessionS
   router.post('/resume', route(async (req) => session.resume(parse(personBody, req.body).personId)));
   router.post('/sign-out', route(async () => session.signOut()));
   router.post('/forget', route(async (req) => session.forget(parse(personBody, req.body).personId)));
+  router.post('/pay-as-you-go/refresh', route(async () => session.refreshPayAsYouGo()));
   router.post(
     '/refresh',
     route(async () => {
