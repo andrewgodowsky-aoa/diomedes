@@ -264,7 +264,7 @@ export function Diomedes({
   // The engine's thinking on the answer on its way; a lost stream shows none.
   const liveThinking =
     streamed?.thinking && streamed.thinking.position !== 'lost' && streamed.thinking.text ? streamed.thinking : null;
-  const pendingWord = useWorkingWord('working', waiting);
+  const pendingWord = useWorkingWord('thinking it over', waiting);
   // The artifact panel: this page has no third column, so it opens over the page.
   const artifacts = useArtifactSelection(scopeId, artifactScope, turns);
   const [artifactWidth, setArtifactWidth] = useArtifactWidth();
