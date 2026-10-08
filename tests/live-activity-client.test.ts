@@ -15,6 +15,7 @@ import {
 import { stepLiveReply, type LiveBinding, type LiveReply } from '../client/console/live-reply';
 import { ToolActivityList } from '../client/console/ToolActivity';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import { Diomedes, type DiomedesPageProps } from '../client/console/Diomedes';
 import type { Conversation, Session } from '../shared/types';
 
@@ -270,13 +271,13 @@ function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'tech
       member: null,
       needs: [],
       settings: { ...defaults(), detail },
-      mode: 'ask',
+      choice: choiceView(thread),
       route: 'claude-code',
       busy: false,
       online: true,
-      onMode: noAction,
       onPermission: noAction,
       onRename: noAction,
+      pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
       prepareSources: async () => [],
       onSend: noAction,
       onResolve: noAction,
@@ -340,8 +341,8 @@ describe('Diomedes home live reply', () => {
     onScope: noAction,
     turns: [],
     pending: true,
-    restriction: 'automatic',
-    onRestriction: noAction,
+    agent: 'auto',
+    onAgent: noAction,
     onSend: async () => true,
     onStop: noAction,
     route: 'claude-code',

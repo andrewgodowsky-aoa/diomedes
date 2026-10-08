@@ -953,54 +953,6 @@ html[data-surface='console'] body {
   padding: 0 8px 0 4px;
   border-top: 1px solid var(--hair);
 }
-.console .modes {
-  position: relative;
-  display: flex;
-  gap: 2px;
-}
-.console .modes button {
-  padding: 11px 10px 12px;
-  font: 500 var(--dm-type-body) / 1 var(--dm-font-ui);
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--t3);
-  transition: color var(--quick);
-}
-.console .modes button:hover {
-  color: var(--t2);
-}
-.console .modes button.on {
-  color: var(--t1);
-}
-.console .modes .ind {
-  position: absolute;
-  bottom: 4px;
-  left: 0;
-  height: 6px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  /* No transition: motion.ts springs this on the Web Animations API. */
-  pointer-events: none;
-}
-.console .modes .ind i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--light);
-  flex: none;
-}
-.console .modes .ind b {
-  height: 1px;
-  width: 34px;
-  transform-origin: left center;
-  transform: scaleX(0);
-  background: var(--light);
-  /* No transition: motion.ts springs this on the Web Animations API. */
-}
-.console .modes .ind b.dash {
-  background: repeating-linear-gradient(90deg, var(--light) 0 3px, transparent 3px 6px);
-}
 .console .bar .cap {
   margin-left: 14px;
   color: var(--t3);
@@ -1623,16 +1575,12 @@ html[data-surface='console'] body {
   }
 }
 
-/* the spine slide and the indicator move stand still under reduced motion */
-html[data-motion='reduced'] .console .spine .gp,
-html[data-motion='reduced'] .console .modes .ind,
-html[data-motion='reduced'] .console .modes .ind b {
+/* the spine slide stands still under reduced motion */
+html[data-motion='reduced'] .console .spine .gp {
   transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .console .spine .gp,
-  .console .modes .ind,
-  .console .modes .ind b,
   .console .toast,
   .console .spine button,
   .console .picker > button {
@@ -1681,7 +1629,6 @@ html[data-motion='reduced'] .console .modes .ind b {
 .console
   :where(
     .rail-head h2,
-    .modes button,
     .picker > button,
     .pmenu h4,
     .pmenu .note,

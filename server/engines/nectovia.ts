@@ -652,9 +652,9 @@ export function nectoviaTier(input: {
   };
 }
 
-/** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
+/** Agents that change files run through Work; the Nectovia Agent answers in the conversation. */
 export const NECTOVIA_WORK_REFUSED =
-  'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';
+  "The Nectovia Agent answers in the conversation. That agent isn't on Nectovia yet, so nothing was sent.";
 
 /**
  * Managed loops require one stable root job and fresh admission before every model step.

@@ -58,6 +58,7 @@ import {
 import { secretScrubber } from './secrets.js';
 import { reviewerBoundary, type ReviewerService } from './trust/reviewer.js';
 import type { AgentRegistry } from './agents.js';
+import { agentFraming } from './agent-framing.js';
 import type { AgentProfileService } from './agent-profiles.js';
 import {
   fallbackSentence,
@@ -156,6 +157,8 @@ interface NativeRun {
    */
   instructionSection?: string;
   instructionPaths?: string[];
+  /** A non-default Agent's role, sent as guidance in the proposal prompt (DIO-292). */
+  agentLine?: string;
   /**
    * The exact skill section bytes sent in the prompt, held here so every
    * engine gets the same text. `skillUse` is the matching record for the
@@ -370,6 +373,11 @@ export interface NativeStartInput {
   /** The Agent the person asked for, or `auto`. Never read from model text. */
   agentId?: string | null;
   /**
+   * Auto's pick for this start, used only where `agentId` is `auto` or absent (DIO-292). A
+   * profile's own Agent, or one the person named, is never replaced by it.
+   */
+  pickedAgentId?: string | null;
+  /**
    * Host-assembled playbook guidance (AssembledSkill `{section,use}`), loaded
    * through the pack contribution pin and checked against its digest by the
    * caller (server/app.ts). Never parsed from request JSON or model text;
@@ -509,12 +517,13 @@ export class NativeWorkService {
     state: ProjectState,
     taskId: string,
     engine: Exclude<Route, 'sample'>,
-    input: Pick<NativeStartInput, 'agentId' | 'mode' | 'requested'>,
+    input: Pick<NativeStartInput, 'agentId' | 'pickedAgentId' | 'mode' | 'requested'>,
     profile?: ProfileResolution,
   ): Promise<AgentResolution | undefined> {
     if (!this.agents) return undefined;
     return this.agents.resolve({
       requestedAgentId: input.agentId ?? null,
+      picked: input.pickedAgentId ?? null,
       mode: input.mode ?? 'build',
       routeId: engine,
       requestedModel: input.requested?.model ?? null,
@@ -575,6 +584,9 @@ export class NativeWorkService {
         `${resolved.agentName} cannot work through ${engine}: ${resolved.unmet[0]?.detail ?? 'a required capability is missing.'}`,
         { code: 'agent_incompatible' },
       );
+    // A non-default Agent's role rides in the proposal prompt as guidance (DIO-292).
+    const definition = resolved ? await this.agents?.find(resolved.agentId, state.project.folder) : undefined;
+    const agentLine = definition ? agentFraming(definition, input.mode ?? 'build') : null;
     await this.store.checkFolder(state);
     if (state.project.missing) throw new ApiError(409, 'The project folder is missing.');
     const sources: Source[] = [];
@@ -786,6 +798,7 @@ export class NativeWorkService {
         ...(input.team ? { team: { ...input.team } } : {}),
         ...(input.requested ? { requested: { ...input.requested } } : {}),
         ...(resolved ? { agent: resolved } : {}),
+        ...(agentLine ? { agentLine } : {}),
         ...(instructions.section || profile?.rules.length
           ? {
               instructionSection: [
@@ -962,6 +975,7 @@ export class NativeWorkService {
           // the JSON contract, the editable-path list and what Diomedes will
           // write stay exactly as they are.
           ...(run.instructionSection ? [run.instructionSection] : []),
+          ...(run.agentLine ? [run.agentLine] : []),
           ...(run.skillSection ? [run.skillSection] : []),
           `Selected editable paths: ${JSON.stringify(run.sources.map((source) => source.path))}`,
           `Requested work: ${run.instruction}`,

@@ -30,6 +30,8 @@ export interface MessageInput {
   text: string;
   mode: ConversationMode;
   sources: { path: string; sha: string }[];
+  /** The Agent the message runs as (DIO-292). Part of what the message is, so it's saved with it. */
+  agent?: string;
 }
 export interface PendingMessage {
   commandId: string;
@@ -106,13 +108,15 @@ const id = (value: unknown): value is string =>
 function normalize(value: unknown): MessageInput {
   if (
     !record(value) ||
-    !only(value, ['text', 'mode', 'sources']) ||
+    !only(value, ['text', 'mode', 'sources', 'agent']) ||
     typeof value.text !== 'string' ||
     !value.text.trim() ||
     value.text.length > 32_000 ||
     (value.mode !== 'ask' && value.mode !== 'plan' && value.mode !== 'auto') ||
     !Array.isArray(value.sources) ||
-    value.sources.length > 8
+    value.sources.length > 8 ||
+    (value.agent !== undefined &&
+      (typeof value.agent !== 'string' || !value.agent.trim() || value.agent.length > 80))
   )
     throw invalid();
   const sources = value.sources.map((source: unknown) => {
@@ -128,7 +132,12 @@ function normalize(value: unknown): MessageInput {
       throw invalid();
     return { path: source.path, sha: source.sha };
   });
-  return { text: value.text.trim(), mode: value.mode, sources };
+  return {
+    text: value.text.trim(),
+    mode: value.mode,
+    sources,
+    ...(typeof value.agent === 'string' ? { agent: value.agent.trim() } : {}),
+  };
 }
 
 function storageFor(kind: 'session' | 'local'): Storage {

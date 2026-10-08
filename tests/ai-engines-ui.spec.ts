@@ -24,6 +24,7 @@ import type {
 } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
+import { chooseAgent } from './fixtures/agent-menu';
 
 // This is a browser contract fixture. The adapters below never start a native
 // engine, read credentials, or contact a provider; they only exercise the
@@ -407,13 +408,8 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
 
   for (const engine of Object.keys(versions) as ExternalEngine[]) {
     await pinThread(engine, `${engine}/fixture-model`);
-    await page
-      .getByRole('radio', { name: engine === 'oh-my-pi' ? 'fix' : 'build', exact: true })
-      .click();
-    if (engine === 'oh-my-pi')
-      await page
-        .getByRole('textbox', { name: 'Paste what went wrong' })
-        .fill('A synthetic typo needs a corrected note.');
+    // Fixer takes what is failing in the message itself (DIO-292).
+    await chooseAgent(page, engine === 'oh-my-pi' ? 'Fixer' : 'Builder');
     await page
       .getByRole('textbox', { name: 'Message this thread', exact: true })
       .fill('PROPOSE exact note');
@@ -570,7 +566,10 @@ test('Console standalone Ask includes only documents named in the message and re
   await expect.poll(() => calls.length).toBe(count + 1);
   expect(calls.at(-1)?.input.documents).toEqual([{ path: 'weekly-brief.md', text: 'weekly-brief.md' }]);
   await expect(composer).toHaveValue('');
-  await expect(page.locator('.exchange .turn.dio')).toBeVisible();
+  // The saved answer: its live text can still show beside it for a moment (DIO-301).
+  await expect(
+    page.locator('.exchange .turn.dio[data-thread-point]').filter({ hasText: 'Scoped answer from opencode.' }),
+  ).toBeVisible();
   await composer.fill('Explain how to write a brief.');
   // A streamed answer can appear before the request finishes and Send unlocks.
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();

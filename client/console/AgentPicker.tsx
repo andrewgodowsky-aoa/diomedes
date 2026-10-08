@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, Route } from '../../shared/types';
-import { AUTO_AGENT, AUTO_BY_MODE } from '../../shared/agents';
+import { AUTO_AGENT, AUTO_SUMMARY } from '../../shared/agents';
+import { agentChoiceOf } from '../../shared/agent-choice';
 import { api } from '../api';
 import { routeDisplayName } from '../../shared/engines';
 import { nectoviaAgentGap } from './agent-gaps';
+import { choiceView, lastPick } from './agent-ui';
 
 /** What `GET /projects/:id/agent-profiles` returns for one profile (H09). */
 interface ProfileOption {
@@ -37,28 +39,22 @@ interface AgentListing {
 interface AgentPickerProps {
   projectId: string;
   thread: Conversation;
-  mode: Mode;
   route: Route;
   live: boolean;
   busy: boolean;
-  onPick(agentId: string | null): void;
+  onPick(agentId: string): void;
   /** Picks an exact-model profile for the thread. Absent hides the profile group. */
   onPickProfile?(profileId: string): void;
 }
 
 /**
- * Which worker does this. It sits beside the model control on purpose: an Agent
- * and a model are independent axes, and the same `Code Reviewer` runs through
- * whichever compatible model is selected.
- *
- * Choosing here changes who works, never what they may do. That sentence is in
- * the menu rather than a tooltip: it is the one thing a person must not have to
- * hover to learn.
+ * Who does the work (DIO-292): Auto first, then each Agent with one plain line. It sits beside the
+ * model control on purpose: an Agent and a model are independent axes. An Agent that can't run
+ * here is grayed with its reason. Choosing changes who works, never what they may do.
  */
 export function AgentPicker({
   projectId,
   thread,
-  mode,
   route,
   live,
   busy,
@@ -115,25 +111,22 @@ export function AgentPicker({
     };
   }, [open]);
 
-  const agents = listing?.agents ?? [];
   const profileId = thread.requested?.profile ?? null;
   const profile = profileId ? profiles.find((item) => item.profileId === profileId) : undefined;
-  const chosenId = profileId ? null : (thread.requested?.agent ?? null);
-  const chosen = chosenId ? agents.find((item) => item.id === chosenId) : undefined;
-  // What Auto resolves to for the current mode, shown so the person can see it
-  // before starting rather than only in the record afterwards. Automatic is a
-  // conversation mode: it never resolves a worker, so it has no entry here.
-  const autoName =
-    mode === 'auto' ? '' : (agents.find((item) => item.id === AUTO_BY_MODE[mode])?.name ?? '');
-  const forMode = (item: AgentOption) => item.modes.includes(mode);
+  const chosenId = profileId ? null : agentChoiceOf(thread);
+  // The listing puts the built-ins first, in catalog order, then the Agents a project added.
+  const agents = listing?.agents ?? [];
+  const chosen = chosenId && chosenId !== AUTO_AGENT ? agents.find((item) => item.id === chosenId) : undefined;
+  // On Auto, the Agent it picked for the latest reply, so the box says who answered.
+  const picked = chosenId === AUTO_AGENT ? lastPick(thread) : null;
 
-  function choose(agentId: string | null) {
+  function choose(agentId: string) {
     if (live || busy) return;
     onPick(agentId);
     setOpen(false);
   }
   const entry = (item: AgentOption) => {
-    // On Nectovia a worker for Build or Fix is grayed: a thread send there refuses those modes.
+    // On Nectovia an Agent that changes files is grayed: a thread send there refuses that work.
     const gap = nectoviaAgentGap(item, route);
     const blocked = !item.compatibility.ok || gap !== null;
     return (
@@ -151,14 +144,12 @@ export function AgentPicker({
         <small>
           {gap ??
             (blocked
-              ? (item.compatibility.unmet[0]?.detail ?? 'This engine cannot support this worker.')
+              ? (item.compatibility.unmet[0]?.detail ?? "This engine can't run this agent.")
               : item.summary)}
         </small>
       </button>
     );
   };
-  const fits = agents.filter(forMode);
-  const rest = agents.filter((item) => !forMode(item));
 
   return (
     <div className="picker agent-picker" ref={root}>
@@ -166,15 +157,18 @@ export function AgentPicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Worker for this thread"
-        title="Which worker does this. It does not change what the worker may do."
+        aria-label="Agent for this thread"
         onClick={() => setOpen(!open)}
       >
         <span className="eng">{profileId ? 'Profile' : 'Agent'}</span>
         <span className="mdl">
-          {profileId ? (profile?.name ?? 'Unavailable profile') : (chosen?.name ?? 'Auto')}
+          {profileId
+            ? (profile?.name ?? 'Unavailable profile')
+            : chosenId === AUTO_AGENT
+              ? 'Auto'
+              : (chosen?.name ?? choiceView(thread).name)}
         </span>
-        {!profileId && !chosen && autoName && <span className="eff">{autoName}</span>}
+        {picked && <span className="eff">{picked}</span>}
       </button>
       {open && (
         <div className="pmenu open" role="menu">
@@ -184,24 +178,21 @@ export function AgentPicker({
             <>
               <button
                 type="button"
-                className={`m ${!chosenId && !profileId ? 'on' : ''}`}
+                className={`m ${chosenId === AUTO_AGENT ? 'on' : ''}`}
                 role="menuitemradio"
-                aria-checked={!chosenId && !profileId}
-                onClick={() => choose(null)}
+                aria-checked={chosenId === AUTO_AGENT}
+                onClick={() => choose(AUTO_AGENT)}
               >
                 <span>Auto</span>
                 <span className="id">{AUTO_AGENT}</span>
-                <small>
-                  {autoName
-                    ? `Nectovia picks the worker for the mode. In ${mode} that is ${autoName}.`
-                    : 'Nectovia picks the worker for the mode.'}
-                </small>
+                <small>{AUTO_SUMMARY}</small>
               </button>
+              {agents.map(entry)}
               {onPickProfile && profiles.length > 0 && (
                 <div>
                   <h4>
                     Profiles
-                    <span>Build and Fix runs</span>
+                    <span />
                   </h4>
                   {profiles.map((item) => (
                     <button
@@ -228,29 +219,7 @@ export function AgentPicker({
                   ))}
                 </div>
               )}
-              {fits.length > 0 && (
-                <div>
-                  <h4>
-                    For {mode}
-                    <span />
-                  </h4>
-                  {fits.map(entry)}
-                </div>
-              )}
-              {rest.length > 0 && (
-                <div>
-                  <h4>
-                    Other workers
-                    <span />
-                  </h4>
-                  {rest.map(entry)}
-                </div>
-              )}
-              {agents.length === 0 && <p className="note">No workers are available here.</p>}
-              <div className="note">
-                <b>Choosing a worker does not change what it may do.</b> Permissions decide that,
-                and each worker may be narrower still.
-              </div>
+              <div className="note">Permissions decide what each agent can do.</div>
             </>
           )}
         </div>

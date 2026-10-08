@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type {
   IntegrationStatus,
-  Mode,
   Project,
   Settings,
   UsageSnapshot,
@@ -12,10 +11,8 @@ import {
   date,
   leftPercent,
   tightestWindow,
-  titleCase,
 } from '../components';
 import { AGENT_NAME } from '../../shared/agent-name';
-import { CAPS, MODE_ORDER } from './Composer';
 import type { EverythingItem } from './Everything';
 import { Rail, type RailItem } from './Rail';
 import { SegmentBar } from './SegmentBar';
@@ -92,7 +89,8 @@ interface HomeProps {
   onText: (value: string) => void;
   targetId: string | null;
   onTarget: (id: string) => void;
-  onSend: (text: string, project: Project, mode: Mode) => void;
+  /** The draft goes to the thread it opens in; Auto picks the Agent when that thread sends (DIO-292). */
+  onSend: (text: string, project: Project) => void;
   onOpenProject: (p: Project) => void;
   onGo: (destination: HomeDestination) => void;
 }
@@ -153,10 +151,8 @@ export function Home({
   // The person's own choice and nothing else. The project last opened is never assumed to be
   // where something should happen (core agent contract, condition H3).
   const target = byRecency.find((p) => p.id === targetId);
-  // The mode travels with the ask and lands on the thread it opens in.
-  const [mode, setMode] = useState<Mode>('ask');
   const send = () => {
-    if (target) onSend(text, target, mode);
+    if (target) onSend(text, target);
   };
   // What needs the person comes first; after that, the order they last worked in.
   const listed = [...projects].sort(
@@ -301,20 +297,6 @@ export function Home({
                       />
                       <div className="bar">
                         <label className="home-target">
-                          <span>Mode</span>
-                          <select
-                            aria-label="Mode"
-                            value={mode}
-                            onChange={(e) => setMode(e.target.value as Mode)}
-                          >
-                            {MODE_ORDER.map((m) => (
-                              <option key={m} value={m}>
-                                {titleCase(m)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="home-target">
                           <span>In project</span>
                           <select
                             aria-label="In project"
@@ -346,11 +328,7 @@ export function Home({
                         </span>
                       </div>
                     </div>
-                    <p className="home-cap" aria-live="polite">
-                      {mode === 'fix'
-                        ? `${CAPS.fix} You pick the failing document in the project.`
-                        : CAPS[mode]}
-                    </p>
+
                     <HelperLine
                       integrations={integrations}
                       settings={settings}

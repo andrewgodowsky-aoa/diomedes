@@ -31,6 +31,7 @@ import {
 import { SMALL_BUSINESS_SKILLS_LATER } from '../shared/small-business-skills.js';
 import { buildEntries, filterPalette, type PaletteContext, type PaletteHandlers } from '../client/console/paletteEntries.js';
 import { Composer } from '../client/console/Composer.js';
+import { choiceView } from '../client/console/agent-ui.js';
 import { Palette } from '../client/console/Palette.js';
 import type { Conversation, ProjectState } from '../shared/types.js';
 
@@ -517,8 +518,9 @@ describe('launching a skill from the Console', () => {
     };
     const pick = skill('invoice-chase');
     const props = {
-      thread, mode: 'ask' as const, onMode: () => {}, busy: false, online: true, route: 'codex' as const,
-      confirmSend: false, prepareSources: async () => [], onSend: () => {},
+      thread, choice: choiceView(thread), busy: false, online: true, route: 'codex' as const,
+      pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
+      confirmFor: () => false, prepareSources: async () => [], onSend: () => {},
     };
     const picked = renderToStaticMarkup(
       createElement(Composer, { ...props, skill: { name: pick.name, starter: pick.starter, n: 1 }, onClearSkill: () => {} }),

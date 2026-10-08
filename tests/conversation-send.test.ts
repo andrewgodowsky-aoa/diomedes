@@ -183,6 +183,34 @@ describe('sending one message', () => {
     expect(mod.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-1');
   });
 
+  test('the Agent travels with the message and is saved with it (DIO-292)', async () => {
+    const asAnalyst = { ...input(), mode: 'ask' as const, agent: 'diomedes.analyst' };
+    fetchMock.mockImplementationOnce(async () => {
+      expect(mod.pendingMessage(PROJECT, THREAD)?.input).toEqual(asAnalyst);
+      return answered();
+    });
+    await mod.sendMessage(PROJECT, THREAD, asAnalyst);
+    expect(sent(0)).toEqual({ ...asAnalyst, commandId: 'uuid-1', consent: true });
+  });
+
+  test('another Agent while one is unconfirmed is another message, and sends nothing', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    const asked = { ...input(), mode: 'ask' as const };
+    await expect(mod.sendMessage(PROJECT, THREAD, { ...asked, agent: 'diomedes.researcher' })).rejects.toThrow();
+    fetchMock.mockReset();
+    await expect(mod.sendMessage(PROJECT, THREAD, { ...asked, agent: 'diomedes.analyst' })).rejects.toThrow(
+      /never confirmed/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a blank or overlong Agent is refused before anything is saved or sent', async () => {
+    for (const agent of ['  ', 'x'.repeat(81)])
+      await expect(mod.sendMessage(PROJECT, THREAD, { ...input(), agent })).rejects.toThrow(/damaged/);
+    expect(session.getItem(PENDING)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test('a different text while one is unconfirmed sends nothing', async () => {
     fetchMock.mockRejectedValue(new TypeError('network'));
     await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow();

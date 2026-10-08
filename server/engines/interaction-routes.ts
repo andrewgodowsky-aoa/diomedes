@@ -31,6 +31,8 @@ export const messageBody = z.strictObject({
    * Absent means the selected documents only; `project` is the person's per-message choice.
    */
   readAccess: z.enum(['selected', 'project']).optional(),
+  /** The Agent this message runs as (DIO-292). Absent means its kind's default, as before. */
+  agent: z.string().trim().min(1).max(80).optional(),
   /**
    * H03: the person sent this while an answer is still running. On a route whose contract
    * queues steering, it waits behind that answer and is sent next; elsewhere it is refused as

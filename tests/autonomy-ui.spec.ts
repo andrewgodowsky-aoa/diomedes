@@ -397,7 +397,7 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   // Governance rows: the Agent, how it was chosen, and honest gaps for what a
   // session does not record yet. An unknown row is present and readable, not hidden.
   await expect(inspector.getByRole('term').filter({ hasText: /^Worker$/ })).toBeVisible();
-  await expect(inspector.getByText(/^Change Builder 1\.0\.0$/)).toBeVisible();
+  await expect(inspector.getByText(/^Builder 2\.0\.0$/)).toBeVisible();
   await expect(
     inspector.getByText(/The worker was picked by hand|Nectovia picked the worker/),
   ).toBeVisible();

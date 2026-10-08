@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ExternalEngine,
   IntegrationStatus,
-  Mode,
   Project,
   Settings,
   UsageSnapshot,
@@ -17,7 +16,6 @@ import {
   Modal,
   UsageChip,
   askDraftKey,
-  askModeKey,
   tightestWindow,
 } from './components';
 import { Shell } from './console/Shell';
@@ -582,17 +580,16 @@ export function App() {
     }
   }
   // Landing ask box handler for the projects-page block below (kept out of the scale effect above).
-  const sendLandingAsk = (text: string, project: Project, mode: Mode) => {
+  const sendLandingAsk = (text: string, project: Project) => {
     const value = text.trim();
     if (!value) return;
     try {
       localStorage.setItem(askDraftKey(project.id), value);
-      localStorage.setItem(askModeKey(project.id), mode);
     } catch {
       // Storage is unavailable; continue without a carried draft.
     }
     setLandingText('');
-    // The Console's composer picks the carried draft and mode up when it opens.
+    // The Console's composer picks the carried draft up when it opens.
     openProject(project);
   };
   const current = projects.find((p) => p.id === selected);

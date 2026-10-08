@@ -152,9 +152,24 @@ import { NATIVE_LOOP_CAPABILITY, NATIVE_LOOP_ENGINE } from '../shared/native-loo
 import { ProductionWorkRows } from './work-rows.js';
 import { mountVerificationRoutes } from './verification/routes.js';
 import { codexVerificationReviewer, type VerificationReviewerAdapter } from './verification/reviewer.js';
-import { AgentRegistry } from './agents.js';
+import { AgentRegistry, type AgentView } from './agents.js';
 import { AgentProfileService, AgentProfileStore, mountAgentProfileRoutes } from './agent-profiles.js';
-import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
+import { AGENT_CATALOG, AUTO_AGENT, DEFAULT_AGENT, agentCompatibility, listedAgents, runKindOf } from '../shared/agents.js';
+import {
+  GENERAL_AGENT,
+  agentChoiceOf,
+  controlOf,
+  keepAgentOnly,
+  recordRunKind,
+  throughConversation,
+  withoutAgent,
+  type AgentPickView,
+} from '../shared/agent-choice.js';
+import { narrowForAgent } from './agent-tools.js';
+import { framedText } from './agent-framing.js';
+import { carriedRun } from './harness/conversation-history.js';
+import { laneRecap, withRecap } from './lane-recap.js';
+import { candidatesFor, hasImage, pickAgent, type Advise } from './agent-pick.js';
 import { effortFor } from '../shared/effort.js';
 import {
   DEFAULT_WORK_STYLE,
@@ -248,7 +263,7 @@ import {
   type ClaudeSessionRouteDependencies,
 } from './engines/claude-session-routes.js';
 import type { EngineAsk } from './engines/contract.js';
-import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
+import { mountJevAdvisorRoutes, type PreflightThreadContext } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { createManagedJevAdvisor } from './harness/evaluation-managed.js';
 import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
@@ -483,6 +498,9 @@ interface AppOptions {
 }
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
 const states: TaskState[] = ['todo', 'working', 'waiting', 'done'];
+/** Fix's stop, as a person reads it. The agent to ask for a plan is named from the catalog. */
+const threeTriesSentence = () =>
+  `Three tries haven't fixed this. Start a new thread, or ask ${AGENT_CATALOG.find((item) => item.id === DEFAULT_AGENT.plan)!.name} for a plan first.`;
 const asString = (value: unknown, name: string, max = 10000): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > max)
     throw new ApiError(400, `Provide ${name} of up to ${max} characters.`);
@@ -1674,7 +1692,8 @@ export async function createApp(options: AppOptions) {
     res.json({
       route,
       auto: AUTO_AGENT,
-      agents: list.map((definition) => ({
+      // The internal worker loops use is never offered (DIO-292).
+      agents: listedAgents(list).map((definition) => ({
         id: definition.id,
         version: definition.version,
         name: definition.name,
@@ -3825,11 +3844,17 @@ export async function createApp(options: AppOptions) {
       }
       const permission: ThreadPermission =
         b.permission === undefined ? 'show-first' : parseThreadPermission(b.permission);
+      // A new thread starts on Auto (DIO-292), in its Agent box. Its stored kind stays Ask, as a new
+      // thread's always was: an Automatic kind is what marks a project's own Diomedes conversation
+      // (shared/diomedes-thread.ts), and no Console thread is that. An API caller that names a kind
+      // gets that kind's default Agent, as a thread with a mode always did.
       let threadMode: Conversation['mode'] = 'ask';
+      let requested: Conversation['requested'] = { model: null, effort: null, agent: AUTO_AGENT };
       if (b.mode !== undefined) {
         const parsed = modeOf(b.mode);
         if (!parsed) throw new ApiError(400, 'Choose a valid mode.');
         threadMode = parsed;
+        requested = null;
       }
       const stamped = now();
       const conversation: Conversation = {
@@ -3843,6 +3868,7 @@ export async function createApp(options: AppOptions) {
         helper: null,
         permission,
         mode: threadMode,
+        ...(requested ? { requested } : {}),
       };
       state.conversations.push(conversation);
       await store.persist(state);
@@ -3869,6 +3895,24 @@ export async function createApp(options: AppOptions) {
       // Checked before any field is touched, so a refused style leaves nothing half applied.
       if (b.workStyle !== undefined && b.workStyle !== null && !isWorkStyle(b.workStyle))
         throw new ApiError(400, chooseWorkStyleSentence());
+      // The Agent box decides the kind of run (DIO-292). An Agent is checked here, before any
+      // field is touched, so a refused one leaves nothing half applied. A profile stands alone.
+      let chosenKind: Conversation['mode'] | null = null;
+      const asked =
+        b.requested && typeof b.requested === 'object' && !Array.isArray(b.requested)
+          ? (b.requested as { agent?: unknown; profile?: unknown })
+          : null;
+      if (asked && asked.profile == null && typeof asked.agent === 'string' && asked.agent.trim() && asked.agent.length <= 80) {
+        const wanted = asked.agent.trim();
+        // Auto keeps the stored kind: an Automatic kind marks a project's own Diomedes conversation,
+        // so choosing Auto never makes a Console thread that. Auto's kind is decided per message.
+        if (wanted !== AUTO_AGENT && wanted !== GENERAL_AGENT) {
+          const definition = await agents.find(wanted, state.project.folder);
+          if (!definition || definition.internal)
+            throw new ApiError(400, "That agent isn't available in this project.", { code: 'agent_not_found' });
+          chosenKind = runKindOf(definition);
+        }
+      }
       // The home conversation runs on the routes a Diomedes conversation supports: an engine
       // with a kept session or a model-API route. Anything else is refused by its own name,
       // with no list of engines to choose (spec decision 5), before any field is touched, so a
@@ -3891,6 +3935,9 @@ export async function createApp(options: AppOptions) {
         const parsed = modeOf(b.mode);
         if (!parsed) throw new ApiError(400, 'Choose a valid mode.');
         conversation.mode = parsed;
+        // A mode an API caller names is that kind's default Agent (DIO-292): a saved Agent gives
+        // way, so the thread reads as the mode always did, narrowing included.
+        if (b.requested === undefined) conversation.requested = withoutAgent(conversation.requested ?? null);
       }
       const engine =
         b.engine === undefined
@@ -3901,8 +3948,15 @@ export async function createApp(options: AppOptions) {
       const requested = engine === LOCAL_MODEL_ROUTE && b.requested && typeof b.requested === 'object'
         && typeof (b.requested as { model?: unknown }).model === 'string'
         ? { ...(b.requested as object), model: localSlug((b.requested as { model: string }).model) } : b.requested;
-      if (b.requested !== undefined) conversation.requested = parseRequested(requested, engine,
-        isModelApiRoute(engine) ? await currentChoiceModels(engine) : undefined);
+      if (b.requested !== undefined) {
+        conversation.requested = parseRequested(requested, engine,
+          isModelApiRoute(engine) ? await currentChoiceModels(engine) : undefined);
+        // The general worker left the menu: a thread that names it is on Auto.
+        if (conversation.requested?.agent === GENERAL_AGENT)
+          conversation.requested = { ...conversation.requested, agent: AUTO_AGENT };
+        // The chosen Agent's kind is the thread's kind; Auto's is decided per message.
+        if (chosenKind) conversation.mode = chosenKind;
+      }
       // A style changes which offered model leads and how hard it reasons, from the next
       // request on. It never touches the mode, the permission or the route.
       if (b.workStyle !== undefined)
@@ -4266,7 +4320,13 @@ export async function createApp(options: AppOptions) {
   const readScopeFor = async (
     projectId: string,
     mode: string,
-    turn: { route: Route; access?: unknown; documents: readonly { path: string }[] },
+    turn: {
+      route: Route;
+      access?: unknown;
+      documents: readonly { path: string }[];
+      /** The Agent's read tools, where this turn has no kept session (DIO-292). */
+      tools?: readonly string[];
+    },
   ): Promise<{ readScope?: ReadScope }> => {
     const access = parseReadAccess(turn.access);
     if (mode !== 'ask' && mode !== 'plan') {
@@ -4309,7 +4369,8 @@ export async function createApp(options: AppOptions) {
       mcp,
       shared: (policy.routes as string[]).includes(turn.route) ? policy.documents : [],
     });
-    return readScope ? { readScope } : {};
+    const narrowed = turn.tools ? narrowForAgent(readScope ?? undefined, turn.tools) : readScope;
+    return narrowed ? { readScope: narrowed } : {};
   };
   /** A route with no read scope: a whole-project read asked of it is refused, not dropped. */
   const refuseWholeProjectRead = (access: unknown): Record<string, never> => {
@@ -4462,6 +4523,87 @@ export async function createApp(options: AppOptions) {
       };
     }, false),
   );
+  /** The route a message of `mode` would take on this thread now, and the host's refusal if any. */
+  const routeView = (projectId: string, thread: Conversation, mode: Mode, text: string | null = null) => {
+    const tier = tierFor(projectId, thread, { mode, text });
+    return {
+      route: tier ? (tier.route as Route) : selectedEngine(store.settings, store.state(projectId).project, routed(projectId, thread)),
+      refusal: tier?.outcome === 'refuse' ? tier.reason : null,
+    };
+  };
+  /**
+   * A thread as the Jev preflight reads it, under the lock: the tenant, the style and the work
+   * style of the route the tier would send on, never the recorded one.
+   */
+  const jevThreadContext = (projectId: string, threadId: string): Promise<PreflightThreadContext> =>
+    store.locked(async () => {
+      const state = store.state(projectId);
+      const thread = state.conversations.find((c) => c.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const style = styleOf(thread);
+      const tier = tierFor(projectId, thread, { mode: thread.mode });
+      const engine =
+        tier?.outcome === 'run'
+          ? (tier.route as Route)
+          : selectedEngine(store.settings, state.project, routed(projectId, thread));
+      if (engine === 'sample') return { tenant: 'local', managed: false, mode: thread.mode, style, workStyle: null };
+      // A conversation on company-managed inference is its business's preflight, never the owner's.
+      const managed = engine === NECTOVIA_ROUTE;
+      const business = managed ? (nectoviaAccount?.organizationFor(projectId) ?? null) : null;
+      const savedModel =
+        engine === 'codex'
+          ? codexModelSetting()
+          : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
+      return {
+        tenant: business ?? 'local',
+        managed,
+        mode: thread.mode,
+        style,
+        workStyle: {
+          style,
+          mode: thread.mode,
+          route: engine,
+          availableModels: routeModels(engine),
+          pin: pinOf(engine, thread.requested),
+          savedModel: savedModel ?? null,
+          routeDefaultAllowed: engine === 'codex',
+          stableEffort: isModelApiRoute(engine),
+        },
+      };
+    });
+  /**
+   * Jev's choice from a shortlist of Agents (DIO-292), or null where no advisor is configured or
+   * the Agent gate would not admit asking. Advice only: an advisor that is unavailable, slow or
+   * refused abstains; it never fails a pick.
+   */
+  const jevAdvice = async (projectId: string, threadId: string, text: string): Promise<Advise | null> => {
+    if (!options.jevAdvisor && !managedJevAdvisor) return null;
+    const context = await jevThreadContext(projectId, threadId);
+    const advisor = context.managed ? managedJevAdvisor : (options.jevAdvisor ?? null);
+    if (!advisor) return null;
+    if (!context.managed && agentGate) {
+      try {
+        await agentGate.check({ phase: 'admit', surface: 'other', projectId, rootJobId: null, routeKind: 'byo' });
+      } catch {
+        return null;
+      }
+    }
+    return async (shortlist) => {
+      try {
+        const advice = await advisor.preflight({
+          scope: { tenant: context.tenant, project: projectId, thread: threadId },
+          intent: text,
+          mode: 'auto',
+          style: context.style,
+          sources: [],
+          shortlist,
+        });
+        return advice.status === 'advised' || advice.status === 'cached' ? advice.hints.shortlist : null;
+      } catch {
+        return null;
+      }
+    };
+  };
   app.get(
     '/api/projects/:id/threads/:threadId/work-style',
     route(async (req) => {
@@ -4470,9 +4612,12 @@ export async function createApp(options: AppOptions) {
       const thread = state.conversations.find((c) => c.id === req.params.threadId);
       if (!thread) throw new ApiError(404, 'This thread was not found.');
       const style = styleOf(thread);
+      // The kind of run the next message takes: Auto's pick names it (DIO-292), and a thread's
+      // own stored kind otherwise. A tier uses the kind only for its level, so none is refused.
+      const mode = modeOf(req.query.mode) ?? thread.mode;
       // A tier decides the route and the model; its answer is shown as it would be sent,
       // including a refusal, which reads as a choice the owner has to make.
-      const tier = tierFor(projectId, thread, { mode: thread.mode });
+      const tier = tierFor(projectId, thread, { mode });
       const engine = tier ? (tier.route as Route) : selectedEngine(store.settings, state.project, routed(projectId, thread));
       const source = isWorkStyle(thread.workStyle)
         ? 'thread'
@@ -4513,7 +4658,7 @@ export async function createApp(options: AppOptions) {
           : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
       const resolution = resolveWorkStyle({
         style,
-        mode: thread.mode,
+        mode,
         route: engine,
         availableModels: routeModels(engine),
         pin,
@@ -4524,46 +4669,86 @@ export async function createApp(options: AppOptions) {
       return { route: engine, style, source, refusal, resolution };
     }),
   );
+  /**
+   * Auto's pick for one message, and the route that message would take (DIO-292). The Console asks
+   * before it sends. A chosen Agent, or a profile's own Agent, is answered as it stands. Reads only:
+   * nothing is sent and nothing on the thread changes. Unlocked, because Jev is asked after the
+   * thread is read and the lock released.
+   */
+  app.post(
+    '/api/projects/:id/threads/:threadId/agent-pick',
+    route(async (req) => {
+      const projectId = id(req);
+      const b = body(req);
+      // As long as a message may be: the messages route takes 32000 characters.
+      const text = asString(b.text, 'a message', 32000);
+      if (b.attachments !== undefined && (!Array.isArray(b.attachments) || b.attachments.length > 8))
+        throw new ApiError(400, 'Attach no more than eight files.');
+      const attachments = ((b.attachments as unknown[] | undefined) ?? []).map(relativeName);
+      const state = store.state(projectId);
+      const thread = state.conversations.find((c) => c.id === req.params.threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const { agents: all } = await agents.list(state.project.folder);
+      const named = (agentId: string) => {
+        const definition = all.find((item) => item.id === agentId && !item.internal);
+        if (!definition)
+          throw new ApiError(409, "That agent isn't available in this project. Pick another one.", { code: 'agent_not_found' });
+        return definition;
+      };
+      const answer = (definition: AgentView | null, by: AgentPickView['by'], lane?: 'auto'): AgentPickView => {
+        const mode: Mode = lane ?? (definition ? runKindOf(definition) : 'auto');
+        return {
+          agent: definition ? { id: definition.id, name: definition.name } : { id: AUTO_AGENT, name: 'Auto' },
+          mode,
+          by,
+          ...routeView(projectId, thread, mode, text),
+        };
+      };
+      // A profile that names its own Agent decides who works, as it does when the run starts.
+      const profileId = thread.requested?.profile ?? null;
+      const profileAgent = profileId
+        ? ((await agentProfiles.candidates(state.project.folder)).get(profileId)?.revision.agentId ?? null)
+        : null;
+      // A profile saved with the general worker, which left the menu, is on Auto.
+      if (profileAgent && profileAgent !== AUTO_AGENT && profileAgent !== GENERAL_AGENT)
+        return answer(named(profileAgent), 'profile');
+      const box = agentChoiceOf(thread);
+      if (box !== AUTO_AGENT) return answer(named(box), 'chosen');
+      const conversation = routeView(projectId, thread, 'auto', text).route;
+      // Home, the Agent view and Nectovia answer only in the conversation.
+      const conversationOnly =
+        store.isHomeProject(projectId) || b.conversationOnly === true || conversation === NECTOVIA_ROUTE;
+      const attachedDocument = thread.attachedTo.kind === 'document' || thread.attachedTo.kind === 'plan';
+      const candidates = candidatesFor(all, {
+        compatible: (agentId) => {
+          const definition = all.find((item) => item.id === agentId)!;
+          return agentCompatibility(definition, routeView(projectId, thread, runKindOf(definition), text).route).ok;
+        },
+        conversationOnly,
+        documents: attachments.length > 0 || attachedDocument,
+        images: hasImage(attachments),
+      });
+      // Auto answers a message itself only where it has a conversation to answer in: a project
+      // thread on Claude Code takes the direct path, which has no Automatic.
+      const autoItself = conversationOnly ? isConversationRoute(conversation) : throughConversation(conversation);
+      const picked = await pickAgent({
+        message: { text, attachments, attachedDocument },
+        candidates,
+        autoItself,
+        advise: (await jevAdvice(projectId, thread.id, text)) ?? undefined,
+      });
+      if (picked.agent === AUTO_AGENT) return answer(null, picked.by);
+      const definition = named(picked.agent);
+      const kind = runKindOf(definition);
+      // Where Auto answers in the conversation, an Agent that only reads rides on Auto's own lane,
+      // so the thread keeps one history and one session as Auto moves between agents.
+      return answer(definition, picked.by, autoItself && (kind === 'ask' || kind === 'plan') ? 'auto' : undefined);
+    }, false),
+  );
   // A preview of the Jev preflight for a thread's next message, beside the resolution above.
   // The thread is read under the lock; the provider is asked after it is released.
   if (options.jevAdvisor || managedJevAdvisor)
-    mountJevAdvisorRoutes(app, options.jevAdvisor ?? null, (projectId, threadId) =>
-      store.locked(async () => {
-        const state = store.state(projectId);
-        const thread = state.conversations.find((c) => c.id === threadId);
-        if (!thread) throw new ApiError(404, 'This thread was not found.');
-        const style = styleOf(thread);
-        // The preflight reads the route the tier would send on, never the recorded one.
-        const tier = tierFor(projectId, thread, { mode: thread.mode });
-        const engine =
-          tier?.outcome === 'run'
-            ? (tier.route as Route)
-            : selectedEngine(store.settings, state.project, routed(projectId, thread));
-        if (engine === 'sample') return { tenant: 'local', managed: false, mode: thread.mode, style, workStyle: null };
-        // A conversation on company-managed inference is its business's preflight, never the owner's.
-        const managed = engine === NECTOVIA_ROUTE;
-        const business = managed ? (nectoviaAccount?.organizationFor(projectId) ?? null) : null;
-        const savedModel =
-          engine === 'codex'
-            ? codexModelSetting()
-            : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
-        return {
-          tenant: business ?? 'local',
-          managed,
-          mode: thread.mode,
-          style,
-          workStyle: {
-            style,
-            mode: thread.mode,
-            route: engine,
-            availableModels: routeModels(engine),
-            pin: pinOf(engine, thread.requested),
-            savedModel: savedModel ?? null,
-            routeDefaultAllowed: engine === 'codex',
-            stableEffort: isModelApiRoute(engine),
-          },
-        };
-      }),
+    mountJevAdvisorRoutes(app, options.jevAdvisor ?? null, jevThreadContext,
       managedJevAdvisor,
       // A preflight on the owner’s own route is Agent work on their own connection: the Agent gate
       // admits it before any provider is asked. A managed preflight is admitted by the managed advisor
@@ -4772,7 +4957,7 @@ export async function createApp(options: AppOptions) {
           },
         );
         thread.helper = { engine, model: response.model };
-        thread.mode = command.mode;
+        recordRunKind(thread, command.mode);
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       });
@@ -4874,7 +5059,8 @@ export async function createApp(options: AppOptions) {
       throw new ApiError(409, 'This conversation moved on before this was started.', {
         code: 'conversation_settled',
       });
-    const currentRestriction=narrower(source.restriction,restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'));
+    // Held to the thread's Agent box now (DIO-292), never to the kind Auto picked for one message.
+    const currentRestriction=narrower(source.restriction,restrictionOf(controlOf(thread)));
     if (source.automaticWork) {
       const phases=await conversationDriver(source.runId).phases(source.projectId,source.runId,source.sourceMessageId);
       const recorded=decisionOf(phases);
@@ -5102,7 +5288,7 @@ export async function createApp(options: AppOptions) {
         decision: body.decision,
         restriction: narrower(
           body.restriction,
-          restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'),
+          restrictionOf(controlOf(thread)),
         ),
         conversationProjectId: projectId,
         ...(await admissionContext()),
@@ -5129,7 +5315,45 @@ export async function createApp(options: AppOptions) {
         const thread = state.conversations.find((item) => item.id === threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
         const sourceMessageId = sourceMessageIdFor(projectId, threadId, command.commandId);
-        const restriction = restrictionOf(command.mode);
+        // The Agent this message runs as (DIO-292), checked before anything is located or sent. A
+        // message that names none runs as the Agent the thread chose, so that Agent's limits hold
+        // for every sender; on Auto, Auto answers it itself.
+        const agentBox = agentChoiceOf(thread);
+        const fromBox = !command.agent && agentBox !== AUTO_AGENT && Boolean(thread.requested?.agent?.trim());
+        const readsOnly = (kind: Mode) => kind === 'ask' || kind === 'plan';
+        let agent: AgentView | null = null;
+        // A message meant for another Agent than the box holds now. Refused below, once an answered
+        // command has been read back, as one that names another Agent is.
+        let boxChanged = false;
+        // The phone relays an Agent that changes files as Automatic (server/relay/ports.ts). It is
+        // answered with no Agent, held to the box's own control, so it never starts work.
+        let relayed = false;
+        if (command.agent || fromBox) {
+          agent = (await agents.find(command.agent ?? agentBox, state.project.folder)) ?? null;
+          if (!agent || agent.internal)
+            throw new ApiError(400, "That agent isn't available in this project.", { code: 'agent_not_found' });
+          const kind = runKindOf(agent);
+          if (fromBox && kind !== command.mode) {
+            if (command.mode === 'auto' && !readsOnly(kind)) relayed = true;
+            else boxChanged = true;
+            agent = null;
+          } else if (kind !== command.mode && !(command.mode === 'auto' && readsOnly(kind)))
+            throw new ApiError(400, `${agent.name} doesn't answer this kind of message.`, { code: 'agent_mode_mismatch' });
+        }
+        // On Auto, an Agent that only reads rides on Auto's own lane wherever Auto answers in the
+        // conversation (agent-pick): the thread keeps one history and one session, and the Agent
+        // narrows the message to its own kind's limit, its role and, where the route reads per
+        // message, its read tools.
+        const rides = agent !== null && command.mode === 'auto';
+        const messageKind = rides
+          ? (runKindOf(agent!) as typeof command.mode)
+          : relayed
+            ? controlOf(thread)
+            : command.mode;
+        const restriction = restrictionOf(messageKind);
+        const turnAgent = agent
+          ? { id: agent.id, name: agent.name, picked: agentBox === AUTO_AGENT && !thread.requested?.profile }
+          : undefined;
         const lineages = thread.lineages ?? [];
         // Today's composed text, with the answer format (server/answer-format.ts). A message on a
         // lineage that already exists may be sent with the text that lineage recorded instead
@@ -5139,11 +5363,17 @@ export async function createApp(options: AppOptions) {
           projectId,threadId,commandId:command.commandId,sourceMessageId,mode:command.mode,text:command.text,
           sources:command.sources,homeProjectId:store.homeBinding()?.projectId ?? null,requestDigest:commandBinding('message',command),
         });
+        // A non-default Agent's role opens the message, then any recap another lane brought (below),
+        // then what the person typed. The lane's instructions never change.
+        const messageWith = (recap: string | null) => {
+          const text = withRecap(command.text, recap);
+          return promptFor(command.mode, agent ? framedText(agent, command.mode, text) : text, sourceMessageId);
+        };
         const request = {
           projectId,
           threadId,
           requestId: command.commandId,
-          prompt: promptFor(command.mode, command.text, sourceMessageId),
+          prompt: messageWith(null),
           // From the parsed command alone, before any setting or file is read, so a retry is
           // compared with what was sent even after either has changed.
           binding: commandBinding('message', command),
@@ -5172,11 +5402,9 @@ export async function createApp(options: AppOptions) {
             ...resolved,
             restriction,
             // The command keeps the restriction it was bound to. What it may still start is
-            // held to the thread's Mode now, so narrowing the control stops an admission
-            // that has not happened yet, on a retry exactly as on a selection.
-            control: restrictionOf(
-              thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
-            ),
+            // held to the thread's Agent box now, so choosing an Agent that only reads stops an
+            // admission that has not happened yet, on a retry exactly as on a selection.
+            control: restrictionOf(controlOf(thread)),
             runId: located.runId,
             // A kept session's run answers on its own route. A model-API run answers on the route
             // the thread recorded; AWS is only the historical default for a thread that predates
@@ -5190,6 +5418,7 @@ export async function createApp(options: AppOptions) {
             replay: true,
             text: command.text,
             mode: command.mode,
+            ...(turnAgent ? { agent: turnAgent } : {}),
             // Nothing is generated, so nothing here is sent anywhere: no file is read again
             // and no model is chosen. The driver compares the binding and reads the record.
             input: {
@@ -5201,6 +5430,12 @@ export async function createApp(options: AppOptions) {
             },
           };
         }
+        // The thread's Agent box is the choice (DIO-292). An answered command was read back above,
+        // whatever the box says now; a new one for another Agent than the box holds, or one riding
+        // Auto's lane after the box left Auto, is refused before anything is sent. On Auto, any
+        // Agent Auto picked may answer.
+        if (boxChanged || (agent && agentBox !== AUTO_AGENT && (agentBox !== agent.id || rides)))
+          throw new ApiError(409, "This thread's agent changed. Nothing was sent. Send again.", { code: 'agent_changed' });
         // A turn a budget refused was written and never sent. Nothing was asked of a model, so
         // it is not an unfinished message, and it never stands in the way of a new lineage.
         const sent = located?.dispatched ? located : null;
@@ -5235,7 +5470,7 @@ export async function createApp(options: AppOptions) {
         if (!located) {
           // The new message sets its Mode before dispatch. Later projection
           // cannot overwrite a person's narrowing while the answer is pending.
-          thread.mode=command.mode;
+          recordRunKind(thread, command.mode);
           await store.persist(state);
         }
         const accountRoute = routeAccount(conversationRoute, projectId);
@@ -5306,10 +5541,14 @@ export async function createApp(options: AppOptions) {
         // it was opened with, so this scope is part of whether its lineage can continue.
         const readScope: { readScope?: ReadScope } = {
           ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
-          ...(await readScopeFor(projectId, command.mode, {
+          // An Agent riding Auto's lane reads as its own kind where the route reads per message; a
+          // kept session keeps the scope its lane opened with.
+          ...(await readScopeFor(projectId, rides && modelRoute ? messageKind : command.mode, {
             route: conversationRoute,
             access: command.readAccess,
             documents,
+            // The Agent's own read tools, where the route keeps no session of its own (DIO-292).
+            ...(agent && isModelApiRoute(conversationRoute) ? { tools: agent.tools } : {}),
           })),
         };
         // The rule path's section for this message: shipped product knowledge and the project's
@@ -5485,6 +5724,29 @@ export async function createApp(options: AppOptions) {
           : opened
             ? current.carriedFrom
             : await carrySource(projectId, current.carriedFrom, current.mode);
+        // A message that moves lanes brings the last answer from the lane before it (DIO-292):
+        // lanes are per kind of run, so this lane hasn't seen it. On Auto that happens only when the
+        // box changes, since Auto's picks ride on its own lane. Only where this route may receive
+        // the conversation's history, asked at each send as the carry is, and only from a lane still
+        // open on this same route: a route change or a fresh start leaves what came before behind,
+        // and a recap never brings it back. A retry finds the same answer and is sent as it was;
+        // history turned off in between refuses it as changed.
+        const previous = [...thread.turns].reverse().find((turn) => turn.role === 'assistant');
+        const previousMode = previous?.mode;
+        if (
+          (previousMode === 'ask' || previousMode === 'plan' || previousMode === 'auto') &&
+          previousMode !== command.mode &&
+          previous?.route === conversationRoute &&
+          sharesHistory(cloudSharing(state), conversationRoute)
+        ) {
+          const previousLane = lineages
+            .filter((lineage) => lineage.mode === previousMode && !lineage.retired)
+            .sort((a, b) => b.generation - a.generation)[0];
+          const recap = laneRecap(
+            await carriedRun(harness.runs, { projectId, threadId, carriedFrom: previousLane?.runId }),
+          );
+          if (recap) request.prompt = messageWith(recap);
+        }
         const runId = current.runId;
         const known = await conversationDriver(runId).status(projectId, runId).catch((error: unknown) => {
           if (error instanceof HarnessError && error.code === 'unknown_run') return null;
@@ -5542,6 +5804,7 @@ export async function createApp(options: AppOptions) {
           replay: false,
           text: command.text,
           mode: command.mode,
+          ...(turnAgent ? { agent: turnAgent } : {}),
           input: {
             ...request,
             instructions,
@@ -5652,13 +5915,12 @@ export async function createApp(options: AppOptions) {
           commandId,
         );
         if (!located) return null;
-        const mode = thread.mode;
         return {
           ...located,
           sourceMessageId: sourceMessageIdFor(projectId, threadId, commandId),
-          // The Mode control as it stands now. A thread on a work mode is not a conversation
-          // that may start anything from here, so it reads as the narrowest limit.
-          restriction: restrictionOf(mode === 'auto' || mode === 'plan' ? mode : 'ask'),
+          // The Agent box as it stands now (DIO-292). A thread whose Agent changes files is not a
+          // conversation that may start anything from here, so it reads as the narrowest limit.
+          restriction: restrictionOf(controlOf(thread)),
         };
       }),
     project: (resolved, result) =>
@@ -5716,6 +5978,8 @@ export async function createApp(options: AppOptions) {
             mode: resolved.mode,
             // The answer without its decision block. The whole answer stays in the run.
             text: result.text,
+            // Which Agent answered, and whether Auto picked it (DIO-292).
+            ...(resolved.agent ? { agent: resolved.agent } : {}),
             at,
             sources,
             route: answeredBy,
@@ -5907,6 +6171,8 @@ export async function createApp(options: AppOptions) {
       mode?: 'build' | 'fix';
       failing?: { document?: string; text?: string };
       skillId?: string;
+      /** The Agent this request named: Auto's pick, or the thread's own (DIO-292). */
+      agentId?: string | null;
     },
     held = false,
   ) => {
@@ -5974,9 +6240,10 @@ export async function createApp(options: AppOptions) {
         };
         state.conversations.push(conversation);
       }
-      conversation.mode = runMode;
+      recordRunKind(conversation, runMode);
+      // A route change drops the model pick, which belonged to the old route, and keeps the Agent.
       if (selectedEngine(store.settings, state.project, conversation) !== engine)
-        conversation.requested = null;
+        conversation.requested = keepAgentOnly(conversation.requested ?? null);
       conversation.engine = engine;
       // Fix attempts: the person is the check. Count prior helper Fix turns.
       let attempt: Turn['attempt'];
@@ -5987,7 +6254,7 @@ export async function createApp(options: AppOptions) {
         if (n > of)
           throw new ApiError(
             409,
-            'Three tries have not fixed this. Start a new thread, or make a plan first.',
+            threeTriesSentence(),
           );
         attempt = { n, of };
       }
@@ -6032,8 +6299,15 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
+      // The thread's own Agent box, as it was saved; a thread that picked the general worker reads
+      // as Auto. Auto's pick for this request rides beside it, and so does the request's own Agent
+      // where the thread has none saved (DIO-292). A profile's own Agent, or one the thread chose,
+      // is never replaced by it.
+      const savedAgent = conversation.requested?.agent?.trim() || null;
+      const workAgent = savedAgent === GENERAL_AGENT ? AUTO_AGENT : savedAgent;
+      const pickedAgent = workAgent === null || workAgent === AUTO_AGENT ? (input.agentId ?? null) : null;
       // A profile that decides this run supplies its own exact model (H09).
-      const resolvedChoice: RunChoice = !team && agentProfiles.applies(projectId, task.id, conversation)
+      const resolvedChoice: RunChoice = !team && agentProfiles.applies(projectId, task.id, conversation, workAgent)
         ? {}
         : nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       // A member whose model Nectovia chose runs it as an automatic selection, so the run's
@@ -6057,7 +6331,8 @@ export async function createApp(options: AppOptions) {
         threadId: conversation.id,
         mode: runMode,
         requested: choice,
-        agentId: conversation.requested?.agent ?? null,
+        agentId: workAgent,
+        pickedAgentId: pickedAgent,
         ...(skill ? { skill } : {}),
       });
       const storedSession = store.state(projectId).sessions.find((item) => item.id === session.id)!;
@@ -6072,6 +6347,18 @@ export async function createApp(options: AppOptions) {
         // The route the run was admitted on: a profile may have named another (H09).
         route: storedSession.route ?? engine,
         ...(attempt ? { attempt } : {}),
+        // Which Agent works, as the run resolved it, and whether Auto picked it (DIO-292).
+        ...(storedSession.agent
+          ? {
+              agent: {
+                id: storedSession.agent.agentId,
+                name: storedSession.agent.agentName,
+                picked:
+                  storedSession.agent.agentSelection === 'automatic' &&
+                  storedSession.agent.requestedAgentId === AUTO_AGENT,
+              },
+            }
+          : {}),
         // The run's own attribution from admission, so the holding line names the
         // model it was sent to, as a request, until the runtime reports one.
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
@@ -6126,6 +6413,16 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // The Agent this request runs as (DIO-292). Absent means its kind's default, as before.
+      let agent: AgentView | null = null;
+      if (b.agent !== undefined && b.agent !== null) {
+        const agentId = asString(b.agent, 'an agent', 80).trim();
+        agent = (await agents.find(agentId, store.state(projectId).project.folder)) ?? null;
+        if (!agent || agent.internal)
+          throw new ApiError(400, "That agent isn't available in this project.", { code: 'agent_not_found' });
+        if (runKindOf(agent) !== mode)
+          throw new ApiError(400, `${agent.name} doesn't do this kind of work.`, { code: 'agent_mode_mismatch' });
+      }
       // What this message may read from the project, bound to it alone. Parsed before consent is
       // asked for or anything is read; only Ask and Plan take a whole-project read.
       const readAccess = parseReadAccess(b.readAccess);
@@ -6177,6 +6474,23 @@ export async function createApp(options: AppOptions) {
         !store.state(projectId).conversations.some((c) => c.id === threadId)
       )
         throw new ApiError(404, 'This thread was not found.');
+      // The thread's Agent box is the choice (DIO-292): a request for another Agent than the box
+      // holds now is refused before anything is sent. On Auto, any Agent Auto picked may run. A
+      // request that names none runs as the Agent the thread chose, so its limits hold here too.
+      if (threadId !== undefined) {
+        const owner = store.state(projectId).conversations.find((c) => c.id === threadId);
+        const box = owner ? agentChoiceOf(owner) : AUTO_AGENT;
+        if (agent && box !== AUTO_AGENT && box !== agent.id)
+          throw new ApiError(409, "This thread's agent changed. Nothing was sent. Send again.", { code: 'agent_changed' });
+        if (!agent && box !== AUTO_AGENT && owner?.requested?.agent?.trim()) {
+          const held = await agents.find(box, store.state(projectId).project.folder);
+          if (!held || held.internal)
+            throw new ApiError(400, "That agent isn't available in this project.", { code: 'agent_not_found' });
+          if (runKindOf(held) !== mode)
+            throw new ApiError(409, "This thread's agent changed. Nothing was sent. Send again.", { code: 'agent_changed' });
+          agent = held;
+        }
+      }
       if (serviceRoute !== 'sample' && !routeOn(serviceRoute))
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
@@ -6204,31 +6518,31 @@ export async function createApp(options: AppOptions) {
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
       requireCloudSharing(store.state(projectId), serviceRoute, sources);
-      // Fix binds to one failing thing: a selected document and/or pasted text.
+      // Fix binds to one failing thing. The message is the report and the attached files are what
+      // it may change (DIO-292); an API caller may still name a selected document or paste text.
       let failing: { document?: string; text?: string } | undefined;
-      if (mode === 'fix') {
+      if (mode === 'fix' && b.failing !== undefined) {
         const raw = b.failing;
-        const missing = () =>
+        const malformed = () =>
           new ApiError(400, 'Say what is failing: pick the document or paste what went wrong.');
-        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw missing();
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw malformed();
         const record = raw as Record<string, unknown>;
         let document: string | undefined;
         let failText: string | undefined;
         if (record.document !== undefined) {
-          if (typeof record.document !== 'string' || !record.document.trim()) throw missing();
+          if (typeof record.document !== 'string' || !record.document.trim()) throw malformed();
           try {
             document = relativeName(record.document);
           } catch {
-            throw missing();
+            throw malformed();
           }
-          if (!sources.includes(document)) throw missing();
+          if (!sources.includes(document)) throw malformed();
         }
         if (record.text !== undefined) {
-          if (typeof record.text !== 'string' || !record.text.trim()) throw missing();
-          if (record.text.length > 4000) throw missing();
+          if (typeof record.text !== 'string' || !record.text.trim() || record.text.length > 4000) throw malformed();
           failText = record.text;
         }
-        if (!document && !failText) throw missing();
+        if (!document && !failText) throw malformed();
         failing = { ...(document ? { document } : {}), ...(failText ? { text: failText } : {}) };
       }
       if ((mode === 'build' || mode === 'fix') && serviceRoute !== 'sample')
@@ -6244,6 +6558,7 @@ export async function createApp(options: AppOptions) {
           mode,
           ...(failing ? { failing } : {}),
           ...(skillId ? { skillId } : {}),
+          ...(agent ? { agentId: agent.id } : {}),
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
@@ -6282,9 +6597,10 @@ export async function createApp(options: AppOptions) {
           };
           state.conversations.push(conversation);
         }
-        conversation.mode = mode;
+        recordRunKind(conversation, mode);
+        // A route change drops the model pick, which belonged to the old route, and keeps the Agent.
         if (selectedEngine(store.settings, state.project, conversation) !== serviceRoute)
-          conversation.requested = null;
+          conversation.requested = keepAgentOnly(conversation.requested ?? null);
         conversation.engine = serviceRoute;
         let attempt: Turn['attempt'];
         if (mode === 'fix') {
@@ -6296,7 +6612,7 @@ export async function createApp(options: AppOptions) {
           if (n > of)
             throw new ApiError(
               409,
-              'Three tries have not fixed this. Start a new thread, or make a plan first.',
+              threeTriesSentence(),
             );
           attempt = { n, of };
         }
@@ -6425,13 +6741,15 @@ export async function createApp(options: AppOptions) {
             route: serviceRoute,
             access: readAccess,
             documents: prepared.documents,
+            // One request, no kept session: the Agent reads with its own tools (DIO-292).
+            ...(agent ? { tools: agent.tools } : {}),
           });
           grant = readScope.readScope?.grant;
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
             requestId,
-            prompt: text,
+            prompt: agent ? framedText(agent, mode, text) : text,
             documents: prepared.documents,
             instructions: instructionsForRequest,
             model: requestedModel,
@@ -6498,7 +6816,7 @@ export async function createApp(options: AppOptions) {
         try {
           requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const result = await askCodex({
-            prompt: text,
+            prompt: agent ? framedText(agent, mode, text) : text,
             documents: prepared.documents,
             ...(requestedModel ? { model: requestedModel } : {}),
             instructions: instructionsForRequest,
@@ -6512,6 +6830,7 @@ export async function createApp(options: AppOptions) {
               route: 'codex',
               access: readAccess,
               documents: prepared.documents,
+              ...(agent ? { tools: agent.tools } : {}),
             })),
           });
           answer = result.text;
@@ -6607,7 +6926,7 @@ export async function createApp(options: AppOptions) {
         }
         const conversation = state.conversations.find((c) => c.id === prepared.conversationId)!;
         if (createdTaskId && !conversation.taskId) conversation.taskId = createdTaskId;
-        conversation.mode = mode;
+        recordRunKind(conversation, mode);
         conversation.helper = { engine: helper.engine, model: helper.model };
         if (session) {
           const sessionId = session.id;
@@ -6629,6 +6948,10 @@ export async function createApp(options: AppOptions) {
           route: serviceRoute,
           ...(prepared.attempt ? { attempt: prepared.attempt } : {}),
           helper,
+          // Which Agent answered, and whether Auto picked it (DIO-292).
+          ...(agent
+            ? { agent: { id: agent.id, name: agent.name, picked: agentChoiceOf(conversation) === AUTO_AGENT } }
+            : {}),
           ...(thinking ? { thinking } : {}),
           ...(writing ? { writing } : {}),
           origin:

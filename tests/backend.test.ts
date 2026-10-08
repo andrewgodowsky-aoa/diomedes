@@ -1200,27 +1200,35 @@ describe('modes belong to the thread and every turn', () => {
   });
   test("PUT /threads/:id { mode: 'fix' } persists and { mode: 'x' } is 400", async () => {
     const id = await sample();
+    // DIO-292: a new thread starts on Auto in its box, with the Ask kind a new thread always had.
+    // A mode an API caller names still persists, and that kind's default Agent stands in the box.
     const created = await request(`/projects/${id}/threads`, 'POST', {});
-    expect(created.data.mode).toBe('ask');
+    expect([created.data.mode, created.data.requested?.agent]).toEqual(['ask', 'auto']);
     const updated = await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', {
       mode: 'fix',
     });
     expect(updated.status).toBe(200);
     expect(updated.data.mode).toBe('fix');
+    expect(updated.data.requested ?? null).toBeNull();
     expect(
       (await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', { mode: 'x' })).status,
     ).toBe(400);
   });
-  test("POST /ask with mode: 'fix' and no failing is 400", async () => {
+  test("POST /ask with mode: 'fix' and no failing runs: the message is the report", async () => {
+    // DIO-292: Fix's own fields left the ask box. A failure report an API caller sends is still checked.
     const id = await sample();
     const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
-    const missing = await request(`/projects/${id}/ask`, 'POST', {
+    const malformed = await request(`/projects/${id}/ask`, 'POST', {
       mode: 'fix',
       text: 'Fix it',
       threadId: thread.id,
+      failing: {},
     });
-    expect(missing.status).toBe(400);
-    expect(missing.data.error).toContain('Say what is failing');
+    expect(malformed.status).toBe(400);
+    expect(malformed.data.error).toContain('Say what is failing');
+    const sent = await request(`/projects/${id}/ask`, 'POST', { mode: 'fix', text: 'Fix it', threadId: thread.id });
+    expect(sent.status).toBe(200);
+    expect(sent.data.turn.attempt).toEqual({ n: 1, of: 3 });
   });
   test('fix with failing.document in sources on the sample route carries attempt 1 of 3', async () => {
     const id = await sample();
@@ -1234,7 +1242,9 @@ describe('modes belong to the thread and every turn', () => {
     });
     expect(answer.status).toBe(200);
     expect(answer.data.conversation.taskId).toBeTruthy();
-    expect(answer.data.conversation.mode).toBe('fix');
+    // On Auto the kind is each message's (DIO-292): the turns carry Fix, and the thread keeps its
+    // box and its stored kind.
+    expect([answer.data.conversation.mode, answer.data.conversation.requested?.agent]).toEqual(['ask', 'auto']);
     const turns = answer.data.conversation.turns.slice(-2);
     expect(turns).toHaveLength(2);
     expect(turns[0].mode).toBe('fix');
@@ -1267,7 +1277,7 @@ describe('modes belong to the thread and every turn', () => {
       failing: { text: 'Still broken' },
     });
     expect(fourth.status).toBe(409);
-    expect(fourth.data.error).toContain('Three tries have not fixed this');
+    expect(fourth.data.error).toContain("Three tries haven't fixed this");
   });
   test('ask and plan turns record their mode', async () => {
     const id = await sample();
@@ -1287,11 +1297,16 @@ describe('modes belong to the thread and every turn', () => {
     });
     expect(plan.status).toBe(200);
     expect(plan.data.turn.mode).toBe('plan');
-    expect(plan.data.conversation.mode).toBe('plan');
+    // On Auto the kind is each message's (DIO-292): the turns carry it, and the thread stays on Auto.
+    expect([plan.data.conversation.mode, plan.data.conversation.requested?.agent]).toEqual(['ask', 'auto']);
   });
   test("mode: 'work' is accepted and stored as 'build'", async () => {
     const id = await sample();
     const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    // A mode an API caller names takes the thread off Auto (DIO-292). With no Agent of its own, the
+    // thread follows the kind each send ran as, as a mode always did.
+    const named = await request(`/projects/${id}/threads/${thread.id}`, 'PUT', { mode: 'ask' });
+    expect(named.data.requested ?? null).toBeNull();
     const answer = await request(`/projects/${id}/ask`, 'POST', {
       mode: 'work',
       text: 'Do some work',

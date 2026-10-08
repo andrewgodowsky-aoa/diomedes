@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, ProjectState, Task } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { chooseAgent } from './fixtures/agent-menu';
 
 // Board workflow through the real built UI against an owned host, on the
 // sample route only: no model calls. Setup goes through the API; every claim
@@ -268,7 +269,7 @@ test('the source conversation link opens the original message', async ({ page })
   expect(errors).toEqual([]);
 });
 
-test('a chosen playbook stays selected when the composer changes to Build and is sent with the request', async ({ page }) => {
+test('a chosen playbook stays selected when the Agent changes to Builder and is sent with the request', async ({ page }) => {
   await openBoard(page);
   await page.keyboard.press('Control+k');
   const palette = page.getByRole('dialog', { name: 'Find and act' });
@@ -276,7 +277,7 @@ test('a chosen playbook stays selected when the composer changes to Build and is
   await palette.getByRole('listitem').filter({ hasText: 'Cash flow snapshot' }).getByRole('button', { name: 'Use', exact: true }).click();
   const removeSkill = page.getByRole('button', { name: 'Remove the Cash flow snapshot playbook' });
   await expect(removeSkill).toBeVisible();
-  await page.getByRole('radio', { name: 'build', exact: true }).click();
+  await chooseAgent(page, 'Builder');
   await expect(removeSkill).toBeVisible();
   // Capture the real composer payload; native delivery is tested through the
   // API and adapter in small-business-skills.test.ts.

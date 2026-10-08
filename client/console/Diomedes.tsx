@@ -20,8 +20,8 @@ import type { SaveOutcome } from './artifact-save';
 import { turnKeyOf, type ArtifactRecord } from './artifacts';
 import {
   ALL_PROJECTS,
-  RESTRICTIONS,
   canSend,
+  conversationAgents,
   instrumentLine,
   keyIntent,
   paragraphs,
@@ -31,7 +31,6 @@ import {
   visibleResults,
   type DiomedesResult,
   type OutcomeCard,
-  type Restriction,
 } from './diomedes-view';
 import './console.css';
 import './artifacts.css';
@@ -39,7 +38,7 @@ import './nectovia.css';
 import './everything.css';
 import './diomedes.css';
 
-export type { DiomedesResult, Restriction };
+export type { DiomedesResult };
 
 export interface DiomedesPageProps {
   /** Never contains the reserved home Project. The caller filters it. */
@@ -56,8 +55,9 @@ export interface DiomedesPageProps {
   live?: { text: string; activity: readonly ToolLine[]; thinking?: LiveThinking | null } | null;
   /** The Technical detail level: tool calls also name their tool and open to their detail. */
   technical?: boolean;
-  restriction: Restriction;
-  onRestriction(next: Restriction): void;
+  /** The conversation's Agent (DIO-292): Auto, or one that answers here. */
+  agent: string;
+  onAgent(next: string): void;
   /** Resolves false when the message was refused and never sent, so the text is given back. */
   onSend(text: string): Promise<boolean>;
   onStop(): void;
@@ -150,14 +150,6 @@ const SHARE_HISTORY = 'Share earlier messages';
 export const SAVE_NEEDS_PROJECT =
   'This conversation is about all projects, so it has no folder to save into. Copy the source, or save from a project conversation.';
 
-/** What the chosen restriction promises, in the composer's own caption line
- *  (the pattern `client/console/Composer.tsx`'s CAPS already uses). Never
- *  exported: it is wording, not a decision the view-model owns. */
-const CAPS: Record<Restriction, string> = {
-  automatic: 'Nectovia decides whether to answer, plan or start work. It starts only what you have allowed.',
-  'answer-only': 'Answers only. Nothing is planned or started.',
-  'plan-only': 'Answers and writes a plan for you to read. Nothing is started.',
-};
 
 /** The ledger's point colour per result state, the same vocabulary
  *  console.css's `.pt` already speaks everywhere else in the Console. */
@@ -201,8 +193,8 @@ export function Diomedes({
   pending,
   live = null,
   technical = false,
-  restriction,
-  onRestriction,
+  agent,
+  onAgent,
   onSend,
   onStop,
   route,
@@ -271,6 +263,8 @@ export function Diomedes({
   // One unconfirmed message at a time: it is resolved before anything new is sent.
   const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
   const ready = canSend(text, pending, blocked);
+  // The Agent the select shows, with its one line under the box.
+  const chosen = conversationAgents().find((item) => item.id === agent) ?? conversationAgents()[0];
   const submit = () => {
     if (!canSend(text, pending, blocked)) return;
     const sending = text;
@@ -342,7 +336,7 @@ export function Diomedes({
               {menu}
             </div>
             <div className="col instr" aria-label="This conversation">
-              <span>{instrumentLine(scopeId, projects, restriction)}</span>
+              <span>{instrumentLine(scopeId, projects, chosen.name)}</span>
               {/* A tier decides the route and the model (owner decision 2026-09-23), so a
                   thread on a tier is named by its tier; the route shows only without one. */}
               <span className="dio-route">{workStyle ? WORK_STYLE_LABELS[workStyle] : routeName(route, routeModel)}</span>
@@ -435,15 +429,16 @@ export function Diomedes({
                       {askRow}
                       <div className="bar">
                         <label className="dio-field">
-                          <span>Mode</span>
+                          <span>Agent</span>
                           <select
-                            aria-label="Mode"
-                            value={restriction}
-                            onChange={(e) => onRestriction(e.target.value as Restriction)}
+                            aria-label="Agent"
+                            value={chosen.id}
+                            disabled={pending}
+                            onChange={(e) => onAgent(e.target.value)}
                           >
-                            {RESTRICTIONS.map((r) => (
-                              <option key={r.id} value={r.id}>
-                                {r.label}
+                            {conversationAgents().map((item) => (
+                              <option key={item.id} value={item.id} title={item.line}>
+                                {item.name}
                               </option>
                             ))}
                           </select>
@@ -469,7 +464,7 @@ export function Diomedes({
                             </select>
                           </label>
                         )}
-                        <span className="cap">{CAPS[restriction]}</span>
+                        <span className="cap">{chosen.line}</span>
                         {pending ? (
                           <button type="button" className="send ready" onClick={onStop}>
                             Stop

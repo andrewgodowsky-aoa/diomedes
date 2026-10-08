@@ -263,20 +263,18 @@ try {
     };
 
     /* ---- 1. The worker is a named Agent, chosen separately from the model ---- */
-    const agentControl = page.getByRole('button', { name: 'Worker for this thread' });
+    const agentControl = page.getByRole('button', { name: 'Agent for this thread' });
     await expect(agentControl).toBeVisible();
     await agentControl.click();
     const agentMenu = page.getByRole('menu');
-    await expect(
-      agentMenu.getByText('Choosing a worker does not change what it may do.'),
-    ).toBeVisible();
-    await agentMenu.getByRole('menuitemradio', { name: /^Change Builder/ }).click();
-    await expect(agentControl).toContainText('Change Builder');
+    await expect(agentMenu.getByText('Permissions decide what each agent can do.')).toBeVisible();
+    await agentMenu.getByRole('menuitemradio', { name: /^Builder/ }).click();
+    await expect(agentControl).toContainText('Builder');
     await shot('packaged-agent-picker.png');
     checks.push({
       name: 'packaged Agent selection is a separate axis and grants nothing',
       ok: true,
-      detail: 'Change Builder selected; menu states permissions decide authority',
+      detail: 'Builder selected; menu states permissions decide authority',
     });
 
     /* ---- 2. Full access is offered honestly, and is not selectable ---- */
@@ -310,7 +308,7 @@ try {
     const grants = await fixtureApi(`/projects/${project.id}/permissions/grants`);
     const pinned = grants.grants.at(-1).grant.reviewer;
     expect(pinned.agentId).toBe('diomedes.reviewer');
-    expect(pinned.agentName).toBe('Code Reviewer');
+    expect(pinned.agentName).toBe('Reviewer');
     expect(pinned.agentDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     checks.push({
       name: 'packaged reviewer identity pinned at consent',

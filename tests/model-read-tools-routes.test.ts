@@ -472,6 +472,162 @@ describe('no read tools outside Ask and Plan', () => {
     await send('auto-1', 'auto');
     expect(toolNames(seen[before].body)).toEqual(['list_sources', 'read_source']);
   });
+
+  test('through the conversation route, each agent reads with its own tools, opens the message with its role and is named on the reply', async () => {
+    // DIO-292: on a model-API route the read tools are set per message, so agents of one kind
+    // share one lane and still each read with their own tools.
+    await connectAws();
+    await fs.writeFile(
+      path.join(store().dataDir, 'read-connectors.json'),
+      JSON.stringify({ version: 1, servers: [{ ...pos, approved: true, transport: 'stdio' }] }),
+    );
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    const send = (commandId: string, agent: string) =>
+      api(`/projects/${project.id}/threads/${thread.id}/messages`, 'POST', {
+        commandId, text: 'What is for lunch?', mode: 'ask', sources: [], consent: true, agent,
+      });
+    plan = [];
+    await send('explorer-1', 'diomedes.explorer');
+    expect(toolNames(seen[0].body)).toEqual(['list_sources', 'read_source']);
+    expect(JSON.stringify(seen[0].body)).toContain('[[diomedes agent=Explorer]]');
+    let at = seen.length;
+    await send('analyst-1', 'diomedes.analyst');
+    expect(toolNames(seen[at].body)).toEqual(['connector_read', 'list_sources', 'read_source']);
+    at = seen.length;
+    await send('researcher-1', 'diomedes.researcher');
+    expect(toolNames(seen[at].body)).toEqual(['connector_read', 'fetch_page', 'list_sources', 'read_source']);
+    expect(JSON.stringify(seen[at].body)).not.toContain('[[diomedes agent=');
+    const saved = store().state(project.id).conversations.find((c) => c.id === thread.id)!;
+    // The thread is on Auto, so each reply says Auto picked its agent.
+    expect(saved.turns.filter((turn) => turn.role === 'assistant').map((turn) => turn.agent)).toEqual([
+      { id: 'diomedes.explorer', name: 'Explorer', picked: true },
+      { id: 'diomedes.analyst', name: 'Analyst', picked: true },
+      { id: 'diomedes.researcher', name: 'Researcher', picked: true },
+    ]);
+    // The thread shows what the person typed; the role rode only in the message.
+    expect(saved.turns.filter((turn) => turn.role === 'you').map((turn) => turn.text)).toEqual([
+      'What is for lunch?', 'What is for lunch?', 'What is for lunch?',
+    ]);
+    // One Ask lane carried all three.
+    expect((saved.lineages ?? []).filter((lineage) => !lineage.retired)).toHaveLength(1);
+  });
+
+  test("on Auto, an agent that only reads rides Auto's own lane, each message with its own kind's tools and role", async () => {
+    // DIO-292: Auto moving between agents never moves the thread between lanes, so the
+    // conversation keeps one history; each message still reads as its agent's kind.
+    await connectAws();
+    await fs.writeFile(
+      path.join(store().dataDir, 'read-connectors.json'),
+      JSON.stringify({ version: 1, servers: [{ ...pos, approved: true, transport: 'stdio' }] }),
+    );
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    const send = (commandId: string, agent?: string) =>
+      api(`/projects/${project.id}/threads/${thread.id}/messages`, 'POST', {
+        commandId, text: 'What is for lunch?', mode: 'auto', sources: [], consent: true, ...(agent ? { agent } : {}),
+      });
+    plan = [];
+    await send('auto-1');
+    expect(toolNames(seen[0].body)).toEqual(['list_sources', 'read_source']);
+    let at = seen.length;
+    await send('researcher-1', 'diomedes.researcher');
+    expect(toolNames(seen[at].body)).toEqual(['connector_read', 'fetch_page', 'list_sources', 'read_source']);
+    expect(JSON.stringify(seen[at].body)).toContain('[[diomedes agent=Researcher]]');
+    at = seen.length;
+    await send('explorer-1', 'diomedes.explorer');
+    expect(toolNames(seen[at].body)).toEqual(['list_sources', 'read_source']);
+    expect(JSON.stringify(seen[at].body)).toContain('[[diomedes agent=Explorer]]');
+    const saved = store().state(project.id).conversations.find((c) => c.id === thread.id)!;
+    expect((saved.lineages ?? []).map((lineage) => lineage.mode)).toEqual(['auto']);
+    expect(saved.turns.filter((turn) => turn.role === 'assistant').map((turn) => [turn.mode, turn.agent?.id ?? null])).toEqual([
+      ['auto', null],
+      ['auto', 'diomedes.researcher'],
+      ['auto', 'diomedes.explorer'],
+    ]);
+    // Still on Auto, with the kind a new thread is stored with.
+    expect([saved.requested?.agent, saved.mode]).toEqual(['auto', 'ask']);
+  });
+
+  test('a message that names no agent runs as the one the thread chose; one for another kind finds the box changed', async () => {
+    await connectAws();
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      requested: { model: null, effort: null, agent: 'diomedes.explorer' },
+    });
+    const send = (commandId: string, mode: string) =>
+      fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ commandId, text: 'What is for lunch?', mode, sources: [], consent: true }),
+      });
+    plan = [];
+    expect((await send('box-1', 'ask')).status).toBe(200);
+    expect(toolNames(seen[0].body)).toEqual(['list_sources', 'read_source']);
+    expect(JSON.stringify(seen[0].body)).toContain('[[diomedes agent=Explorer]]');
+    const saved = () => store().state(project.id).conversations.find((c) => c.id === thread.id)!;
+    expect(saved().turns.at(-1)?.agent).toEqual({ id: 'diomedes.explorer', name: 'Explorer', picked: false });
+    const before = structuredClone(saved());
+    const other = await send('box-2', 'plan');
+    expect(other.status).toBe(409);
+    expect(((await other.json()) as Item).code).toBe('agent_changed');
+    expect(saved()).toEqual(before);
+    expect(seen).toHaveLength(1);
+  });
+
+  test('the phone relays a Builder thread as Automatic: answered, held to answers only, and the thread stays Builder', async () => {
+    await connectAws();
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      requested: { model: null, effort: null, agent: 'diomedes.builder' },
+    });
+    plan = [];
+    await api(`/projects/${project.id}/threads/${thread.id}/messages`, 'POST', {
+      commandId: 'relay-1', text: 'What is for lunch?', mode: 'auto', sources: [], consent: true,
+    });
+    expect(toolNames(seen[0].body)).toEqual(['list_sources', 'read_source']);
+    expect(JSON.stringify(seen[0].body)).not.toContain('[[diomedes agent=');
+    const saved = store().state(project.id).conversations.find((c) => c.id === thread.id)!;
+    expect([saved.requested?.agent, saved.mode]).toEqual(['diomedes.builder', 'build']);
+    expect(saved.turns.at(-1)?.agent).toBeUndefined();
+  });
+
+  test('through the conversation route, an agent for another kind of message, or one not here, is refused before anything is sent', async () => {
+    await connectAws();
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    const refused = async (agent: string) => {
+      const response = await fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ commandId: `refused-${agent}`, text: 'What is for lunch?', mode: 'ask', sources: [], consent: true, agent }),
+      });
+      return { status: response.status, body: (await response.json()) as Item };
+    };
+    expect(await refused('diomedes.architect')).toMatchObject({ status: 400, body: { code: 'agent_mode_mismatch' } });
+    expect(await refused('acme.nobody')).toMatchObject({ status: 400, body: { code: 'agent_not_found' } });
+    expect(await refused('diomedes.general')).toMatchObject({ status: 400, body: { code: 'agent_not_found' } });
+    // An agent that changes files never rides Auto's lane.
+    const changes = await fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ commandId: 'refused-builder-auto', text: 'Add a line.', mode: 'auto', sources: [], consent: true, agent: 'diomedes.builder' }),
+    });
+    expect(changes.status).toBe(400);
+    // Riding Auto's lane is for a thread on Auto; a thread that chose Researcher sends Ask.
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      requested: { model: null, effort: null, agent: 'diomedes.researcher' },
+    });
+    const stale = await fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ commandId: 'refused-rides-chosen', text: 'Hi', mode: 'auto', sources: [], consent: true, agent: 'diomedes.researcher' }),
+    });
+    expect(stale.status).toBe(409);
+    expect(seen).toHaveLength(0);
+  });
 });
 
 // --- egress for a read tool step ---------------------------------------------------

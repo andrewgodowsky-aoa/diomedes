@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { Button, Mark } from '../components';
-import { AGENT_CATALOG, AUTO_AGENT } from '../../shared/agents';
+import { AGENT_CATALOG, AUTO_AGENT, listedAgents } from '../../shared/agents';
 import { ROUTES, routeDisplayName } from '../../shared/engines';
 import { PROFILE_MAX_RULES } from '../../shared/agent-profiles';
 import './agent-profiles.css';
@@ -325,7 +325,7 @@ function ProfileEditor({
         Works as
         <select value={draft.agentId} onChange={(e) => set({ agentId: e.target.value })}>
           <option value={AUTO_AGENT}>Auto</option>
-          {AGENT_CATALOG.map((agent) => (
+          {listedAgents(AGENT_CATALOG).map((agent) => (
             <option key={agent.id} value={agent.id}>
               {agent.name}
             </option>

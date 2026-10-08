@@ -1,5 +1,6 @@
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock';
 import { scripted } from './scripted-conversation';
+import { spokenPrompt } from '../../server/lane-recap';
 import { responsesEvents, sseResponse } from './model-api-streams.js';
 
 // AWS Bedrock (Luna) answering by the same script the Claude fixture speaks, at the real
@@ -76,7 +77,7 @@ const userText = (body: AwsCall['body']) => {
 function respond(body: AwsCall['body']): Item[] | 'hang' {
   const text = userText(body);
   const message = text.split("The person's message:\n\n")[1] ?? text;
-  if (message.split('\n\n[[diomedes')[0].startsWith('SLOW')) return 'hang';
+  if (spokenPrompt(message).startsWith('SLOW')) return 'hang';
   return [answer(scripted(message))];
 }
 

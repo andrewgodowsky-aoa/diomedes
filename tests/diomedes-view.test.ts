@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_PROJECTS,
-  RESTRICTIONS,
+  canSaveAgent,
   canSend,
+  conversationAgentOf,
+  conversationAgents,
+  conversationKindOf,
   instrumentLine,
   keyIntent,
   paragraphs,
@@ -11,11 +14,10 @@ import {
   spineItems,
   visibleResults,
   diomedesThread,
-  modeFor,
   outcomeCard,
-  restrictionFor,
   type DiomedesResult,
 } from '../client/console/diomedes-view';
+import { AUTO_SUMMARY } from '../shared/agents';
 import type { InteractionOutcome } from '../shared/conversation';
 import type { Conversation } from '../shared/types';
 
@@ -195,12 +197,13 @@ describe('keyIntent', () => {
   });
 });
 
-describe('RESTRICTIONS', () => {
-  it('has exactly three entries, and none of them mentions Build', () => {
-    expect(RESTRICTIONS).toHaveLength(3);
-    expect(RESTRICTIONS.map((r) => r.id)).toEqual(['automatic', 'answer-only', 'plan-only']);
-    expect(RESTRICTIONS.map((r) => r.label)).toEqual(['Automatic', 'Answer only', 'Plan only']);
-    expect(RESTRICTIONS.some((r) => /build/i.test(r.label))).toBe(false);
+describe('conversationAgents', () => {
+  it('offers Auto first, then only the Agents that answer here, so none of them changes files', () => {
+    const agents = conversationAgents();
+    expect(agents[0]).toEqual({ id: 'auto', name: 'Auto', line: AUTO_SUMMARY, kind: 'auto' });
+    expect(agents.map((a) => a.name)).toEqual(['Auto', 'Researcher', 'Planner', 'Reviewer', 'Explorer', 'Analyst']);
+    expect(agents.map((a) => a.kind)).toEqual(['auto', 'ask', 'plan', 'ask', 'ask', 'ask']);
+    expect(agents.every((a) => a.line.trim() !== '')).toBe(true);
   });
 });
 
@@ -225,17 +228,17 @@ describe('instrumentLine', () => {
   const projects = [projectFixture({ id: 'proj-1', name: 'Weekly ordering' })];
 
   it('names the home conversation for a null scope', () => {
-    expect(instrumentLine(null, projects, 'automatic')).toContain('All projects');
+    expect(instrumentLine(null, projects, 'Auto')).toBe('All projects · Auto');
   });
 
-  it('names a known project', () => {
-    const line = instrumentLine('proj-1', projects, 'plan-only');
+  it('names a known project and the Agent', () => {
+    const line = instrumentLine('proj-1', projects, 'Planner');
     expect(line).toContain('Weekly ordering');
-    expect(line).toContain('Plan only');
+    expect(line).toContain('Planner');
   });
 
   it('reads an unknown scope id as All projects rather than naming nothing', () => {
-    expect(instrumentLine('missing-project', projects, 'answer-only')).toContain('All projects');
+    expect(instrumentLine('missing-project', projects, 'Researcher')).toContain('All projects');
   });
 });
 
@@ -305,16 +308,45 @@ describe('which thread a project talks to Diomedes on', () => {
   });
 });
 
-describe('the Mode control and the server Mode', () => {
-  it('maps each control to a conversation Mode and never to a work mode', () => {
-    expect(RESTRICTIONS.map((r) => modeFor(r.id))).toEqual(['auto', 'ask', 'plan']);
+describe('the Agent control and the thread', () => {
+  const thread = (patch: Partial<Conversation> = {}): Conversation => ({
+    id: 'C1',
+    attachedTo: { kind: 'project', ref: 'p1' },
+    turns: [],
+    mode: 'auto',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    ...patch,
   });
-  it('reads a saved Mode back, and a work mode or a missing one as the default', () => {
-    expect(restrictionFor('ask')).toBe('answer-only');
-    expect(restrictionFor('plan')).toBe('plan-only');
-    expect(restrictionFor('auto')).toBe('automatic');
-    expect(restrictionFor('build')).toBe('automatic');
-    expect(restrictionFor(undefined)).toBe('automatic');
+  const box = (agent: string) => ({ model: null, effort: null, agent });
+  const spoken = [{ mode: 'auto' as const, generation: 1, runId: 'r1' }];
+
+  it("reads the thread's Agent box, and a Mode saved before agents as its kind's Agent", () => {
+    expect(conversationAgentOf(thread())).toBe('auto');
+    expect(conversationAgentOf(thread({ mode: 'ask' }))).toBe('diomedes.researcher');
+    expect(conversationAgentOf(thread({ mode: 'plan' }))).toBe('diomedes.architect');
+    expect(conversationAgentOf(thread({ mode: 'ask', requested: box('diomedes.reviewer') }))).toBe('diomedes.reviewer');
+  });
+  it('reads an Agent that changes files as Auto, so this page never shows one', () => {
+    expect(conversationAgentOf(thread({ mode: 'build' }))).toBe('auto');
+    expect(conversationAgentOf(thread({ mode: 'build', requested: box('diomedes.writer') }))).toBe('auto');
+  });
+  it("gives each Agent's kind of message, and Auto's for one it doesn't offer", () => {
+    expect(conversationKindOf('auto')).toBe('auto');
+    expect(conversationKindOf('diomedes.researcher')).toBe('ask');
+    expect(conversationKindOf('diomedes.architect')).toBe('plan');
+    expect(conversationKindOf('diomedes.builder')).toBe('auto');
+    expect(conversationKindOf('acme.unknown')).toBe('auto');
+  });
+  it('holds another Agent back from a project conversation that has not spoken, which its kind would lose', () => {
+    // Why: the page and the provisioner find a conversation that hasn't spoken by its Automatic kind.
+    expect(diomedesThread([thread({ mode: 'ask' })])).toBeNull();
+    expect(canSaveAgent('p1', thread(), 'diomedes.researcher')).toBe(false);
+    expect(canSaveAgent('p1', null, 'diomedes.architect')).toBe(false);
+    // Auto keeps the kind, a thread that has spoken is found by its lineages, and home by its binding.
+    expect(canSaveAgent('p1', thread(), 'auto')).toBe(true);
+    expect(canSaveAgent('p1', thread({ lineages: spoken }), 'diomedes.researcher')).toBe(true);
+    expect(diomedesThread([thread({ mode: 'ask', lineages: spoken })])?.id).toBe('C1');
+    expect(canSaveAgent(null, thread(), 'diomedes.researcher')).toBe(true);
   });
 });
 
