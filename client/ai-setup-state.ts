@@ -308,20 +308,6 @@ export function checkedSentence(
 }
 
 /**
- * One line for a signed-in account: what Diomedes last saw, and when. The
- * expiry rule is the shared one, so this line and `checkedSentence` cannot
- * disagree at the boundary; an unreadable or future timestamp is not current
- * and is never shown as Ready.
- */
-export function connectionState(connection: EngineConnection, nowMs = Date.now()): string {
-  const state = freshness(connection.checkedAt, nowMs);
-  if (state === 'fresh') return 'Signed in · Ready';
-  return state === 'stale'
-    ? `Signed in · checked ${new Date(Date.parse(connection.checkedAt!)).toLocaleTimeString()}, rechecked before sending`
-    : 'Signed in · rechecked before sending';
-}
-
-/**
  * The last real result through this route, kept apart from what it can do now.
  * A receipt is history and authorises nothing.
  */

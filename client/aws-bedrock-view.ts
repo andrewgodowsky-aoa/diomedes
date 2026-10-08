@@ -151,20 +151,6 @@ export function holdSentence(hold: Hold): string {
   }
 }
 
-export const AWS_ROUTE_NAME = 'AWS Bedrock';
-
-/**
- * Whether a thread's picker offers AWS, and if not, the one sentence that says
- * why. It is offered only when the host reports nothing blocking a send, so the
- * menu never offers a route that admission would refuse.
- */
-export function awsPickerState(view: AwsConnectionView | null): { offered: boolean; note: string | null } {
-  if (!view || !view.connection) return { offered: false, note: null };
-  if (!view.enabled) return { offered: false, note: null };
-  if (view.next) return { offered: false, note: `${AWS_ROUTE_NAME} is on but not ready: ${view.next}` };
-  return { offered: true, note: null };
-}
-
 /** Whether AWS is the route new work takes. Connecting never makes it so by itself. */
 export function awsIsDefault(services: Record<string, unknown> | undefined): boolean {
   return services?.defaultEngine === 'aws-bedrock';

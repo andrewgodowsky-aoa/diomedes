@@ -11,9 +11,7 @@ import { routeContractFor } from '../server/harness/route-contract.js';
 import type { EngineModel, ExternalEngine, IntegrationStatus, Settings } from '../shared/types.js';
 import type { EngineConnection } from '../shared/engines.js';
 import { ENGINE_NAMES, EXTERNAL_ENGINES } from '../shared/engines.js';
-import { CONNECTION_TTL_MS } from '../shared/connection-policy.js';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes.js';
-import { connectionState } from '../client/ai-setup-state.js';
 import { isFoundEngine } from '../shared/conversation-engines.js';
 
 /**
@@ -347,7 +345,7 @@ describe('AI setup writes cannot lose each other', () => {
  * shows, and deliberately not `IntegrationStatus.available`, which also folds
  * in "checked in the last five minutes" — a working account read six minutes
  * after its check is still the same account, and the send path rechecks it
- * anyway. What the freshness window governs is the status line.
+ * anyway. The freshness window governs only what AI setup says about the check.
  */
 describe('what counts as a usable account', () => {
   const base: EngineConnection = {
@@ -365,33 +363,8 @@ describe('what counts as a usable account', () => {
     expect(isFoundEngine(base)).toBe(true);
     const stale = { ...base, checkedAt: new Date(Date.now() - 3_600_000).toISOString() };
     expect(isFoundEngine(stale)).toBe(true);
-    expect(connectionState(base)).toBe('Signed in · Ready');
-    expect(connectionState(stale)).toContain('rechecked before sending');
   });
 
-  /**
-   * The same expiry rule as the setup screen, from the same helper. The two
-   * surfaces used to compare differently at the exact boundary, so this pins
-   * the boundary itself rather than a round number near it.
-   */
-  it('reads the freshness boundary exactly as the setup screen does', () => {
-    const checkedAt = '2026-09-20T10:00:00.000Z';
-    const observed = Date.parse(checkedAt);
-    const row = { ...base, checkedAt };
-    expect(connectionState(row, observed + CONNECTION_TTL_MS - 1)).toBe('Signed in · Ready');
-    // Exactly the TTL old is no longer current, and says so instead of Ready.
-    const expired = connectionState(row, observed + CONNECTION_TTL_MS);
-    expect(expired).toContain('rechecked before sending');
-    expect(expired).not.toContain('Ready');
-  });
-
-  it('never shows an unreadable or future check as Ready', () => {
-    const now = Date.parse('2026-09-20T10:00:00.000Z');
-    for (const checkedAt of ['not a date', new Date(now + 3_600_000).toISOString(), null]) {
-      const line = connectionState({ ...base, checkedAt }, now);
-      expect(line, String(checkedAt)).toBe('Signed in · rechecked before sending');
-    }
-  });
   /**
    * AI setup shows the account route beside the engine, because "I have
    * OpenCode" and "I hold the one account route this adapter accepts" are

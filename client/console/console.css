@@ -1254,7 +1254,7 @@ html[data-surface='console'] body {
   }
 }
 
-/* ---- model picker: full name in every mode ---- */
+/* ---- the header's agent picker: full name in every mode ---- */
 .console .picker {
   position: relative;
   min-width: 0;
@@ -1295,9 +1295,6 @@ html[data-surface='console'] body {
   color: var(--t3);
   text-transform: none;
   letter-spacing: normal;
-}
-.console .picker > button .eff.capped {
-  color: var(--attn);
 }
 /* A popup escapes its ancestor's layout box but not its inherited typography:
    the chrome bar sets `white-space: nowrap`, which would forbid every line in
