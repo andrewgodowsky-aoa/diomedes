@@ -1,5 +1,7 @@
 import type { ConversationMode, InteractionOutcome } from '../../shared/conversation';
-import type { Project } from '../../shared/types';
+import type { Conversation, Project } from '../../shared/types';
+import { AGENT_CATALOG, AUTO_AGENT, AUTO_SUMMARY, listedAgents, runKindOf } from '../../shared/agents';
+import { agentChoiceOf } from '../../shared/agent-choice';
 import type { RailItem } from './Rail';
 import { projectProgress } from './progress-bars';
 
@@ -15,7 +17,6 @@ import { projectProgress } from './progress-bars';
  * screen's logic can actually run under Node.
  */
 
-export type Restriction = 'automatic' | 'answer-only' | 'plan-only';
 
 /** One finished piece of work, read from records that already exist. Never invented. */
 export interface DiomedesResult {
@@ -35,14 +36,54 @@ export interface DiomedesResult {
  */
 export const ALL_PROJECTS = ':all';
 
-/** The Mode select, in order. Build is absent on purpose and must stay absent:
- *  this page answers, looks things up and plans; it never applies a change
- *  unsupervised, and Build is a promise this screen does not make. */
-export const RESTRICTIONS: readonly { id: Restriction; label: string }[] = [
-  { id: 'automatic', label: 'Automatic' },
-  { id: 'answer-only', label: 'Answer only' },
-  { id: 'plan-only', label: 'Plan only' },
-];
+/** One Agent this page offers: its one plain line, and the kind of message it answers. */
+export interface ConversationAgent {
+  id: string;
+  name: string;
+  line: string;
+  kind: ConversationMode;
+}
+
+/**
+ * The Agent select, in order (DIO-292): Auto, then each built-in Agent that answers in the
+ * conversation, in catalog order. An Agent that changes files is absent on purpose and must stay
+ * absent: this page answers, looks things up and plans; it never applies a change unsupervised.
+ */
+export function conversationAgents(): ConversationAgent[] {
+  return [
+    { id: AUTO_AGENT, name: 'Auto', line: AUTO_SUMMARY, kind: 'auto' },
+    ...listedAgents(AGENT_CATALOG).flatMap((item) => {
+      const kind = runKindOf(item);
+      return kind === 'ask' || kind === 'plan' ? [{ id: item.id, name: item.name, line: item.summary, kind }] : [];
+    }),
+  ];
+}
+
+/** A thread's Agent box as this page's control. An Agent this page doesn't offer reads as Auto. */
+export function conversationAgentOf(thread: Pick<Conversation, 'mode' | 'requested'>): string {
+  const id = agentChoiceOf(thread);
+  return conversationAgents().some((item) => item.id === id) ? id : AUTO_AGENT;
+}
+
+/** The kind of message one of this page's Agents answers. Anything else answers as Auto. */
+export function conversationKindOf(agentId: string): ConversationMode {
+  return conversationAgents().find((item) => item.id === agentId)?.kind ?? 'auto';
+}
+
+/**
+ * Whether an Agent can go in the conversation's box now (DIO-292). Another Agent's pick waits for
+ * the conversation's first message. That wait dates from when a project's conversation that hadn't
+ * spoken was found by its Automatic kind; its marker finds it now (DIO-299), so the wait is no
+ * longer needed and can be relaxed later. Auto keeps the kind, and the home conversation is found
+ * by its binding, so either can go in at once.
+ */
+export function canSaveAgent(
+  scopeId: string | null,
+  thread: Pick<Conversation, 'lineages'> | null,
+  agent: string,
+): boolean {
+  return scopeId === null || agent === AUTO_AGENT || (thread?.lineages?.length ?? 0) > 0;
+}
 
 const parse = (iso: string): number | null => {
   const ms = Date.parse(iso);
@@ -123,20 +164,18 @@ export function scopeFromSpineId(id: string): string | null {
 }
 
 /**
- * One mono line: the scope's name and the restriction in words. An id that
- * names no project reads exactly as the null scope would, so a project
- * removed out from under an open conversation never leaves the line naming
- * nothing at all.
+ * One mono line: the scope's name and the Agent's. An id that names no
+ * project reads exactly as the null scope would, so a project removed out
+ * from under an open conversation never leaves the line naming nothing at all.
  */
 export function instrumentLine(
   scopeId: string | null,
   projects: readonly Project[],
-  restriction: Restriction,
+  agent: string,
 ): string {
   const project = scopeId === null ? null : (projects.find((p) => p.id === scopeId) ?? null);
   const name = project ? project.name : 'All projects';
-  const label = RESTRICTIONS.find((r) => r.id === restriction)?.label ?? RESTRICTIONS[0].label;
-  return `${name} · ${label}`;
+  return `${name} · ${agent}`;
 }
 
 /**
@@ -202,19 +241,6 @@ export function visibleResults(
   return results.slice(0, limit);
 }
 
-const MODE_FOR: Record<Restriction, ConversationMode> = {
-  automatic: 'auto',
-  'answer-only': 'ask',
-  'plan-only': 'plan',
-};
-/** The Mode control as the server names it. The page never sends a work mode. */
-export function modeFor(restriction: Restriction): ConversationMode {
-  return MODE_FOR[restriction];
-}
-/** A thread's saved Mode as this page's control. A thread on a work mode reads as the default. */
-export function restrictionFor(mode: string | undefined): Restriction {
-  return mode === 'ask' ? 'answer-only' : mode === 'plan' ? 'plan-only' : 'automatic';
-}
 
 /**
  * Which thread is a project's Diomedes conversation is not this page's rule alone: the server

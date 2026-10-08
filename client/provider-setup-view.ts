@@ -17,7 +17,6 @@ import type {
   OpenRouterConnectionView,
   OpenRouterReasoningView,
 } from '../shared/model-api';
-import { routeDisplayName } from '../shared/engines';
 import { usd } from './aws-bedrock-view';
 
 export const PROVIDER_MIN_KEY_LENGTH = 20;
@@ -301,36 +300,6 @@ export function readinessLines(readiness: ModelApiReadiness): { id: string; ok: 
   return [...readiness.checks]
     .sort((a, b) => Number(a.ok) - Number(b.ok))
     .map((check) => ({ id: check.id, ok: check.ok, text: check.detail }));
-}
-
-/**
- * The models set up on this route: one per Azure deployment or allowed OpenRouter model.
- * `where` is what serves it: the deployment, or the only endpoints it may use. The picker
- * shows the one saved as the route's default, which is what a thread on the route runs.
- */
-export function providerModels(view: ProviderView | null): { slug: string; where: string }[] {
-  if (!view?.connection) return [];
-  if (view.route === 'azure-openai')
-    return (view as AzureConnectionView).connection!.deployments.map((entry) => ({
-      slug: entry.model,
-      where: entry.deployment,
-    }));
-  return (view as OpenRouterConnectionView).connection!.models.map((entry) => ({
-    slug: entry.id,
-    where: entry.upstreams.join(', '),
-  }));
-}
-
-/**
- * Whether a thread's picker offers this route, and if not, the one sentence
- * that says why. The same rule as AWS: offered only when the host reports
- * nothing blocking a send, so the menu never offers a route admission refuses.
- */
-export function providerPickerState(view: ProviderView | null): { offered: boolean; note: string | null } {
-  if (!view || !view.connection) return { offered: false, note: null };
-  if (!view.enabled) return { offered: false, note: null };
-  if (view.next) return { offered: false, note: `${routeDisplayName(view.route)} is on but not ready: ${view.next}` };
-  return { offered: true, note: null };
 }
 
 /** Whether this route is the one new work takes. Connecting never makes it so by itself. */

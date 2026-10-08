@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { Conversation, DocumentInfo, Mode, Route } from '../../shared/types';
 import { TASK_SOURCE_LIMITS } from '../../shared/task-sources';
 import type { ReadAccess } from '../../shared/read-access';
-import { AGENT_NAME } from '../../shared/agent-name';
+import { AUTO_AGENT } from '../../shared/agents';
+import type { AgentPickView } from '../../shared/agent-choice';
+import { isRoute } from '../../shared/engines';
 import { askDraftKey } from '../components';
-import { reducedMotion, spring } from './motion';
+import { agentCaption, placeholderFor, type AgentChoiceView } from './agent-ui';
 import { SendConfirmation } from './SendConfirmation';
 import { AskIcon } from './AskRow';
 import './attachments.css';
@@ -16,49 +18,25 @@ import { modelAttachmentProblem } from './attachments';
  * owns.
  */
 export const COMPOSER_LABEL = 'Message this thread';
-export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
-export const CAPS: Record<Mode, string> = {
-  ask: 'Nothing in the project changes.',
-  plan: 'A plan you read before work begins.',
-  auto: `${AGENT_NAME} answers, and says when something needs doing.`,
-  build: 'Applied only on your go-ahead.',
-  fix: 'The smallest change that clears the failure.',
-};
-const PLACEHOLDERS: Record<Mode, string> = {
-  ask: 'Ask or think out loud',
-  plan: 'What should the plan cover?',
-  auto: `Ask ${AGENT_NAME}`,
-  build: 'What should be done?',
-  fix: 'What went wrong?',
-};
-/** Trailing line per mode: width in px; plan draws dashed. `auto` is not a
- * strip button, so its line is never drawn; the width is unused. */
-const LINE_FOR: Record<Mode, [number, boolean]> = {
-  ask: [0, false],
-  plan: [22, true],
-  auto: [0, false],
-  build: [34, false],
-  fix: [12, false],
-};
 
 interface ComposerProps {
   thread: Conversation;
   /** Names the project whose Projects-page draft this composer may pick up. */
   projectId?: string;
-  mode: Mode;
-  onMode(mode: Mode): void;
+  /** The thread's Agent box (DIO-292): what the box asks for, and which kinds take images. */
+  choice: AgentChoiceView;
   busy: boolean;
   online: boolean;
   route: Route;
-  confirmSend: boolean;
-  prepareSources(text: string, failingDocument: string): Promise<string[]>;
-  onSend(
-    text: string,
-    failingDocument: string,
-    failingText: string,
-    sources: string[],
-    readAccess: ReadAccess,
-  ): void;
+  /**
+   * Auto's pick for this message, or the Agent the box names, with the kind of run it takes and
+   * the route it would take. Asked once per send, before anything else.
+   */
+  pick(text: string, attachments: string[]): Promise<AgentPickView>;
+  /** Whether the person confirms this message before it's sent (`agent-ui.ts` `confirmFor`). */
+  confirmFor(pick: AgentPickView): boolean;
+  prepareSources(text: string, kind: Mode): Promise<string[]>;
+  onSend(text: string, sources: string[], readAccess: ReadAccess, pick: AgentPickView): void;
   /**
    * A playbook the person picked for the next message. Named once beside the box and
    * removable; `starter` fills the box each time `n` changes. The playbook's own text is
@@ -89,13 +67,14 @@ interface ComposerProps {
   attachable?(): Promise<DocumentInfo[]>;
   /** Opens an attached file in Files. */
   onOpenFile?(path: string): void;
-  /** The ask box's row (AskRow.tsx): engine, model or tier, effort and agent, after the modes. */
+  /** The ask box's row (AskRow.tsx): engine, model or tier, effort and agent. */
   controls?: ReactNode;
   /** The context ring (AskRow.tsx), beside Send. */
   ring?: ReactNode;
   /**
    * The thread's model takes images, as its catalogue entry declares (`inputModalities`). An
-   * attached project image then travels as exact bytes in Ask, Plan and Automatic.
+   * attached project image then travels as exact bytes when the message answers in the
+   * conversation.
    */
   imageInput?: boolean;
 }
@@ -124,12 +103,12 @@ function carriedAsk(projectId: string): string {
 
 /**
  * The ask box (round 2 board N4): one line that grows as you type, and under it one row: the
- * mode strip with its point-and-line indicator, then the engine, model or tier, effort and agent
- * boxes, then Attach, the context ring and Send. A mode's promise is its button's tooltip; the
- * caption speaks only when the box is waiting on something. Build and Fix keep their aux rows.
+ * engine, model or tier, effort and agent boxes, then Attach, the context ring and Send. There is
+ * no mode strip (DIO-292): the Agent box is the choice, and on Auto an Agent is picked for each
+ * message before it is sent. The caption speaks only while the box is waiting on something.
  */
 export function Composer({
-  thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
+  thread, projectId, choice, busy, online, route, pick, confirmFor, prepareSources, onSend,
   skill = null, onClearSkill, attachments = [], onAttachments, attachable, onOpenFile, insert = null,
   controls = null, ring = null, imageInput = false,
 }: ComposerProps) {
@@ -152,11 +131,10 @@ export function Composer({
       // Nothing was stored if storage is unavailable.
     }
   }, [projectId]);
-  const [failingDocument, setFailingDocument] = useState('');
-  const [failingText, setFailingText] = useState('');
   const [pending, setPending] = useState<{
     text: string;
     sources: string[];
+    pick: AgentPickView;
     send(access: ReadAccess): void;
   } | null>(null);
   // What this one message may read. It starts at the selected documents each time the dialog
@@ -166,19 +144,14 @@ export function Composer({
   const [error, setError] = useState('');
   const preparingRef = useRef(false);
   // Images travel only to a model whose catalogue entry takes them, and only in a conversation:
-  // Build and Fix keep their text proposal contract.
-  const acceptsImages = imageInput && (mode === 'ask' || mode === 'plan' || mode === 'auto');
+  // an Agent that changes files keeps the text proposal contract, and Auto never hands it an image.
+  const acceptsImages = imageInput && (choice.kind === 'ask' || choice.kind === 'plan' || choice.kind === 'auto');
   const preparation = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
-  const modes = useRef<HTMLDivElement>(null);
-  const ind = useRef<HTMLSpanElement>(null);
-  const line = useRef<HTMLElement>(null);
-  const buttons = useRef(new Map<string, HTMLButtonElement>());
   const sources = [...new Set(thread.turns.flatMap((t) => t.sources ?? []))];
-  const fixReady = failingDocument.trim() !== '' || failingText.trim() !== '';
-  const ready = text.trim() !== '' && (mode !== 'fix' || fixReady);
+  const ready = text.trim() !== '';
 
-  // A pending send belongs to this thread, mode and route. Late listing results
+  // A pending send belongs to this thread, Agent and route. Late listing results
   // cannot open a confirmation after navigation or reuse a different route.
   useEffect(() => {
     setPending(null);
@@ -188,7 +161,7 @@ export function Composer({
       preparation.current += 1;
       preparingRef.current = false;
     };
-  }, [thread.id, mode, route]);
+  }, [thread.id, choice.id, route]);
 
   // A different thread opens on an empty box. Mounting is not a change of thread:
   // clearing there is what emptied the draft carried in from the Projects page.
@@ -197,8 +170,6 @@ export function Composer({
     if (shownThread.current === thread.id) return;
     shownThread.current = thread.id;
     setText('');
-    setFailingDocument('');
-    setFailingText('');
   }, [thread.id]);
   // A picked playbook fills the box. Declared after the thread effect above, so a pick that
   // opens a new thread lands in the box that thread's change just emptied.
@@ -215,119 +186,12 @@ export function Composer({
     setText((current) => (current.trim() ? `${current.replace(/\s+$/, '')}\n\n${insert.text}` : insert.text));
     box.current?.focus();
   }, [insert?.n]);
-  useEffect(() => {
-    if (mode !== 'fix') {
-      setFailingDocument('');
-      setFailingText('');
-    }
-  }, [mode]);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [text]);
-  // The mode strip's point rides a small spring (stiffness 210, damping 22,
-  // relative exit test, 267 ms budget) and its line scales, never resizes. Interruptible:
-  // a new mode cancels the running animation and springs from the current
-  // computed position. The CSS transition this replaces is removed in
-  // console.css; motion.ts owns the movement now.
-  const indAnim = useRef<Animation | null>(null);
-  const lineAnim = useRef<Animation | null>(null);
-  const indX = useRef<number | null>(null);
-  const lineS = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    const active = mode === 'ask' || mode === 'plan' || mode === 'build' || mode === 'fix'
-      ? buttons.current.get(mode)
-      : undefined;
-    const bar = ind.current;
-    if (!active || !bar) return;
-    const toX = active.offsetLeft + 10;
-    const [width, dashed] = LINE_FOR[mode];
-    const toS = width / 34;
-    const rail = line.current;
-    if (rail) rail.classList.toggle('dash', dashed);
-    if (indX.current === toX && lineS.current === toS) return;
-    if (reducedMotion() || indX.current === null) {
-      bar.style.transform = `translateX(${toX}px)`;
-      if (rail) rail.style.transform = `scaleX(${toS})`;
-      indX.current = toX;
-      lineS.current = toS;
-      return;
-    }
-    // Read the current computed position first, then cancel: the spring
-    // starts where the eye is, not where the last trip was heading.
-    let curX = indX.current;
-    try {
-      const m = new DOMMatrix(getComputedStyle(bar).transform);
-      if (Number.isFinite(m.m41)) curX = m.m41;
-    } catch {
-      // Keep the last target; the spring still lands true.
-    }
-    let curS = lineS.current ?? 0;
-    try {
-      if (rail) {
-        const ml = new DOMMatrix(getComputedStyle(rail).transform);
-        if (Number.isFinite(ml.m11)) curS = ml.m11;
-      }
-    } catch {
-      // Keep the last scale; the spring still lands true.
-    }
-    try {
-      indAnim.current?.cancel();
-    } catch {
-      // The previous run already finished; the new trip still starts.
-    }
-    try {
-      lineAnim.current?.cancel();
-    } catch {
-      // The previous run already finished; the new trip still starts.
-    }
-    indAnim.current = null;
-    lineAnim.current = null;
-    const fx = spring(curX, toX);
-    const move = bar.animate(
-      fx.map((x) => ({ transform: `translateX(${x}px)` })),
-      {
-        duration: Math.max(1, Math.round((fx.length * 1000) / 120)),
-        easing: 'linear',
-        fill: 'forwards',
-      },
-    );
-    indAnim.current = move;
-    move.onfinish = () => {
-      bar.style.transform = `translateX(${toX}px)`;
-      try {
-        move.cancel();
-      } catch {
-        // Already done; the end state is committed above.
-      }
-      if (indAnim.current === move) indAnim.current = null;
-    };
-    if (rail) {
-      const fs = spring(curS, toS);
-      const grow = rail.animate(
-        fs.map((s) => ({ transform: `scaleX(${s})` })),
-        {
-          duration: Math.max(1, Math.round((fs.length * 1000) / 120)),
-          easing: 'linear',
-          fill: 'forwards',
-        },
-      );
-      lineAnim.current = grow;
-      grow.onfinish = () => {
-        rail.style.transform = `scaleX(${toS})`;
-        try {
-          grow.cancel();
-        } catch {
-          // Already done; the end state is committed above.
-        }
-        if (lineAnim.current === grow) lineAnim.current = null;
-      };
-    }
-    indX.current = toX;
-    lineS.current = toS;
-  }, [mode]);
 
   function dispatch(send: () => void) {
     if (!preparingRef.current || busy || !online) return;
@@ -336,15 +200,12 @@ export function Composer({
     send();
     onAttachments?.([]);
     setText('');
-    setFailingDocument('');
-    setFailingText('');
   }
 
   async function submit() {
     const value = text.trim();
     if (!value || busy || !online || preparingRef.current) return;
-    if (mode === 'fix' && !fixReady) return;
-    const blocked = attachments.map(file => modelAttachmentProblem(file, acceptsImages)).find((problem) => problem !== null);
+    const blocked = attachments.map((file) => modelAttachmentProblem(file, acceptsImages)).find((problem) => problem !== null);
     if (blocked) {
       setError(blocked);
       return;
@@ -353,19 +214,21 @@ export function Composer({
     setPreparing(true);
     setError('');
     const attempt = ++preparation.current;
-    const doc = failingDocument.trim();
-    const failure = failingText.trim();
     try {
+      // The Agent comes first (DIO-292): it decides the kind of run, the route and whether to confirm.
+      const picked = await pick(value, attachments.map((file) => file.path));
+      if (preparation.current !== attempt) return;
+      if (picked.refusal) throw new Error(picked.refusal);
       // Attachments lead: they are what the person chose for this message.
       const selected = [
-        ...new Set([...attachments.map((file) => file.path), ...(await prepareSources(value, doc))]),
+        ...new Set([...attachments.map((file) => file.path), ...(await prepareSources(value, picked.mode))]),
       ];
       if (preparation.current !== attempt) return;
       if (selected.length > TASK_SOURCE_LIMITS.files)
         throw new Error('A message can carry at most eight documents. Remove an attachment to send.');
-      const send = (access: ReadAccess) => onSend(value, doc, failure, selected, access);
+      const send = (access: ReadAccess) => onSend(value, selected, access, picked);
       setReadAccess('selected');
-      if (confirmSend) setPending({ text: value, sources: selected, send });
+      if (confirmFor(picked)) setPending({ text: value, sources: selected, pick: picked, send });
       else dispatch(() => send('selected'));
     } catch (e) {
       if (preparation.current !== attempt) return;
@@ -389,7 +252,7 @@ export function Composer({
           ref={box}
           rows={1}
           aria-label={COMPOSER_LABEL}
-          placeholder={PLACEHOLDERS[mode]}
+          placeholder={placeholderFor(choice)}
           value={text}
           disabled={preparing || pending !== null}
           onChange={(e) => setText(e.target.value)}
@@ -400,9 +263,8 @@ export function Composer({
             }
           }}
         />
-        {/* Named documents are worth stating; the approval promise is already on
-            the caption below, so an empty scope says nothing at all. */}
-        {mode === 'build' && sources.length > 0 && (
+        {/* Named documents are worth stating; an empty scope says nothing at all. */}
+        {choice.kind === 'build' && sources.length > 0 && (
           <div className="aux show">
             <span className="mono">in scope</span>
             <span className="mono lc names" style={{ color: 'var(--t1)' }} title={sources.join(', ')}>
@@ -495,64 +357,14 @@ export function Composer({
             )}
           </div>
         )}
-        {mode === 'fix' && (
-          <div className="aux show">
-            <span>What is failing</span>
-            <select
-              aria-label="What is failing"
-              value={failingDocument}
-              onChange={(e) => setFailingDocument(e.target.value)}
-            >
-              <option value="">Not a document</option>
-              {sources.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <textarea
-              aria-label="Paste what went wrong"
-              placeholder="Paste what went wrong..."
-              value={failingText}
-              onChange={(e) => setFailingText(e.target.value)}
-              rows={1}
-            />
-            <span style={{ marginLeft: 'auto' }}>Up to three tries.</span>
-          </div>
-        )}
         <div className="bar ask-bar">
-          <div className="modes" ref={modes} role="radiogroup" aria-label="Mode">
-            {MODE_ORDER.map((m) => (
-              <button
-                key={m}
-                type="button"
-                ref={(el) => {
-                  if (el) buttons.current.set(m, el);
-                  else buttons.current.delete(m);
-                }}
-                role="radio"
-                aria-checked={mode === m}
-                className={mode === m ? 'on' : ''}
-                title={CAPS[m]}
-                onClick={() => onMode(m)}
-              >
-                {m}
-              </button>
-            ))}
-            <span className="ind" ref={ind}>
-              <i />
-              <b ref={line} />
-            </span>
-          </div>
           {controls}
           {/* The box is locked while the message is prepared, so the caption says
               why: a locked box with the text still in it reads as a send that
-              never happened. Otherwise the mode's promise is on its button. */}
-          {(preparing || (mode === 'fix' && !fixReady)) && (
-            <span className="cap" role={preparing ? 'status' : undefined}>
-              {preparing
-                ? 'Checking project documents before sending.'
-                : 'Pick the document or paste what went wrong to send.'}
+              never happened. */}
+          {preparing && (
+            <span className="cap" role="status">
+              Checking project documents before sending.
             </span>
           )}
           <span className="ask-end">
@@ -597,9 +409,14 @@ export function Composer({
         <SendConfirmation
           kind="message"
           instruction={pending.text}
-          route={route}
+          route={isRoute(pending.pick.route) ? pending.pick.route : route}
           sources={pending.sources}
-          mode={mode}
+          mode={pending.pick.mode}
+          agent={
+            pending.pick.agent.id === AUTO_AGENT
+              ? null
+              : agentCaption({ ...pending.pick.agent, picked: choice.id === AUTO_AGENT })
+          }
           disabled={busy || !online}
           readAccess={readAccess}
           onReadAccess={setReadAccess}

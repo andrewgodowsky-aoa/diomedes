@@ -371,10 +371,15 @@ test('Answer only and Plan only never show or start work, whatever the model pro
   ]);
 });
 
-test('narrowing the Mode control after a proposal was shown means it can no longer be started', async () => {
+test('narrowing the Agent box after a proposal was shown means it can no longer be started', async () => {
+  // DIO-292 (Review Focus 2): the Mode control became the Agent box. The person chooses an Agent
+  // that only reads, then sends a real message as it.
   const proposed = await send('m-act', 'ACT order the usual');
   if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
-  await send('m-narrow', 'And now only answer', { mode: 'ask' });
+  await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+    requested: { model: null, effort: null, agent: 'diomedes.researcher' },
+  });
+  await send('m-narrow', 'And now only answer', { mode: 'ask', agent: 'diomedes.researcher' });
   expect((await select('m-act', proposed.outcome.proposalDigest)).status).toBe(409);
   expect(workFor(proposed.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
 });
@@ -528,7 +533,8 @@ test('independent: cancellation after work-input must prevent new work admission
   } finally { runtime.record = original; }
 });
 
-test('independent: narrowing Mode during selection must prevent new work admission', async () => {
+test('independent: narrowing the Agent box during selection must prevent new work admission', async () => {
+  // DIO-292 (Review Focus 2): the Mode control became the Agent box, so the race narrows it there.
   const proposed = await send('m-mode-race', 'ACT create an owned draft');
   if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
   const runtime = driver();
@@ -538,17 +544,22 @@ test('independent: narrowing Mode during selection must prevent new work admissi
     await original(...args);
     if (!injected && args[2].some((phase: { phase: string }) => phase.phase === 'action-selected')) {
       injected = true;
-      await send('m-narrow-race', 'Only answer now', { mode: 'ask' });
+      await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+        requested: { model: null, effort: null, agent: 'diomedes.researcher' },
+      });
+      await send('m-narrow-race', 'Only answer now', { mode: 'ask', agent: 'diomedes.researcher' });
     }
   };
   try {
     const response = await select('m-mode-race', proposed.outcome.proposalDigest);
     const work = workFor(proposed.sourceMessageId);
-    const mode = store().state(project.id).conversations.find((item) => item.id === thread.id)!.mode;
+    const saved = store().state(project.id).conversations.find((item) => item.id === thread.id)!;
+    const mode = saved.mode;
     console.log('INDEPENDENT_MODE_RACE', JSON.stringify({
-      response: response.status, mode, tasks: work.tasks.length, sessions: work.sessions.length,
+      response: response.status, mode, agent: saved.requested?.agent, tasks: work.tasks.length, sessions: work.sessions.length,
     }));
     expect(mode).toBe('ask');
+    expect(saved.requested?.agent).toBe('diomedes.researcher');
     expect(work.sessions).toHaveLength(0);
   } finally { runtime.record = original; }
 });

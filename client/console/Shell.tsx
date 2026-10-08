@@ -49,7 +49,6 @@ import {
   time,
   titleCase,
   askDraftKey,
-  askModeKey,
 } from '../components';
 import { NectoviaMark } from './NectoviaMark';
 import { Rail, type RailItem } from './Rail';
@@ -69,11 +68,15 @@ import {
 import type { MessageResult } from '../../shared/conversation';
 import {
   directAskBody,
+  pickForMessage,
   planThreadSend,
   readThreadRoute,
   sendThreadConversation,
   stopThreadMessage,
 } from './thread-send';
+import { choiceView } from './agent-ui';
+import { agentChoiceOf, type AgentPickView } from '../../shared/agent-choice';
+import { AUTO_AGENT, DEFAULT_AGENT } from '../../shared/agents';
 import {
   acceptActivity,
   activityTarget,
@@ -231,7 +234,6 @@ export function Shell({
   /** A team wake's job-cap question, and how to answer the wake waiting on it. */
   const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
   const [workspace, setWorkspace] = useWorkspace(report);
-  const [mode, setMode] = useState<Mode>('ask');
   // The playbook a person picked for their next message in one thread. It lives here, not in
   // the composer, because the send is made here; `n` refills the composer on each pick.
   const [skillDraft, setSkillDraft] = useState<{
@@ -500,7 +502,7 @@ export function Shell({
   useEffect(() => {
     onPaletteKey?.(openPalette);
   }, [onPaletteKey, openPalette]);
-  // Live engine catalogues for the Models group, read exactly as the Picker does.
+  // Live engine catalogues for the Models group, read exactly as the ask row does.
   useEffect(() => {
     if (!paletteOpen) return;
     let alive = true;
@@ -839,6 +841,8 @@ export function Shell({
   const selected = selectedId
     ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
     : null;
+  // The thread's Agent box (DIO-292). Nobody picks a mode: the box does, and on Auto, each message's pick.
+  const choice = selected ? choiceView(selected) : null;
   // The thread's progress board: its attached plan's tasks and the work its
   // conversation started, counted from records only (board-model.ts). The
   // tasks and session events reload `state`, so the board moves with them.
@@ -882,30 +886,6 @@ export function Shell({
           }
         : null,
   });
-  useEffect(() => {
-    if (selected) setMode(selected.mode ?? 'ask');
-  }, [selected?.id, selected?.mode]);
-  // A mode chosen on the Projects page arrives with the carried ask and lands on
-  // the thread the draft opens in. Declared after the effect above, which would
-  // otherwise put the thread's stored mode back in the same commit.
-  useEffect(() => {
-    if (!selected) return;
-    let carried: string | null = null;
-    try {
-      carried = localStorage.getItem(askModeKey(projectId));
-      if (carried !== null) localStorage.removeItem(askModeKey(projectId));
-    } catch {
-      // Storage is unavailable; the thread keeps its own mode.
-    }
-    if (carried !== 'ask' && carried !== 'plan' && carried !== 'build' && carried !== 'fix') return;
-    if (carried === (selected.mode ?? 'ask')) return;
-    const next: Mode = carried;
-    setMode(next);
-    void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
-      report(e);
-      setMode(selected.mode ?? 'ask');
-    });
-  }, [selected?.id]);
   useEffect(() => {
     setRoute(selectedEngine(settings, state?.project, selected));
   }, [selected?.id, selected?.engine, state?.project.ai, settings.services?.defaultEngine]);
@@ -1038,7 +1018,7 @@ export function Shell({
 
   /**
    * One handover from Settings: the route and model a connection test verified
-   * become a thread's choice through the same call the Picker makes, the cursor
+   * become a thread's choice through the same guarded call every route change makes, the cursor
    * goes into the composer, and nothing is sent.
    *
    * The offer was gated on four facts of the host's when it was drawn, and used
@@ -1203,19 +1183,22 @@ export function Shell({
     });
   }
   /**
-   * Launch a playbook: an empty thread is reused, otherwise a new one opens, in the skill's
-   * Mode, with the composer filled and the skill shown beside it. Nothing is sent: the person
-   * reads, edits and presses Send, and the playbook itself travels in the instruction channel.
+   * Launch a playbook: an empty thread is reused, otherwise a new one opens, on the Agent for the
+   * playbook's kind, with the composer filled and the skill shown beside it. Nothing is sent: the
+   * person reads, edits and presses Send, and the playbook itself travels in the instruction channel.
    */
   async function launchSkill(skill: PackSkill) {
     await perform(async () => {
       let target = selected && selected.turns.length === 0 ? selected : null;
       if (!target) target = await api<Conversation>(`${base}/threads`, 'POST', {});
-      if ((target.mode ?? 'ask') !== skill.mode)
-        await api(`${base}/threads/${target.id}`, 'PUT', { mode: skill.mode });
+      // The kind's default Agent goes in the thread's Agent box (DIO-292), keeping its model pick.
+      const agent = DEFAULT_AGENT[skill.mode];
+      if (agentChoiceOf(target) !== agent)
+        await api(`${base}/threads/${target.id}`, 'PUT', {
+          requested: { model: target.requested?.model ?? null, effort: target.requested?.effort ?? null, agent },
+        });
       await load();
       setSelectedId(target.id);
-      setMode(skill.mode);
       setView('Thread');
       setSkillDraft((prev) => ({ skill, threadId: target.id, n: (prev?.n ?? 0) + 1 }));
     });
@@ -1239,19 +1222,10 @@ export function Shell({
       say(`${SMALL_BUSINESS_PACK.name} skills are on for this project.`);
     });
   }
-  function changeMode(next: Mode) {
-    if (!selected || next === mode) return;
-    const previous = mode;
-    setMode(next);
-    void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
-      report(e);
-      setMode(previous);
-    });
-  }
   /**
    * One choice from the ask row (engine, model, effort or style), written to the thread in one
-   * update behind the same guard as `pick()`. No choice changes the mode or the permission, and
-   * whatever else changes, the Agent stays. A refused write puts the route back.
+   * update behind the same guard as `pick()`. No choice changes the permission, and whatever else
+   * changes, the Agent stays. A refused write puts the route back.
    */
   function chooseAsk(change: AskChange) {
     const thread = selected ?? null;
@@ -1277,21 +1251,15 @@ export function Shell({
       await load();
     });
   }
-  /** Agent and model are separate choices; changing one preserves the other. */
-  function pickAgent(agentId: string | null) {
+  /** Agent and model are separate choices; changing one preserves the other. Auto is saved too. */
+  function pickAgent(agentId: string) {
     if (!selected) return;
     const current = selected.requested;
-    const next =
-      agentId === null
-        ? current?.model
-          ? { model: current.model, effort: current.effort ?? null }
-          : null
-        : {
-            model: current?.model ?? null,
-            effort: current?.effort ?? null,
-            agent: agentId,
-          };
-    void setRequested(selected, next as Conversation['requested'], route);
+    void setRequested(
+      selected,
+      { model: current?.model ?? null, effort: current?.effort ?? null, agent: agentId },
+      route,
+    );
   }
   /** An exact-model profile (H09) replaces the thread's own Agent and model pick. */
   function pickProfile(profileId: string) {
@@ -1549,23 +1517,25 @@ export function Shell({
   }
   async function send(
     thread: Conversation,
-    mode: Mode,
+    pick: AgentPickView,
     text: string,
     route: Route,
-    failing?: { document?: string; text?: string },
     sources?: string[],
     skill?: string,
     readAccess?: import('../../shared/read-access').ReadAccess,
   ) {
+    // The Agent the message runs as (DIO-292). Auto answering itself sends none.
+    const agent = pick.agent.id === AUTO_AGENT ? undefined : pick.agent.id;
     await deliver(
       thread,
       route,
       async (control) => {
-        // The route is the host's to say: the owner's tier map, else the thread's own route.
-        // A tier that cannot run is refused here, in the host's words, before anything is sent.
+        // The route is the host's to say: the owner's tier map, else the thread's own route, for
+        // the kind of run the pick takes. A tier that cannot run is refused here, in the host's
+        // words, before anything is sent.
         const plan = planThreadSend(
-          await readThreadRoute(projectId, thread.id, control.signal),
-          mode,
+          await readThreadRoute(projectId, thread.id, control.signal, pick.mode),
+          pick.mode,
           skill,
         );
         if (plan.kind === 'refuse') throw new Error(plan.reason);
@@ -1582,6 +1552,7 @@ export function Shell({
             threadId: thread.id,
             text,
             mode: plan.mode,
+            agent,
             paths: sources ?? [],
             signal: control.signal,
             onClaim: (identity) => {
@@ -1591,7 +1562,7 @@ export function Shell({
         await api(
           `${base}/ask`,
           'POST',
-          directAskBody({ thread, mode, text, route: plan.route, failing, sources, skill, readAccess }),
+          directAskBody({ thread, mode: pick.mode, agent, text, route: plan.route, sources, skill, readAccess }),
           control.signal,
         );
         return null;
@@ -1617,22 +1588,16 @@ export function Shell({
       await load();
     });
   }
-  async function messageSources(
-    thread: Conversation,
-    mode: Mode,
-    text: string,
-    failingDocument: string,
-  ): Promise<string[]> {
-    // Preserve explicit attachments and Fix's failing document. Ask may also
-    // carry documents named by the person in this message or its owning task.
-    // Never infer scope from assistant prose or the rest of the transcript.
+  async function messageSources(thread: Conversation, kind: Mode, text: string): Promise<string[]> {
+    // The thread's own document or plan; the composer adds the attachments. An Ask may also
+    // carry documents named by the person in this message or its owning task. Never infer
+    // scope from assistant prose or the rest of the transcript.
     const sources = [...new Set([
-      ...(mode === 'fix' && failingDocument ? [failingDocument] : []),
       ...(['document', 'plan'].includes(thread.attachedTo.kind)
         ? [thread.attachedTo.ref]
         : []),
     ])];
-    if (mode !== 'ask') return sources;
+    if (kind !== 'ask') return sources;
     const task = taskOf(thread);
     const description = task ? `${task.name}\n${task.description ?? ''}` : '';
     // Listing the project walks its whole folder, which can take seconds. A
@@ -2268,7 +2233,7 @@ export function Shell({
                 />
               }
               settings={settings}
-              mode={mode}
+              choice={choiceView(selected)}
               route={route}
               busy={busy}
               online={online}
@@ -2278,25 +2243,24 @@ export function Shell({
               onChoose={chooseAsk}
               pinChart={conversation}
               agentControl={
-                conversation ? null : (
-                  <AgentPicker
-                    projectId={projectId}
-                    thread={selected}
-                    mode={mode}
-                    route={route}
-                    live={selectedLive}
-                    busy={busy}
-                    onPick={pickAgent}
-                    // An exact-model profile replaces the thread's model, so on the local
-                    // model it would drop the chosen local profile; the Agent alone stays.
-                    onPickProfile={route === localModel(integrations)?.route ? undefined : pickProfile}
-                  />
-                )
+                // The Agent box takes the place the mode strip had in both views (DIO-292), so the
+                // conversation view keeps it too. Profiles stay in the full Console.
+                <AgentPicker
+                  projectId={projectId}
+                  thread={selected}
+                  route={route}
+                  live={selectedLive}
+                  busy={busy}
+                  onPick={pickAgent}
+                  // An exact-model profile replaces the thread's model, so on the local
+                  // model it would drop the chosen local profile; the Agent alone stays.
+                  onPickProfile={conversation || route === localModel(integrations)?.route ? undefined : pickProfile}
+                />
               }
-              onMode={changeMode}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
-              prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
+              pick={(text, attachments) => pickForMessage(projectId, selected.id, { text, attachments })}
+              prepareSources={(kind, text) => messageSources(selected, kind, text)}
               skill={
                 skillDraft?.threadId === selected.id
                   ? {
@@ -2317,13 +2281,13 @@ export function Shell({
               attachable={async () => (await listDocuments(projectId)).documents}
               onOpenFile={openDocument}
               onOpenReference={openReference}
-              onSend={(m, text, r, failing, sources, readAccess) =>
+              onSend={(text, sources, readAccess, pick) =>
                 void send(
                   selected,
-                  m,
+                  pick,
                   text,
-                  r,
-                  failing,
+                  // The route the person confirmed: the host's, for the kind of run the pick takes.
+                  isRoute(pick.route) ? pick.route : route,
                   sources,
                   skillDraft?.threadId === selected.id
                     ? skillDraft.skill.id
@@ -2359,7 +2323,7 @@ export function Shell({
               state={state}
               task={selectedTask}
               taskWorker={taskWorker}
-              mode={mode}
+              kind={choice?.kind ?? 'auto'}
               running={selectedTask ? liveByTask(selectedTask.id) !== null : false}
               latest={latestTaskSession}
               openNeeds={waiting}
@@ -2401,7 +2365,7 @@ export function Shell({
               state={state}
               task={null}
               taskWorker=""
-              mode={mode}
+              kind={choice?.kind ?? 'auto'}
               running={false}
               latest={null}
               openNeeds={waiting}

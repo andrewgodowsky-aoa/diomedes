@@ -12,6 +12,7 @@ import type {
 } from '../shared/types';
 import { isPackActive } from '../shared/capability-packs';
 import { reopenLastProject } from './fixtures/landing';
+import { AGENT_MENU, chooseAgent } from './fixtures/agent-menu';
 
 /**
  * The acceptance scenarios, driven through the Console. They were written
@@ -767,12 +768,7 @@ test('F17, F20-F22: moving between views and Settings preserves data; the Consol
   );
   await newThread(page);
   const askText = 'How should I organize the restaurant menu work?';
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  await modes.getByRole('radio', { name: 'ask', exact: true }).click();
-  await expect(modes.getByRole('radio', { name: 'ask', exact: true })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await chooseAgent(page, 'Researcher');
   await page.getByRole('textbox', { name: 'Message this thread', exact: true }).fill(askText);
   await page.locator('.console .composer').getByRole('button', { name: 'Send', exact: true }).click();
   await expect
@@ -1241,8 +1237,10 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   await expect(projectSelect).toHaveValue(latest.id);
   const askText = 'Which suppliers are late?';
   await startHere.getByRole('textbox').fill(askText);
+  // Nothing about who answers is chosen here (DIO-292): the draft carries no mode.
+  await expect(startHere.getByLabel('Mode')).toHaveCount(0);
   await startHere.getByRole('button', { name: 'Send', exact: true }).click();
-  // The draft arrives in the chosen project's Console composer, in Ask.
+  // The draft arrives in the chosen project's Console composer.
   await expect(railOf(page)).toBeVisible();
   await expect(
     openProjects(page).getByRole('button', { name: latest.name, exact: true }),
@@ -1250,9 +1248,9 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   await expect(page.getByRole('textbox', { name: 'Message this thread', exact: true })).toHaveValue(
     askText,
   );
-  await expect(
-    page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'ask', exact: true }),
-  ).toHaveAttribute('aria-checked', 'true');
+  // The thread's Agent box decides who answers it; there is no mode strip to set.
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: AGENT_MENU })).toBeVisible();
   // Empty state (three cards with no projects): skipped. There is no existing
   // helper for a fresh data dir in this spec and projects cannot be deleted
   // via the API, so the no-projects cards cannot be reached in this run.
@@ -1262,8 +1260,7 @@ test('Unavailable helper: the application notice has no invented runtime caption
   await openProject(page);
   await goTo(page, 'Thread');
   await newThread(page);
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  await modes.getByRole('radio', { name: 'ask', exact: true }).click();
+  await chooseAgent(page, 'Researcher');
   await page
     .getByRole('textbox', { name: 'Message this thread', exact: true })
     .fill('Which soups are local?');
@@ -1383,7 +1380,7 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
   expect(off.ok()).toBe(true);
 });
 
-test('Modes: the Console composer shows four modes and Fix needs what is failing', async ({
+test('Agents: the ask box has no mode strip, and Fixer takes what is failing in the message', async ({
   page,
 }) => {
   // A project of its own, so no other test's sample work is in progress here.
@@ -1414,26 +1411,23 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
   await expect(railOf(page)).toBeVisible();
   // A new project has no thread yet; the rail's New opens one.
   await newThread(page);
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  for (const name of ['ask', 'plan', 'build', 'fix'])
-    await expect(modes.getByRole('radio', { name, exact: true })).toBeVisible();
-  await modes.getByRole('radio', { name: 'fix', exact: true }).click();
-  await expect(modes.getByRole('radio', { name: 'fix', exact: true })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  // The Agent box is the choice (DIO-292): no Mode radio group, and no Fix fields.
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: AGENT_MENU }).locator('.mdl')).toHaveText('Auto');
+  await chooseAgent(page, 'Fixer');
   const composer = page.locator('.console .composer');
-  await expect(composer.getByLabel('What is failing', { exact: true })).toBeVisible();
+  await expect(composer.getByLabel('What is failing', { exact: true })).toHaveCount(0);
+  await expect(composer.getByLabel('Paste what went wrong')).toHaveCount(0);
   // Send stays focusable while it is not ready, so it says so with aria-disabled.
   const send = composer.getByRole('button', { name: 'Send', exact: true });
   await expect(send).toHaveAttribute('aria-disabled', 'true');
-  await page.getByRole('textbox', { name: 'Message this thread', exact: true }).fill('Fix the patio list');
-  await expect(send).toHaveAttribute('aria-disabled', 'true');
-  await composer.getByLabel('Paste what went wrong').fill('The list shows the wrong day.');
+  await page
+    .getByRole('textbox', { name: 'Message this thread', exact: true })
+    .fill('Fix the patio list. It shows the wrong day.');
   await expect(send).toHaveAttribute('aria-disabled', 'false');
   await send.click();
-  // The stored turns carry the try. The Console does not draw the Workbook's
-  // "Fix, try 1 of 3" chip, so the try is read from the record.
+  // The stored turns carry the try and the thread its Agent. The Console does not draw the
+  // Workbook's "Fix, try 1 of 3" chip, so the try is read from the record.
   await expect
     .poll(async () => {
       const response = await page.request.get(`/api/projects/${project.id}/state`);
@@ -1442,28 +1436,55 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
         c.turns.some((t) => t.role !== 'you' && t.mode === 'fix'),
       );
       const reply = thread?.turns.filter((t) => t.role !== 'you' && t.mode === 'fix').at(-1);
-      return { mode: thread?.mode, attempt: reply?.attempt };
+      return { mode: thread?.mode, agent: thread?.requested?.agent, attempt: reply?.attempt };
     })
-    .toEqual({ mode: 'fix', attempt: { n: 1, of: 3 } });
-  // The thread keeps its mode: reloading shows it still in Fix.
+    .toEqual({ mode: 'fix', agent: 'diomedes.debugger', attempt: { n: 1, of: 3 } });
+  // The thread keeps its Agent: reloading shows Fixer in the box.
   await page.reload();
   await expect(railOf(page)).toBeVisible();
-  await expect(
-    page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'fix', exact: true }),
-  ).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('button', { name: AGENT_MENU }).locator('.mdl')).toHaveText('Fixer');
   await expect(page.locator('#scrThread .turn.dio').last()).toContainText(
     'Started a clearly labelled sample fix.',
   );
+});
+
+test('Agents: a new thread starts on Auto, and the menu lists Auto, then each Agent with its line', async ({
+  page,
+}) => {
+  await openProject(page);
+  await goTo(page, 'Thread');
+  await newThread(page);
+  const box = page.getByRole('button', { name: AGENT_MENU });
+  await expect(box.locator('.mdl')).toHaveText('Auto');
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await box.click();
+  const menu = page.getByRole('menu');
+  const items = menu.getByRole('menuitemradio');
+  await expect(items.first()).toBeVisible();
+  const names = await items.locator('> span:first-child').allTextContents();
+  expect(names.slice(0, 9)).toEqual([
+    'Auto',
+    'Researcher',
+    'Planner',
+    'Builder',
+    'Fixer',
+    'Reviewer',
+    'Explorer',
+    'Analyst',
+    'Writer',
+  ]);
+  await expect(items.first().locator('small')).toHaveText('Picks the right agent for each message.');
+  for (const line of await items.locator('small').allTextContents()) expect(line.trim()).not.toBe('');
+  await expect(menu).toContainText('Permissions decide what each agent can do.');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
 });
 
 test('Enter sends from the Console composer and Shift+Enter adds a line', async ({ page }) => {
   await openProject(page);
   await goTo(page, 'Thread');
   await newThread(page);
-  await page
-    .getByRole('radiogroup', { name: 'Mode' })
-    .getByRole('radio', { name: 'ask', exact: true })
-    .click();
+  await chooseAgent(page, 'Researcher');
   const box = page.getByRole('textbox', { name: 'Message this thread', exact: true });
   await expect(box).toHaveValue('');
   const heldText = `Shift+Enter held line ${Date.now()}`;

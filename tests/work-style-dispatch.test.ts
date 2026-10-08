@@ -144,6 +144,23 @@ describe('dispatch with a style', () => {
     expect(calls.at(-1)).toMatchObject({ model: 'gpt-6-sol', effort: 'high' });
   });
 
+  test('the work-style read follows the kind of run the next message takes', async () => {
+    // DIO-292: Auto picks the agent first, and the Console reads the style for that agent's kind.
+    const { projectId, threadId } = await project();
+    // Every tier pinned to ChatGPT, so the tier runs here and its level follows the kind.
+    await request('/settings', 'PUT', { services: { codex: true, ownerPinRoute: 'codex', ownerPinModel: 'gpt-6-sol' } });
+    await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', { workStyle: 'focused' });
+    const asked = await request(`/projects/${projectId}/threads/${threadId}/work-style?mode=ask`);
+    const planned = await request(`/projects/${projectId}/threads/${threadId}/work-style?mode=plan`);
+
+    expect(asked.data.resolution).toMatchObject({ model: 'gpt-6-sol', effort: 'medium' });
+    expect(planned.data.resolution).toMatchObject({ model: 'gpt-6-sol', effort: 'high' });
+    // Something that isn't a kind reads the thread's own, as a read with none does.
+    const odd = await request(`/projects/${projectId}/threads/${threadId}/work-style?mode=build-it`);
+    const own = await request(`/projects/${projectId}/threads/${threadId}/work-style`);
+    expect(odd.data).toEqual(own.data);
+  });
+
   test('the Settings default applies to a thread that names no style', async () => {
     const { projectId, threadId } = await project();
     expect((await request('/settings', 'PUT', { services: { codex: true, workStyle: 'focused' } })).status).toBe(200);

@@ -10,6 +10,7 @@
  * messages of the lineage it retired, whichever driver answered them (artifacts v2, frozen item 3).
  */
 import type { HarnessRun } from '../../shared/harness.js';
+import { withoutFraming } from '../agent-framing.js';
 import type { RunService } from './run-service.js';
 
 /** The history bounds (draft a.3): at most the last 12 answered messages and 24,000 characters. */
@@ -75,7 +76,9 @@ export function answeredTurns(runs: readonly HarnessRun[], exclude?: string): An
       const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
       const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
       const answer = typeof response?.text === 'string' ? spoken(response.text) : null;
-      if (typeof prompt === 'string') lines.push(`Person: ${prompt}`);
+      // What the person said: the role line an Agent's message opens with is the host's (DIO-292),
+      // and on Auto's own lane a later message would otherwise read it as the person's words.
+      if (typeof prompt === 'string') lines.push(`Person: ${withoutFraming(prompt)}`);
       if (answer !== null) lines.push(`Diomedes: ${answer}`);
       // One block per message, joined as the lines always were: each line, then a blank line.
       if (lines.length)

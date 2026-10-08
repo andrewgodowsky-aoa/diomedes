@@ -6,7 +6,8 @@ import {
   type DispatchIdentity,
 } from '../conversation-send';
 import { isKeptSessionRoute, isRoute, type KeptSessionRoute } from '../../shared/engines';
-import { isModelApiRoute, MODEL_API_NAMES, type ModelApiRoute } from '../../shared/model-api';
+import { MODEL_API_NAMES, type ModelApiRoute } from '../../shared/model-api';
+import { throughConversation, type AgentPickView } from '../../shared/agent-choice';
 import type { ConversationMode, MessageResult } from '../../shared/conversation';
 import type { Conversation, Mode, Route } from '../../shared/types';
 import type { ReadAccess } from '../../shared/read-access';
@@ -39,18 +40,18 @@ export type ThreadSendPlan =
 const conversationMode = (mode: Mode): ConversationMode | null =>
   mode === 'ask' || mode === 'plan' || mode === 'auto' ? mode : null;
 
-/** The routes whose Ask, Plan and Automatic answer through the conversation. */
-const throughConversation = (route: string): route is ModelApiRoute | KeptSessionRoute =>
-  isModelApiRoute(route) || isKeptSessionRoute(route);
-
-/** Reads the route the host resolves for this thread now. A failed read sends nothing. */
+/**
+ * Reads the route the host resolves for this thread now, for the kind of run the next message
+ * takes (Auto's pick decides it). A failed read sends nothing.
+ */
 export async function readThreadRoute(
   projectId: string,
   threadId: string,
   signal?: AbortSignal,
+  mode?: Mode,
 ): Promise<ThreadRouteView> {
   const view = await api<{ route?: unknown; refusal?: unknown }>(
-    `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/work-style`,
+    `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/work-style${mode ? `?mode=${encodeURIComponent(mode)}` : ''}`,
     'GET',
     undefined,
     signal,
@@ -61,6 +62,24 @@ export async function readThreadRoute(
     route: view.route,
     refusal: typeof view.refusal === 'string' && view.refusal ? view.refusal : null,
   };
+}
+
+/**
+ * Auto's pick for one message, or the Agent the thread's box names, with the kind of run it takes
+ * and the route it would take (DIO-292). Asked before anything is sent.
+ */
+export async function pickForMessage(
+  projectId: string,
+  threadId: string,
+  input: { text: string; attachments: string[]; conversationOnly?: boolean },
+  signal?: AbortSignal,
+): Promise<AgentPickView> {
+  return api<AgentPickView>(
+    `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/agent-pick`,
+    'POST',
+    input,
+    signal,
+  );
 }
 
 /**
@@ -89,13 +108,16 @@ export function planThreadSend(view: ThreadRouteView, mode: Mode, skill?: string
   return { kind: 'direct', route: view.route };
 }
 
-/** The direct request's body, exactly as the thread composer has always sent it. */
+/**
+ * The direct request's body. The Agent rides with it when it isn't Auto's own answer (DIO-292).
+ * Fix sends no failure report of its own: the message is the report.
+ */
 export function directAskBody(input: {
   thread: Pick<Conversation, 'id' | 'attachedTo'>;
   mode: Mode;
+  agent?: string;
   text: string;
   route: Route;
-  failing?: { document?: string; text?: string };
   sources?: string[];
   skill?: string;
   readAccess?: ReadAccess;
@@ -108,7 +130,7 @@ export function directAskBody(input: {
     threadId: input.thread.id,
     attachedTo: input.thread.attachedTo,
     ...(input.sources ? { sources: input.sources } : {}),
-    ...(input.mode === 'fix' && input.failing ? { failing: input.failing } : {}),
+    ...(input.agent ? { agent: input.agent } : {}),
     ...(input.skill ? { skill: input.skill } : {}),
     // Sent only when the person chose it for this message; absent means the selection.
     ...(input.readAccess === 'project' ? { readAccess: input.readAccess } : {}),
@@ -140,6 +162,8 @@ export async function sendThreadConversation(input: {
   threadId: string;
   text: string;
   mode: ConversationMode;
+  /** The Agent the message runs as, when it isn't Auto's own answer (DIO-292). */
+  agent?: string;
   paths: readonly string[];
   signal?: AbortSignal;
   onClaim?: (identity: DispatchIdentity) => void;
@@ -148,7 +172,7 @@ export async function sendThreadConversation(input: {
   return sendMessage(
     input.projectId,
     input.threadId,
-    { text: input.text, mode: input.mode, sources },
+    { text: input.text, mode: input.mode, sources, ...(input.agent ? { agent: input.agent } : {}) },
     input.signal,
     input.onClaim,
   );

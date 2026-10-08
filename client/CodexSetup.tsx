@@ -80,7 +80,7 @@ export function CodexSetup({
       )}
       <p className="caption">
         Uses the native Codex account on this computer. Signing in can change that account. ChatGPT
-        subscription usage applies to Ask, Plan, and Work in projects.
+        subscription usage applies to every agent's work in projects.
       </p>
       <p className="caption">
         Check connection looks at what is installed, which version it is and whether you are signed

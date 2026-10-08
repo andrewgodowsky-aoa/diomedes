@@ -258,15 +258,17 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
   ).toBeVisible();
 });
 
-test('Answer only holds the same request to an answer', async ({ page }) => {
+test('Researcher holds the same request to an answer', async ({ page }) => {
   await open(page);
   await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'Linen service' });
   // The project's Diomedes conversation is found again, not made twice.
   await expect(answers(page).last()).toContainText('I can start that.');
-  await page.getByRole('combobox', { name: 'Mode' }).selectOption({ label: 'Answer only' });
+  await page.getByRole('combobox', { name: 'Agent' }).selectOption({ label: 'Researcher' });
   await say(page, 'ACT tidy it again');
-  // Under Answer only the model is never shown how to propose work, so there is only an answer.
-  await expect(answers(page).last()).toHaveText('You said: ACT tidy it again');
+  // Researcher only answers: the model is never shown how to propose work, so there is only an
+  // answer. This engine echoes what it was sent, and a message that moves lanes opens with the
+  // last answer, so the echo is matched by its start and its end.
+  await expect(answers(page).last()).toHaveText(/^You said: [\s\S]*ACT tidy it again$/);
   await expect(page.locator('.dio-card')).toHaveCount(0);
   const after = await state();
   expect(after.tasks.length).toBe(1);
@@ -357,7 +359,7 @@ async function reviewProject(page: Page, name: string) {
   await page.getByRole('combobox', { name: 'Project' }).selectOption(p.id);
   await say(page, `Warm ${name}`);
   await expect(answers(page).last()).toHaveText(`You said: Warm ${name}`);
-  await page.getByRole('combobox', { name: 'Mode' }).selectOption('automatic');
+  await page.getByRole('combobox', { name: 'Agent' }).selectOption('auto');
   return p;
 }
 
@@ -827,7 +829,7 @@ test('CD05-R-09 closure: sending again sends what was saved, whatever the Mode c
   // It may have been accepted, so it is not handed back as a draft.
   await expect(composer(page)).toHaveValue('');
   await page.unroute('**/api/projects/*/threads/*/messages');
-  await page.getByRole('combobox', { name: 'Mode' }).selectOption({ label: 'Answer only' });
+  await page.getByRole('combobox', { name: 'Agent' }).selectOption({ label: 'Researcher' });
   await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
   // The strip is hidden for as long as a delivery runs; its ending is what settles the message.
   await expect(page.locator('.dio-pending')).toHaveCount(0);

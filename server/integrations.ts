@@ -960,7 +960,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       status.available = true;
       status.status = 'Ready';
       status.detail =
-        'Native ChatGPT account connected. Windows write-denial proof passed. Ask, Plan, and Work proposals use an isolated text-only context; Diomedes applies approved file proposals.';
+        "Native ChatGPT account connected. Windows write-denial proof passed. Every agent's proposals use an isolated text-only context; Diomedes applies approved file proposals.";
       status.capabilities = ['ask', 'plan', 'work-proposals', 'native-chatgpt', 'read-only'];
     } catch (error) {
       recordEngineCatalog({ engine: 'codex', models: [], detail: 'Check the current Codex connection and account.' });

@@ -11,6 +11,7 @@ import {
   sendMessage,
   UnconfirmedMessage,
   type DispatchIdentity,
+  type MessageInput,
   type PendingMessage,
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
@@ -44,7 +45,7 @@ import {
 import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
 import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
 import { AccountPlanNotice } from './FreePlanNotice';
-import { conversationSources, readThreadRoute } from './thread-send';
+import { conversationSources, pickForMessage, readThreadRoute } from './thread-send';
 import { LocalImageAttachments, LocalModelControls, PrepareLocalModels } from './LocalModelControls';
 import type {
   Conversation,
@@ -87,13 +88,15 @@ import { CONVERSATION_ENGINES } from './ask-row';
 import type { EverythingItem } from './Everything';
 import { technicalView } from './technical-view';
 import {
+  canSaveAgent,
+  conversationAgentOf,
+  conversationKindOf,
   diomedesThread,
-  modeFor,
   outcomeCard,
-  restrictionFor,
   type DiomedesResult,
-  type Restriction,
 } from './diomedes-view';
+import { AUTO_AGENT } from '../../shared/agents';
+import { agentChoiceOf } from '../../shared/agent-choice';
 
 /** Where one scope's conversation lives. Null until it has been made, which is on the first send. */
 interface Binding {
@@ -222,7 +225,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [binding, setBinding] = useState<Binding | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [restriction, setRestriction] = useState<Restriction>('automatic');
+  // The conversation's Agent as this page shows it (DIO-292): the thread's Agent box, else Auto.
+  const [agent, setAgent] = useState<string>(AUTO_AGENT);
   const [pending, setPending] = useState(false);
   const [last, setLast] = useState<MessageResult | null>(null);
   const [kept, setKept] = useState<Kept | null>(null);
@@ -307,6 +311,12 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   /** The message a member's own monthly limit stopped, with the account service's words, told from inside the delivery. */
   const limitStop = useRef<{ identity: DispatchIdentity; message: string } | null>(null);
   const delivery = useRef<ActiveDelivery | null>(null);
+  // The page's Agent where the thread's box doesn't hold it yet: picked before this scope's
+  // conversation could take it, or Auto in place of an Agent this page doesn't offer. The next
+  // message here writes it to the box before Auto is asked.
+  const unsavedAgent = useRef<{ scope: string | null; agent: string } | null>(null);
+  // The latest Agent save. A message waits for it, so the box it reads is the one the page shows.
+  const agentSave = useRef<Promise<void> | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
   // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
@@ -482,13 +492,24 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         }
         if (!owns()) return;
         setBinding(found);
-        if (!found || !conversation) return;
+        // A pick made in this scope that its conversation doesn't hold yet stays the page's Agent
+        // until a message goes. One made in another scope is dropped.
+        const carried = unsavedAgent.current?.scope === scope ? unsavedAgent.current : null;
+        unsavedAgent.current = carried;
+        if (!found || !conversation) {
+          setAgent(carried?.agent ?? AUTO_AGENT);
+          return;
+        }
         setRoute(conversation.engine ?? null);
         setWorkStyle(conversation.workStyle ?? null);
         setPinnedModel(conversation.requested?.model ?? null);
         setModelThread(conversation);
         setTurns(conversation.turns);
-        setRestriction(restrictionFor(conversation.mode));
+        // The thread's Agent box. One this page doesn't offer shows as Auto, and Auto is what the
+        // next message here writes to it.
+        const shown = conversationAgentOf(conversation);
+        setAgent(carried?.agent ?? shown);
+        if (!carried && shown !== agentChoiceOf(conversation)) unsavedAgent.current = { scope, agent: shown };
         setKept(keptOf(retained(found)));
         // The last message's outcome is asked for again, never remembered.
         const command = lastCommand(found.projectId, found.threadId);
@@ -717,28 +738,55 @@ export function DiomedesHome(props: DiomedesHomeProps) {
    */
   const send = async (text: string, presetCommandId?: string): Promise<boolean> => {
     const scope = scopeId;
-    const mode = modeFor(restriction);
-    const draft = { text, mode, sources: [] as { path: string; sha: string }[] };
+    // The kind and the Agent are this message's pick, made once the conversation exists (DIO-292).
+    const draft: MessageInput = { text, mode: 'auto', sources: [] };
     capStop.current = null;
     limitStop.current = null;
     const sent = await deliver(
       text,
       () => ensure(scope),
       async (found, signal, onClaim) => {
-        draft.sources = await conversationSources(found.projectId, imagePaths, signal);
-        let commandId = presetCommandId;
-        if (commandId === undefined) {
-          const gate = await beforeSend({
-            estimate: () => estimateMessage(found.projectId, found.threadId, draft),
-            ask: (prompt) => askCap(prompt, signal),
-            upgrade: (tier) => tierUp(found, tier),
-            goOver: (id) => goOverBeforeSend(found.projectId, found.threadId, id, draft),
-            mint: mintCommandId,
-          });
-          if (!gate.send || signal.aborted) throw new CapDeclined();
-          commandId = gate.commandId;
+        const visit = turn.current;
+        await agentSave.current;
+        // The page's Agent goes in the thread's box before Auto is asked, so the box says who answers.
+        // Inside the try, so a save that fails or is stopped puts the box back as a failed send does.
+        const unsaved = unsavedAgent.current?.scope === scope ? unsavedAgent.current : null;
+        try {
+          if (unsaved) {
+            const conversation = await saveAgent(found, unsaved.agent, signal);
+            if (turn.current === visit) setModelThread(conversation);
+          }
+          const picked = await pickForMessage(
+            found.projectId,
+            found.threadId,
+            { text, attachments: imagePaths, conversationOnly: true },
+            signal,
+          );
+          if (picked.refusal) throw new Error(picked.refusal);
+          if (picked.mode !== 'ask' && picked.mode !== 'plan' && picked.mode !== 'auto')
+            throw new Error(`${picked.agent.name} can't answer here. Pick another agent.`);
+          draft.mode = picked.mode;
+          draft.agent = picked.agent.id === AUTO_AGENT ? undefined : picked.agent.id;
+          draft.sources = await conversationSources(found.projectId, imagePaths, signal);
+          let commandId = presetCommandId;
+          if (commandId === undefined) {
+            const gate = await beforeSend({
+              estimate: () => estimateMessage(found.projectId, found.threadId, draft),
+              ask: (prompt) => askCap(prompt, signal),
+              upgrade: (tier) => tierUp(found, tier),
+              goOver: (id) => goOverBeforeSend(found.projectId, found.threadId, id, draft),
+              mint: mintCommandId,
+            });
+            if (!gate.send || signal.aborted) throw new CapDeclined();
+            commandId = gate.commandId;
+          }
+          const result = await sendMessage(found.projectId, found.threadId, draft, signal, onClaim, commandId);
+          if (unsavedAgent.current === unsaved) unsavedAgent.current = null;
+          return result;
+        } catch (error) {
+          if (unsaved && unsavedAgent.current === unsaved) await keepUnsaved(found, scope, unsaved, visit);
+          throw error;
         }
-        return sendMessage(found.projectId, found.threadId, draft, signal, onClaim, commandId);
       },
     );
     // Set inside the delivery, which TypeScript cannot see from here.
@@ -779,8 +827,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     // Nothing on record to send again: read what happened.
     if (!found || !shown || !command) return void load(scopeId);
     // The command these words were shown for, never whichever is pending now. The transport
-    // sends it with the body it was saved with, Mode included, and if another window settled it
-    // meanwhile it sends nothing and reads what that command came to.
+    // sends it with the body it was saved with, its kind and Agent included, and if another
+    // window settled it meanwhile it sends nothing and reads what that command came to.
     void deliver(
       shown.text,
       () => Promise.resolve(found),
@@ -847,7 +895,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
 
   /**
    * The person's WorkStyle for the scoped thread, written to the thread. From the next message
-   * the owner's tier map decides the route and the model it runs on; never the Mode. A refused
+   * the owner's tier map decides the route and the model it runs on; never the Agent. A refused
    * write puts the record's answer back and says why.
    */
   const pickStyle = (next: WorkStyle | null) => {
@@ -873,9 +921,79 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   };
 
   /**
+   * Writes the conversation's Agent box, with the thread's own model pick kept. `mode` writes the
+   * stored kind too, which choosing Auto alone leaves as it is.
+   */
+  const saveAgent = async (found: Binding, next: string, signal?: AbortSignal, mode?: 'auto'): Promise<Conversation> => {
+    const listed = await listedThread(found);
+    return api<Conversation>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
+      'PUT',
+      {
+        ...(mode ? { mode } : {}),
+        requested: { model: listed?.requested?.model ?? null, effort: listed?.requested?.effort ?? null, agent: next },
+      },
+      signal,
+    );
+  };
+
+  /**
+   * After a message that wasn't sent, the Agent written for it stays only where `canSaveAgent`
+   * allows. Where it doesn't, the box goes back to Auto, so the conversation is still found, and
+   * the page keeps the pick to write again with the next message.
+   */
+  const keepUnsaved = async (
+    found: Binding,
+    scope: string | null,
+    unsaved: { scope: string | null; agent: string },
+    visit: number,
+  ) => {
+    // The thread is read again only where its having spoken decides it.
+    const listed = canSaveAgent(scope, null, unsaved.agent) ? null : await listedThread(found).catch(() => null);
+    if (!canSaveAgent(scope, listed, unsaved.agent)) {
+      // With the Automatic kind the conversation was made with, until its first message
+      // (see `canSaveAgent`).
+      const conversation = await saveAgent(found, AUTO_AGENT, undefined, 'auto').catch(() => null);
+      if (conversation && turn.current === visit) setModelThread(conversation);
+      return;
+    }
+    unsavedAgent.current = null;
+  };
+
+  /**
+   * The person's Agent for this conversation (DIO-292), written to the thread's box with its model
+   * pick kept, where `canSaveAgent` allows. Otherwise it waits for the next message, as it does
+   * before the conversation exists. A refused write puts the page's Agent back and says why.
+   */
+  const pickAgent = (next: string) => {
+    if (pending || next === agent) return;
+    const found = binding;
+    const visit = turn.current;
+    const before = agent;
+    const unsaved = unsavedAgent.current;
+    setAgent(next);
+    if (!found || !canSaveAgent(scopeId, modelThread, next)) {
+      unsavedAgent.current = { scope: scopeId, agent: next };
+      return;
+    }
+    unsavedAgent.current = null;
+    agentSave.current = saveAgent(found, next).then(
+      (conversation) => {
+        if (turn.current === visit) setModelThread(conversation);
+      },
+      (error) => {
+        if (turn.current !== visit) return;
+        setAgent(before);
+        unsavedAgent.current = unsaved;
+        setNotice(words(error));
+      },
+    );
+  };
+
+  /**
    * One choice from the ask row, written to the conversation in one update. The tier, an engine
-   * of the person's own and its model are choices; the Mode is not touched. A refused write says
-   * why and changes nothing on screen.
+   * of the person's own and its model are choices; whatever else changes, the Agent stays. A
+   * refused write says why and changes nothing on screen.
    */
   const chooseAsk = (change: AskChange) => {
     const found = binding;
@@ -884,7 +1002,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     const body: { engine?: Route; requested?: Conversation['requested']; workStyle?: WorkStyle | null } = {};
     if (change.engine !== undefined) body.engine = change.engine;
     if (change.workStyle !== undefined) body.workStyle = change.workStyle;
-    if (change.requested !== undefined) body.requested = change.requested;
+    if (change.requested !== undefined) {
+      // The Agent box is part of `requested` too (DIO-292), so a model change carries it along.
+      const kept = modelThread?.requested?.agent ?? null;
+      body.requested = kept
+        ? { model: change.requested?.model ?? null, effort: change.requested?.effort ?? null, agent: kept }
+        : change.requested;
+    }
     void api<Conversation>(
       `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
       'PUT',
@@ -1052,8 +1176,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         live={live ? { text: live.text, activity: live.activity?.lines ?? [], thinking: live.thinking } : null}
         technical={technicalView(projects.find((project) => project.id === scopeId))}
         showThinking={props.settings?.appearance.showThinking === true}
-        restriction={restriction}
-        onRestriction={setRestriction}
+        agent={agent}
+        onAgent={pickAgent}
         onSend={send}
         onStop={stopDelivery}
         route={effective}
@@ -1061,7 +1185,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         workStyle={binding !== null && effective !== localRoute ? workStyle : undefined}
         onWorkStyle={pickStyle}
         modelControls={binding && modelThread ? <><LocalModelControls projectId={binding.projectId}
-          thread={modelThread} route={effective} mode={modeFor(restriction)} busy={pending} live={pending}
+          thread={modelThread} route={effective} mode={conversationKindOf(agent)} busy={pending} live={pending}
           onRoute={setLocalRoute}
           onChanged={conversation => {
             setModelThread(conversation); setRoute(conversation.engine ?? null);
@@ -1115,7 +1239,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           binding && modelThread && props.settings && effective !== localRoute ? (
             <AskRow
               thread={modelThread}
-              mode={modeFor(restriction)}
+              mode={conversationKindOf(agent)}
               route={route ?? CONVERSATION_DEFAULT_ROUTE}
               integrations={(props.integrations ?? []).filter((item) => item.kind !== 'local')}
               settings={props.settings}
@@ -1154,7 +1278,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
               <NativeSessionControls
                 projectId={binding.projectId}
                 threadId={binding.threadId}
-                mode={modeFor(restriction)}
+                mode={conversationKindOf(agent)}
+                agent={agent === AUTO_AGENT ? undefined : agent}
                 answering={pending}
                 onAnswered={() => void reread(binding)}
               />

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { defaults } from '../server/store';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import type { Conversation, Turn } from '../shared/types';
 
 const at = '2026-09-10T12:00:00.000Z';
@@ -18,9 +19,9 @@ function renderThread(turn: Turn, pickedModel = 'new-picker-model') {
   };
   return renderToStaticMarkup(createElement(ThreadView, {
     thread, title: 'Historical origin', task: null, sessions: [], mail: [], members: [],
-    member: null, needs: [], settings: defaults(), mode: 'ask', route: 'codex',
-    busy: false, online: true, onMode: noAction, onPermission: noAction, onRename: noAction,
-    prepareSources: async () => [],
+    member: null, needs: [], settings: defaults(), choice: choiceView(thread), route: 'codex',
+    busy: false, online: true, onPermission: noAction, onRename: noAction,
+    pick: () => Promise.reject(new Error('Nothing is sent in a render.')), prepareSources: async () => [],
     onSend: noAction, onResolve: noAction, onPreview: noAction, onStopSession: noAction,
     onOpenBoard: noAction,
   }));

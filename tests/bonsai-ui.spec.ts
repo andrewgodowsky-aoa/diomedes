@@ -86,7 +86,9 @@ test('Home selects and reloads local profiles, preserves effort and agent, and s
   expect(wakes).toEqual(['local:quick']);
   await expect(start).toHaveCount(0);
   await expect(page.getByRole('img', { name: '16,384 token context' })).toBeVisible();
-  await expect(page.locator('.local-model-controls .agent-picker')).toContainText('Auto');
+  // The page's own Agent select is the one Agent control (DIO-292), and it starts on Auto.
+  await expect(page.locator('.local-model-controls .agent-picker')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Agent', exact: true })).toHaveValue('auto');
   const binding = await api<{ projectId: string; threadId: string }>('/home/conversation');
   const current = async () => (await api<ProjectState>(`/projects/${binding.projectId}/state`))
     .conversations.find(thread => thread.id === binding.threadId);

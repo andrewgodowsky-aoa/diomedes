@@ -679,6 +679,11 @@ export interface Turn {
     verified: boolean;
   };
   /**
+   * Which Agent answered, and whether Auto picked it (DIO-292). Absent when Auto answered
+   * itself, and on turns written before 2026-10-07.
+   */
+  agent?: { id: string; name: string; picked: boolean };
+  /**
    * H18: what went into the model context for this answer, on a route where Diomedes assembled
    * it (a model-API route). Absent for an external engine, which manages its own context.
    */
@@ -743,6 +748,8 @@ export interface Conversation {
    * choice is preserved across provisioning and restart.
    */
   engineChoice?: 'person';
+  /** Host-owned project conversation identity, independent of its Agent, route and work. */
+  conversation?: 'project';
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];
@@ -839,6 +846,8 @@ export interface ProjectState {
   history: HistoryEntry[];
   changes: Change[];
   conversations: Conversation[];
+  /** The legacy project-conversation selection ran once, including when it found nothing. */
+  projectConversationIdentity?: 1;
   /** Absent in projects written before the follow-up queue existed. */
   followUps?: FollowUpCommand[];
   /** Receipts for Steer, Queue, Stop, Resume, Retry and Fork (H08). Append-only; absent before 2026-09-24. */

@@ -5,7 +5,7 @@ import {
   AGENT_CATALOG,
   AGENT_REQUIREMENTS,
   AUTO_AGENT,
-  AUTO_BY_MODE,
+  DEFAULT_AGENT,
   agentCompatibility,
   narrowerPermission,
   type AgentDefinition,
@@ -57,15 +57,10 @@ describe('the built-in Agent catalog', () => {
     }
     expect(ids.has('diomedes.general')).toBe(true);
     expect(ids.has('diomedes.reviewer')).toBe(true);
-    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.reviewer')!.name).toBe(
-      'Code Reviewer',
-    );
-    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.researcher')!.name).toBe(
-      'Documentation Researcher',
-    );
-    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.analyst')!.name).toBe(
-      'Weekly Operations Analyst',
-    );
+    // DIO-292: short job names; the ids stay, so saved threads and resolutions still name them.
+    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.reviewer')!.name).toBe('Reviewer');
+    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.researcher')!.name).toBe('Researcher');
+    expect(AGENT_CATALOG.find((item) => item.id === 'diomedes.analyst')!.name).toBe('Analyst');
   });
   test('the digest changes when the Agent changes, and not otherwise', () => {
     const [first] = AGENT_CATALOG;
@@ -144,7 +139,7 @@ describe('the Agent registry', () => {
     const { agents, skipped } = await registry.list(null);
     expect(agents).toHaveLength(AGENT_CATALOG.length);
     expect(skipped).toEqual([]);
-    expect(await registry.find('diomedes.reviewer')).toMatchObject({ name: 'Code Reviewer' });
+    expect(await registry.find('diomedes.reviewer')).toMatchObject({ name: 'Reviewer' });
     expect(await registry.find('nope')).toBeUndefined();
   });
   test('a project Agent loads from the project folder with no service involved', async () => {
@@ -257,7 +252,7 @@ describe('resolution records authority and never confers it', () => {
         state: project(temp),
         taskId: 'T1',
       });
-      expect(resolution.agentId).toBe(AUTO_BY_MODE[mode]);
+      expect(resolution.agentId).toBe(DEFAULT_AGENT[mode]);
       expect(resolution.agentSelection).toBe('automatic');
       expect(resolution.requestedAgentId).toBe(AUTO_AGENT);
     }
@@ -283,7 +278,7 @@ describe('resolution records authority and never confers it', () => {
       taskId: 'T1',
     });
     expect(resolution.agentId).toBe('diomedes.analyst');
-    expect(resolution.agentName).toBe('Weekly Operations Analyst');
+    expect(resolution.agentName).toBe('Analyst');
     expect(resolution.agentSelection).toBe('manual');
     expect(resolution.requestedModel).toBe('some-model');
     expect(resolution.modelSelection).toBe('manual');

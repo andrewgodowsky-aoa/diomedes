@@ -312,6 +312,10 @@ test('matrix: HTTP cancellation after work-input preserves the task and admits n
   } finally { runtime.record = original; }
 });
 
+// DIO-292 (Review Focus 2): the Mode control became the Agent box. The narrowing act is choosing
+// an Agent that only reads or only plans, then sending a real message as it. A message Auto hands
+// to such an Agent never narrows the thread; interaction-seam.test.ts pins that twin.
+const READER = { ask: 'diomedes.researcher', plan: 'diomedes.architect' } as const;
 for (const mode of ['ask', 'plan'] as const) {
   test('matrix: real ' + mode + ' message after work-input prevents new Work', async () => {
     const proposed = await send('matrix-mode-' + mode, 'ACT create an owned draft');
@@ -320,12 +324,18 @@ for (const mode of ['ask', 'plan'] as const) {
     const original = runtime.record.bind(runtime);
     runtime.record = async (...args: Parameters<typeof original>) => {
       await original(...args);
-      if (args[2].some((phase) => phase.phase === 'work-input'))
-        await send('matrix-narrow-' + mode, 'Only respond under the selected mode', { mode });
+      if (args[2].some((phase) => phase.phase === 'work-input')) {
+        await api('/projects/' + project.id + '/threads/' + thread.id, 'PUT', {
+          requested: { model: null, effort: null, agent: READER[mode] },
+        });
+        await send('matrix-narrow-' + mode, 'Only respond under the selected mode', { mode, agent: READER[mode] });
+      }
     };
     try {
       await select('matrix-mode-' + mode, proposed.outcome.proposalDigest);
-      expect(store().state(project.id).conversations.find((item) => item.id === thread.id)!.mode).toBe(mode);
+      const saved = store().state(project.id).conversations.find((item) => item.id === thread.id)!;
+      expect(saved.mode).toBe(mode);
+      expect(saved.requested?.agent).toBe(READER[mode]);
       expect(workFor(proposed.sourceMessageId).tasks).toHaveLength(1);
       expect(workFor(proposed.sourceMessageId).sessions).toHaveLength(0);
     } finally { runtime.record = original; }

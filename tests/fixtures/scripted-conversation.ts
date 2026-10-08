@@ -4,6 +4,7 @@ import type { PersistentTextAdapter } from '../../server/engines/contract';
 import type { ClaudeSessionCheckpoint } from '../../server/engines/claude-session';
 import { routeContractFor } from '../../server/harness/route-contract';
 import { hash } from '../../server/store';
+import { spokenPrompt } from '../../server/lane-recap';
 
 // A Claude Code provider that answers by script, for the Diomedes page's browser spec. Everything
 // above it is real: the Store, the Runtime, the session driver and both admissions. It starts no
@@ -16,10 +17,12 @@ const ACCOUNT_ROUTE = 'claude-code:claude.ai';
 /**
  * The fake model. It reads the issued identity off the last line, as the instructions tell a real
  * one to. A message starting with ACT proposes internal work; anything else is an ordinary answer.
+ * It answers what the person said: the role line an Agent opens with, or a recap the host puts
+ * first, is not that.
  */
 export function scripted(prompt: string): string {
   const issued = /\[\[diomedes source_message_id=(sm\.[0-9a-f]{32})\]\]$/.exec(prompt)?.[1];
-  const text = prompt.split('\n\n[[diomedes')[0];
+  const text = spokenPrompt(prompt);
   if (!text.startsWith('ACT') || !issued) return `You said: ${text}`;
   const decision = {
     source_message_id: issued,

@@ -15,7 +15,7 @@ import type { NativeGenerator } from '../server/native-work.js';
 import type { ReviewerAdapter } from '../server/trust/reviewer.js';
 import type { ScopeGrantCommand } from '../shared/permissions.js';
 import type { ProjectState, Session } from '../shared/types.js';
-import { AGENT_CATALOG, AUTO_AGENT } from '../shared/agents.js';
+import { AGENT_CATALOG, AUTO_AGENT, listedAgents } from '../shared/agents.js';
 
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server;
@@ -151,9 +151,11 @@ describe('the Agent catalog reaches the interaction surface', () => {
     const { status, data } = await request(`/projects/${projectId}/agents?route=codex`);
     expect(status).toBe(200);
     expect(data.auto).toBe(AUTO_AGENT);
-    expect(data.agents).toHaveLength(AGENT_CATALOG.length);
+    // The internal worker loops use is never offered (DIO-292).
+    expect(data.agents).toHaveLength(listedAgents(AGENT_CATALOG).length);
+    expect(data.agents.some((item: any) => item.id === 'diomedes.general')).toBe(false);
     const builder = data.agents.find((item: any) => item.id === 'diomedes.builder');
-    expect(builder).toMatchObject({ name: 'Change Builder', compatibility: { ok: true } });
+    expect(builder).toMatchObject({ name: 'Builder', compatibility: { ok: true } });
     // A person sees the job identity; the machinery is available underneath.
     expect(builder.summary).toBeTruthy();
     expect(builder.digest).toMatch(/^sha256:/);
@@ -244,16 +246,48 @@ describe('selecting an Agent never grants authority', () => {
       expect(session.agent?.policy.grantsAuthority).toBe(false);
     },
   );
-  test('a review-only Agent cannot write even under a confirmed scope', async () => {
+  test('an agent that only reads is refused for a Build, so it never reaches the writer', async () => {
+    // DIO-292: an agent carries its kind of work. Planner plans; it is never run as a Build.
     expect((await grant()).status).toBe(200);
-    expect((await start({ agentId: 'diomedes.architect' })).status).toBe(200);
+    const before = await state();
+    const refused = await start({ agentId: 'diomedes.architect' });
+    expect(refused.status).toBe(409);
+    expect((refused.data as any).code).toBe('agent_mode_mismatch');
+    expect(String((refused.data as any).error)).toContain('Planner');
+    expect(generate).not.toHaveBeenCalled();
+    expect((await state()).sessions).toHaveLength(before.sessions.length);
+  });
+  test('a Build agent capped at review cannot write even under a confirmed scope', async () => {
+    const folder = (await state()).project.folder;
+    await fs.mkdir(path.join(folder, '.diomedes', 'agents'), { recursive: true });
+    await fs.writeFile(
+      path.join(folder, '.diomedes', 'agents', 'drafter.json'),
+      JSON.stringify({
+        protocolVersion: 1,
+        id: 'acme.drafter',
+        version: '1.0.0',
+        name: 'Menu Drafter',
+        summary: 'Drafts menu changes for someone to check.',
+        modes: ['build'],
+        role: 'Draft the menu change that was asked for.',
+        requires: ['text-proposals', 'no-secret-access'],
+        tools: [],
+        ruleScopes: ['project'],
+        permissionCeiling: 'review',
+        models: [],
+        handoff: { accepts: [], produces: ['proposal.text'] },
+        evidence: ['proposal.text'],
+      }),
+    );
+    expect((await grant()).status).toBe(200);
+    expect((await start({ agentId: 'acme.drafter' })).status).toBe(200);
     const current = await settled();
     const need = current.needs.at(-1)!;
     expect(need.execution).toBeUndefined();
     expect(need.authorization).toBeUndefined();
     expect(need.state).toBe('open');
     // The person is told which identity held the change back, and why.
-    expect(need.authorizationBoundary).toContain('Solution Architect');
+    expect(need.authorizationBoundary).toContain('Menu Drafter');
     expect(need.authorizationBoundary).toContain('review');
     const session = current.sessions.at(-1)!;
     expect(session.agent?.policy.agentCeiling).toBe('review');
@@ -383,7 +417,7 @@ describe('the work trail says which Agent did the work', () => {
     const resolution = current.sessions.at(-1)!.agent!;
     // The default mode is a build relationship, so Auto lands on the builder.
     expect(resolution.agentId).toBe('diomedes.builder');
-    expect(resolution.agentName).toBe('Change Builder');
+    expect(resolution.agentName).toBe('Builder');
     expect(resolution.agentSelection).toBe('automatic');
     expect(resolution.requestedAgentId).toBe(AUTO_AGENT);
     expect(resolution.agentDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -403,7 +437,7 @@ describe('the work trail says which Agent did the work', () => {
     const need = current.needs.at(-1)!;
     expect(need.origin?.agent).toMatchObject({
       id: 'diomedes.builder',
-      name: 'Change Builder',
+      name: 'Builder',
       selection: 'manual',
     });
     // The model that ran it is recorded separately from the identity that did it.
@@ -427,7 +461,7 @@ describe('a reviewer is an Agent identity, pinned when the person consents', () 
     expect((await start({ agentId: 'diomedes.builder' })).status).toBe(200);
     const current = await settled();
     const record = current.needs.at(-1)!.reviews![0];
-    expect(record.agent).toMatchObject({ id: 'diomedes.reviewer', name: 'Code Reviewer' });
+    expect(record.agent).toMatchObject({ id: 'diomedes.reviewer', name: 'Reviewer' });
     expect(record.agent.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(record.reportedModel).toBe('synthetic-reviewer-model');
     // The reviewer's identity and the worker's are different things.

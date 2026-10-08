@@ -1,5 +1,53 @@
 # Harness host integration changes, 2026-09-09
 
+## Agents replace the modes (DIO-292), 2026-10-07
+
+On 2026-10-07 Andrew decided that the ask box's Ask, Plan, Build and Fix modes go and agents carry
+their limits, and chose to have it built separately from main ("Separately from main"). That is the
+owner override for the hot files (`shared/agents.ts`, `shared/types.ts`, `server/app.ts`,
+`server/native-work.ts` and `client/console/Shell.tsx`) and for files held by claims whose lanes
+weren't running: DIO-247's long-context stack held `client/console/Composer.tsx`,
+`client/console/ThreadView.tsx` and this file, and DIO-252's design center removal held
+`client/console/Home.tsx`, `client/App.tsx` and `client/components.tsx`. The record is
+`docs/implementation/2026-10-07-agents-replace-modes.md`.
+
+- The roster (`shared/agents.ts`). Researcher, Planner, Builder, Fixer, Reviewer, Explorer, Analyst
+  and Writer are built-ins at 2.0.0, each with one menu line, a kind of run, its read tools and a
+  permission ceiling. General Assistant is internal. The ids are the ones records already hold.
+  `DEFAULT_AGENT` names each kind's default agent, which runs on exactly its kind's text.
+- Auto's pick (`server/agent-pick.ts`, `POST /api/projects/:id/threads/:threadId/agent-pick`). One
+  agent for each message, before anything is sent: a rule on the message's own words, then Jev's
+  choice from the same shortlist where an advisor is configured, then Auto itself or Researcher. No
+  default changes files. The route answers `{agent, mode, by, route, refusal}`, sends nothing and
+  changes nothing on the thread. Where Auto answers in the conversation, a reading agent it picks
+  rides Auto's own lane (mode `auto` with the agent), narrowing that message to its kind's limit,
+  its role and, on a model-API route, its read tools, so a thread on Auto keeps one history.
+- Framing and binding (`server/agent-framing.ts`, `server/app.ts`). A non-default agent's role
+  travels in the message behind a host marker, never in a lane's instructions, so a lane's saved
+  scope stands, and the history a lane is sent drops the marker. Both send paths hold a message to
+  the Agent box: one that names no agent runs as the box's agent, one meant for another agent or of
+  a kind the box's agent doesn't do is 409 `agent_changed`, and a kind that doesn't match the agent
+  a message names is 400 `agent_mode_mismatch`. Reply turns record the agent that answered.
+- Read scope per agent (`server/agent-tools.ts`). An agent's tools narrow a turn's read scope and
+  never widen it: without the web tool it neither searches nor fetches, and without the connector
+  tool it calls no connector. The host applies this on every model-API route and every direct
+  request. An engine that keeps its own session pins the scope it opened with, so there agents of
+  one kind share it. Each agent's own tools there is DIO-296.
+- The box, the control and the relay (`shared/agent-choice.ts`, `server/store.ts`,
+  `server/relay/`). A pending Automatic proposal is held to the Agent box (`controlOf`, which reads
+  a built-in's kind from the catalog), never to the kind Auto picked for the last message. New
+  threads are stored as Ask with Auto in the box, and choosing Auto keeps the stored kind, so no
+  Console thread is taken for a project's own conversation. A thread saved before agents reads as
+  its kind's default agent, and one whose saved agent no longer fits is set right at load. The
+  phone relay sends a reading agent the thread chose, an Auto thread's message as Auto itself, and
+  a file-changing box's message as Automatic held to the box's control.
+- Fix's `failing` is optional. Fixer takes what is failing in the message, and the API still accepts
+  `failing` from callers that send it. Fix keeps its three tries and its effort ceiling.
+- The lane recap (`server/lane-recap.ts`). Lanes are per kind of run, so a message that moves a
+  thread to another lane brings the last answered exchange from the lane it left, at most 2,000
+  characters, read from the durable run, with markers and earlier recaps taken out. It comes only
+  from an open lane and only when the last answer came on the same route.
+
 ## The Work view, round 2 reskin slice 3, 2026-10-06
 
 Slice 3 of the round 2 reskin (DIO-200) builds boards BD1 to BD3: the Work view replaces Architect,

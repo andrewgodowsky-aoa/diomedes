@@ -24,7 +24,7 @@ import {
   AGENT_MAX_ROLE,
   AGENT_REQUIREMENTS,
   AUTO_AGENT,
-  AUTO_BY_MODE,
+  DEFAULT_AGENT,
   agentCompatibility,
   narrowerPermission,
   type AgentDefinition,
@@ -191,6 +191,8 @@ export class AgentRegistry {
    */
   async resolve(input: {
     requestedAgentId?: string | null;
+    /** Auto's pick for this message. Read only when the request is Auto. */
+    picked?: string | null;
     /** A worker is resolved for a work mode only; `auto` never reaches here. */
     mode: Exclude<Mode, 'auto'>;
     routeId: string;
@@ -210,7 +212,7 @@ export class AgentRegistry {
       });
     const requested = input.requestedAgentId?.trim() || null;
     const automatic = !requested || requested === AUTO_AGENT;
-    const wanted = automatic ? AUTO_BY_MODE[input.mode] : requested;
+    const wanted = automatic ? input.picked?.trim() || DEFAULT_AGENT[input.mode] : requested;
     const { agents } = await this.list(input.state.project.folder);
     const definition =
       agents.find((item) => item.id === wanted) ??
@@ -219,6 +221,17 @@ export class AgentRegistry {
       throw new ApiError(404, `No Agent named ${wanted} is available in this project.`, {
         code: 'agent_not_found',
       });
+    // An Agent carries its kind of work (DIO-292): it never runs as a kind it doesn't do,
+    // whether a person named it, Auto picked it or a profile names it. Nothing stands in for
+    // it, because another Agent could do more than the one that was named.
+    if (!definition.modes.includes(input.mode))
+      throw new ApiError(
+        409,
+        input.profile && input.profile.agentId === definition.id
+          ? `The ${input.profile.name} profile works as ${definition.name}, and ${definition.name} doesn't do this kind of work.`
+          : `${definition.name} doesn't do this kind of work.`,
+        { code: 'agent_mode_mismatch' },
+      );
     const compatibility = agentCompatibility(definition, input.routeId);
     // What the person has actually granted for this task, read live.
     const record = [...(input.state.scopeGrants ?? [])]

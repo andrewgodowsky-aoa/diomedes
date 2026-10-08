@@ -350,13 +350,14 @@ describe('independent review (review-e): what a list may not change', () => {
   test('a project list never replaces an Agent the thread chose for itself', async () => {
     const listed = await profile({ name: 'Listed', agentId: undefined });
     await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [listed.profileId] });
+    // DIO-292: an agent carries its kind of work, so the thread chooses one that builds.
     await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', {
-      requested: { model: null, effort: null, agent: 'diomedes.reviewer' },
+      requested: { model: null, effort: null, agent: 'diomedes.writer' },
     });
     expect((await start()).status).toBe(200);
     const session = (await settled()).sessions.at(-1)!;
-    // The Reviewer's ceiling is the person's choice; a list chooses intelligence, never authority.
-    expect(session.agent?.agentId).toBe('diomedes.reviewer');
+    // Who works is the person's choice; a list chooses intelligence, never the Agent or its authority.
+    expect(session.agent?.agentId).toBe('diomedes.writer');
     expect(session.agent?.profile).toBeUndefined();
   });
 
@@ -371,12 +372,35 @@ describe('independent review (review-e): what a list may not change', () => {
       route: 'codex',
       consent: true,
       sources: [],
-      agentId: 'diomedes.reviewer',
+      agentId: 'diomedes.writer',
     });
     expect(started.status).toBe(200);
     const session = (await settled()).sessions.at(-1)!;
-    expect(session.agent?.agentId).toBe('diomedes.reviewer');
+    expect(session.agent?.agentId).toBe('diomedes.writer');
     expect(session.agent?.profile).toBeUndefined();
+  });
+
+  test("a profile's own agent never runs a kind of work it doesn't do", async () => {
+    // DIO-292: an agent carries its kind. A list whose profile works as Builder can't take a Fix,
+    // and nothing stands in for Builder: it's refused by name before anything is sent.
+    const listed = await profile({ name: 'Listed' });
+    await request(`/projects/${projectId}/agent-routing`, 'PUT', { order: [listed.profileId] });
+    const refused = await request(`/projects/${projectId}/ask`, 'POST', {
+      text: 'The Friday total is off by a day.',
+      route: 'codex',
+      mode: 'fix',
+      consent: true,
+      threadId,
+      sources: [],
+      failing: { text: 'Friday shows Thursday.' },
+    });
+    expect(refused.status).toBe(409);
+    expect((refused.data as any).code).toBe('agent_mode_mismatch');
+    expect((refused.data as any).error).toBe(
+      "The Listed profile works as Builder, and Builder doesn't do this kind of work.",
+    );
+    expect(generate).not.toHaveBeenCalled();
+    expect((await state()).sessions).toHaveLength(0);
   });
 
   test('a profiles file that cannot be read refuses the run instead of falling open', async () => {
