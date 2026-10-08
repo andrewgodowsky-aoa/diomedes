@@ -1076,6 +1076,10 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
               }
               reasoningParts.set(partId, prior + next);
               if (next) input.onReasoningDelta?.(next);
+              // OpenCode stamps `time.end` on a reasoning part once that block of thinking is
+              // finished (opencode v1.18.4, packages/opencode/src/session/processor.ts:207-213).
+              // What the thinking channel still holds is shown now, ahead of the answer.
+              if (Number.isFinite(object(partValue.time).end)) input.onReasoningEnd?.();
               continue;
             }
             if (partType !== 'text') continue;

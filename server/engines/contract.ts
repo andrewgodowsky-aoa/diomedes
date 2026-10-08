@@ -95,6 +95,14 @@ export interface TextRequest {
    */
   onReasoningDelta?: (text: string) => void;
   /**
+   * Set beside `onReasoningDelta`, and refused from a caller the same way. An adapter calls it
+   * when the engine itself reports that one block of thinking is finished. What the thinking
+   * channel still holds back for redaction is then redacted with the rest of its window and
+   * shown, so the answer that follows is not held behind it until the attempt ends; thinking
+   * after it starts a new window. A switch to another channel is never such an end.
+   */
+  onReasoningEnd?: () => void;
+  /**
    * Read-only tools for an Ask or Plan turn: the project folder, web search and
    * the owner's approved MCP read tools (server/engines/read-scope.ts). Set only
    * by the host from its own project record, never from a client or a model.

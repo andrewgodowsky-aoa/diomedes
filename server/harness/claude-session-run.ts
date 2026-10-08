@@ -218,6 +218,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
     onToolActivity?: TextRequest['onToolActivity'];
     /** The adapter-facing thinking sink, fenced to the same attempt; absent where the route declares none. */
     onReasoningDelta?: TextRequest['onReasoningDelta'];
+    /** Shows what the thinking sink holds when the engine finishes a block of thinking. */
+    onReasoningEnd?: TextRequest['onReasoningEnd'];
     finish(): Promise<void>;
   };
 }
@@ -1082,6 +1084,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           onToolActivity: undefined,
           onReasoning: undefined,
           onReasoningDelta: undefined,
+          onReasoningEnd: undefined,
         },
         {
           observedVersion: admission.version,
@@ -1198,6 +1201,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 onToolActivity: preview?.onToolActivity,
                 onReasoning: undefined,
                 onReasoningDelta: preview?.onReasoningDelta,
+                onReasoningEnd: preview?.onReasoningEnd,
               });
               if (
                 result.projectId !== input.projectId ||
