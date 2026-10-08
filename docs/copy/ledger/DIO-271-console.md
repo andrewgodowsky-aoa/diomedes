@@ -8,6 +8,8 @@ Voice source: [VOICE.md](<F:/Diomedes/planning/Roadmap and prompts/Nectovia_Site
 
 ## Frozen scope and counts
 
+Owner decision, 2026-10-08: Andrew keeps the playful working words. On this branch `client/console/working-words.ts` and `tests/working-words.test.ts` are back to main, so the working-words rows below are not applied. The counts in this section and the tables below are the frozen candidate's and still include that change: one source file, one test file and one copy group of 26 old and 4 new fragments.
+
 - 78 source files changed: 77 TS/TSX and one CSS rule.
 - 419 changed copy groups: 447 old fragments and 422 new fragments. A fragment is a string, JSX text run, or whole template expression. Multiple fragments form one row when a paragraph or loading pool was consolidated. These are implementation counts, not a claim that every audit line was fixed.
 - 58 existing test files updated to assert the new wording. Six of these also belong to the integrator's client assertion lane; combined counts must deduplicate paths. The working-word pool assertion now checks truthful status phrases instead of requiring ten or more cute phrases.
@@ -18,7 +20,7 @@ Voice source: [VOICE.md](<F:/Diomedes/planning/Roadmap and prompts/Nectovia_Site
 
 Product actions `Needs your OK`, `Show me first`, `Go ahead for this task`, and existing approval buttons are retained. Actual engine/model identities, reasoning time, measured token budgets, payer/account evidence, checksum values, revision provenance, consent limits, uncertain outcomes, and same-request retry identity stay truthful. Versioned RoutingPreferences privacy consent is retained. This copy patch does not establish provider or runtime capabilities.
 
-The cute loading lists now contain `working`, `continuing`, `still working`, and `continuing the work`. The hook, tick timing, rare-pool probability, no-repeat selection, reduced-motion behavior, and automation behavior are unchanged. No invented work stage is reported.
+The frozen candidate replaced the loading lists with `working`, `continuing`, `still working`, and `continuing the work`. Andrew kept the playful lists on 2026-10-08, so this branch leaves `client/console/working-words.ts` as it is on main. The plain first phrase each wait starts with is still this lane's to change.
 
 Static shape differences reviewed explicitly: AgentPicker removes a presentation-only bold wrapper and reorders displayed default-worker substitutions; Diomedes removes a hardcoded display `(Luna)` and changes its initial loading phrase; DocumentEditor removes reassurance text after the existing trouble value; PermissionPanel removes a duplicate displayed connection interpolation and a spacing node; conversation-update removes repeated product-name display substitutions; working-words changes pool contents and lengths only. Later AutomationsPage substitutions shorten the displayed business caption and test-data label. No effect, authorization, storage, network or numeric constants changed.
 

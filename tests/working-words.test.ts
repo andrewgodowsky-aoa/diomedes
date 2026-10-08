@@ -15,14 +15,15 @@ describe('working words', () => {
     expect(AGENT_NAME).toBe('Nectovia');
     expect(workingLine('replying')).toBe('Nectovia is replying…');
   });
-  test('both pools describe ongoing work without inventing a stage or using a joke', () => {
-    expect(WORKING_WORDS).toEqual(['working', 'continuing']);
-    expect(EASTER_EGGS).toEqual(['still working', 'continuing the work']);
+  test('there are enough ordinary sayings and a few rare ones', () => {
+    expect(WORKING_WORDS.length).toBeGreaterThanOrEqual(10);
+    expect(WORKING_WORDS.length).toBeLessThanOrEqual(20);
+    expect(EASTER_EGGS.length).toBeGreaterThan(0);
     expect(new Set([...WORKING_WORDS, ...EASTER_EGGS]).size).toBe(WORKING_WORDS.length + EASTER_EGGS.length);
   });
-  test('the less frequent pool comes only from a low roll, and wording never repeats back to back', () => {
-    expect(EASTER_EGGS).toContain(nextWorkingWord('working', 0.01, 0.5));
-    expect(WORKING_WORDS).toContain(nextWorkingWord('working', 0.9, 0.5));
+  test('an easter egg comes only from a low roll, and a saying never repeats back to back', () => {
+    expect(EASTER_EGGS).toContain(nextWorkingWord('noodling on it', 0.01, 0.5));
+    expect(WORKING_WORDS).toContain(nextWorkingWord('noodling on it', 0.9, 0.5));
     for (const pick of [0, 0.3, 0.6, 0.999])
       expect(nextWorkingWord(WORKING_WORDS[0], 0.9, pick)).not.toBe(WORKING_WORDS[0]);
   });
