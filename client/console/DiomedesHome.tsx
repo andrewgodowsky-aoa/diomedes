@@ -1052,6 +1052,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         pending={pending}
         live={live ? { text: live.text, activity: live.activity?.lines ?? [], thinking: live.thinking } : null}
         technical={props.detail === 'technical'}
+        showThinking={props.settings?.appearance.showThinking === true}
         restriction={restriction}
         onRestriction={setRestriction}
         onSend={send}

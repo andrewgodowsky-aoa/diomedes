@@ -81,6 +81,12 @@ export interface Settings {
     activeTheme?: { id: string; revision: number; scope?: string } | null;
     /** Turn decorative texture off for everyone on this install. */
     textureOff?: boolean;
+    /**
+     * Show an engine's thinking as it streams, before the reply starts. Off or absent: the working
+     * line stands in for it, and the finished thought stays one click away above the reply. Its own
+     * switch, never tied to the detail level (Andrew, 2026-10-08).
+     */
+    showThinking?: boolean;
   };
   seen: {
     onlineServiceNotice: boolean;

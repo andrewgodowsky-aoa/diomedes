@@ -695,6 +695,11 @@ function validateSettings(current: Settings, body: unknown): Settings {
         throw new ApiError(400, 'Texture must be on or off.');
       result.appearance.textureOff = value.textureOff;
     }
+    if (value.showThinking !== undefined) {
+      if (typeof value.showThinking !== 'boolean')
+        throw new ApiError(400, 'Showing thinking must be on or off.');
+      result.appearance.showThinking = value.showThinking;
+    }
     // Shape only. Whether the theme still exists, still validates, or was
     // written by this install is decided when it is read, by the theme service
     // and its fallback — not here, where a stale pointer would become a saved

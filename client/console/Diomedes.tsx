@@ -7,8 +7,8 @@ import { speakerName } from '../attribution-display';
 import type { EverythingItem } from './Everything';
 import { Rail, type RailSection } from './Rail';
 import { showsScope } from './home-rail';
-import { useWorkingWord, workingLine } from './working-words';
-import { toolRunning, type ToolLine } from './engine-activity';
+import { toolWorkingWord, useWorkingWord, workingLine } from './working-words';
+import type { ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
 import { Thinking } from './Thinking';
 import { ToolActivityList } from './ToolActivity';
@@ -56,6 +56,8 @@ export interface DiomedesPageProps {
   live?: { text: string; activity: readonly ToolLine[]; thinking?: LiveThinking | null } | null;
   /** The Technical detail level: tool calls also name their tool and open to their detail. */
   technical?: boolean;
+  /** Settings, Appearance: show the engine's thinking as it streams, before the reply starts. */
+  showThinking?: boolean;
   restriction: Restriction;
   onRestriction(next: Restriction): void;
   /** Resolves false when the message was refused and never sent, so the text is given back. */
@@ -201,6 +203,7 @@ export function Diomedes({
   pending,
   live = null,
   technical = false,
+  showThinking = false,
   restriction,
   onRestriction,
   onSend,
@@ -260,10 +263,20 @@ export function Diomedes({
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
   // stays until text arrives, stepping aside while a tool call is already saying what it does.
   const streamed = pending ? live : null;
-  const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity) && !streamed?.thinking?.text;
-  // The engine's thinking on the answer on its way; a lost stream shows none.
+  // The engine's thinking on the answer on its way; a lost stream shows none. As it streams it
+  // shows only when the person asked for it. Otherwise the working line stands in for it, and once
+  // the answer starts it folds to one line that opens on click.
   const liveThinking =
-    streamed?.thinking && streamed.thinking.position !== 'lost' && streamed.thinking.text ? streamed.thinking : null;
+    streamed?.thinking &&
+    streamed.thinking.position !== 'lost' &&
+    streamed.thinking.text &&
+    (showThinking || streamed.thinking.endedAt !== null)
+      ? streamed.thinking
+      : null;
+  // A tool call in progress is said in the same voice as the sayings; its plain line stays in the list.
+  const toolWord = pending && !streamed?.text ? toolWorkingWord(streamed?.activity) : null;
+  const waiting =
+    pending && !streamed?.text && !toolWord && !(liveThinking && liveThinking.endedAt === null);
   const pendingWord = useWorkingWord('thinking it over', waiting);
   // The artifact panel: this page has no third column, so it opens over the page.
   const artifacts = useArtifactSelection(scopeId, artifactScope, turns);
@@ -560,8 +573,8 @@ export function Diomedes({
                   </div>
                 )}
                 {pending && (
-                  <p className="mono dio-pending" role="status" aria-label="Working" hidden={!waiting}>
-                    <span aria-hidden="true">{workingLine(pendingWord)}</span>
+                  <p className="mono dio-pending" role="status" aria-label="Working" hidden={!waiting && !toolWord}>
+                    <span aria-hidden="true">{workingLine(toolWord ?? pendingWord)}</span>
                   </p>
                 )}
               </div>

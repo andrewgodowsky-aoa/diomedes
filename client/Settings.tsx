@@ -759,6 +759,14 @@ export function SettingsPage({
                     }
                   />
                 </label>
+                <label className="setting-row">
+                  <span>Show thinking while it works</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.appearance.showThinking === true}
+                    onChange={(e) => void patchAppearance({ showThinking: e.target.checked })}
+                  />
+                </label>
                 {(() => {
                   const effectiveInterfaceScale = settings.appearance.interfaceScale ?? 1;
                   return (['interfaceScale', 'readingScale', 'codeScale'] as const).map(

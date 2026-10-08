@@ -50,7 +50,7 @@ import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
 import { ChangeDiffs } from './ChangeDiffs';
 import type { ReviewComment } from '../../shared/review-comments';
-import { useWorkingWord, workingLine } from './working-words';
+import { toolWorkingWord, useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
 import { Thinking } from './Thinking';
@@ -359,15 +359,24 @@ export function ThreadView({
   // A turn's place in the thread, which names it when an old record has no id.
   const turnIndex = new Map(thread.turns.map((turn, index) => [turn, index]));
 
-  // While an answer is on its way and nothing has streamed yet, the agent
-  // says what it is up to. Display only; nothing here is recorded. A tool
-  // call in progress already says it, so the line waits behind it.
-  const streamWaiting = Boolean(
-    streaming && !streaming.text && !toolRunning(streaming.activity) && !streaming.thinking?.text,
-  );
-  // The engine's thinking on the answer on its way; a lost stream shows none.
+  // The engine's thinking on the answer on its way; a lost stream shows none. As it streams it
+  // shows only when the person asked for it (Settings, Appearance). Otherwise the working line
+  // stands in for it, and once the answer starts it folds to one line that opens on click.
+  const showThinking = settings.appearance.showThinking === true;
   const liveThinking =
-    streaming?.thinking && streaming.thinking.position !== 'lost' && streaming.thinking.text ? streaming.thinking : null;
+    streaming?.thinking &&
+    streaming.thinking.position !== 'lost' &&
+    streaming.thinking.text &&
+    (showThinking || streaming.thinking.endedAt !== null)
+      ? streaming.thinking
+      : null;
+  // While an answer is on its way and nothing has streamed yet, the agent says what it is up to.
+  // Display only; nothing here is recorded. A tool call in progress is said in the same voice,
+  // and its plain line stays in the list; thinking shown as it streams takes the line's place.
+  const toolWord = streaming && !streaming.text ? toolWorkingWord(streaming.activity) : null;
+  const streamWaiting = Boolean(
+    streaming && !streaming.text && !toolWord && !(liveThinking && liveThinking.endedAt === null),
+  );
   const streamWord = useWorkingWord(
     mode === 'plan' ? 'drafting the plan' : 'replying',
     streamWaiting,
@@ -822,6 +831,8 @@ export function ThreadView({
                 <div className="body">
                   {streaming.text ? (
                     <TurnBody text={streaming.text} preview session={live} />
+                  ) : toolWord ? (
+                    <p className="caption">{workingLine(toolWord)}</p>
                   ) : (
                     streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
                   )}

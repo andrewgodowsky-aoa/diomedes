@@ -13,6 +13,7 @@ import {
   type ActivityState,
 } from '../client/console/engine-activity';
 import { stepLiveReply, type LiveBinding, type LiveReply } from '../client/console/live-reply';
+import { TOOL_SAYINGS } from '../client/console/working-words';
 import { ToolActivityList } from '../client/console/ToolActivity';
 import { ThreadView } from '../client/console/ThreadView';
 import { Diomedes, type DiomedesPageProps } from '../client/console/Diomedes';
@@ -290,11 +291,33 @@ function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'tech
 
 describe('ThreadView live reply', () => {
   const running = [{ callId: 'a', tool: 'read_file', phase: 'started' as const, summary: 'Reading menu.md', detail: 'menu.md' }];
-  test('shows tool lines under the streaming reply, and the waiting line steps aside for them', () => {
+  test('shows tool lines under the streaming reply, and the working line says the running call in its own voice', () => {
+    // Andrew, 2026-10-08: the working line turns in-theme for the tool, and the plain line stays.
     const html = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'claude-code', activity: running } });
     expect(html).toContain('Reading menu.md…');
-    expect(html).not.toContain('Nectovia is');
+    expect(TOOL_SAYINGS.read.filter((saying) => html.includes(`Nectovia is ${saying}…`))).toHaveLength(1);
     expect(html).not.toContain('read_file');
+  });
+  test('live thinking stays out of the thread unless asked for, and the working line stands in for it', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: null };
+    const hidden = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'opencode', thinking } });
+    expect(hidden).not.toContain('Weighing the menu');
+    expect(hidden).not.toContain('thinking-live');
+    expect(hidden).toContain('Nectovia is');
+    const shown = renderThread({
+      streaming: { requestId: 'R1', text: '', engine: 'opencode', thinking },
+      settings: { ...defaults(), appearance: { ...defaults().appearance, showThinking: true } },
+    });
+    expect(shown).toContain('Weighing the menu against the hours.');
+    expect(shown).toContain('thinking-live');
+    expect(shown).not.toContain('Nectovia is');
+  });
+  test('once the answer starts, the hidden thought folds to one line above it', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: 14_000 };
+    const html = renderThread({ streaming: { requestId: 'R1', text: 'Open until nine.', engine: 'opencode', thinking } });
+    expect(html).toContain('Thought for 14s');
+    expect(html).not.toContain('Weighing the menu');
+    expect(html).toContain('Open until nine.');
   });
   test('keeps the waiting line while nothing has streamed and no call is running', () => {
     const html = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'claude-code' } });
@@ -381,6 +404,22 @@ describe('Diomedes home live reply', () => {
     expect(html).not.toMatch(/class="turn dio/);
     // The status stays in place but steps aside once text has streamed.
     expect(html).toMatch(/class="mono dio-pending" role="status" aria-label="Working" hidden="">/);
+  });
+  test('a running tool is said in its own voice above its plain line', () => {
+    const html = render({ live: { text: '', activity: running } });
+    expect(html).toContain('Searching the web for hours…');
+    expect(html).toMatch(/class="mono dio-pending" role="status" aria-label="Working">/);
+    expect(TOOL_SAYINGS.search.filter((saying) => html.includes(`Nectovia is ${saying}…`))).toHaveLength(1);
+  });
+  test('live thinking stays off the home page unless asked for', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: null };
+    const hidden = render({ live: { text: '', activity: [], thinking } });
+    expect(hidden).not.toContain('Weighing the menu');
+    expect(hidden).not.toContain('dio-live');
+    expect(hidden).toMatch(/class="mono dio-pending" role="status" aria-label="Working">/);
+    const shown = render({ live: { text: '', activity: [], thinking }, showThinking: true });
+    expect(shown).toContain('Weighing the menu against the hours.');
+    expect(shown).toMatch(/class="mono dio-pending" role="status" aria-label="Working" hidden="">/);
   });
   test('technical detail on the home page', () => {
     const html = render({ live: { text: '', activity: running }, technical: true });

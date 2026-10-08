@@ -33,7 +33,8 @@ async function api<T>(endpoint: string, method = 'GET', body?: unknown): Promise
   await shareAfter(api, endpoint, method, value);
   return value;
 }
-async function start(reasoning: AdapterRouteContract['streaming']['reasoning'], how: Script = 'answer') {
+/** `showThinking` is the person's Settings switch: on, thinking shows as it streams. */
+async function start(reasoning: AdapterRouteContract['streaming']['reasoning'], how: Script = 'answer', showThinking = true) {
   script = how;
   await fs.mkdir(path.resolve('test-results'), { recursive: true });
   const root = await fs.mkdtemp(path.resolve('test-results', 'reasoning-ui-'));
@@ -80,7 +81,7 @@ async function start(reasoning: AdapterRouteContract['streaming']['reasoning'], 
   await api('/ai/select', 'POST', { engine, model });
   const project = await api<{ id: string }>('/projects', 'POST', { name: 'Thinking shown' });
   await api(`/projects/${project.id}/threads`, 'POST', { name: 'Lunch menu', mode: 'ask' });
-  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id], appearance: { showThinking },
     onboarding: { work: 'business', detail: 'technical', familiarity: 'comfortable', resumeAt: 'done', completedAt: new Date().toISOString() } });
 }
 test.afterEach(async () => {
@@ -103,6 +104,31 @@ async function send(page: Page) {
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByRole('dialog', { name: 'Send this message?' }).getByRole('button', { name: 'Send message', exact: true }).click();
 }
+
+test('with the switch off, the working line stands in for the thinking, which folds above the answer once it starts', async ({ page }) => {
+  await start('reasoning-delta', 'answer', false);
+  await send(page);
+  const transcript = page.locator('.transcript');
+  // While the engine thinks: the working line, and none of its thinking.
+  await expect(transcript).toContainText(`${AGENT_NAME} is `);
+  await expect(transcript.getByText('Thinking', { exact: true })).toHaveCount(0);
+  await expect(transcript.getByText(thought)).toHaveCount(0);
+
+  // The first answer text: the thought is there as one closed line, and opens on request.
+  answering();
+  await expect(transcript).toContainText(answer);
+  const liveFold = transcript.getByRole('button', { name: /^Thought for/ });
+  await expect(liveFold).toHaveAttribute('aria-expanded', 'false');
+  await expect(transcript.getByText(thought)).toBeHidden();
+  await expect(transcript).not.toContainText(`${AGENT_NAME} is `);
+
+  // The saved reply keeps it the same way.
+  finishing();
+  const fold = transcript.getByRole('button', { name: /^Thought for/ });
+  await expect(fold).toHaveCount(1);
+  await fold.click();
+  await expect(transcript.getByText(thought)).toBeVisible();
+});
 
 test('thinking streams above the reply, folds at the first answer text, and stays folded on the saved reply', async ({ page }) => {
   await start('reasoning-delta');
