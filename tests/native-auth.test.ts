@@ -112,6 +112,7 @@ function fixture(
   values = new Map<string, unknown>(),
   callbackPort = heldPort,
   callbackPageLimitMs?: number,
+  attemptLimitMs?: number,
 ) {
   const secure = {
     isEncryptionAvailable: vi.fn(() => true),
@@ -183,6 +184,7 @@ function fixture(
     registerProtocol,
     callbackPort,
     callbackPageLimitMs,
+    attemptLimitMs,
   });
   const invoke = (name: keyof typeof IPC_CHANNELS, ...args: unknown[]) =>
     handlers.get(IPC_CHANNELS[name])!(event, ...args);
@@ -937,5 +939,56 @@ describe('loopback callback page', () => {
         account: { id: 'user_a' },
       });
     });
+  });
+});
+
+describe('a sign-in attempt the browser never finishes', () => {
+  const owned: Array<{ dispose(): void }> = [];
+  afterEach(() => {
+    for (const item of owned.splice(0)) item.dispose();
+  });
+  const limit = 300;
+
+  it('ends at its limit as one that could not finish, closes the port and refuses a late callback', async () => {
+    const port = await freePort();
+    const f = fixture(true, new Map(), port, undefined, limit);
+    owned.push(f.auth);
+    const state = await f.signIn();
+    expect(f.auth.identity.status().status).toBe('signing-in');
+    expect(await refused(port)).toBe(false);
+    await vi.waitFor(() => expect(f.auth.identity.status()).toEqual({ status: 'signed-out', message: NOT_FINISHED }));
+    expect(f.webContents.send.mock.calls.at(-1)![1]).toMatchObject({ status: 'signed-out', message: NOT_FINISHED });
+    await vi.waitFor(async () => expect(await refused(port)).toBe(true));
+    expect(await f.auth.handleCallback(callback + '?code=abc&state=' + encodeURIComponent(state))).toBe(false);
+    expect(f.exchange).not.toHaveBeenCalled();
+    expect(f.values.has('session')).toBe(false);
+    // The next attempt begins at once, on the same port.
+    await f.signIn();
+    expect(f.auth.identity.status().status).toBe('signing-in');
+    expect(await refused(port)).toBe(false);
+  });
+
+  it('ends an attempt returning through the app protocol at the same limit', async () => {
+    const f = fixture(true, new Map(), heldPort, undefined, limit);
+    owned.push(f.auth);
+    await f.signIn();
+    expect(new URL(f.openExternal.mock.calls.at(-1)![0]).searchParams.get('redirect_uri')).toBe(callback);
+    await vi.waitFor(() => expect(f.auth.identity.status()).toEqual({ status: 'signed-out', message: NOT_FINISHED }));
+  });
+
+  it('does not end an attempt whose callback is being finished, and does not fire after it signed in', async () => {
+    const f = fixture(true, new Map(), heldPort, undefined, limit);
+    owned.push(f.auth);
+    const state = await f.signIn();
+    let release!: (value: unknown) => void;
+    f.exchange.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)) as any);
+    const finishing = f.auth.handleCallback(callback + '?code=abc&state=' + encodeURIComponent(state));
+    await vi.waitFor(() => expect(f.exchange).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, limit * 2));
+    expect(f.auth.identity.status().status).toBe('signing-in');
+    release({ accessToken: jwt(f.user.id), refreshToken: 'refresh-fixture', user: f.user });
+    expect(await finishing).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, limit * 2));
+    expect((await f.invoke('getUser')).data.status).toBe('signed-in');
   });
 });

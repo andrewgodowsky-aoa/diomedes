@@ -38,6 +38,11 @@ const LOOPBACK_PATH = '/callback';
 const LOOPBACK_PORT = Number(new URL(NATIVE_AUTH_LOOPBACK_CALLBACK).port);
 /** The browser tab gets its page within this time, whatever WorkOS or the account service do. */
 const PAGE_TIME_LIMIT_MS = 15_000;
+/**
+ * How long a sign-in attempt waits for the browser. The SDK keeps a pending sign-in for ten
+ * minutes, and no callback can finish it after that, so the app stops saying it is waiting then.
+ */
+const ATTEMPT_TIME_LIMIT_MS = 10 * 60_000;
 const SIGN_IN_UNFINISHED = 'Sign-in could not finish. Try again.';
 const PAGE_STYLE =
   ':root{color-scheme:light dark}' +
@@ -268,6 +273,8 @@ export function createNativeAuth(options: {
   callbackPort?: number;
   /** How long the browser tab waits for its page, fifteen seconds by default. Tests pass a short one. */
   callbackPageLimitMs?: number;
+  /** How long a sign-in attempt waits for the browser, ten minutes by default. Tests pass a short one. */
+  attemptLimitMs?: number;
 }) {
   const ipc = options.ipcMain ?? (ipcMain as unknown as IpcMainLike);
   let state = signedOut();
@@ -276,6 +283,7 @@ export function createNativeAuth(options: {
   let reading: Promise<AuthResult> | undefined;
   const port = options.callbackPort ?? LOOPBACK_PORT;
   const pageLimit = options.callbackPageLimitMs ?? PAGE_TIME_LIMIT_MS;
+  const attemptLimit = options.attemptLimitMs ?? ATTEMPT_TIME_LIMIT_MS;
   const loopbackRedirect =
     Number.isInteger(port) && port > 0 && port < 65536
       ? `http://${LOOPBACK_HOST}:${port}${LOOPBACK_PATH}`
@@ -290,6 +298,8 @@ export function createNativeAuth(options: {
     manager: ReturnType<typeof createSessionManager>;
     server: Server | null;
     digest: Buffer | null;
+    /** Ends the attempt once it has waited `attemptLimit`. */
+    limit?: ReturnType<typeof setTimeout>;
   };
   let attempt: Attempt | undefined;
   let closing: Promise<void> = Promise.resolve();
@@ -303,6 +313,7 @@ export function createNativeAuth(options: {
   const endAttempt = (now = false) => {
     const ending = attempt;
     attempt = undefined;
+    if (ending?.limit) clearTimeout(ending.limit);
     if (ending?.server) closeListener(ending.server, now);
   };
   const tokenIssuers: readonly unknown[] =
@@ -604,6 +615,12 @@ export function createNativeAuth(options: {
           ? { redirect: loopbackRedirect, manager: loopbackManager, server, digest: null }
           : { redirect: NATIVE_AUTH_CALLBACK, manager: current.manager, server: null, digest: null };
       attempt = chosen;
+      // A browser that never comes back (a hand-off the system did not deliver, a tab left open)
+      // ends as any other attempt that could not finish, not as a wait without end.
+      chosen.limit = setTimeout(() => {
+        if (attempt === chosen && handling === null) abandon();
+      }, attemptLimit);
+      chosen.limit.unref?.();
       await current.storage.run(async () => {
         current.storage.sdk.clearSession();
         await chosen.manager.beginSignIn();
