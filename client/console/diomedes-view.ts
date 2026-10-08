@@ -234,7 +234,7 @@ export interface OutcomeCard {
 
 const OPERATION: Record<'prepare_artifact' | 'write_internal', string> = {
   prepare_artifact: 'Nectovia will prepare this for you to review.',
-  write_internal: 'Nectovia will propose the changes. Nothing is written until you say go ahead.',
+  write_internal: 'Review the proposed changes before approving them.',
 };
 
 /**
@@ -258,14 +258,14 @@ export function outcomeCard(
     return {
       tone: 'live',
       title: `Started in ${nameOf(outcome.projectId)}`,
-      body: 'The work is running in that project, where you can follow and review it.',
+      body: 'Open the project to follow this work.',
       action: { kind: 'open', label: 'Open the work' },
     };
   if (outcome.status === 'unresolved')
-    return { tone: 'attn', title: 'This did not finish', body: outcome.message, action: null };
+    return { tone: 'attn', title: "This didn't finish", body: outcome.message, action: null };
   return {
     tone: outcome.reason === 'refused' ? 'fail' : 'attn',
-    title: 'Nothing was started',
+    title: "Couldn't start this work",
     body: outcome.message,
     action: null,
   };

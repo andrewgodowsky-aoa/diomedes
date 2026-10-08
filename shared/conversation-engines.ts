@@ -63,5 +63,5 @@ export const ENGINE_GONE_CODES: Readonly<Record<string, EngineGone>> = {
  */
 export function engineGoneSentence(engine: string, gone: EngineGone): string {
   const state = gone === 'not-installed' ? "isn't installed" : "isn't signed in";
-  return `${routeDisplayName(engine)} ${state} on this computer, so this conversation can't continue here. Nothing was sent.`;
+  return `${routeDisplayName(engine)} ${state} on this computer, so this conversation can't continue here.`;
 }

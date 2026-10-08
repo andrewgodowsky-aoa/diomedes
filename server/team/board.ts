@@ -101,7 +101,7 @@ export function checkCompletionAllowed(state: {
   if (openNeed)
     throw new ApiError(
       409,
-      `Cannot complete '${subject}': an open Need (${openNeed.id}) is waiting for the owner.`,
+      `Can't complete '${subject}'. The owner must answer Need ${openNeed.id}.`,
     );
   const waitingChange = state.changes.find((c) => c.taskId === taskId && c.state === 'waiting');
   if (waitingChange)

@@ -250,7 +250,7 @@ test('a message queued while Claude Code answers is sent next, and both answers 
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   const queued = page.getByRole('list', { name: 'Queued messages' });
   await expect(queued).toContainText('Also check the linen order');
-  await expect(queued).toContainText('Queued: sent when the current answer finishes');
+  await expect(queued).toContainText("Sends after the current answer");
   await expect(answers(page).last()).toHaveText('Answer to Also check the linen order');
   await expect(queued).toHaveCount(0);
   // The home shows the newest exchange; Earlier opens the rest of the conversation.

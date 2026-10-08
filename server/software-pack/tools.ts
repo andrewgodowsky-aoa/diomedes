@@ -246,18 +246,18 @@ export function registerSoftwareTools(tools: ToolRegistry, host: SoftwareToolHos
       try {
         found = await containedPath(root, relative, { write: true });
       } catch (error) {
-        if (error instanceof HarnessError) return refused(error.code, `${error.message} Nothing was changed.`);
+        if (error instanceof HarnessError) return refused(error.code, `${error.message}`);
         throw error;
       }
       if (await fs.lstat(found.absolute).catch(() => null))
-        return refused('worktree_exists', `${relative} already exists. Nothing was changed.`);
+        return refused('worktree_exists', `${relative} already exists.`);
       if ((await listWorktrees(root)).length - 1 >= MAX_WORKTREES)
         return refused('worktree_limit', `This project already has ${MAX_WORKTREES} worktrees. Remove one first.`);
       const format = await git(root, ['check-ref-format', '--branch', input.branch]);
       if (format.code !== 0) return refused('branch_invalid', 'That branch name is not one git accepts.');
       const exists = await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${input.branch}`]);
       if (exists.code === 0)
-        return refused('branch_exists', `A branch called ${input.branch} already exists. Choose a new name; nothing was changed.`);
+        return refused('branch_exists', `A branch called ${input.branch} already exists. Choose a new name.`);
       const added = await git(root, ['worktree', 'add', '-b', input.branch, relative, 'HEAD'], { timeoutMs: 90_000 });
       if (added.code !== 0)
         return {
@@ -304,23 +304,23 @@ export function registerSoftwareTools(tools: ToolRegistry, host: SoftwareToolHos
       try {
         found = await containedPath(root, relative, { write: false });
       } catch (error) {
-        if (error instanceof HarnessError) return refused(error.code, `${error.message} Nothing was changed.`);
+        if (error instanceof HarnessError) return refused(error.code, `${error.message}`);
         throw error;
       }
       const stat = await fs.lstat(found.absolute).catch(() => null);
-      if (!stat?.isDirectory()) return refused('worktree_missing', `${relative} is not there. Nothing was changed.`);
+      if (!stat?.isDirectory()) return refused('worktree_missing', `${relative} isn't there.`);
       const real = await realNative(found.absolute);
       const known = await Promise.all((await listWorktrees(root)).map((item) => realNative(item).catch(() => item)));
       const fold = (value: string) => (process.platform === 'linux' ? value : value.toLowerCase());
       if (!known.some((item) => fold(path.resolve(item)) === fold(real)))
-        return refused('not_a_worktree', `${relative} is not a worktree of this repository. Nothing was changed.`);
+        return refused('not_a_worktree', `${relative} isn't a worktree of this repository.`);
       const dirty = await worktreeDirty(root, relative);
       if (dirty.length)
         return refused(
           'worktree_dirty',
           `${relative} has ${dirty.length === 1 ? '1 file' : `${dirty.length} files`} with uncommitted changes (${dirty
             .slice(0, 3)
-            .join(', ')}${dirty.length > 3 ? ', …' : ''}). Commit or discard them yourself first; Diomedes never force-removes a worktree. Nothing was removed.`,
+            .join(', ')}${dirty.length > 3 ? ', …' : ''}). Commit or discard them yourself first.`,
         );
       // No --force: git refuses a dirty or locked worktree itself, a second guard behind the check above.
       const removed = await git(root, ['worktree', 'remove', relative], { timeoutMs: 90_000 });

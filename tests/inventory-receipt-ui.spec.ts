@@ -133,7 +133,7 @@ test('a request lost before dispatch retries only after status, with the same sa
   await expect(page.getByRole('button', { name: 'Retry same receipt' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Check receipt status' }).click();
   await expect(
-    page.getByText('No receipt is recorded for this operation. You can retry the same receipt.'),
+    page.getByText("Receipt not found. Retry the same receipt."),
   ).toBeVisible();
   await page.unroute('**/api/inventory/receipts');
   const nextPost = page.waitForRequest(

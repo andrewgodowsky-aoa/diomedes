@@ -234,7 +234,7 @@ test('H11-UI-01: the line opens the last run in precedence order, with scope, sh
   await expect(first.locator('.instructions-meta')).toContainText(delivery.files[0].sha!.slice(0, 12));
   await expect(rows.nth(2).locator('.instructions-meta')).toContainText('sent · project root');
   const omitted = rows.nth(3);
-  await expect(omitted.locator('.instructions-meta')).toContainText('left out whole · no room left');
+  await expect(omitted.locator('.instructions-meta')).toContainText("excluded · input limit reached");
   await expect(omitted.locator('p')).toContainText('rather than cut part way');
   const excluded = rows.nth(4);
   // Excluded files took no part in the run, so they carry no rank.

@@ -27,7 +27,7 @@ describe('receipt intent and transport', () => {
         new Response(JSON.stringify({ status: 'not-found', operationId: 'different-operation' })),
       );
     await expect(new InventoryReceiptClient(fetcher).status(command.operationId)).rejects.toThrow(
-      'does not match',
+      "The status belongs to a different receipt. Check the original receipt's status.",
     );
   });
   test('quantities preserve exact minor units including the maximum safe integer', () => {
@@ -113,11 +113,11 @@ describe('receipt intent and transport', () => {
       reason: 'Revoked',
     });
   });
-  test('unreadable saved intent says to preserve and reconcile, whatever made it unreadable', () => {
+  test('unreadable saved receipt requires checking its outcome before receiving more stock', () => {
     const key = receiptPendingKey({ organizationId: 'one', tenantId: 'tenant', projectId: 'project' });
     for (const raw of ['{broken', JSON.stringify({ kind: 'receive' })])
       expect(() => readPending({ getItem: () => raw }, key)).toThrow(
-        'Saved receipt intent is unreadable. Preserve it and reconcile before receiving more stock.',
+        'The saved receipt request can\'t be read. Keep it and confirm what happened before receiving more stock.',
       );
   });
   test('a reply that is not JSON reports its HTTP failure, not a parser error', async () => {

@@ -186,7 +186,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
     const started = await start();
     const held = await openNeed(started.session.id);
     expect(held.files).toEqual(['Harness report.md']);
-    expect(held.why).toMatch(/^A rule held this before it ran: Reports are written only after a person reads them\./);
+    expect(held.why).toMatch(/^A rule blocked this step\. Reports are written only after a person reads them\./);
     const waiting = await host().get(projectId, started.runId);
     const write = waiting.steps.find((step) => step.intent.name === 'propose_write')!;
     expect(write.state).toBe('waiting_approval');
@@ -447,7 +447,7 @@ describe('H16 stream-time triggers on the scripted loop route', () => {
 
     const started = await start();
     const need = await openNeed(started.session.id);
-    expect(need.why).toMatch(/^A rule held this before it ran/);
+    expect(need.why).toMatch(/^A rule blocked this step\./);
     const view = (await supervision(started.session.id)).data.triggers;
     expect(view.map((item) => [item.firing.rule.authority, item.firing.rule.id, item.state])).toEqual([
       ['organization', 'writes-held', 'waiting'],
@@ -515,7 +515,7 @@ describe('H16 holds and remembered approvals', () => {
     const waiting = state().needs.find((need) => need.id === held.id)!;
     expect(waiting.state).toBe('open');
     expect(waiting.authorization).toBeUndefined();
-    expect(waiting.why).toMatch(/^A rule held this before it ran: Every report is read by a person/);
+    expect(waiting.why).toMatch(/^A rule blocked this step\. Every report is read by a person/);
     expect((await host().get(projectId, runId)).state).toBe('waiting');
     await answer(waiting);
     await untilRun(runId, 'completed');

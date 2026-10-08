@@ -77,7 +77,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
       (loaded) => current && setView(loaded),
       (failure: unknown) =>
         current &&
-        setError(failure instanceof Error ? failure.message : 'Capabilities could not be read.'),
+        setError(failure instanceof Error ? failure.message : "Pack features couldn't be read."),
     );
     return () => {
       current = false;
@@ -108,7 +108,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
           ? (failure.data.dependencies as Dependency[])
           : null;
       if (dependencies && retry) setPending({ key, ...retry(dependencies) });
-      else setError(failure instanceof Error ? failure.message : 'That could not be changed.');
+      else setError(failure instanceof Error ? failure.message : "That couldn't be changed.");
     } finally {
       try {
         setView(await api<PacksView>(base));
@@ -172,7 +172,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
         failure instanceof ApiError && Array.isArray(failure.data.problems)
           ? ` ${(failure.data.problems as string[]).join(' ')}`
           : '';
-      setError(`${failure instanceof Error ? failure.message : 'That folder could not be read.'}${problems}`);
+      setError(`${failure instanceof Error ? failure.message : "That folder couldn't be read."}${problems}`);
     } finally {
       setBusy('');
     }
@@ -194,7 +194,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
   const requests = (manifest: PackManifest) =>
     manifest.permissions.requested.length ? (
       <>
-        <p className="pack-label">Requests · Trust decides at use</p>
+        <p className="pack-label">Requested permissions · approval required when used</p>
         <ul className="pack-points">
           {manifest.permissions.requested.map((item) => (
             <li key={item.capability}>
@@ -213,7 +213,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
   return (
     <section className="pack-settings" aria-label="Capabilities">
       <h3>Capabilities</h3>
-      <p>Turning a pack on grants nothing; Trust still decides.</p>
+      <p>Permissions are approved separately from packs.</p>
       {view?.storeProblem && <p role="alert">{view.storeProblem}</p>}
       {view?.installed.map((pack) => {
         const manifest = pack.manifest;
@@ -238,7 +238,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
               <p className="mono lc pack-contributes">{contributionSummary(manifest)}</p>
             )}
             {pack.runtime === 'declared' && (
-              <p>Its contributions are recorded; this build does not run them yet.</p>
+              <p>Nectovia can inspect this pack. Its features are unavailable.</p>
             )}
             {skills > 0 && (
               <p>
@@ -297,7 +297,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
                   onClick={() =>
                     ask({
                       key: pack.id,
-                      question: `Roll ${name} back from ${pack.current} to ${pack.rollbackTo}? It grants and restores no permission.`,
+                      question: `Roll ${name} back from ${pack.current} to ${pack.rollbackTo}? Permissions stay separate.`,
                       confirm: 'Roll back',
                       run: () => api(`/packs/${encodeURIComponent(pack.id)}/rollback`, 'POST', {}),
                     })
@@ -313,7 +313,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
                 onClick={() =>
                   ask({
                     key: pack.id,
-                    question: `Uninstall ${name} ${pack.current}? Its History in each project stays as it was.`,
+                    question: `Uninstall ${name} ${pack.current}?`,
                     confirm: 'Uninstall',
                     run: () => api(`/packs/${encodeURIComponent(pack.id)}/uninstall`, 'POST', {}),
                   })
@@ -381,7 +381,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
             <span className="mono lc pack-state">{inspected.manifest.version}</span>
           </div>
           <p>
-            {inspected.manifest.publisher.name} · digest verified{' '}
+            {inspected.manifest.publisher.name} · file contents verified{' '}
             <span className="mono lc">{inspected.manifest.digest.slice(0, 19)}</span>
           </p>
           <p>{inspected.manifest.description}</p>

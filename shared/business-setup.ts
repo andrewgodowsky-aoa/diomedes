@@ -172,7 +172,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'name',
     prompt: 'What should we call your business, and what work do you do?',
     reason:
-      'Names this workspace and picks which examples you are shown. It selects examples, not authority.',
+      'Use the name your team recognizes.',
     kind: 'text',
     required: true,
     maxLength: 120,
@@ -180,7 +180,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
   {
     id: 'industry',
     prompt: 'What kind of work is that, in a word or two?',
-    reason: 'Optional. Chooses starting examples only; leave it blank if none fit.',
+    reason: 'Leave this blank if no description fits.',
     kind: 'text',
     required: false,
     maxLength: 60,
@@ -189,7 +189,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'job',
     prompt: 'What recurring job should Nectovia help with first?',
     reason:
-      'One concrete outcome to start from. Anything unsupported is explained rather than promised.',
+      'Choose one job your team repeats.',
     kind: 'choice',
     options: JOB_OPTIONS,
     allowOther: true,
@@ -200,7 +200,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'result',
     prompt: 'What does a useful result look like, and who reviews it today?',
     reason:
-      'Records the output and who checks it now. It is a baseline to compare against, not a saving Nectovia claims.',
+      'Describe the result your team uses today.',
     kind: 'text',
     required: true,
     maxLength: 400,
@@ -208,7 +208,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
   {
     id: 'sources',
     prompt: 'Where does the information for that job live?',
-    reason: 'Describes the sources. Naming one does not connect it or grant access to it.',
+    reason: 'Listing a source describes the job. Connecting it needs separate approval.',
     kind: 'multi',
     options: Object.freeze([
       { id: 'files', label: 'Files on this computer' },
@@ -227,7 +227,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'people',
     prompt: 'Who uses this workspace, and who approves changes to it?',
     reason:
-      'A proposal about people and approvers. It is confirmed separately; it does not invite anyone or grant a role.',
+      'These answers identify the people involved. Invitations and roles need separate confirmation.',
     kind: 'choice',
     options: Object.freeze([
       { id: 'just-me', label: 'Just me' },
@@ -240,7 +240,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'locations',
     prompt: 'Are there multiple locations or projects to keep apart?',
     reason:
-      'Records labels and what must stay separate. It does not grant anyone access to either.',
+      'Describe which work needs to stay separate. Access is approved separately.',
     kind: 'choice',
     options: Object.freeze([
       { id: 'one', label: 'One' },
@@ -257,7 +257,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'human-required',
     prompt: 'What must always come back to a person before it happens?',
     reason:
-      'Sets where a draft stops and waits. Anything consequential stays conservative by default.',
+      'Choose the actions that need human approval.',
     kind: 'multi',
     options: Object.freeze([
       { id: 'sending', label: 'Anything sent outside the business' },
@@ -272,7 +272,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'data-leaving',
     prompt: 'May this information leave this computer?',
     reason:
-      'Decides which processing routes are allowed. If this is unknown, the risky ones stay closed.',
+      'If you don’t know, keep the information on this computer.',
     kind: 'choice',
     options: Object.freeze([
       { id: 'no', label: 'No, keep it on this computer' },
@@ -285,7 +285,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'host',
     prompt: 'Which computer does this work, and when is it available?',
     reason:
-      'Records the host and its hours. Nothing is discovered or scheduled without a separate confirmation.',
+      'These answers describe computer availability. Starting scheduled work needs separate confirmation.',
     kind: 'text',
     required: false,
     maxLength: 200,
@@ -294,7 +294,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = Object.freeze([
     id: 'spend-cap',
     prompt: 'What monthly AI spending limit applies, and who can change it?',
     reason:
-      'A proposed upper bound in US dollars. It cannot authorise spending, and it is never consent to go over.',
+      'Enter a proposed limit in US dollars. Spending needs separate authorization.',
     kind: 'money',
     required: false,
   },

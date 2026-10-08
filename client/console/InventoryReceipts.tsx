@@ -127,8 +127,7 @@ export function InventoryReceipts({ client = defaultClient }: { client?: Invento
         <p className="inventory-eyebrow">Nectovia / Inventory</p>
         <h1>Stock receipts</h1>
         <p>
-          Record stock already received and inspect its History. No orders, supplier messages or
-          payments are sent.
+          Record stock you've received and check its History.
         </p>
       </header>
       <div className="inventory-toolbar">
@@ -168,12 +167,12 @@ export function InventoryReceipts({ client = defaultClient }: { client?: Invento
                 <p role="status">
                   {settled
                     ? outcome.status === 'already-applied'
-                      ? 'Original receipt confirmed. Stock was not added again.'
+                      ? 'Receipt already recorded.'
                       : 'Stock receipt recorded.'
                     : outcome?.status === 'conflict'
                       ? 'Stock changed. Refresh and review a new receipt before submitting again.'
                       : outcome?.status === 'not-found'
-                        ? 'No receipt is recorded for this operation. You can retry the same receipt.'
+                        ? 'Receipt not found. Retry the same receipt.'
                         : outcome && 'reason' in outcome
                           ? outcome.reason
                           : 'This receipt needs a status check before you continue.'}

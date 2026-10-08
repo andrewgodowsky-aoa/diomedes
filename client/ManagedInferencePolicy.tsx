@@ -4,29 +4,26 @@ export function ManagedInferencePolicy() {
     <section aria-label="Nectovia-managed AI">
       <h3>Nectovia-managed AI</h3>
       <p className="prose">
-        Nectovia-managed AI is the default for paid Agent work. Any included allowance is used first,
-        with model routing managed by Nectovia.
+        By default, paid Agent work uses Nectovia's AI and draws from your included allowance first.
       </p>
       <p className="caption">
-        Additional managed usage is billed at Nectovia's current usage rate. It requires your
-        organization's authorization and a monthly spending cap; it never starts automatically.
-        A higher limit for one job does not authorize extra monthly spending.
+        Extra usage needs your business's approval and a monthly spending limit. It's billed at Nectovia's current rate.
+        Raising one job's limit doesn't approve extra monthly spending.
       </p>
       <p className="caption">
         To arrange additional usage, contact Diomedes Systems at{' '}
         <a href="mailto:hello@diomedes.net">hello@diomedes.net</a> for the current rate and spending limit.
       </p>
       <details>
-        <summary>Advanced: organization-owned API or cloud account</summary>
+        <summary>Your business's own AI account</summary>
         <p className="caption">
-          Supported commercial API or cloud credentials are an optional, contract-specific setup.
-          Contact Diomedes Systems to confirm eligibility. Your provider bills that usage separately;
-          it does not use your included Nectovia allowance or grant Nectovia Agent access.
+          Contact Diomedes Systems to arrange a supported business AI account. The provider bills you separately.
+          That usage doesn't use your Nectovia allowance.
+          You still need a plan that includes the Nectovia Agent.
         </p>
         <p className="caption">
-          Consumer, Pro, Max, Team and Business AI subscriptions cannot fund shared organization-wide
-          Nectovia Agent work. A permitted subscription-backed external engine is for its licensed
-          user on that user's device, subject to the provider's rules.
+          AI subscriptions can't fund shared Agent work. Supported subscriptions cover the licensed person's work on their device,
+          under the provider's terms.
         </p>
       </details>
     </section>

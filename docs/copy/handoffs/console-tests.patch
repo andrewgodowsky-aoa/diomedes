@@ -1,0 +1,15 @@
+diff --git a/tests/artifacts-ui.spec.ts b/tests/artifacts-ui.spec.ts
+--- a/tests/artifacts-ui.spec.ts
++++ b/tests/artifacts-ui.spec.ts
+@@ -1125 +1125 @@
+-  const refused = panel.getByRole('group', { name: 'This diagram could not be drawn.' });
++  const refused = panel.getByRole('group', { name: "Couldn't draw this diagram." });
+@@ -1166 +1166 @@
+-  panel.getByRole('group', { name: 'This diagram could not be drawn.', exact: true }).locator('.art-error-problem');
++  panel.getByRole('group', { name: "Couldn't draw this diagram.", exact: true }).locator('.art-error-problem');
+diff --git a/tests/files-attachments-ui.spec.ts b/tests/files-attachments-ui.spec.ts
+--- a/tests/files-attachments-ui.spec.ts
++++ b/tests/files-attachments-ui.spec.ts
+@@ -211 +211 @@
+-  await expect(page.getByRole('alert').filter({ hasText: 'photo.png is not a text document' })).toBeVisible();
++  await expect(page.getByRole('alert').filter({ hasText: "photo.png isn't a text document" })).toBeVisible();

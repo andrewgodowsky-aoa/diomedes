@@ -206,7 +206,7 @@ describe('the agent usage bar', () => {
   it('a month with no grant draws no bar and no percentage', () => {
     const html = bar(ready(0, 0, 0));
     expect(html).not.toContain('role="meter"');
-    expect(text(html)).toContain('No monthly credits this month.');
+    expect(text(html)).toContain("No included credits for this month.");
   });
 
   it.each([

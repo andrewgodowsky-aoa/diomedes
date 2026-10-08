@@ -150,7 +150,7 @@ test('H13-UI-01: the inspector shows the plan, actions, observations, delegation
   await expect(loop.locator('.loop-sentence')).toHaveText('1 declared check passed against 1 exact file version.');
   // Attribution: Diomedes supervised; a fixed local script is no model.
   await expect(loop.locator('.loop-supervisor')).toHaveText(AGENT_NAME);
-  await expect(loop.locator('.loop-models')).toHaveText('None: a fixed local script');
+  await expect(loop.locator('.loop-models')).toHaveText("Fixed local script");
   await expect(loop.locator('.loop-plan li')).toHaveCount(4);
   await expect(loop.locator('.loop-plan li').first()).toHaveText('Read order.md.');
 

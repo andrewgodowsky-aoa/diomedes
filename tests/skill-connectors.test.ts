@@ -70,7 +70,7 @@ describe('which approved connectors cover what a playbook reads', () => {
 
   test('an unreadable connectors file is said, and an unread one says nothing', () => {
     expect(skillConnectorNote(skill('business-pulse'), view([], 'malformed'))).toEqual({
-      text: 'The read connectors file cannot be read. See Settings > Engines.',
+      text: "Can't read the connector settings. Check Settings > Engines.",
       offerAdd: true,
     });
     expect(skillConnectorNote(skill('business-pulse'), null)).toBeNull();

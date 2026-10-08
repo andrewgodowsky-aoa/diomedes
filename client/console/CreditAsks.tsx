@@ -140,7 +140,7 @@ export function CreditAsksView({
     <section className="ws-section ws-asks" aria-label="Asks for more credits">
       <h4>Asks for more credits</h4>
       {asks.length === 0 ? (
-        <p className="caption">No one is waiting on an answer.</p>
+        <p className="caption">No credit requests.</p>
       ) : (
         <ul className="ws-asks-list">
           {asks.map((ask) => (

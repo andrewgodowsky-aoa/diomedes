@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AwsConnectionView } from '../shared/model-api';
-import { AWS_DIRECT_MODELS, AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MANAGED_LUNA, MODEL_API_NAMES } from '../shared/model-api';
+import { AWS_DIRECT_MODELS, AWS_KIMI_K3, AWS_KIMI_K3_REFUSAL, MANAGED_LUNA } from '../shared/model-api';
 import type { Settings } from '../shared/types';
 import { ApiError, api } from './api';
 import {
@@ -18,7 +18,7 @@ import { RouteChecks } from './RouteChecks';
 const BASE = '/ai/model-api/aws-bedrock';
 
 const messageOf = (error: unknown) =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
+  error instanceof ApiError || error instanceof Error ? error.message : "The request couldn't be completed.";
 
 /**
  * AI setup's card for the AWS Bedrock route: connect the company's own AWS account, approve an
@@ -111,7 +111,7 @@ export function AwsBedrockSetup({
       await load();
     });
   const disconnect = () => {
-    if (!window.confirm('Forget the saved AWS key and switch AWS Bedrock off? Spend records are kept.')) return;
+    if (!window.confirm('Forget the saved AWS key and switch AWS Bedrock off?')) return;
     void run(() => api<AwsConnectionView>(BASE, 'DELETE'));
   };
   const recordCost = (holdId: string) => {
@@ -136,7 +136,7 @@ export function AwsBedrockSetup({
 
   const disabled = busy || working;
   const connection = view?.connection ?? null;
-  const routeName = connection?.model === AWS_KIMI_K3.model ? 'AWS Bedrock (Kimi K3)' : MODEL_API_NAMES['aws-bedrock'];
+  const routeName = 'AWS Bedrock';
   const spend = view?.spend ?? null;
   const showForm = !!view && view.protectedStorage && (!connection || editing || connection.credential.expired);
 
@@ -147,8 +147,7 @@ export function AwsBedrockSetup({
         {awsIsDefault(settings.services) && <span className="caption push-right">Default</span>}
       </div>
       <p className="caption ai-route">
-        Your company’s own AWS account, us-east-1, US processing. AWS keeps nothing between calls
-        (store:false), and every call is billed to that account.
+        Uses your business's AWS account in us-east-1, with US processing. Requests disable saved responses. AWS bills that account.
       </p>
       {view && (
         <ul className="ai-states" aria-label="AWS Bedrock setup state">
@@ -251,7 +250,7 @@ export function AwsBedrockSetup({
               checked={limitConsent}
               onChange={(event) => setLimitConsent(event.target.checked)}
             />
-            Approve this as the most Nectovia may send to AWS in total, estimated from AWS list prices.
+            Allow Nectovia to spend up to this total, estimated at AWS list prices.
           </label>
           <div className="actions">
             <Button type="submit" disabled={disabled}>

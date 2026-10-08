@@ -97,17 +97,17 @@ const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,
 const PICTURE_FIELD = /(^|[\s,{])img\s*:\s*"([^"]*)"/g;
 
 export const REFUSED_STYLE =
-  'This diagram styles something with a link to a file (url() in a style, classDef or linkStyle line), so it is not drawn here.';
+  "Can't draw this diagram with linked styles. Remove url() from style, classDef and linkStyle lines.";
 export const REFUSED_MATH_HERE =
-  'Math ($$) in a diagram is drawn only in the app itself, where the page refuses every outside load. This page does not, so the diagram is not drawn here.';
+  "Can't draw diagram math ($$) on this page. Open it in Nectovia, which blocks outside loads.";
 export const REFUSED_MATH_MARKUP =
-  'This diagram has math ($$) and also <, ~, or & or \\ outside the math, so it is not drawn here. In math, write < as \\lt.';
+  "Can't draw this diagram with <, ~, & or \\ outside the math ($$). Inside math, write < as \\lt.";
 export const REFUSED_IMAGE =
-  'This diagram shows a picture from a link. Only a picture written into the diagram, as a quoted data:image URL (PNG, JPEG, GIF or WebP), is drawn here.';
+  "Can't draw linked pictures. Embed a PNG, JPEG, GIF or WebP as a quoted data:image URL in the diagram.";
 export const REFUSED_SHAPE_ESCAPE =
-  'This diagram writes shape data with an escape (\\), which could name a picture from a link, so it is not drawn here.';
+  "Can't draw this diagram with escapes (\\) in shape data. They could link to an outside picture.";
 export const REFUSED_PARTICIPANT_DETAILS =
-  'This sequence diagram gives a participant properties or details, which can show a picture from a link or take content from the page by id, so it is not drawn here.';
+  "Can't draw participant properties or details. They could load outside pictures or read content from this page.";
 
 /** The diagram text Mermaid is given: no frontmatter, no directives. */
 export function preparedSource(source: string): string {
@@ -682,7 +682,7 @@ function load(): Promise<MermaidApi> {
 function describe(error: unknown): string {
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   const trimmed = text.trim().slice(0, 600);
-  return trimmed || 'Mermaid could not read this diagram.';
+  return trimmed || "Couldn't read this diagram.";
 }
 
 async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult> {
@@ -697,7 +697,7 @@ async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult>
   try {
     mermaid = await load();
   } catch {
-    return { ok: false, problem: 'The diagram drawer could not be loaded. Close the panel and open the diagram again.' };
+    return { ok: false, problem: "Couldn't load the diagram renderer. Close the panel and reopen the diagram." };
   }
   serial += 1;
   const id = `art-mermaid-${serial}`;

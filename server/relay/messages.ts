@@ -100,7 +100,7 @@ export const DESKTOP_REFUSALS = {
   run_not_found: "That run isn't on this computer anymore.",
   member_not_found: "That Team member isn't on this computer anymore.",
   conversation_not_found: "That conversation isn't on this computer anymore.",
-  nothing_waiting: 'Nothing is waiting for this Team member.',
+  nothing_waiting: 'This Team member has no pending work.',
   names_documents: 'Waking this Team member would hand it documents. Do that on your computer.',
   cap_question: "This would go past the job's cap. Decide that on your computer.",
   updating: 'Nectovia on your computer is closing for an update. Try again once it restarts.',

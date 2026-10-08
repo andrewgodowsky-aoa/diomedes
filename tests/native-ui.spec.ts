@@ -293,7 +293,7 @@ test('Console task Start recovers both lost responses from state without duplica
   await rail.getByRole('button', { name: /^Team/ }).click();
   const team = page.locator('.team[aria-label="Team"]');
   await expect(team.locator('.lane').filter({ hasText: 'Receipt test helper' })).toBeVisible();
-  await expect(page.getByRole('alert')).toContainText('A saved Work request could not be checked');
+  await expect(page.getByRole('alert')).toContainText("A saved Work request couldn't be checked");
   await page.getByRole('alert').getByRole('button', { name: 'Dismiss', exact: true }).click();
   await api(`/projects/${sample.id}/tasks`, 'POST', { name: 'Check the refreshed board', owner: 'you' });
   await rail.getByRole('button', { name: /^Board/ }).click();
@@ -362,7 +362,7 @@ test('Console exact approval recovers both lost responses from durable state eve
   await page.evaluate(id => sessionStorage.setItem(`diomedes.approval.pending.${id}|broken`, '{broken'), fixture.id);
   await page.reload();
   await rail.getByRole('button', { name: /Exact approval thread/ }).click();
-  await expect(page.getByRole('alert')).toContainText('A saved approval request could not be checked');
+  await expect(page.getByRole('alert')).toContainText("A saved approval request couldn't be checked");
   await expect(pane).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -380,7 +380,7 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   const board = page.locator('.board[aria-label="Board"]');
   await expect(board).toBeVisible();
   const ready = board.locator('.column[aria-label="Ready"]');
-  await expect(ready).toContainText('Nothing is ready. New task adds one.');
+  await expect(ready).toContainText('No tasks ready. Add a task to begin.');
   await board.getByRole('button', { name: 'New task', exact: true }).click();
   const form = board.locator('form.newtask');
   await form.getByLabel('Task name').fill('Draft the operations brief');
@@ -670,7 +670,7 @@ test('Cloud sharing selects an exact future path before AI review can send it', 
   await dialog.getByRole('textbox', { name: 'Document path' }).fill('notes/Planned.md');
   await dialog.getByRole('button', { name: 'Add path' }).click();
   await expect(dialog.getByRole('checkbox', { name: 'notes/Planned.md' })).toBeChecked();
-  await dialog.getByRole('checkbox', { name: /Share proposed changes with the AI reviewer/ }).check();
+  await dialog.getByRole('checkbox', { name: 'Share proposed changes, task details, allowed work and selected file excerpts with the AI reviewer', exact: true }).check();
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   const policy = await api<{ version: number; documents: string[]; shareReviewPackets: boolean }>(

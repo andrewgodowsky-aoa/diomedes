@@ -561,16 +561,16 @@ export function loopOutcome(
     case 'waiting':
       return {
         state: 'waiting',
-        label: 'Waiting for your OK',
+        label: 'Needs your OK',
         sentence: view.waiting
-          ? `The next action, ${view.waiting.tool}, waits for your OK. Nothing runs until you answer.`
-          : 'Waiting for something outside Diomedes.',
+          ? `Approve ${view.waiting.tool} to continue.`
+          : 'Paused for an external response.',
       };
     case 'reconcile_required':
       return {
         state: 'reconcile',
         label: 'Needs checking',
-        sentence: 'An action may have happened that Diomedes could not confirm. Nothing will be repeated on its own.',
+        sentence: 'An action has an unconfirmed result. Check what happened before starting again.',
       };
     case 'completed': {
       if (!verification)
@@ -610,7 +610,7 @@ export function loopOutcome(
       return {
         state: 'failed',
         label: 'Failed',
-        sentence: 'Stopped because something went wrong. Nothing will be repeated on its own.',
+        sentence: 'The job failed. Check its error before starting again.',
       };
   }
 }

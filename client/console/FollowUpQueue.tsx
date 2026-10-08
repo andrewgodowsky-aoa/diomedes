@@ -31,7 +31,7 @@ const deliveryLabel = (choice: Delivery) =>
 
 const OUTCOME: Record<Exclude<FollowUpCommand['state'], 'queued'>, string> = {
   delivered: 'Sent',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
   rejected: 'Not sent',
 };
 
@@ -39,7 +39,7 @@ function why(item: FollowUpCommand): string | null {
   if (item.state === 'rejected') return item.rejectedReason ?? null;
   if (item.state === 'cancelled')
     return item.cancelledBy && item.cancelledBy !== 'you'
-      ? `Cancelled by Stop (${item.cancelledBy.slice('stop:'.length)}).`
+      ? `Canceled by Stop (${item.cancelledBy.slice('stop:'.length)}).`
       : null;
   return null;
 }
@@ -81,7 +81,7 @@ export function FollowUpQueue({
     try {
       await action();
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : 'That could not be done.');
+      setError(problem instanceof Error ? problem.message : "That couldn't be done.");
     } finally {
       setWorking(false);
     }
@@ -102,8 +102,8 @@ export function FollowUpQueue({
           rows={2}
           maxLength={16000}
           disabled={disabled || full}
-          placeholder={waitsFor === 'now' ? 'Steer the running turn' : 'Queue a follow-up'}
-          aria-label={waitsFor === 'now' ? 'Steer the running turn' : 'Queue a follow-up'}
+          placeholder={waitsFor === 'now' ? 'Change the current instruction' : 'Queue a follow-up'}
+          aria-label={waitsFor === 'now' ? 'Change the current instruction' : 'Queue a follow-up'}
           onChange={(event) => setText(event.target.value)}
         />
         <div className="row">
@@ -161,7 +161,7 @@ export function FollowUpQueue({
         </div>
         {live && !canSteer && (
           <p className="caption follow-up-steer-note">
-            {live.routeName} can’t steer a running turn, so a message waits for the turn to end.
+            {live.routeName} accepts your next message after the current answer finishes.
           </p>
         )}
         {full && (

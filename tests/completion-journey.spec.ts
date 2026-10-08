@@ -281,7 +281,7 @@ async function expectReviewedNotes(page: Page, approved: string) {
   const review = page.locator('.crev');
   await expect(review).toBeVisible();
   await expect(review.getByRole('heading', { name: 'What changed' })).toBeVisible();
-  await expect(review.getByText('Deterministic · no AI model wrote this')).toBeVisible();
+  await expect(review.getByText("From recorded file changes")).toBeVisible();
   await expect(review.locator('.crev-sentences li').first()).toContainText(/1 file changed/);
   const row = review.locator('.crev-row', { hasText: NOTES });
   await expect(row).toHaveCount(1);

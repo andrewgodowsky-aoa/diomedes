@@ -428,7 +428,7 @@ export class TeamService {
       throw new ApiError(409, 'This member is answering an Agent-owned Team request. Its root run controls the response.');
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
-      throw new ApiError(400, 'Nothing is waiting for this helper.');
+      throw new ApiError(400, 'This helper has no pending work.');
     if (!member.threadId) throw new ApiError(400, 'This helper has no thread to wake.');
     if (!this.runStarter) throw new ApiError(503, 'Runs are not available here.');
     const { sessionId } = await this.runStarter({

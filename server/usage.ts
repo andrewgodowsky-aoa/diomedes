@@ -19,18 +19,18 @@ export const ROSTER_ORDER = [
 const DETAILS: Record<string, string> = {
   sample: 'Sample work uses no service.',
   codex:
-    'Codex has not reported its allowance yet. It appears after the next connection check or turn.',
-  'claude-code': 'Claude Code reports cost per answer; a plan window is not available yet.',
-  opencode: 'OpenCode does not report what is left on the Go plan. See your OpenCode account.',
-  'oh-my-pi': 'oh-my-pi keeps its own counts where it runs; nothing is reported here yet.',
-  cursor: 'Cursor is reported as installed; no allowance is reported here yet.',
-  devin: 'Devin is reported as installed; no allowance is reported here yet.',
-  hermes: 'Hermes is reported as installed; no allowance is reported here yet.',
-  localai: 'The loopback supervisor reports status only; no allowance is reported.',
-  ollama: 'Ollama reports per-request counts only; no allowance is reported.',
-  aioncore: 'AionCore is not configured in this build.',
+    'Codex hasn\'t reported its allowance. It refreshes after a connection check or answer.',
+  'claude-code': 'Claude Code reports each answer\'s cost. Its remaining plan allowance isn\'t available here.',
+  opencode: 'OpenCode doesn\'t report the Go plan\'s remaining allowance. Check your OpenCode account.',
+  'oh-my-pi': 'oh-my-pi keeps its usage counts in its own process. They aren\'t reported here.',
+  cursor: 'Cursor hasn\'t reported its allowance.',
+  devin: 'Devin hasn\'t reported its allowance.',
+  hermes: 'Hermes hasn\'t reported its allowance.',
+  localai: 'LocalAI reports status without usage figures.',
+  ollama: 'Ollama reports each request\'s counts. Its remaining allowance isn\'t available here.',
+  aioncore: 'AionCore isn\'t configured.',
 };
-const FALLBACK_DETAIL = 'This helper does not report its allowance here yet.';
+const FALLBACK_DETAIL = 'This helper hasn\'t reported its allowance.';
 
 export const now = () => new Date().toISOString();
 

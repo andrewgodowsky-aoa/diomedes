@@ -107,11 +107,11 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
   if (open) {
     // Raised once, but never silent: the same issue on another run of the task is noted there.
     if (resumed.has(open.sessionId) || onRun.some((record) => record.action === 'note'))
-      return { rung: null, reason: 'An escalation about this is already waiting for you.' };
+      return { rung: null, reason: 'This issue already needs your decision.' };
     return {
       rung: 'note',
-      reason: 'An escalation about this is already waiting for you on an earlier run, so it is noted here, not raised again.',
-      settled: 'An escalation about this is already waiting for you.',
+      reason: 'This issue already needs your decision on an earlier job. It was noted on this job.',
+      settled: 'This issue already needs your decision.',
     };
   }
   const last = onRun.at(-1);
@@ -171,7 +171,7 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
       rung: 'escalate',
       reason:
         bound === 0
-          ? 'This detector declares no correction, so the run is paused for you.'
+          ? 'No automatic correction is available. Review the paused job.'
           : `Diomedes asked the run to correct this ${bound === 1 ? 'once' : `${bound} times`}, which is the bound, and it persists.`,
     };
   };
@@ -201,5 +201,5 @@ export function nextStep(finding: DriftFinding, context: LadderContext): LadderS
   }
   if (onRun.some((record) => record.action === 'note'))
     return { rung: null, reason: 'Already noted on this run.' };
-  return { rung: 'note', reason: 'Worth recording; not yet something to act on.' };
+  return { rung: 'note', reason: 'Recorded for review.' };
 }

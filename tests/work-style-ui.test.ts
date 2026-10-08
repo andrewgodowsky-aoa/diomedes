@@ -81,7 +81,7 @@ describe('the style picker', () => {
     const pinned = thread({ workStyle: 'efficient', requested: { model: 'gpt-6-astra', effort: 'high' } });
     expect(styleButtonLabel(pinned, settings())).toBe('Chosen model');
     const html = picker({ thread: pinned });
-    expect(html).toContain('Picking a style clears the pin');
+    expect(html).toContain('Choosing a style lets Nectovia choose the model instead.');
     expect(html).not.toContain('gpt-6-astra');
     expect(html).not.toMatch(/class="m on"/);
   });

@@ -220,14 +220,14 @@ test('a held write names its rule, and the Supervision section shows each firing
   await expect(annotate).toContainText(`By ${AGENT_NAME} supervision · application action, no model`);
   await expect(annotate).toContainText('Project rule helper-note v1: Note when the plan hands work to a helper.');
   await expect(annotate).toContainText('Matched “helper to check” at 27–42 of model:plan, while it streamed.');
-  await expect(annotate.locator('[data-trigger-outcome]')).toHaveText('Recorded. Nothing else was done.');
+  await expect(annotate.locator('[data-trigger-outcome]')).toHaveText('Recorded.');
   await expect(annotate.locator('small')).toContainText(/rule · [a-f0-9]{64}/);
 
   const hold = rows.nth(2);
   await expect(hold).toHaveAttribute('data-intervention', 'hold');
   await expect(hold).toContainText('Organization rule reports-held v1: Every report is read by a person before it is written.');
   await expect(hold).toContainText('Matched the proposed propose_write call on Harness report.md, before it was admitted.');
-  await expect(hold.locator('[data-trigger-outcome]')).toHaveText('Held before it ran, then you said go ahead.');
+  await expect(hold.locator('[data-trigger-outcome]')).toHaveText('You approved this step.');
 
   await page.setViewportSize({ width: 900, height: 900 });
   await expect(supervision).toBeVisible();
@@ -262,7 +262,7 @@ test('a stop rule on streamed text pauses the run and asks you; your answer is r
   const escalation = page.getByRole('region', { name: `${AGENT_NAME} paused this run` });
   await expect(escalation).toBeVisible();
   await expect(escalation.locator('.ask')).toHaveText(
-    `${AGENT_NAME} paused this run: a project rule (no-summaries) matched the streamed text “Summarise what”: Summaries are written by a person — continue, redirect, or stop?`,
+    `${AGENT_NAME} paused this job. a project rule (no-summaries) matched the streamed text “Summarise what”: Summaries are written by a person`,
   );
   await expect(escalation.getByRole('button')).toHaveText(['Continue', 'Redirect', 'Stop']);
 

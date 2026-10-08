@@ -154,9 +154,9 @@ export const SAVE_NEEDS_PROJECT =
  *  (the pattern `client/console/Composer.tsx`'s CAPS already uses). Never
  *  exported: it is wording, not a decision the view-model owns. */
 const CAPS: Record<Restriction, string> = {
-  automatic: 'Nectovia decides whether to answer, plan or start work. It starts only what you have allowed.',
-  'answer-only': 'Answers only. Nothing is planned or started.',
-  'plan-only': 'Answers and writes a plan for you to read. Nothing is started.',
+  automatic: 'Nectovia answers, plans or starts work within your permissions.',
+  'answer-only': 'Answers your question.',
+  'plan-only': 'Prepares a plan for your review.',
 };
 
 /** The ledger's point colour per result state, the same vocabulary
@@ -173,7 +173,7 @@ const POINT_FOR: Record<DiomedesResult['state'], string> = {
  * substitutes another engine for the one the thread is actually on.
  */
 export function routeName(route: Route, model?: string | null): string {
-  if (route === 'aws-bedrock') return `${routeDisplayName(route)} (Luna)`;
+  if (route === 'aws-bedrock') return routeDisplayName(route);
   // Nectovia's model is the one the account service publishes, named as it names it.
   if (route === 'nectovia' && model) return `${routeDisplayName(route)} (${model})`;
   return routeDisplayName(route);
@@ -269,7 +269,7 @@ export function Diomedes({
   const artifacts = useArtifactSelection(scopeId, artifactScope, turns);
   const [artifactWidth, setArtifactWidth] = useArtifactWidth();
   // One unconfirmed message at a time: it is resolved before anything new is sent.
-  const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
+  const blocked = unconfirmed !== null ? 'Check the outcome of your earlier message first.' : unavailable;
   const ready = canSend(text, pending, blocked);
   const submit = () => {
     if (!canSend(text, pending, blocked)) return;
@@ -391,8 +391,8 @@ export function Diomedes({
                   {unconfirmed !== null && !pending && (
                     <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
                       <p>
-                        Nectovia could not confirm your last message. Sending it again checks what
-                        happened and never asks twice.
+                        Nectovia couldn't confirm your last message. Retry to check its outcome
+                        using the original request.
                       </p>
                       <p className="dio-quote" title={unconfirmed}>
                         {unconfirmed}

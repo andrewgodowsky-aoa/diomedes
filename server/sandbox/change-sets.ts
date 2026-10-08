@@ -347,7 +347,7 @@ export class ChangeSetService {
         what: `A sub-task's ${paths.length === 1 ? 'change' : `${paths.length} changes`} to ${paths.slice(0, 3).join(', ')}${paths.length > 3 ? ` and ${paths.length - 3} more` : ''} ${paths.length === 1 ? 'waits' : 'wait'} for you`,
         why: `${writer(record.origin)} wrote ${paths.length === 1 ? 'it' : 'them'} in its own sandbox, and this loop did not apply ${paths.length === 1 ? 'it' : 'them'}: ${reasons.join('; ')}.`,
         consequence:
-          'Keep writes a change to the project as yours, checked against the version the sub-task started from. Discard leaves the project as it is. Nothing changes until you decide.',
+          'Keep saves a change as yours after checking against the file version the sub-task started from. Discard declines the proposed change.',
         files: paths,
         state: 'open',
         createdAt: now(),

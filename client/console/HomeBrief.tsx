@@ -38,7 +38,7 @@ export function HomeBrief({ projects, onOpen, onOpenWaiting, now = new Date() }:
       </h2>
       {model.waiting.length > 0 && (
         <section className="nv-report">
-          <h3>Waiting on you</h3>
+          <h3>Needs you</h3>
           <ul>
             {model.waiting.map(({ projectId, projectName, item }) => {
               const tone = item.kind === 'failed' ? 'fail' : 'attn';

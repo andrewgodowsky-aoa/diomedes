@@ -74,7 +74,7 @@ describe('the Nectovia usage bar', () => {
   it('pending 100 and uncertain 50 are shown apart and leave 550 available', () => {
     const page = text(render(ready({ settledMonthlyMicroUsd: c(300), pendingMonthlyMicroUsd: c(100), uncertainMonthlyMicroUsd: c(50) })));
     expect(page).toContain('Available this month 550 credits');
-    expect(page).toContain('Held for work in flight 100 credits');
+    expect(page).toContain("Reserved for ongoing work 100 credits");
     expect(page).toContain('Held, outcome not yet known 50 credits');
     expect(page).toContain('30%');
   });

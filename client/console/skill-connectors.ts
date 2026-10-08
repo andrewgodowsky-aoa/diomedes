@@ -66,7 +66,7 @@ export function skillConnectorNote(
   if (kinds.length === 0) return null;
   if (!view) return null;
   if (view.state === 'malformed')
-    return { text: 'The read connectors file cannot be read. See Settings > Engines.', offerAdd: true };
+    return { text: "Can't read the connector settings. Check Settings > Engines.", offerAdd: true };
   const { covered, missing } = skillConnectorMatch(skill, view);
   const parts: string[] = [];
   if (covered.length > 0) {

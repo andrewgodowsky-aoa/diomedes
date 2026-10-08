@@ -256,7 +256,7 @@ export function Picker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Engine, model and reasoning level for this thread"
+        title="AI settings for this thread"
         onClick={() => setOpen(!open)}
       >
         {engLabel && <span className="eng">{engLabel}</span>}
@@ -325,8 +325,8 @@ export function Picker({
                 const why = connection?.repair
                   ? 'is on and the installation it uses needs attention'
                   : connection?.routeIssue
-                    ? 'is on and the account it reported is not the one this route uses'
-                    : 'is on but has not passed a sign-in and model check';
+                    ? "is on but reported a different account from the one this connection needs"
+                    : "is on but hasn't passed its connection checks";
                 return (
                   <p className="note" key={id}>
                     {integrations.find((i) => i.id === id)?.name ?? id} {why}. Check it in Settings
@@ -431,12 +431,12 @@ export function Picker({
                     </div>
                   ) : (
                     <div className="note">
-                      Applies to this thread. The default lives in Settings.
+                      For this thread. Change the default in Settings.
                     </div>
                   )}
                 </>
               ) : (
-                <div className="note">Applies to this thread. The default lives in Settings.</div>
+                <div className="note">For this thread. Change the default in Settings.</div>
               )}
             </>
           )}

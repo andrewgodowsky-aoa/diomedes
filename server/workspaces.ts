@@ -1085,7 +1085,7 @@ export class WorkspaceService {
     if (!canConfigureOrganization(membership))
       throw refuse(
         403,
-        'An owner or administrator sets this workspace up. You join the configuration they have already made.',
+        'An owner or administrator sets up this business.',
         'not_configurator',
       );
     const setup = this.setups.get(organizationId) ?? null;
@@ -1350,7 +1350,7 @@ export class WorkspaceService {
     if (mode === 'start' && setup.state !== 'not-started')
       throw refuse(
         409,
-        'This workspace already has a saved setup. Resume it rather than starting a second one.',
+        'This workspace already has a saved setup. Resume it to continue.',
         'setup_exists',
       );
     // Resuming a finished draft starts a new proposal from the same answers; it

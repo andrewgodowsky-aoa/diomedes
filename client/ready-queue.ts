@@ -22,8 +22,8 @@ export const pauseAllReadyQueues = (paused: boolean, reason?: string) =>
 
 /** The one line the Board's header says about the queue. */
 export function queueStatus(view: ReadyQueueView): string {
-  if (view.allPaused) return `All queues paused · ${view.allPaused.reason}`;
-  if (view.paused) return `Queue paused · ${view.paused.reason}`;
-  if (!view.autoStart) return 'You start Ready work';
-  return `Starts automatically · ${view.running} of ${view.limits.global} running across projects`;
+  if (view.allPaused) return `All Ready work paused · ${view.allPaused.reason}`;
+  if (view.paused) return `Ready work paused · ${view.paused.reason}`;
+  if (!view.autoStart) return 'Start Ready tasks yourself';
+  return `Automatic starts on · ${view.running} of ${view.limits.global} tasks running across projects`;
 }

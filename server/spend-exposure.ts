@@ -216,7 +216,7 @@ export class JobCapReached extends SpendExposureError {
   ) {
     super(
       'job_cap_reached',
-      `This job has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} cap, and its next step could take it to ${formatMoney(neededMicroUsd)}. It stopped before that step; nothing more was sent.`,
+      `This job has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} cap. Its next step could take it to ${formatMoney(neededMicroUsd)}, so it stopped before that step.`,
       402,
     );
     this.name = 'JobCapReached';
@@ -233,7 +233,7 @@ export class RunBudgetReached extends SpendExposureError {
     readonly neededMicroUsd: MicroUsd,
   ) {
     super('run_budget_reached',
-      `This run has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} allocation, and its next step could take it to ${formatMoney(neededMicroUsd)}. Nothing more was held or sent.`, 402);
+      `This run has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} allocation. Its next step could take it to ${formatMoney(neededMicroUsd)}, so it stopped before that step.`, 402);
     this.name = 'RunBudgetReached';
   }
 }

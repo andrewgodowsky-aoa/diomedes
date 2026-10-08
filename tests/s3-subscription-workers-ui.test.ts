@@ -225,7 +225,7 @@ describe('Settings: what "Your coding tools" shows', () => {
   test('a person with nothing saved: the copy, every tool by the server’s name, and Nectovia preselected', () => {
     const html = render(view());
     for (const text of [
-      'Nectovia can hand a task in your Personal work to a coding tool you already pay for. That task runs on your plan, not your Nectovia credits.',
+      "Use a coding tool you already pay for on Personal tasks. Those tasks use that tool's plan.",
       SUBSCRIPTION_WORKERS_CONSENT,
       '<span>I understand</span>',
       '<span>Hand tasks to my coding tools</span>',
@@ -236,7 +236,7 @@ describe('Settings: what "Your coding tools" shows', () => {
       "% of each tool's limit for me.",
       "A tool that doesn't report how much of its limit is left won't get tasks while you keep a share.",
       'When none of your tools can take a task',
-      'Nectovia does it with your Nectovia credits',
+      'Nectovia uses your credits for the task',
       'Hold the work until one of your tools can take it',
     ])
       expect(html).toContain(text);

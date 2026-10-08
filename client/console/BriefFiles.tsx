@@ -39,7 +39,7 @@ export function BriefFiles({
       )
       .catch((e: unknown) => {
         if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : 'The project files could not be read.');
+          setError(e instanceof Error ? e.message : "The project files couldn't be read.");
       })
       .finally(() => {
         if (!abort.signal.aborted) setBusy(false);
@@ -54,7 +54,7 @@ export function BriefFiles({
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The brief could not be prepared.');
+      setError(e instanceof Error ? e.message : "The brief couldn't be prepared.");
       report(e);
     } finally {
       setBusy(false);
@@ -63,9 +63,8 @@ export function BriefFiles({
   return (
     <div className="brief-files">
       <p className="caption">
-        Check the exports for this brief, or check nothing to read the files the active setup
-        approved. Use Files &gt; Import files to add exports from this computer. This brief runs
-        locally.
+        Select reports for this brief. With none selected, it uses the approved files in the
+        current setup. Add reports through Files &gt; Import files.
       </p>
       <div className="brief-file-list" role="group" aria-label="Weekly brief sources">
         {files.map((file) => (
@@ -125,7 +124,7 @@ export function BriefFiles({
                 selected.length ? { projectId, sources: selected } : {},
               );
               onResult(
-                `Drafted into ${result.projectName} as ${result.destination}. It is waiting for you to read.`,
+                `Review the draft in ${result.projectName} at ${result.destination}.`,
               );
             })
           }
@@ -138,7 +137,7 @@ export function BriefFiles({
           ? 'Reading selected files or preparing the brief...'
           : selected.length
             ? `${selected.length} of ${IMPORT_MAX_FILES} files selected`
-            : 'Nothing checked: the brief reads the files the active setup approved.'}
+            : 'Using the approved files from the current setup.'}
       </p>
     </div>
   );

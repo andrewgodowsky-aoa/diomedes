@@ -105,16 +105,16 @@ export function usageBarModel(state: UsageState, now: number, scope: UsageScope 
     { term: `Used ${period}`, value: credits(usage.settledMicroUsd) },
     { term: `Available ${period}`, value: credits(usage.availableMicroUsd) },
   ];
-  if (usage.pendingMicroUsd > 0) facts.push({ term: 'Held for work in flight', value: credits(usage.pendingMicroUsd) });
+  if (usage.pendingMicroUsd > 0) facts.push({ term: 'Reserved for ongoing work', value: credits(usage.pendingMicroUsd) });
   if (usage.uncertainMicroUsd > 0)
     facts.push({
       term: 'Held, outcome not yet known',
       value: credits(usage.uncertainMicroUsd),
-      note: 'This may already have cost money upstream. It stays held until the provider’s records say what happened, so nothing is charged twice.',
+      note: 'These requests may have been charged. This amount stays reserved until the service confirms the outcome.',
     });
   if (usage.overspentMicroUsd > 0) facts.push({ term: 'Over by', value: credits(usage.overspentMicroUsd) });
   if (usage.correctionsMicroUsd > 0)
-    facts.push({ term: 'Returned by corrections', value: credits(usage.correctionsMicroUsd), note: 'Covered by us. Your usage history is unchanged.' });
+    facts.push({ term: 'Returned by corrections', value: credits(usage.correctionsMicroUsd), note: 'Covered by Nectovia.' });
   if (usage.correctionWithdrawalsMicroUsd > 0) facts.push({ term: 'Withdrawn by corrections', value: credits(usage.correctionWithdrawalsMicroUsd) });
   const topUp = usage.topUp;
   if (topUp.availableMicroUsd > 0 || topUp.heldMicroUsd > 0 || topUp.settledThisPeriodMicroUsd > 0)

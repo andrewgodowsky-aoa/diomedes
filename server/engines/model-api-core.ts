@@ -171,7 +171,7 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
     )
       throw new ModelApiError(
         `${prefix}_destination_refused`,
-        `The model request was addressed somewhere other than the approved ${label} endpoint. Nothing was sent.`,
+        `The request was addressed outside the approved ${label} destination.`,
         false,
       );
     if ((init?.method ?? 'GET').toUpperCase() !== 'POST' || typeof init?.body !== 'string')
@@ -179,7 +179,7 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
     if (Buffer.byteLength(init.body) > options.maxRequestBytes)
       throw new ModelApiError(
         `${prefix}_input_too_large`,
-        'This request is larger than the route allows. Nothing was sent.',
+        'This request exceeds the connection\'s size limit.',
         false,
       );
     options.inspectBody?.(init.body);
@@ -193,7 +193,7 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
             ? error
             : new ModelApiError(
                 `${prefix}_dispatch_refused`,
-                `${error instanceof Error ? error.message : 'The payer refused this call.'} Nothing was sent.`,
+                `${error instanceof Error ? error.message : 'The payer refused this call.'}`,
                 false,
               ),
         );
@@ -535,7 +535,7 @@ export function callCeiling(input: {
   if (estimateBytes > input.limits.maxRequestBytes)
     throw new ModelApiError(
       `${input.prefix}_input_too_large`,
-      'The conversation and its sources are larger than this route allows. Nothing was sent.',
+      'The conversation and its sources exceed this connection\'s size limit.',
       false,
     );
   return ceilingCost(input.card, {
@@ -764,7 +764,7 @@ function cacheRefusal(binding: RouteBinding, request: CacheRequest): ModelApiErr
   if (!expected || !isDeepStrictEqual(expected, request))
     return new ModelApiError(
       `${binding.prefix}_cache_refused`,
-      'This call’s cache setting is not one Diomedes can send.',
+      'Nectovia can\'t use this cache setting.',
       false,
     );
   if (!binding.cacheNamespace && request.policy !== 'provider-default')
@@ -989,7 +989,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
       code === 'attempt_exists' ? `${prefix}_attempt_exists` : `${prefix}_spend_refused`,
       code === 'attempt_exists'
         ? 'This exact call was already attempted. It is never sent twice; check the run before continuing.'
-        : `${message} Nothing was sent.`,
+        : `${message}`,
       false,
     );
   }
@@ -1185,7 +1185,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
     const refusedEarly = transportError as ModelApiError | null;
     if (refusedEarly) return fail(refusedEarly.code, refusedEarly.message);
     if (sdkError instanceof ModelApiError) return fail(sdkError.code, sdkError.message);
-    return fail(`${prefix}_request_not_prepared`, 'The model request could not be prepared. Nothing was sent.');
+    return fail(`${prefix}_request_not_prepared`, 'The AI request couldn\'t be prepared.');
   }
   if (signal.aborted && !envelope)
     return fail(
@@ -1212,7 +1212,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
   if (!read.readable || !read.classified)
     return fail(
       `${prefix}_unreadable_response`,
-      `${label} returned a response Diomedes could not read. Nothing from it was used.`,
+      `${label} returned a response Nectovia couldn't read.`,
     );
   const classified = read.classified;
   const partialText = classified.text ? bounded(classified.text) : null;
@@ -1244,7 +1244,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
   if (classified.unexpectedItems.length)
     return fail(
       `${prefix}_unexpected_output`,
-      `${label} returned output this route does not accept. Nothing from it was used.`,
+      `${label} returned output this connection doesn't accept.`,
       common,
     );
   if (classified.functionCalls.length > 1)
@@ -1264,7 +1264,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
   if (sdkError || !sdk)
     return fail(
       `${prefix}_invalid_output`,
-      `The ${label} answer did not pass the SDK’s own validation. Nothing from it was used.`,
+      `The ${label} answer failed validation.`,
       common,
     );
   const read_ = sdk as NonNullable<typeof sdk>;
@@ -1301,7 +1301,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
     if (read_.toolCalls.length || read_.text !== classified.text)
       return fail(
         `${prefix}_invalid_output`,
-        `The SDK’s reading of the answer differs from ${label}’s response. Nothing was used.`,
+        `The checked answer differs from ${label}'s response.`,
         common,
       );
     outcome = { kind: 'final', text: classified.text };
@@ -1312,7 +1312,7 @@ async function exchange(input: RespondStreamInput, facts: CallFacts): Promise<Re
     // Fail closed: an answer whose cost is not on the ledger is not used.
     throw new ModelApiError(
       `${prefix}_usage_unrecorded`,
-      `${label} answered, but Diomedes could not record what it cost. The answer was not used; the call is held as uncertain.`,
+      `${label} answered, but Nectovia couldn't record its cost. The answer wasn't used, and the call's cost remains unconfirmed.`,
       true,
       { ...evidence(), responseId: classified.responseId },
     );

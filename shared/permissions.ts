@@ -302,10 +302,10 @@ export function describePermissionChoices(input: {
       id: 'review',
       name: 'Review changes',
       available: true,
-      detail: 'You see each change set and decide. Nothing is applied without your OK.',
+      detail: 'Review each change set before applying it.',
       unavailableReason: '',
       points: [
-        'Every write waits for your exact decision.',
+        'Approve each exact change before it’s written.',
         'Revoking a task scope returns you to this.',
       ],
     },
@@ -335,11 +335,11 @@ export function describePermissionChoices(input: {
           ? ''
           : input.reviewerReason,
       points: [
-        'A separate reviewer looks at each eligible change set. It can only hold a change back, never widen what is allowed.',
-        'This does not increase file, tool, command or network permission by one byte.',
+        'A separate reviewer can approve or block eligible changes within your existing scope.',
+        'Your file, tool, command and network permissions remain the limit.',
         'Anything outside the scope still comes to you.',
-        'If the reviewer times out, fails or is unclear, the change set waits for you.',
-        'A reviewer decision is recorded as a model decision. It is never recorded as your approval.',
+        'Review the change yourself if the reviewer fails, times out or gives an unclear answer.',
+        'History attributes the decision to the AI reviewer. Human approval requires your own decision.',
       ],
     },
     {
@@ -348,12 +348,12 @@ export function describePermissionChoices(input: {
       available: fullAccess.available,
       detail: fullAccess.available
         ? 'Unrestricted execution inside the named isolated environment.'
-        : 'Unrestricted execution needs an isolated environment Diomedes can name, restore and revoke.',
+        : 'Unrestricted execution needs an isolated environment Nectovia can name, restore and revoke.',
       unavailableReason: fullAccess.available ? '' : fullAccess.summary,
       points: fullAccess.available
         ? ['Effects are confined to the named environment.']
         : [
-            'Not offered: no environment on this installation has an operating-system, process or virtual-machine boundary that Diomedes owns.',
+            'This installation has no isolated environment with an operating-system, process or virtual-machine boundary owned by Nectovia.',
             `Never available for: ${fullAccess.unsupportedEffects.join(', ')}.`,
             'A disabled-tools flag, a prompt instruction or a git worktree is not containment.',
           ],

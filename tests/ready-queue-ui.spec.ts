@@ -105,14 +105,14 @@ test('the Board turns automatic start on, pauses with a reason, and says why eac
   const auto = queue(page).getByRole('switch', { name: 'Start ready work automatically' });
   await expect(auto).not.toBeChecked();
   await expect(queue(page).locator('[data-queue-state]')).toHaveText('You start Ready work');
-  await expect(board(page).locator('.column[aria-label="Ready"] > .why')).toHaveText('Start explicitly to run');
+  await expect(board(page).locator('.column[aria-label="Ready"] > .why')).toHaveText('Start the task');
   await expect(readyRow(page, 'Count the walk-in')).not.toHaveAttribute('data-queue-why', /.*/);
 
   // Pause first, with a reason, then turn automatic start on: nothing starts.
   await queue(page).getByRole('button', { name: 'Pause queue' }).click();
   await queue(page).getByRole('textbox', { name: 'Reason' }).fill('Stocktake tonight');
   await queue(page).getByRole('button', { name: 'Pause', exact: true }).click();
-  await expect(queue(page).locator('[data-queue-state]')).toHaveText('Queue paused · Stocktake tonight');
+  await expect(queue(page).locator('[data-queue-state]')).toHaveText('Ready work paused · Stocktake tonight');
   await auto.click();
   await expect(auto).toBeChecked();
   await expect(readyRow(page, 'Count the walk-in')).toHaveAttribute('data-queue-why', 'paused');
@@ -131,25 +131,25 @@ test('the Board turns automatic start on, pauses with a reason, and says why eac
   await expect(readyRow(page, 'Order produce').locator('.why')).toHaveText('Next · waits on a decision in this project');
   await expect(board(page).locator('.column[aria-label="Ready"] > .why')).toHaveText('Starts automatically, oldest first');
   await expect(queue(page).locator('[data-queue-state]')).toHaveText(
-    'Starts automatically · 1 of 2 running across projects',
+    'Automatic starts on · 1 of 2 tasks running across projects',
   );
   const after = await api<ProjectState>(`/projects/${project.id}/state`);
   expect(after.sessions.map((session) => session.taskId)).toEqual([first.id]);
   expect(after.needs.filter((need) => need.state === 'open')).toHaveLength(1);
   expect(after.history.map((entry) => entry.sentence)).toContain(
-    'Diomedes started Count the walk-in from the Ready queue.',
+    'Nectovia started Count the walk-in automatically from Ready.',
   );
 
   // Pause every queue: the label says so, and running work keeps running.
   await queue(page).getByRole('button', { name: 'Pause all' }).click();
   await queue(page).getByRole('button', { name: 'Pause all queues' }).click();
-  await expect(queue(page).locator('[data-queue-state]')).toHaveText('All queues paused · Paused by you');
+  await expect(queue(page).locator('[data-queue-state]')).toHaveText('All Ready work paused · Paused by you');
   await expect(readyRow(page, 'Order produce')).toHaveAttribute('data-queue-why', 'all-paused');
   expect((await api<ProjectState>(`/projects/${project.id}/state`)).sessions[0].state).toBe('waiting');
   await page.screenshot({ path: path.join(fixtureRoot, 'board-queue-running.png') });
   await queue(page).getByRole('button', { name: 'Resume all' }).click();
   await expect(queue(page).locator('[data-queue-state]')).toHaveText(
-    'Starts automatically · 1 of 2 running across projects',
+    'Automatic starts on · 1 of 2 tasks running across projects',
   );
   expect(errors).toEqual([]);
 });

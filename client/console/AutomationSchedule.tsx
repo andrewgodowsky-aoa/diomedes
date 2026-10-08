@@ -192,7 +192,7 @@ function Editor({
         <button type="button" className="auto-toggle" onClick={onCancel}>
           Cancel
         </button>
-        <span className="auto-blocked">Saving does not turn it on.</span>
+        <span className="auto-blocked">Saving keeps the schedule's current state.</span>
       </div>
     </form>
   );
@@ -220,7 +220,7 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
       setReason('');
       onChanged(message(result));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The schedule could not be changed.');
+      setError(failure instanceof Error ? failure.message : "The schedule couldn't be changed.");
     } finally {
       setBusy(false);
     }
@@ -237,7 +237,7 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
       ? `On since ${when(schedule.since!)}, turned on by ${who(schedule.by)}`
       : schedule.state === 'paused'
         ? `Paused ${when(schedule.since!)} by ${who(schedule.by)}: ${schedule.pauseReason}`
-        : 'Off. It runs only when someone presses Run once.';
+        : 'Off. Use Run once to start it.';
   return (
     <section aria-label="Schedule" className="auto-schedule">
       <h3>Schedule</h3>
@@ -274,9 +274,9 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
             This computer, <span className="mono lc">{schedule.host.name}</span>.{' '}
             {schedule.host.lastSeenAt
               ? `Last checked ${when(schedule.host.lastSeenAt)}${
-                  schedule.host.state === 'unknown' ? '; it has not checked since.' : '.'
+                  schedule.host.state === 'unknown' ? "; it hasn't checked since." : '.'
                 }`
-              : 'It has not checked yet.'}
+              : "It hasn't checked in."}
             {!schedule.host.here && ' The schedule is assigned to another computer.'}
           </dd>
         </div>
@@ -295,8 +295,8 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
           onSave={(next, catchUpMinutes) =>
             void act({ action: 'edit', schedule: next, catchUpMinutes }, () =>
               schedule.state === 'enabled'
-                ? 'Schedule changed. It stays on, from the next slot.'
-                : 'Schedule saved. It is not on until someone turns it on.',
+                ? 'Schedule changed. The next scheduled job uses these settings.'
+                : 'Schedule saved. Turn it on to start scheduled work.',
             )
           }
         />
@@ -320,8 +320,8 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
             onClick={() =>
               void act({ action: 'pause', ...(reason.trim() ? { reason: reason.trim() } : {}) }, (result) =>
                 result.inFlight
-                  ? 'Paused. The run already started keeps going; pausing does not stop it.'
-                  : 'Paused. Nothing starts on its own until it is resumed.',
+                  ? 'Schedule paused. The current job continues.'
+                  : 'Schedule paused.',
               )
             }
           >
@@ -362,7 +362,7 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
               type="button"
               className="button primary"
               aria-disabled={busy}
-              onClick={() => void act({ action: 'resume' }, () => 'Resumed. Paused slots do not run.')}
+              onClick={() => void act({ action: 'resume' }, () => 'Resumed. Missed jobs stay skipped.')}
             >
               Resume
             </button>
@@ -372,7 +372,7 @@ export function ScheduleSection({ organizationId, automation, personId, onChange
               type="button"
               className="auto-toggle"
               aria-disabled={busy}
-              onClick={() => void act({ action: 'turn-off' }, () => 'Schedule off. It runs only when someone presses Run once.')}
+              onClick={() => void act({ action: 'turn-off' }, () => 'Schedule off. Use Run once to start it.')}
             >
               Turn off
             </button>
@@ -437,7 +437,7 @@ export function AttentionList({
                   await markAttentionSeen(organizationId, item.automationId, item.id);
                   onChanged(`Marked as seen: ${item.title}.`);
                 } catch (failure) {
-                  setError(failure instanceof Error ? failure.message : 'It could not be marked.');
+                  setError(failure instanceof Error ? failure.message : "It couldn't be marked as seen.");
                 }
               }}
             >

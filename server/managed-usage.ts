@@ -357,7 +357,7 @@ export class AllowanceLedger {
       if (sumMoney([used, input.maxMicroUsd]) > input.parentEnvelopeMicroUsd)
         throw refuse(
           402,
-          `The parent task cannot afford a ${formatMoney(input.maxMicroUsd)} hold inside its ${formatMoney(input.parentEnvelopeMicroUsd)} envelope with ${formatMoney(used)} already held. Settle work under it first, or raise the envelope.`,
+          `The parent task can't cover a ${formatMoney(input.maxMicroUsd)} hold within its ${formatMoney(input.parentEnvelopeMicroUsd)} spending limit while ${formatMoney(used)} is already held. Settle its work first, or raise its spending limit.`,
           'parent_envelope_exceeded',
         );
     }
@@ -401,7 +401,7 @@ export class AllowanceLedger {
     if (input.allowanceDebitMicroUsd > reservation.maxMicroUsd)
       throw refuse(
         409,
-        `That call settled at ${formatMoney(input.allowanceDebitMicroUsd)}, past its ${formatMoney(reservation.maxMicroUsd)} ceiling. This is a reconciliation problem, not a rounding one.`,
+        `That call settled at ${formatMoney(input.allowanceDebitMicroUsd)}, past its ${formatMoney(reservation.maxMicroUsd)} ceiling. Check the usage record.`,
         'settlement_exceeds_reservation',
       );
     const moved = this.move(reservation, 'settle');

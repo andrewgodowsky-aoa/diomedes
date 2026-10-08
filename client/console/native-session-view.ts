@@ -43,7 +43,7 @@ export function canQueue(view: ThreadSessionView | null, answering: boolean): bo
 
 /** One queued message as the list under the composer shows it. */
 export function queuedLabel(item: ThreadSessionView['queued'][number]): string {
-  if (item.state === 'pending') return 'Queued: sent when the current answer finishes';
+  if (item.state === 'pending') return 'Sends after the current answer';
   if (item.state === 'delivered') return 'Sent';
   return item.detail;
 }

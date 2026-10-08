@@ -211,7 +211,7 @@ test('Settings > App updates checks, downloads, verifies and hands off', async (
 
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(page.locator('.app-updates')).toContainText(ASSET);
-  await expect(page.locator('.app-updates')).toContainText('published digest verified');
+  await expect(page.locator('.app-updates')).toContainText('Download matches the official release');
   await fs.mkdir('evidence/autonomy-workbench', { recursive: true });
   await page.screenshot({
     path: 'evidence/autonomy-workbench/app-updates-verified.png',
@@ -219,7 +219,7 @@ test('Settings > App updates checks, downloads, verifies and hands off', async (
   });
 
   await page.getByRole('button', { name: 'Close and install', exact: true }).click();
-  await expect(page.locator('.app-updates')).toContainText('Update handoff accepted.');
+  await expect(page.locator('.app-updates')).toContainText('Nectovia is closing.');
   expect(launched).toHaveLength(1);
   expect(launched[0].path.endsWith(ASSET)).toBe(true);
   expect(launched[0].sha256).toBe(sha);

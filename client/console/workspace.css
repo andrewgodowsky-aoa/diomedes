@@ -250,7 +250,7 @@
 }
 .ws-facts > div.unresolved dd {
   color: var(--t3);
-  font-style: italic;
+  font-style: normal;
 }
 .ws-boundary {
   border-top: 1px solid var(--hair);

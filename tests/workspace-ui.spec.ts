@@ -134,7 +134,7 @@ test('creating a business is explicit, and says what it actually is', async ({ p
 
   await panel.getByRole('button', { name: 'Close dialog' }).click();
   await expect(mark(page)).toContainText('Business: Ridge Cabinetry');
-  await expect(page.getByText('Development identity — not verified')).toBeVisible();
+  await expect(page.getByText("Unverified test account")).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, 'business-rail.png') });
 });
 

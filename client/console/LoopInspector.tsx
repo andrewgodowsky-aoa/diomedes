@@ -51,7 +51,7 @@ const BADGE: Record<LoopOutcomeState, string> = {
 
 const ACTION_STATE: Record<string, string> = {
   succeeded: 'done',
-  waiting_approval: 'waiting for your OK',
+  waiting_approval: 'Needs your OK',
   running: 'running',
   pending: 'pending',
   retry_wait: 'will retry',
@@ -150,7 +150,7 @@ export function LoopInspector({ projectId, runId, revision }: { projectId: strin
         if (!controller.signal.aborted) setRead(value);
       },
       (reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'The loop could not be read.');
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "The job details couldn't be read.");
       },
     );
     return () => controller.abort();
@@ -174,7 +174,7 @@ export function LoopInspector({ projectId, runId, revision }: { projectId: strin
         <dt>Supervised by</dt>
         <dd
           className="loop-supervisor"
-          title="The native loop owns the plan, the order of actions, any handoff and the finish gate. Each model step is attributed to the model the runtime reported."
+          title="Nectovia directs the work. Each AI step records the model reported by the service."
         >
           {AGENT_NAME}
         </dd>
@@ -233,7 +233,7 @@ export function LoopInspector({ projectId, runId, revision }: { projectId: strin
       {view.finish && (
         <>
           <h3>Finish</h3>
-          <p className="loop-claim" title="The model’s own summary. The task’s declared checks decide the outcome above.">
+          <p className="loop-claim" title="AI summary. The task’s completion checks decide the result.">
             {view.finish.claim}
           </p>
         </>

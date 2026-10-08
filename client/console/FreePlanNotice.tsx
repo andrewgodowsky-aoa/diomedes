@@ -70,7 +70,7 @@ export function FreePlanNotice({ plan, busy = false, error = '', onChoice }: Fre
   return (
     <section className="dio-plan" aria-label="Free version">
       <h2>You're on the free version</h2>
-      <p>The Nectovia Agent is part of a paid plan. Your projects, task board and own AI tools keep working.</p>
+      <p>A paid plan adds the Nectovia Agent.</p>
       <div className="dio-plan-lists">
         <div>
           <h3>Free</h3>
@@ -137,7 +137,7 @@ export function usePlanNoticeChoice() {
       account.apply(await api<AccountStateView>('/account/plan-notice', 'POST', { choice }));
       return true;
     } catch (failure) {
-      setError(failure instanceof Error && failure.message ? failure.message : 'That choice could not be saved. Try again.');
+      setError(failure instanceof Error && failure.message ? failure.message : "That choice couldn't be saved. Try again.");
       return false;
     } finally {
       setBusy(false);

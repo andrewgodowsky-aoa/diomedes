@@ -100,7 +100,7 @@ function checkDropped(name: string, bytes: Uint8Array): { kind: SniffedKind; tex
   if (IMAGE_KINDS.includes(kind)) {
     const size = pictureSize(kind, bytes);
     if (!size || size.width < 1 || size.height < 1)
-      throw new ApiError(415, `${name} does not say how large it is. Files did not add it.`);
+      throw new ApiError(415, `${name} doesn't have readable picture dimensions.`);
     if (size.width * size.height > DROP_MAX_PIXELS)
       throw new ApiError(
         413,

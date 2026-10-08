@@ -30,8 +30,7 @@ export function RememberOfferBlock({
       </div>
       <p className="ask">{offerQuestion(offer.what, offer.approvals)}</p>
       <p className="why">
-        It would cover exactly this, in this project, until you revoke it. Anything different still
-        asks.
+        Approve this action in this project until you revoke it. Other actions need separate approval.
       </p>
       <div className="verbs">
         <button type="button" className="verb go" onClick={() => answer(true)}>

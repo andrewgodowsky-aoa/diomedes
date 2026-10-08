@@ -208,7 +208,7 @@ test('while an escalation is open, the same issue on another run of the task is 
   const other = context(trail, { needs: open, sessionId: 'S2' });
   expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), other)).toMatchObject({
     rung: 'note',
-    settled: 'An escalation about this is already waiting for you.',
+    settled: 'This issue already needs your decision.',
   });
   trail.push(record(finding('critical', 'scope-drift', 'scope:Plans'), 'note', { sessionId: 'S2' }));
   expect(nextStep(finding('critical', 'scope-drift', 'scope:Plans'), other).rung).toBeNull();

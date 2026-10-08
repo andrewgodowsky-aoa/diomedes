@@ -383,7 +383,7 @@ export function resolveBriefTarget(input: {
     return {
       ready: false,
       code: 'no-output-project',
-      message: `Choose the project ${organization.name} writes into. Its work is saved there for review, and nothing is written anywhere else.`,
+      message: `Choose the project where ${organization.name} saves its work for review.`,
     };
   const project = projects.find((candidate) => candidate.id === binding.projectId);
   // Deliberately not a fallback. A brief written into a project nobody chose is

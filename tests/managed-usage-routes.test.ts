@@ -131,7 +131,7 @@ describe('Nectovia usage on this host (NC-2026-09-22.1)', () => {
     expect(usage.data).toEqual({
       state: 'not-connected',
       organizationId,
-      reason: expect.stringMatching(/not signed in to a Nectovia account/),
+      reason: expect.stringMatching(/Sign in to Nectovia to read this business's credit usage/),
     });
     expect(JSON.stringify(usage.data)).not.toMatch(/MicroUsd|percent/i);
   });

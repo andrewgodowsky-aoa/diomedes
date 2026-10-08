@@ -328,7 +328,7 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       consent: true,
     });
     expect(refused.ok).toBe(false);
-    expect(await refused.text()).toMatch(/spend limit/i);
+    expect(await refused.text()).toMatch(/spending limit/i);
     expect(seen).toHaveLength(0);
 
     const approved = await approveSpend(1);

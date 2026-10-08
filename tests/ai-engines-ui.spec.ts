@@ -513,7 +513,7 @@ test('Console Ask revision confirms the named task documents, preserves Cancel, 
   await expect(confirmation).toContainText('weekly-operations-brief.md');
   await expect(confirmation).toContainText('bakery-inventory.md');
   await expect(confirmation).not.toContainText('unrelated.md');
-  await expect(confirmation).toContainText('Nothing in the project changes');
+  await expect(confirmation).toContainText("Read-only answer.");
   expect(calls).toHaveLength(count);
   expect((await api<ProjectState>(`/projects/${fixture.id}/state`)).conversations[0].turns).toHaveLength(0);
   await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -927,7 +927,7 @@ test('Settings binds the installation a person chooses, and sends only its candi
     await section.getByRole('button', { name: 'Choose an installation', exact: true }).click();
     const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(managed).toContainText('Recommended');
-    await expect(managed).toContainText('Nectovia verified these bytes against the release it pinned.');
+    await expect(managed).toContainText('Matches the verified release.');
     expect(binds).toHaveLength(0);
     await managed.getByRole('button', { name: 'Use this installation', exact: true }).click();
     await expect.poll(() => binds.length).toBe(1);

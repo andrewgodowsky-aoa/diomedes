@@ -145,7 +145,7 @@ export function mountReadConnectorRoutes(
       if (!(error instanceof Malformed)) throw error;
       return {
         state: 'malformed',
-        problem: `${READ_CONNECTORS_FILE} in the data folder cannot be read. Fix or remove it; nothing here will write over it.`,
+        problem: `${READ_CONNECTORS_FILE} in the data folder can't be read. Fix or remove it.`,
         connectors: [],
         ignored: [],
       };
@@ -180,7 +180,7 @@ export function mountReadConnectorRoutes(
         if (error instanceof Malformed)
           throw new ApiError(
             409,
-            `${READ_CONNECTORS_FILE} in the data folder cannot be read. Fix or remove it first; nothing was changed.`,
+            `${READ_CONNECTORS_FILE} in the data folder can't be read. Fix or remove it first.`,
           );
         throw error;
       }

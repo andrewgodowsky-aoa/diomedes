@@ -394,24 +394,24 @@ export function automationLabel(facts: AutomationFacts): AutomationStatus {
   if (latest?.admission === 'refused' && latest.refusalCode === 'interrupted_before_start')
     return status(
       'needs-investigation',
-      'The last press was interrupted before its run started. Nothing was written. Press Run once again.',
+      'The last start was interrupted. Press Run once again.',
     );
   if (latest?.admission === 'admitted' && run === null)
-    return status('needs-investigation', 'The last run’s record could not be read.');
+    return status('needs-investigation', 'The last job\'s history couldn\'t be read.');
   if (run) {
     if (run.state === 'queued' || run.state === 'running')
       return status('running', 'Preparing the draft now.');
     if (run.state === 'waiting')
       return run.waitingApproval
-        ? status('needs-approval', 'A step is waiting for your exact OK.')
-        : status('needs-investigation', 'The last run is waiting on something outside Diomedes.');
+        ? status('needs-approval', 'Approve the next step to continue.')
+        : status('needs-investigation', 'The last job needs an external response.');
     if (run.state === 'reconcile_required' || run.uncertain)
       return status(
         'needs-investigation',
-        'The last run may have done something it could not confirm. Check it before running again.',
+        'The last job has an unconfirmed action. Check what happened before starting again.',
       );
     if (run.state === 'failed' && !run.waitingForData)
-      return status('needs-investigation', 'The last run stopped because something went wrong.');
+      return status('needs-investigation', 'The last job failed. Check its error before starting again.');
   }
   const schedule = facts.schedule;
   if (schedule && schedule.state !== 'off' && schedule.blocked)
@@ -420,16 +420,16 @@ export function automationLabel(facts: AutomationFacts): AutomationStatus {
   if (run?.state === 'failed' && run.waitingForData)
     return status(
       'waiting-for-data',
-      `${listFiles(run.missing)} could not be read, so nothing was written.`,
+      `${listFiles(run.missing)} couldn't be read. Check the required files before starting again.`,
     );
   if (schedule?.state === 'paused')
-    return status('paused', 'Nothing starts on its own until an owner or admin resumes it.');
+    return status('paused', 'An owner or admin can resume the schedule.');
   if (schedule?.state === 'enabled' && !schedule.here)
-    return status('waiting-for-computer', 'Its schedule is assigned to another computer, so nothing starts here.');
+    return status('waiting-for-computer', 'The schedule is assigned to another computer.');
   if (schedule?.state === 'enabled' && schedule.host === 'unknown')
     return status(
       'waiting-for-computer',
-      'This computer has not checked its schedule recently, so it cannot say it will start on time.',
+      'This computer hasn\'t checked its schedule recently. Check the schedule before relying on its start time.',
     );
   if (schedule?.state === 'enabled')
     return status('scheduled', 'Starts on its own at its scheduled time while this computer is on.');
@@ -607,7 +607,7 @@ export const AUTOMATION_SUMMARY_CAPTIONS: Readonly<Record<keyof AutomationSummar
     configured: 'Set up and able to run, on a schedule or when someone presses Run once.',
     scheduled: 'Starts on its own at its scheduled time on this computer.',
     running: 'Working now.',
-    needsAttention: 'Waiting for data, an approval, or a check, or a run was missed or blocked.',
+    needsAttention: 'Needs data, approval or a check. Missed or blocked jobs also need attention.',
     notReady: 'Setup is not finished, so it cannot run.',
   });
 

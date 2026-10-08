@@ -273,7 +273,7 @@ export class AutomationOccurrences {
               : {
                   state: 'refused',
                   code: 'interrupted_before_start',
-                  reason: 'Diomedes stopped before this run started, so nothing was written.',
+                  reason: 'Nectovia stopped before this job started.',
                   at,
                 },
         });
@@ -454,7 +454,7 @@ export class AutomationService {
     if (!outputFor(manifest))
       return incomplete(
         'brief_no_destination',
-        'This setup names nowhere to put the brief, so nothing was prepared.',
+        'Choose a destination for this brief in the business setup.',
       );
     return { facts: { state: 'ready' }, manifest, target };
   }
@@ -842,8 +842,8 @@ export class AutomationService {
       doesNot: 'It sends nothing, and changes nothing but its own draft.',
       manual: [
         on
-          ? 'It starts on its own only while this computer is on and Diomedes is running. Nobody is alerted while it is off: a missed run is recorded when it starts again.'
-          : 'Someone presses Run once. Nothing starts on a schedule.',
+          ? 'The schedule runs while this computer is on and Nectovia is open. Missed jobs are recorded when it restarts; alerts need this computer running.'
+          : 'Press Run once to start it.',
         'The exports it reads are put into the project by hand, with Files > Import files.',
         'A person reads the draft and keeps or undoes it.',
         'Sharing the brief with anyone is done by hand.',
@@ -1074,7 +1074,7 @@ export class AutomationService {
     if (!setup)
       return refused(
         'schedule_owner_not_signed_in',
-        'The person signed in on this computer is not a member of this business, so nothing ran.',
+        'The person signed in on this computer isn\'t a member of this business.',
       );
     if (setup.facts.state === 'incomplete' && !setup.target.ready)
       return refused(setup.facts.code, setup.facts.message);
@@ -1574,7 +1574,7 @@ export class AutomationService {
           kind: 'failed',
           code: 'interrupted_before_start',
           title: 'A scheduled run was interrupted before it started',
-          detail: 'Diomedes stopped before the run started, so nothing was written. It is not run again on its own.',
+          detail: 'Nectovia stopped before the job started. Start it again when this computer is ready.',
         });
     // Newest first, stopping at the newest run that completed: the steady
     // state reads one run record per pass.
@@ -1601,10 +1601,10 @@ export class AutomationService {
             ? 'A scheduled run needs a check'
             : 'A scheduled run failed',
         detail: waiting
-          ? `${run.failure?.message ?? 'A source could not be read'} Nothing was written.`
+          ? `${run.failure?.message ?? 'A required source could not be read'}`
           : unsure
-            ? 'It may have done something it could not confirm. Check it before it runs again.'
-            : (run.failure?.message ?? 'It stopped because something went wrong.'),
+            ? 'The job has an unconfirmed action. Check what happened before starting again.'
+            : (run.failure?.message ?? 'The job failed. Check its error before starting again.'),
       });
     }
     if (clean) {
@@ -1747,7 +1747,7 @@ export class AutomationService {
         next = { ...current, control: { state: 'enabled', since: at, grant: granted } };
         next = this.resolveOpen(next, 'addressed', person, (item) => item.kind === 'blocked');
         act = { at, by: person, kind: 'resumed', revision: revision?.revision ?? 0 };
-        sentence = `You resumed the weekly brief’s schedule: ${description(revision ? describeSchedule(revision.schedule) : null)}. Slots from now on start on their own; the paused ones do not.`;
+        sentence = `You resumed the weekly brief’s schedule: ${description(revision ? describeSchedule(revision.schedule) : null)}. Future scheduled jobs start automatically; jobs skipped while paused stay skipped.`;
         break;
       }
       case 'turn-off': {

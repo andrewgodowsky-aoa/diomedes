@@ -155,8 +155,8 @@ test('a card opens in full: the work on one side, how it would run on the other,
   await expect(inspector).toBeVisible();
   const work = inspector.locator('.ti-work');
   await expect(work).toContainText('Read the three quotes, note what changed since last month, and recommend one.');
-  await expect(work).toContainText('No completion checks are declared, so a finished run reads Not verified.');
-  await expect(work).toContainText('It has not run yet.');
+  await expect(work).toContainText("Add completion checks to verify the result.");
+  await expect(work).toContainText("No job history.");
   const runs = inspector.locator('.ti-controls');
   await expect(runs).toContainText('Sample');
   // A project made over the API has no AI of its own, so the route is the default in Settings.

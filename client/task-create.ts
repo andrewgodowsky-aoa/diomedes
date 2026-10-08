@@ -13,12 +13,12 @@ const flights = new Map<string, { input: string; promise: Promise<Task> }>();
 const pattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const invalid = () =>
   new Error(
-    'The saved task request could not be checked. It has been kept; check the Board before creating another task.',
+    'The saved task request couldn\'t be checked. Check the Board before creating another task.',
   );
 const unavailable = () =>
   new Error('Task request storage is unavailable; the request was not sent.');
 const unresolved = () =>
-  new Error('Task creation could not be confirmed. Retry create checks the same request.');
+  new Error('Task creation couldn\'t be confirmed. Retry create checks the same request.');
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -89,7 +89,7 @@ function clear(storage: Storage, key: string) {
     storage.removeItem(key);
   } catch {
     throw new Error(
-      'This browser could not clear its saved task request. Check the Board before creating another task.',
+      'This browser couldn\'t clear its saved task request. Check the Board before creating another task.',
     );
   }
 }

@@ -45,7 +45,7 @@ describe('local profile controls', () => {
   });
   it('admits bounded images only for an image-capable profile, retaining existing text rules', () => {
     const image: Pick<DocumentInfo, 'path' | 'kind' | 'size'> = { path: 'diagram.png', kind: 'unsupported', size: 1000 };
-    expect(modelAttachmentProblem(image)).toContain('not a text document');
+    expect(modelAttachmentProblem(image)).toContain("isn't a text document");
     expect(modelAttachmentProblem(image, true)).toBeNull();
     expect(modelAttachmentProblem({ ...image, size: 4 * 1024 * 1024 + 1 }, true)).toContain('4 MB');
     expect(modelAttachmentProblem({ path: 'notes.md', kind: 'markdown', size: 1000 }, true)).toBeNull();

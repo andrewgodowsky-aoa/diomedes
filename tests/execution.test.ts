@@ -160,7 +160,7 @@ describe('who pays', () => {
       managedInference: true,
     });
     expect(payer.kind).toBe('local-machine');
-    expect(payer.reason).toContain('machine');
+    expect(payer.reason).toContain('computer without a usage charge');
     // The local model runs here too, even in a business workspace with managed inference.
     expect(payerFor({ routeId: 'bonsai', workspace: { kind: 'business', organizationId: 'org-1' }, managedInference: true }).kind)
       .toBe('local-machine');

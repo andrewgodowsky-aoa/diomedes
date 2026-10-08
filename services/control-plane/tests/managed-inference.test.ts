@@ -852,7 +852,7 @@ describe('reading an attempt', () => {
 
 // --- the owner's spend controls ------------------------------------------------------------------
 
-const CEILING_REFUSAL = 'Nectovia’s model service isn’t available right now. Nothing was charged.';
+const CEILING_REFUSAL = 'Nectovia\'s AI service isn\'t available right now.';
 /**
  * The hold the gateway prices for this request body, under the tier's charge: its input bound at the
  * highest input-side charge plus the output cap at the output charge, rounded up, plus the request fee.

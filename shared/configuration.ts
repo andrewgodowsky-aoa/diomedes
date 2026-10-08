@@ -158,7 +158,7 @@ export type ConnectionStatus = 'connected' | 'catalogue' | 'requires-authorizati
 export const CONNECTION_STATUS_TEXT: Readonly<Record<ConnectionStatus, string>> = Object.freeze({
   connected: 'Connected',
   catalogue: 'Not connected',
-  'requires-authorization': 'Waiting for you to allow it',
+  'requires-authorization': 'Needs your approval',
   unsupported: 'Not supported here',
 });
 
@@ -735,7 +735,7 @@ export function validateProposal(
         'no-approver',
         'degraded',
         'approvers.humanRequired',
-        'Nothing was named as needing a person first, so everything keeps stopping for review.',
+        'No actions were assigned an approver. All actions need review.',
       ),
     );
 
@@ -964,7 +964,7 @@ function summarise(proposal: ConfigurationProposal): Map<string, Row> {
   );
   set(
     'approvers',
-    'What waits for a person',
+    'What needs approval',
     proposal.approvers.everythingStops
       ? 'Everything'
       : proposal.approvers.humanRequired.join(', ') || 'Nothing named',
@@ -1081,4 +1081,4 @@ export const ACTIVATION_CONFLICT =
 export const ANSWERS_MOVED =
   'The answers changed after this setup was proposed. Review it again so you activate what you read.';
 export const ROLLBACK_LIMITS =
-  'Going back restores the previous setup on this computer. It cannot undo invitations, connections or anything already sent, and it cannot bring back access that was taken away.';
+  'Going back restores the previous setup on this computer. Invitations, connections, sent items and revoked access remain as they are.';

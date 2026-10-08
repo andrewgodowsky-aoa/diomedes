@@ -72,7 +72,7 @@ export function vertexStateRows(view: VertexConnectionView): VertexStateRow[] {
       text: !spend
         ? 'Not set'
         : spend.capMicroUsd === 0
-          ? 'Not approved: nothing can be sent'
+          ? 'Approval required'
           : `${usd(spend.capMicroUsd)} approved, ${usd(spend.availableMicroUsd)} left`,
       value: !spend || spend.capMicroUsd === 0 ? 'waiting' : spend.availableMicroUsd > 0 ? 'ok' : 'blocked',
     },
@@ -131,7 +131,7 @@ export function vertexMoneyLines(view: VertexConnectionView): VertexMoneyLine[] 
   const a = view.accounting;
   if (!a) return [];
   return [
-    { key: 'payer', label: 'Paid by', text: `Your Google Cloud project ${a.payer.projectId}, not Nectovia credits` },
+    { key: 'payer', label: 'Paid by', text: `Your Google Cloud project ${a.payer.projectId}` },
     { key: 'gross', label: 'Estimated cost, settled calls', text: `${usd(a.grossEstimateMicroUsd)} at Google’s standard rate` },
     {
       key: 'unresolved',
@@ -145,6 +145,6 @@ export function vertexMoneyLines(view: VertexConnectionView): VertexMoneyLine[] 
     },
     { key: 'credits', label: 'Credits Google applied', text: `Not known here: see ${a.confirmedCredits.where}` },
     { key: 'debit', label: 'Nectovia credits used', text: usd(a.customerDebitMicroUsd) },
-    { key: 'invoice', label: 'Invoice', text: `Google’s, not Nectovia’s: see ${a.invoice.where}` },
+    { key: 'invoice', label: 'Invoice', text: `Google's invoice. See ${a.invoice.where}` },
   ];
 }

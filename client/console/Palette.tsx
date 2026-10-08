@@ -127,9 +127,9 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
             setSel(0);
             setSelAct(0);
           }}
-          placeholder="Task, worker, model, project, or a verb like stop"
+          placeholder="Search by name or enter an action"
           autoComplete="off"
-          aria-label="Find a task, worker, model, project or action"
+          aria-label="Find and act"
         />
         <ul>
           {rows.map((entry, i) => {

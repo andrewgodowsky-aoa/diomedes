@@ -11,7 +11,7 @@ import {
 import { Button } from './components';
 
 const messageOf = (error: unknown) =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
+  error instanceof ApiError || error instanceof Error ? error.message : "The request couldn't be completed.";
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,7 +24,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function RouteChecks({
   base,
   model,
-  title = 'Route checks',
+  title = 'Connection tests',
   revision,
   disabled = false,
   onChanged,
@@ -121,7 +121,7 @@ export function RouteChecks({
           </Button>
         ) : (
           <Button onClick={() => void run()} disabled={disabled || !state.canRun}>
-            Run route checks
+            Run connection tests
           </Button>
         )}
         {state.reason && <span className="caption">{state.reason}</span>}

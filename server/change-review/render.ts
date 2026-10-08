@@ -90,7 +90,7 @@ export function renderSummary(
   if (noChanges) {
     const text =
       manifest.outcome === 'declined'
-        ? 'The proposed change was declined. Nothing was written.'
+        ? 'The proposed change was declined.'
         : manifest.outcome === 'stopped'
           ? 'The run was stopped. No recorded changes were made.'
           : manifest.outcome === 'failed'

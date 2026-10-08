@@ -828,7 +828,7 @@ export class CommercialService {
         workspace: 'personal', member: true, entitlement: snapshotFromView(NO_ENTITLEMENT_VIEW), individual: snapshotFromView(view), at,
       });
       const decision = contract.admitted && parsed.data.routeKind === 'managed'
-        ? { admitted: false as const, code: 'scoped_admission_required', reason: 'Managed Personal work requires a current Nectovia client and scoped admission. Nothing was sent.' }
+        ? { admitted: false as const, code: 'scoped_admission_required', reason: 'Managed Personal work requires a current Nectovia app and scoped admission.' }
         : contract.admitted ? contract
         : view.state === 'revoked' ? { admitted: false as const, code: 'entitlement_revoked', reason: INDIVIDUAL_REVOKED_REASON }
         : view.state === 'expired' ? { admitted: false as const, code: 'entitlement_expired', reason: INDIVIDUAL_EXPIRED_REASON }

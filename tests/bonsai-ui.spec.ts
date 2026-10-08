@@ -128,7 +128,7 @@ test('Work: the ask row offers the local model, lists its profiles and levels, a
   await page.goto(baseURL);
   await reopenLastProject(page);
   await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Local model thread/ }).click();
-  const row = page.getByRole('group', { name: 'Engine, model and agent' });
+  const row = page.getByRole('group', { name: "AI settings for this thread" });
   const engine = row.locator('.ask-engine .ask-pick'), tier = row.locator('.ask-tier .ask-pick');
   const modelBox = row.locator('.ask-model .ask-pick'), effortBox = row.locator('.ask-effort .ask-pick');
   const local = row.locator('.ask-local'), ring = page.locator('.ask-ring');

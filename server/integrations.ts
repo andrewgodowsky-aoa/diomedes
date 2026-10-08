@@ -671,7 +671,7 @@ async function requireChatGpt(client: NativeRpc) {
   if (object(result.account).type !== 'chatgpt' || result.requiresOpenaiAuth !== true) {
     throw new IntegrationError(
       'CHATGPT_REQUIRED',
-      'Sign in to the native Codex CLI with ChatGPT. Diomedes never substitutes an API key or another provider.',
+      'Sign in to Codex with your ChatGPT account.',
     );
   }
   // Nonsecret account metadata is hashed in memory, never copied as credentials.
@@ -921,8 +921,8 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       detail: 'Native account and isolation checks have not completed.',
       capabilities: [],
       disclosure: [
-        'Selected document text and your message are sent to OpenAI using your native ChatGPT account.',
-        'Subscription usage applies. No API key fallback.',
+        'OpenAI receives your message and selected document text through your ChatGPT account.',
+        'This uses your ChatGPT subscription, with API-key fallback disabled.',
         nativeWorkDisclosure(),
       ],
     };
@@ -990,8 +990,8 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       detail: 'The loopback supervisor is not responding.',
       capabilities: ['observe-status'],
       disclosure: [
-        'Only GET /localai/status on 127.0.0.1:8080 is used.',
-        'Diomedes does not generate, load, unload, pin, or change any local model or Hermes service.',
+        'Nectovia reads LocalAI status on this computer.',
+        'This connection doesn\'t generate responses or change local models or Hermes.',
       ],
     };
     try {
@@ -1098,9 +1098,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           adapter: 'ready' as const,
           status: 'Ready',
           detail:
-            'Deterministic sample work uses Diomedes approvals and history. It does not call an AI engine.',
+            'Sample work uses Nectovia\'s approvals and history.',
           capabilities: ['sample-work'],
-          disclosure: ['Sample output is labeled throughout the app.'],
+          disclosure: ['Sample work runs on this computer without AI.'],
         },
         codexEntry,
         pick('claude-code'),
@@ -1122,9 +1122,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           adapter: 'none' as const,
           status: 'Not configured',
           detail:
-            'The proposed engine host is not installed in Diomedes. The native Codex adapter implements the bounded fallback.',
+            'AionCore isn\'t connected to Nectovia.',
           capabilities: [],
-          disclosure: ['No AionCore process is launched.'],
+          disclosure: ['Nectovia doesn\'t start AionCore.'],
         },
       ];
     });
@@ -1321,7 +1321,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     )
       throw new IntegrationError(
         'POLICY_MISMATCH',
-        'Codex did not acknowledge the required read-only native ChatGPT policy. No turn was sent.',
+        'Codex didn\'t confirm the required read-only ChatGPT policy.',
       );
     return threadId;
   }
@@ -1350,7 +1350,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         )
           throw new IntegrationError(
             'TEAM_SERVER_MISSING',
-            'The requested Diomedes team service is absent or disabled. No model turn was sent.',
+            'The requested Nectovia team service is missing or disabled.',
           );
       }
       let teamStarting = false;
@@ -1392,7 +1392,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           );
         });
       if (!disabledInventory || mcp.nextCursor || (teamStarting && retry === 5))
-        throw new IntegrationError('MCP_NOT_ISOLATED', 'Native MCP tools remain available. No model turn was sent.');
+        throw new IntegrationError('MCP_NOT_ISOLATED', 'Codex couldn\'t confirm the required tool restrictions.');
       if (!teamStarting) return;
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
     }
@@ -1558,7 +1558,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           if (typeof turn.model === 'string' && turn.model) reportedModel = turn.model;
           ending = turn.status === 'completed' ? 'completed' : turn.status === 'interrupted' ? 'interrupted' : 'failed';
           if (turn.status !== 'completed')
-            reject(new IntegrationError('TURN_FAILED', 'Codex did not complete the response. No fallback was used.'));
+            reject(new IntegrationError('TURN_FAILED', 'Codex couldn\'t finish the answer.'));
           else if (!answer.trim())
             reject(new IntegrationError('EMPTY_RESPONSE', 'Codex completed without a text answer.'));
           else resolve(answer);
@@ -1569,7 +1569,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[account]')
             .replace(/(?:Bearer\s+|sk-)[\w.-]+/gi, '[redacted]')
             .slice(0, 350);
-          reject(new IntegrationError('TURN_FAILED', `${nativeMessage} No fallback was used.`));
+          reject(new IntegrationError('TURN_FAILED', `${nativeMessage}`));
         }
       };
       removeListener = client.onNotification((method, params) => {
@@ -1698,7 +1698,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     if (scope && readAccessOf(scope) === 'project')
       throw new IntegrationError(
         'CONTEXT_UNBOUND',
-        'Codex cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        'Codex can\'t read the whole project folder because Nectovia can\'t check each read first. Choose the documents to include.',
       );
     if (activeRequests >= 2)
       throw new IntegrationError(
@@ -1981,18 +1981,18 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       const account = await requireChatGpt(client);
       // Check on the process that will make the fork, before any thread operation.
       if (input.expectedAccount !== undefined && account !== input.expectedAccount)
-        throw new IntegrationError('ACCOUNT_CHANGED', 'The ChatGPT account changed. No fork was made.');
+        throw new IntegrationError('ACCOUNT_CHANGED', 'The ChatGPT account changed. Sign in with the original account before copying this conversation.');
       const capabilities = await probeCodexCapabilities(client);
       if (!capabilities.fork)
         return {
           state: 'refused',
-          reason: 'This Codex build does not offer thread fork, so no fork was made.',
+          reason: 'This Codex version doesn\'t support copying conversations.',
         };
       // A branch is only ever continued through thread/resume.
       if (!capabilities.resume)
         return {
           state: 'refused',
-          reason: 'This Codex build does not offer thread resume, so a fork could not be continued and none was made.',
+          reason: 'This Codex version can\'t continue a copied conversation.',
         };
       const effective = object(
         object(await client.request('config/read', { includeLayers: false })).config,
@@ -2025,7 +2025,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         if (!answer || !threadGone(answer)) throw error;
         return {
           state: 'refused',
-          reason: `Codex did not accept a fork of thread ${input.threadId} (it may no longer have it), so no fork was made.`,
+          reason: `Codex rejected the copy of conversation ${input.threadId}. The original may no longer be available.`,
         };
       }
       const sandbox = object(forked.sandbox);
@@ -2109,7 +2109,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       if (scope && readAccessOf(scope) === 'project')
         throw new IntegrationError(
           'CONTEXT_UNBOUND',
-          'Codex cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+          'Codex can\'t read the whole project folder because Nectovia can\'t check each read first. Choose the documents to include.',
         );
       await proveSandbox();
       if (signal?.aborted) throw abortError();

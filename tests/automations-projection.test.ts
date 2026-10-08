@@ -119,7 +119,7 @@ describe('automationLabel', () => {
     });
     expect(shown.reason).toContain('exports/north.csv');
     expect(shown.reason).toContain('exports/south.csv');
-    expect(shown.reason).toMatch(/nothing was written/);
+    expect(shown.reason).toMatch(/Check the required files before starting again/);
   });
 
   test('setup incomplete carries the server’s own sentence', () => {

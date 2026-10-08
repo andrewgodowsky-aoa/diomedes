@@ -239,7 +239,7 @@ function taskEntries(ctx: PaletteContext): PaletteEntry[] {
     }
     if (state === 'blocked') {
       actions.push({
-        label: 'Route to',
+        label: 'Use connection',
         light: true,
         stay: true,
         run: () => ctx.onRoutingTask(task.id),

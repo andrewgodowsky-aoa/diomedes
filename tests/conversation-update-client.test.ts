@@ -65,14 +65,14 @@ describe('the confirmation says what the server decided', () => {
       'History sharing is on for AWS Bedrock, so Nectovia will carry over your most recent messages.',
     );
     expect(memorySentence({ retiring: 1, carried: false, route: 'aws-bedrock', reason: 'history-off' })).toBe(
-      "History sharing is off for AWS Bedrock, so your earlier messages stay on screen but Nectovia won't remember them. Updating doesn't turn sharing on.",
+      "History sharing is off for AWS Bedrock. This update excludes earlier messages and keeps sharing off.",
     );
     expect(memorySentence({ retiring: 1, carried: false, route: 'google-vertex', reason: 'other-route' })).toBe(
-      "Your earlier messages were answered on another service, so Nectovia won't carry them over to Google Vertex AI. They stay on screen.",
+      "Google Vertex AI won't receive messages answered on another service.",
     );
     for (const route of [null, 'claude-code'])
       expect(memorySentence({ retiring: 1, carried: false, route, reason: 'other' })).toBe(
-        "Your earlier messages stay on screen, but Nectovia won't remember them.",
+        "Nectovia won't receive your earlier messages after updating.",
       );
     expect(memorySentence({ retiring: 1, carried: true, route: 'claude-code' })).toBe(
       'History sharing is on for Claude Code, so Nectovia will carry over your most recent messages.',

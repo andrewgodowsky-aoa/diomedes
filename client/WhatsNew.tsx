@@ -46,7 +46,7 @@ export function WhatsNew({
     if (wanted) setOpen((last) => (wanted in last ? last : { ...last, [wanted]: true }));
   }, [focusVersion, installed]);
   if (releases.length === 0)
-    return <p className="prose">This build carries no release notes.</p>;
+    return <p className="prose">No release notes are included.</p>;
   return (
     <div className="whats-new service-list">
       {releases.map((release) => {

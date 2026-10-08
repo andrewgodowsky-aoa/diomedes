@@ -109,7 +109,7 @@ describe('the artifact panel', () => {
     expect(live).toContain('Reading the brief.');
     const broken = { ...index.list[0], source: '{"kind":"bar"}' };
     const html = pane({ ...index, list: [broken] }, 0);
-    expect(html).toContain('<div class="art-error" role="group" aria-label="This visual could not be drawn.">');
+    expect(html).toContain("<div class=\"art-error\" role=\"group\" aria-label=\"Couldn&#x27;t draw this visual.\">");
     expect(html).toContain('aria-label="Source as written"');
   });
 
@@ -119,7 +119,7 @@ describe('the artifact panel', () => {
     expect(isValidElement(drawn) && drawn.type).toBe(VisualBoundary);
     const fallback = isValidElement<{ fallback?: ReactNode }>(drawn) ? drawn.props.fallback : null;
     expect(renderToStaticMarkup(createElement('div', null, fallback))).toBe(
-      '<div><p class="iv-note">This artifact could not be shown here. Its source is under Source.</p></div>',
+      "<div><p class=\"iv-note\">Couldn&#x27;t show this file here. Open Source to read it.</p></div>",
     );
     // The source view is plain text and needs none.
     const source = ArtifactBody({ record: index.list[0], source: true, session: null, onOpen: () => undefined });
@@ -135,7 +135,7 @@ describe('the artifact panel', () => {
     expect(html).toContain('<select><option value="1" selected="">Sent</option><option value="2">Replies</option></select>');
     expect(html).toContain('<button type="button" class="art-tool" aria-expanded="false">Chart this</button>');
     const words = indexArtifacts('thread-1', [said('t1', '| Name | Role |\n|---|---|\n| Ada | Lead |\n| Bo | Ops |')]);
-    expect(pane(words, 0)).toContain('No column holds only numbers, so there is nothing to chart.');
+    expect(pane(words, 0)).toContain("A chart needs a column containing only numbers.");
   });
 
   it('offers Chart this only for a column that makes a valid visual', () => {
@@ -143,7 +143,7 @@ describe('the artifact panel', () => {
     const index = indexArtifacts('thread-1', [said('t1', `| Row | Value |\n|---|---|\n${rows}`)]);
     const html = pane(index, 0);
     expect(html).not.toContain('Chart this');
-    expect(html).toContain('Nothing here can be charted: a chart draws at most 200 rows, and this column has 201.');
+    expect(html).toContain("Can&#x27;t chart this table. a chart draws at most 200 rows, and this column has 201.");
   });
 
   it('reads a document with the turn renderer and offers its own artifacts as chips', () => {

@@ -50,7 +50,7 @@ export interface DesktopPaths {
 }
 
 /** The sentence a decision from the phone leaves in History. */
-const decidedSentence = (decision: 'go-ahead' | 'declined') => (decision === 'go-ahead' ? 'You went ahead from your phone' : 'You declined from your phone');
+const decidedSentence = (decision: 'go-ahead' | 'declined') => (decision === 'go-ahead' ? 'You approved from your phone' : 'You declined from your phone');
 
 export function desktopRelayPorts(paths: DesktopPaths): PhoneRelayPorts {
   const { store } = paths;

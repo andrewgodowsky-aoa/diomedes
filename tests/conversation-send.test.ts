@@ -244,7 +244,7 @@ describe('sending one message', () => {
 
   test('nothing is sent when the message cannot be saved first', async () => {
     session.failSet();
-    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/can't save/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -648,7 +648,7 @@ describe('one pending message, shared by every window', () => {
     const failure = await b.catch((error: unknown) => error);
     // A wait that Stop ended held nothing and sent nothing; it is not a message that may have run.
     expect(failure).not.toBeInstanceOf(secondWindow.UnconfirmedMessage);
-    expect((failure as Error).message).toMatch(/Another window is still sending/);
+    expect((failure as Error).message).toMatch(/Another window is sending a message in this conversation\./);
     expect(secondSession.getItem(PENDING)).toBeNull();
     expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -658,7 +658,7 @@ describe('one pending message, shared by every window', () => {
 
   test('without the Web Locks API nothing is sent and nothing is written', async () => {
     vi.stubGlobal('navigator', {});
-    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/can't save/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(session.getItem(PENDING)).toBeNull();
     expect(local.getItem(CLAIM)).toBeNull();
@@ -666,7 +666,7 @@ describe('one pending message, shared by every window', () => {
 
   test('a claim that cannot be written sends nothing and leaves no reference', async () => {
     local.failSet();
-    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/can't save/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(session.getItem(PENDING)).toBeNull();
   });
@@ -679,14 +679,14 @@ describe('one pending message, shared by every window', () => {
     // Another window confirmed or discarded that message and left this reference behind.
     local.removeItem(CLAIM);
     local.failSet();
-    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/can't save/);
     expect(session.getItem(PENDING)).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test('a reference that cannot be written takes the claim back with it', async () => {
     session.failSet();
-    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/can't save/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(local.getItem(CLAIM)).toBeNull();
   });
@@ -772,7 +772,7 @@ describe('the dispatch identity a Stop may act on', () => {
     const stop = new AbortController();
     stop.abort();
     await expect(mod.sendMessage(PROJECT, THREAD, input(), stop.signal)).rejects.toThrow(
-      /still sending/,
+      /Another window is sending a message in this conversation\./,
     );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(session.getItem(PENDING)).toBeNull();
@@ -938,7 +938,7 @@ describe('the dispatch identity a Stop may act on', () => {
     const stop = new AbortController();
     const resend = mod.resendPending(PROJECT, THREAD, 'uuid-1', stop.signal);
     stop.abort();
-    await expect(resend).rejects.toThrow(/still sending/);
+    await expect(resend).rejects.toThrow(/Another window is sending a message in this conversation\./);
     releaseLock();
     await done;
     expect(fetchMock).not.toHaveBeenCalled();

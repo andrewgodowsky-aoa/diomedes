@@ -69,7 +69,7 @@ export function projectBoardProgress(input:{store:Pick<Store,'addEntry'>;state:P
     const sentence = status === 'failed' ? `${label}${detail} failed: ${evidence.error}`
       : status === 'uncertain' ? `${label}${detail} has an unknown outcome. Reconcile it before continuing.`
       : status === 'cancelled' ? `${label}${detail} stopped.${unresolved ? ' An effect has an unknown outcome; reconcile it before starting again.' : ''}`
-      : status === 'waiting' ? `${label}${detail} waits for approval or a response.`
+      : status === 'waiting' ? `${label}${detail} needs approval or a response.`
       : event.type === 'run.completed' ? `${label} execution completed. Its output remains in Review until verification passes.`
       : status === 'succeeded' ? `${label}${detail} succeeded.` : `${label} started.`;
     const entry = store.addEntry(state as Parameters<Store['addEntry']>[0],{kind:'task-progress',actor:'diomedes',taskId:task.id,sessionId:session.id,

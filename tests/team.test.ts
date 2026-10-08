@@ -675,7 +675,7 @@ describe('team wake', () => {
       {},
     );
     expect(empty.status).toBe(400);
-    expect(empty.data.error).toBe('Nothing is waiting for this helper.');
+    expect(empty.data.error).toBe('This helper has no pending work.');
 
     const sent = await request(`/projects/${id}/team/messages`, 'POST', {
       to: helper.member.slotId,

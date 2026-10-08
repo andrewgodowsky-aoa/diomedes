@@ -28,7 +28,7 @@ import './diff-view.css';
  */
 
 function stateWord(change: Change): string {
-  if (change.state === 'waiting') return 'waiting for you';
+  if (change.state === 'waiting') return 'needs review';
   if (change.state === 'undone') return 'undone';
   return change.partial ? partialSentence(change.partial) : 'kept';
 }
@@ -388,7 +388,7 @@ export function ChangeDiffs({
     <section className="cdiff" aria-labelledby={headingId}>
       <header className="cdiff-head">
         <h2 id={headingId}>Review changes</h2>
-        {waiting > 0 && <span className="caption">{waiting} waiting for you</span>}
+        {waiting > 0 && <span className="caption">{waiting} need review</span>}
       </header>
       {mine.map((change) => (
         <ChangeDiffCard

@@ -398,7 +398,7 @@ describe('the Nectovia bot', () => {
     const refused = await say(binding, 'm-thorough', 'Plan next week.');
     const body = (await refused.json()) as { error: string };
     expect(refused.status).toBe(409);
-    expect(body.error).toBe('Thorough has no Nectovia model right now. Nothing was sent. Choose another tier.');
+    expect(body.error).toBe('Thorough is unavailable right now. Choose another tier.');
     expect(gateway.length).toBe(before);
     expect(awsCalls).toBe(0);
     expect(await homeThread(binding)).toMatchObject({ engine: 'nectovia' });
@@ -408,7 +408,7 @@ describe('the Nectovia bot', () => {
     // The signed-in person is the business owner: the sentence points at buying more, not at the service's words.
     [402, 'insufficient_allowance', "This business has used this month's 1,000 credits.", 'Your business is out of credits, so this stopped here. Buy more credits in Settings, Usage.'],
     [503, 'route_unavailable', 'Upstream route is down.', NECTOVIA_UNAVAILABLE],
-    [429, 'provider_busy', 'Slow down.', "Nectovia's model service is busy. Nothing was charged. Try again in a minute."],
+    [429, 'provider_busy', 'Slow down.', "Nectovia's AI service is busy. Try again in a minute."],
   ])('a gateway %i %s reaches the conversation in plain words, with the local hold released', async (status, code, said, words) => {
     const owner = await signIn(DEMO_ACCOUNTS.owner.email);
     const binding = await ownedHome(owner.workspaces[0].organization.id);

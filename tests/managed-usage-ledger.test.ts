@@ -155,7 +155,7 @@ describe('reserving against both bounds', () => {
     );
     expect(refused.status).toBe(402);
     expect(refused.details.code).toBe('parent_envelope_exceeded');
-    expect(refused.message).toMatch(/envelope/i);
+    expect(refused.message).toMatch(/parent task.*spending limit/i);
   });
 });
 

@@ -40,7 +40,7 @@ export function presentRun(run: HarnessRun): RunPresentation {
         taskState: 'todo',
         reason: null,
         sessionState: 'queued',
-        sentence: 'Waiting to start.',
+        sentence: 'Queued to start.',
       };
     case 'running':
       return {
@@ -57,14 +57,14 @@ export function presentRun(run: HarnessRun): RunPresentation {
             taskState: 'waiting',
             reason: 'needs-ok',
             sessionState: 'waiting',
-            sentence: `Waiting for your OK: ${describeIntent(waitingStep)}.`,
+            sentence: `Approve ${describeIntent(waitingStep)} to continue.`,
           }
         : {
             ...base,
             taskState: 'waiting',
             reason: null,
             sessionState: 'waiting',
-            sentence: 'Waiting for something outside Diomedes.',
+            sentence: 'Paused for an external response.',
           };
     case 'reconcile_required':
       return {
@@ -73,7 +73,7 @@ export function presentRun(run: HarnessRun): RunPresentation {
         reason: 'went-wrong',
         sessionState: 'waiting',
         sentence:
-          'Something may have happened outside Diomedes that it could not confirm. Check before starting again; nothing will be repeated on its own.',
+          'An external action has an unconfirmed result. Check what happened before starting again.',
       };
     case 'completed':
       return {
@@ -95,8 +95,8 @@ export function presentRun(run: HarnessRun): RunPresentation {
         sessionState: 'failed',
         sentence:
           run.failure?.name === 'waiting_for_data'
-            ? 'Waiting for data: a file it reads is missing, so nothing was written.'
-            : 'Stopped because something went wrong. Nothing will be repeated on its own.',
+            ? 'A required file is missing. Add it before starting again.'
+            : 'The job failed. Check its error before starting again.',
       };
     case 'cancelled': {
       // A work loop that ended because the business ran out of credits keeps the sentence the stop
@@ -122,7 +122,7 @@ export function presentRun(run: HarnessRun): RunPresentation {
             reason: 'went-wrong',
             sessionState: 'stopped',
             sentence:
-              'Stopped. One action may have happened outside Diomedes that it could not confirm. Check before starting again.',
+              'Stopped. An external action has an unconfirmed result. Check what happened before starting again.',
           }
         : {
             ...base,
@@ -167,9 +167,9 @@ export function needFromWaitingStep(
       ...(step.origin === undefined ? {} : { origin: step.origin }),
       what: `Continue this task to ${label}?`,
       why: held
-        ? `A rule held this before it ran: ${held.reason} Nothing happens until you say go ahead, and your OK covers exactly this continuation and nothing else.`
-        : 'The agent finished this phase and asks to continue to the next one, staying within its granted files, services and spend. Nothing happens until you say go ahead, and your OK covers exactly this continuation and nothing else.',
-      consequence: `This continues the task to ${label} within its existing file, service and spend permissions. It moves the task\u2019s phase marker and records the move in History; it grants nothing new and writes no files itself.`,
+        ? `A rule blocked this continuation. ${held.reason} Approve this continuation to proceed.`
+        : 'This phase finished. Approve this continuation to proceed within the existing permissions and spending limit.',
+      consequence: `This continues the task to ${label} within its existing permissions and spending limit. History records the phase change.`,
       files: [],
     };
   }
@@ -182,23 +182,23 @@ export function needFromWaitingStep(
   // make it reversible, so nothing else is told it can be undone.
   const consequence =
     step.intent.destination === 'external'
-      ? 'This sends information outside this computer. Diomedes cannot take it back afterwards.'
+      ? 'This sends information outside this computer. Nectovia can\'t take it back afterwards.'
       : step.intent.effect === 'non-idempotent'
         ? files.length > 0
-          ? 'This changes files in this project. Diomedes records the before and after, so you can undo it in Review.'
-          : 'This changes something. Diomedes records what it did, but it cannot promise this can be undone.'
+          ? 'This changes files in this project. Nectovia records the before and after, so you can undo it in Review.'
+          : 'This makes a change. Nectovia records it. Undo isn\'t guaranteed.'
         : step.intent.effect === 'idempotent'
-          ? 'This makes a change that is safe to repeat. Diomedes records it.'
-          : 'This only reads. Nothing changes.';
+          ? 'This makes a change that can be repeated safely. History records it.'
+          : 'This reads information.';
   const held = heldBy(run, step);
   return {
     runId: run.id,
     intentHash: step.intentHash,
     ...(step.origin === undefined ? {} : { origin: step.origin }),
-    what: `Go ahead with ${describeIntent(step)}?`,
+    what: `Approve ${describeIntent(step)}?`,
     why: held
-      ? `A rule held this before it ran: ${held.reason} Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.`
-      : 'This step asks for your OK before it runs. Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.',
+      ? `A rule blocked this step. ${held.reason} Approve this step to proceed.`
+      : 'Approve this step to proceed.',
     consequence,
     files,
   };

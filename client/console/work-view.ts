@@ -16,10 +16,10 @@ export const VIEW_LABELS: Readonly<Record<ConsoleView, string>> = Object.freeze(
 /** The notice behind the Nectovia tab on the free version (board BD1, copy-rename.txt). */
 export const NECTOVIA_PAID_TITLE = 'Nectovia comes with a paid plan';
 export const NECTOVIA_PAID_LINE =
-  'It suggests jobs for your business and leads a team of helpers. Work stays on every plan, with your own engines.';
+  'Get suggestions for business jobs and a team led by Nectovia.';
 
 /** The team view on the free version: the person leads, and Nectovia's seat waits for a plan (board BD2). */
-export const TEAM_PAID_LINE = 'Nectovia can lead the team and call models like Jev on a paid plan.';
+export const TEAM_PAID_LINE = 'A paid plan lets Nectovia lead this team.';
 export const TEAM_YOU = 'You';
 export const TEAM_LEAD = 'Lead';
 export const TEAM_NECTOVIA_SEAT = 'Can lead this team';
@@ -27,7 +27,7 @@ export const TEAM_NECTOVIA_SEAT = 'Can lead this team';
 /** Automations are called Routines wherever a person reads them; ids and API paths keep the old name. */
 export const ROUTINES = 'Routines';
 export const ROUTINES_PAID = 'Paid plans';
-export const ROUTINES_FREE_VERSION = "Routines are part of a paid plan, and you're on the free version.";
+export const ROUTINES_FREE_VERSION = 'Choose a paid plan to use Routines.';
 
 /**
  * The view a project shows. A free person can't use the Nectovia view on their own subscription

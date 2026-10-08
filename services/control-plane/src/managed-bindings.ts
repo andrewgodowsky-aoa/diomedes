@@ -259,7 +259,7 @@ export function nativeRouteId(value: string): string | null {
 async function continuationCodec(call: BoundProviderCall) {
   // An account's own scope, or the Operations route checks' scope, which names no account.
   if (call.scopeKey !== ROUTE_CHECKS_SCOPE_KEY && !/^(organization|individual):[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(call.scopeKey))
-    throw new BindingError('account_scope_required', 'A native checkpoint requires its authenticated account scope. Nothing was sent.');
+    throw new BindingError('account_scope_required', 'A native checkpoint requires its authenticated account scope.');
   const b = call.route.binding!;
   const identity = encoder.encode(JSON.stringify([call.scopeKey, call.route.id, call.connection.id, call.connection.revision, call.route.model,
     b.modelVersion, b.protocol, b.deployment, b.upstreamEndpoint]));

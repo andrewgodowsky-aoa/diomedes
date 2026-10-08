@@ -140,7 +140,7 @@ export async function keepPartially(
           : 'someone outside Diomedes';
       throw new ApiError(
         409,
-        `${change.path} was changed by ${by} after this change was made, so nothing was written. Review it again against the current file.`,
+        `${change.path} was changed by ${by} after this change was made. Review it again against the current file.`,
         {
           code: 'change_conflict',
           path: change.path,

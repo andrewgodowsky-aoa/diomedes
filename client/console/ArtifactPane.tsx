@@ -160,7 +160,7 @@ export function ArtifactPane({
   async function save() {
     if (saving) return;
     if (!onSave) {
-      setStatus({ text: saveUnavailable ?? 'Saving is not available here.' });
+      setStatus({ text: saveUnavailable ?? "Saving isn't available here." });
       return;
     }
     setSaving(true);
@@ -308,7 +308,7 @@ export function ArtifactBody({
   return (
     <VisualBoundary
       fallback={
-        <p className="iv-note">This artifact could not be shown here. Its source is under Source.</p>
+        <p className="iv-note">Couldn't show this file here. Open Source to read it.</p>
       }
     >
       <ArtifactView record={record} session={session} onOpen={onOpen} />
@@ -331,7 +331,7 @@ function ArtifactView({
       return read.ok ? (
         <PanelVisual spec={read.spec} session={session} />
       ) : (
-        <ArtifactError heading="This visual could not be drawn." problem={read.reason} source={record.source} />
+        <ArtifactError heading="Couldn't draw this visual." problem={read.reason} source={record.source} />
       );
     }
     case 'table':
@@ -405,8 +405,8 @@ function TableArtifact({ table, title }: { table: TableBlock; title: string }) {
       ) : (
         <p className="art-waiting">
           {refused && !refused.ok
-            ? `Nothing here can be charted: ${refused.reason}.`
-            : 'No column holds only numbers, so there is nothing to chart.'}
+            ? `Can't chart this table. ${refused.reason}.`
+            : 'A chart needs a column containing only numbers.'}
         </p>
       )}
       {charted && chosen && (

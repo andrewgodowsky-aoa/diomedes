@@ -12,7 +12,7 @@ describe('the free-version notice', () => {
   it('says the person is on the free version and lists what is free and what a plan adds', () => {
     const html = renderToStaticMarkup(createElement(FreePlanNotice, { plan, onChoice: () => undefined }));
     expect(html).toContain(escape("You're on the free version"));
-    expect(html).toContain('The Nectovia Agent is part of a paid plan.');
+    expect(html).toContain("A paid plan adds the Nectovia Agent.");
     for (const item of [...FREE_ABILITIES, ...PAID_ABILITIES]) expect(html).toContain(escape(item));
   });
 

@@ -545,7 +545,7 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
       style: 'efficient',
     });
     expect(lead.status).toBe(409);
-    expect(lead.data.error).toBe('Google Vertex AI is unavailable right now. Please contact support and check that your account is connected and has credits remaining.');
+    expect(lead.data.error).toBe('Google Vertex AI is unavailable right now. Check your connection and credits, then contact support if it still fails.');
     expect((await state()).team?.members).toHaveLength(1);
 
     // The owner maps Focused to the OpenRouter model: now the lead runs there.
@@ -571,7 +571,7 @@ describe('Nectovia chooses a member’s route and model from the owner’s tier 
       engine: 'auto',
     });
     expect(refused.status).toBe(409);
-    expect(refused.data.error).toMatch(/^(AWS Bedrock|Google Vertex AI) is unavailable right now\. Please contact support/);
+    expect(refused.data.error).toMatch(/^(AWS Bedrock|Google Vertex AI) is unavailable right now\. Check your connection and credits/);
   });
 });
 
@@ -798,6 +798,6 @@ describe('the add-member form offers connected routes and "Nectovia chooses"', (
     expect(html).not.toContain('aria-label="Model"');
     for (const word of ['Claude Code', 'OpenRouter', 'ChatGPT', 'Codex', 'Opus', OR_MODEL, 'Nectovia chooses</option>'])
       expect(html).not.toContain(word);
-    expect(html).toContain('a leader works one tier above it');
+    expect(html).toContain('The leader uses one tier above your choice.');
   });
 });

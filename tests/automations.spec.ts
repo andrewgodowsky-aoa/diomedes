@@ -307,7 +307,7 @@ test('an owner turns a schedule on, sees the next run, the due slot starts on it
   await expect(row(page).locator('.auto-state')).toHaveText('Manual, not scheduled');
   const tasksBefore = (await api<{ tasks: unknown[] }>(`/projects/${project.id}/state`)).tasks.length;
   const schedule = row(page).getByRole('region', { name: 'Schedule' });
-  await expect(schedule).toContainText('Off. It runs only when someone presses Run once.');
+  await expect(schedule).toContainText("Off. Use Run once to start it.");
 
   // Edit: saving a schedule does not turn it on (A01).
   await schedule.getByRole('button', { name: 'Set a schedule' }).click();

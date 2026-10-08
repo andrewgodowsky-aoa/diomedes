@@ -9,8 +9,8 @@ test('text documents within the limit travel; pictures, PDFs and large files are
   expect(attachmentProblem({ path: 'Imports/stock.csv', kind: 'text', size: 128_000 })).toBeNull();
   expect(attachmentProblem({ path: 'plans/next.md', kind: 'plan', size: 10 })).toBeNull();
   expect(attachmentProblem({ path: 'Imports/photo.png', kind: 'unsupported', size: 70 })).toBe(
-    'photo.png is not a text document, so a message cannot carry it to an engine. It stays in Files; remove it to send.',
+    "photo.png isn't a text document. Remove this attachment to send the message.",
   );
-  expect(attachmentProblem({ path: 'drawing.svg', kind: 'drawing', size: 70 })).toContain('not a text document');
+  expect(attachmentProblem({ path: 'drawing.svg', kind: 'drawing', size: 70 })).toContain("isn't a text document");
   expect(attachmentProblem({ path: 'big.txt', kind: 'text', size: 128_001 })).toContain('128 KB');
 });

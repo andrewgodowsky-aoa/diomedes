@@ -63,8 +63,8 @@ export class EngineAskNeeds {
           : `${name} asks to ${ask.title.charAt(0).toLowerCase()}${ask.title.slice(1)}`,
       why:
         ask.kind === 'plan'
-          ? `${name} presented this plan in the conversation and waits for your answer before it continues.`
-          : `${name} needs your permission for this one ${ask.toolKind ?? 'tool'} call, which the conversation's read access does not cover.`,
+          ? `Approve ${name}'s plan in this conversation to continue.`
+          : `${name} needs separate approval for this ${ask.toolKind ?? 'tool'} action. The conversation's read access doesn't cover it.`,
       consequence:
         ask.kind === 'plan'
           ? `Go ahead lets ${name} continue with this plan in the same answer, still in ask mode with its tools denied. Decline tells ${name} no. Nobody answering by ${expiresAt} stops the answer.`
@@ -159,7 +159,7 @@ export class EngineAskNeeds {
         await this.store.persist(state);
         throw new ApiError(
           409,
-          'The answer this question belonged to has ended, so nothing was sent. Ask again in the conversation.',
+          'This question has expired. Ask again in the conversation.',
           { code: 'approval_expired' },
         );
       }

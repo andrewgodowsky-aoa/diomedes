@@ -163,7 +163,7 @@ test('the review explains every field and says what this build will not do', asy
 
   // The weekly schedule this business asked for is not built. It is named as
   // unavailable rather than quietly dropped or drawn as though it works.
-  await expect(panel.getByRole('heading', { name: 'Not available yet' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: "Unavailable" })).toBeVisible();
   await expect(panel.getByText(/recorded but stays inactive/i).first()).toBeVisible();
 
   // The business system it named is not connected, and the review says that in
@@ -195,7 +195,7 @@ test('turning the setup on is something a person does, and it then says what is 
 test('a person can go back to change an answer instead of activating', async ({ page }) => {
   const panel = await openReview(page);
   await panel.getByRole('button', { name: 'Change an answer' }).click();
-  await expect(panel.getByRole('heading', { name: 'Here is what you told us' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: "Your answers" })).toBeVisible();
   await expect(panel.getByText(/no rehearsal step yet/i)).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, 'configuration-revise.png') });
 });

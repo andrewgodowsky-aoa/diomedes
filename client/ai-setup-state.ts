@@ -210,18 +210,18 @@ export function repairText(c: EngineConnection): string {
   const at = where ? ` at ${where}` : '';
   switch (c.repair) {
     case 'selected-missing':
-      return `The installation you chose${at} is no longer there. Nectovia will not switch to another copy on its own.`;
+      return `The installation you chose${at} is missing. Choose an installation again.`;
     case 'selected-changed':
-      return `The installation you chose${at} has changed since you chose it. Nectovia will not run it until you choose again or install a compatible copy.`;
+      return `The installation you chose${at} has changed. Choose it again or install a compatible copy.`;
     case 'selected-unverified':
       return `The installation you chose${at} no longer passes its version and integrity checks.`;
     case 'no-reviewed-candidate':
       return 'No installation on this computer matches the version Nectovia supports.';
     case 'record-unreadable':
-      return 'Nectovia cannot read which installation you chose for this service, so it will not use one. Choose an installation again. The record it could not read is kept.';
+      return "Nectovia can't read your saved installation choice. Choose an installation again.";
     default:
       return c.installation === 'corrupt'
-        ? `The installation${at} failed its integrity check. Nectovia will not run it.`
+        ? `The installation${at} failed its integrity check.`
         : '';
   }
 }
@@ -240,7 +240,7 @@ export function repairNote(c: EngineConnection): string {
   const said = repairText(c);
   if (said !== '') return said;
   return c.repair
-    ? 'This installation needs attention for a reason this version of Nectovia cannot put into words. Choose an installation again, or install the compatible copy.'
+    ? 'This installation needs repair. Choose an installation again, or install a compatible copy.'
     : '';
 }
 
@@ -277,16 +277,16 @@ export function stageAction(stage: SetupStage): string {
     case 'launch':
       return 'Check the installation and try again.';
     case 'local-handshake':
-      return 'This is the local service the tool runs on this computer, not your provider account.';
+      return "Check the tool's connection on this computer.";
     case 'provider-auth':
-      return 'The provider refused this account for this route. Check the account this route uses.';
+      return 'The service refused this account. Check the account used for this connection.';
     case 'model-list':
       return 'Check which models this account can use, then look again.';
     case 'dispatch':
     case 'stream':
-      return 'The request reached the provider and did not finish.';
+      return "The request reached the service and didn't finish.";
     case 'cleanup':
-      return 'The tool may still be running. Wait before trying this route again.';
+      return 'The tool may still be running. Wait before trying this connection again.';
   }
 }
 
@@ -303,8 +303,8 @@ export function checkedSentence(
   if (state === 'fresh') return `Checked ${time(c.checkedAt!)}`;
   if (state === 'stale') return `Checked ${time(c.checkedAt!)}. That check is no longer current.`;
   return c.checkedAt === null
-    ? 'Not checked yet'
-    : 'The last check carries no usable time. Check again.';
+    ? 'Not checked'
+    : 'The last check has no valid time. Check again.';
 }
 
 /**
@@ -315,7 +315,7 @@ export function verifiedSentence(
   c: EngineConnection,
   time: (value: string) => string,
 ): string {
-  if (!c.verification) return 'Never verified by a real request';
+  if (!c.verification) return 'No successful test request';
   const at = time(c.verification.verifiedAt);
   return verified(c)
     ? `Last verified ${at} on ${c.verification.model}`
@@ -332,8 +332,8 @@ export function sourceText(source: CandidateSource): string {
 /** Publisher provenance, said plainly and without implying a verdict on the tool. */
 export function provenanceText(provenance: EngineCandidate['provenance']): string {
   return provenance === 'reviewed-release'
-    ? 'Nectovia verified these bytes against the release it pinned.'
-    : 'Your own copy; Nectovia did not verify its publisher.';
+    ? 'Matches the verified release.'
+    : "Your own copy. Nectovia hasn't verified its publisher.";
 }
 
 /** A WSL copy and a desktop application are named as what they are. */
@@ -388,8 +388,8 @@ export function routeIssueSentences(c: EngineConnection, name: string): string[]
   return [
     connected.length > 0
       ? `${name} reported ${connected.join(', ')}.`
-      : `${name} reported no account this adapter accepts.`,
-    `This route uses ${c.routeIssue.required} only. Other accounts you hold are not used here, and Nectovia does not switch to one of them.`,
+      : `${name} reported no supported account.`,
+    `This connection requires ${c.routeIssue.required}.`,
   ];
 }
 

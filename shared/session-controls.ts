@@ -108,7 +108,7 @@ export function workControlProfile(
   const queue: ControlAvailability = {
     control: 'queue',
     support: 'host',
-    note: 'Held, then sent through ordinary Work admission after this turn or the task.',
+    note: 'Sent after the current answer or task finishes, with the usual permission and spending checks.',
   };
   const stop: ControlAvailability = {
     control: 'stop',
@@ -123,12 +123,12 @@ export function workControlProfile(
       contractRouteId: null,
       engine: null,
       controls: {
-        steer: off('steer', 'No route contract is registered for this route.'),
+        steer: off('steer', 'This connection doesn\'t support this control.'),
         queue,
         stop,
-        resume: off('resume', 'No route contract is registered for this route.'),
-        retry: off('retry', 'No route contract is registered for this route.'),
-        fork: off('fork', 'No route contract is registered for this route.'),
+        resume: off('resume', 'This connection doesn\'t support this control.'),
+        retry: off('retry', 'This connection doesn\'t support this control.'),
+        fork: off('fork', 'This connection doesn\'t support this control.'),
       },
       stopScopes: ['task', 'queued'],
     };

@@ -281,7 +281,7 @@ export class HarnessBridge {
         session.log.push({
           time: now(),
           level: 'plain',
-          sentence: 'The native run could not start. No report was written.',
+          sentence: 'The native job couldn\'t start.',
         });
         await this.store.persist(state);
       }
@@ -655,7 +655,7 @@ export class HarnessBridge {
     }
     const ttlMs = Date.parse(need.approval.expiresAt) - Date.now();
     if (ttlMs <= 0)
-      throw new ApiError(409, 'This approval window expired. The run is still waiting.', {
+      throw new ApiError(409, 'This approval window expired.', {
         code: 'approval_expired',
       });
     try {

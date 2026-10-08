@@ -258,7 +258,7 @@ function Detail({
       })
       .catch((failure: unknown) => {
         if (started === epoch.current && !request.signal.aborted)
-          setError(failure instanceof Error ? failure.message : 'The runs could not be read.');
+          setError(failure instanceof Error ? failure.message : "The job history couldn't be read.");
       });
     return () => request.abort();
   }, [organizationId, automation.id, page, refresh]);
@@ -302,8 +302,8 @@ function Detail({
             <dt>Reviewed by</dt>
             <dd>
               {automation.reviewedBy === 'person-after-reviewer'
-                ? 'A person, who keeps or undoes it. The setup asks for a reviewer first; this build does not run one for the brief.'
-                : 'A person, who keeps or undoes it.'}
+                ? "You keep or undo the draft. The AI review requested in setup isn't available for briefs."
+                : 'You keep or undo the draft.'}
             </dd>
           </div>
           <div>
@@ -334,7 +334,7 @@ function Detail({
             <dd>
               {owner.you ? 'You' : <span className="mono lc">{owner.personId}</span>}
               {owner.identitySource === 'development-fixture' && (
-                <span className="auto-fixture"> · a local development identity, not a verified account</span>
+                <span className="auto-fixture"> · unverified test account</span>
               )}
             </dd>
           </div>
@@ -348,12 +348,12 @@ function Detail({
           <div>
             <dt>Alerts</dt>
             <dd>
-              Shown here and in its project’s Needs you. Nothing is sent by push, email or phone.
+              Check alerts here or in the project's Needs you. Push, email and phone alerts aren't available.
             </dd>
           </div>
           <div>
             <dt>Approvals</dt>
-            <dd>Saving the draft asks for none: it waits for review instead. Nothing is remembered.</dd>
+            <dd>Review each draft after it's saved.</dd>
           </div>
           <div>
             <dt>Setup</dt>
@@ -377,7 +377,7 @@ function Detail({
         <h3>Runs</h3>
         {error && <p role="alert">{error}</p>}
         {!detail && !error && <p className="auto-quiet">Reading runs...</p>}
-        {detail && detail.total === 0 && <p className="auto-quiet">It has not run yet.</p>}
+        {detail && detail.total === 0 && <p className="auto-quiet">No job history.</p>}
         {detail && detail.occurrences.length > 0 && (
           <ol className="auto-occurrences">
             {detail.occurrences.map((item) => (
@@ -655,14 +655,14 @@ export function AutomationsPage(props: AutomationsPageProps) {
       if (admission.state === 'admitted' && !result.duplicate) watching.current = result.occurrence.id;
       setAnnounce(
         result.duplicate
-          ? 'That press was already received. Nothing new was started.'
+          ? 'That request was already received.'
           : admission.state === 'refused'
             ? `Not started: ${admission.reason}`
             : 'Started.',
       );
       setOpen((current) => ({ ...current, [automation.id]: true }));
     } catch (failure) {
-      setAnnounce(failure instanceof Error ? failure.message : 'It could not be started.');
+      setAnnounce(failure instanceof Error ? failure.message : "The routine couldn't be started.");
     } finally {
       setPressing(null);
       await load();
@@ -679,8 +679,8 @@ export function AutomationsPage(props: AutomationsPageProps) {
           <h1>{ROUTINES}</h1>
           <p>
             {list
-              ? `What runs for ${list.organization.name}, what it last did, and what needs you.`
-              : 'What runs for a business, what it last did, and what needs you.'}
+              ? `Routines for ${list.organization.name}.`
+              : 'Routines for this business.'}
           </p>
         </div>
         {/* A routine of a person's own isn't built yet, so its place is kept and says so
@@ -716,7 +716,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
         (freePlan ? (
           <div className="auto-empty">
             <h2>Routines are part of a paid plan</h2>
-            <p>You're on the free version. With a plan, work like the weekly brief runs on a schedule.</p>
+            <p>Choose a paid plan for scheduled work such as the weekly brief.</p>
             <PlansLink plan={freePlan} className="auto-plans">
               See plans
             </PlansLink>
@@ -725,8 +725,7 @@ export function AutomationsPage(props: AutomationsPageProps) {
           <div className="auto-empty">
             <h2>Personal has no routines</h2>
             <p>
-              Routines are set up per business workspace. Switch to a business under Change
-              workspace to see what runs for it.
+              Switch to a business under Change workspace to use Routines.
             </p>
           </div>
         ))}
@@ -750,13 +749,13 @@ export function AutomationsPage(props: AutomationsPageProps) {
           </dl>
           <p className="auto-meta-line">
             {list.organization.identitySource === 'development-fixture'
-              ? `${list.organization.name} is a local development workspace. `
+              ? `${list.organization.name} uses test data. `
               : ''}
             Read {when(list.observedAt)}.
           </p>
           {list.automations.length === 0 ? (
             <div className="auto-empty">
-              <h2>Nothing is set up to run yet</h2>
+              <h2>No routines set up</h2>
               <p>
                 The weekly brief appears here once {list.organization.name} has a setup, under Change
                 workspace.

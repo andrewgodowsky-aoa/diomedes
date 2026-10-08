@@ -58,7 +58,7 @@ export class AccountRoutingSession {
     if (this.individual) return this.individual;
     const row = await this.session.call(token => this.session.backend.client.individualAccount(token));
     if (this.current() !== person || row.personId !== person || row.tenantId !== person)
-      throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed. Nothing was sent.', false);
+      throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed.', false);
     return this.individual = row;
   }
   /** Entitlement refresh never requires a managed route or a provider connection. */
@@ -67,7 +67,7 @@ export class AccountRoutingSession {
     if (!account) return;
     const access = await this.session.call(token => this.session.backend.client.scopedAccess(token, { kind: 'individual', id: account.id }));
     if (this.current() !== account.personId)
-      throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed. Nothing was sent.', false);
+      throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed.', false);
     const expires = access.validUntil === null ? Infinity : Date.parse(access.validUntil);
     this.individualAccess = { value: access, until: Math.min(this.now() + 60_000, Number.isFinite(expires) ? expires : this.now() + 60_000) };
   }
@@ -197,12 +197,12 @@ export class AccountRoutingSession {
       if ((error instanceof EngineError && error.code === 'ACCOUNT_CHANGED') || (error instanceof ApiError && error.status === 401)) throw error;
       if (scope) this.assertScope(projectId, person, scope);
       else if (this.current() !== person || this.scopeFor(projectId)?.kind === 'organization')
-        throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed. Nothing was sent.', false);
+        throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed.', false);
       return cached;
     }
     scope ??= this.scopeFor(projectId);
     if (!scope || scope.kind !== 'individual')
-      throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed. Nothing was sent.', false);
+      throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed.', false);
     this.assertScope(projectId, person, scope);
     const fresh = this.individualAccess?.value;
     if (this.includes(scope, AGENT_FEATURE) || this.paysAsYouGo(scope)) await this.session.confirmPersonalAdmitted();
@@ -224,7 +224,7 @@ export class AccountRoutingSession {
       throw error;
     }
     const scope = this.scopeFor(work.projectId), person = this.current();
-    if (!scope || !person) throw new EngineError('AGENT_NOT_INCLUDED', 'This work has no authorized account. Nothing was sent.', false);
+    if (!scope || !person) throw new EngineError('AGENT_NOT_INCLUDED', 'This work has no authorized account.', false);
     // Known plan limits are refused before a service admission is recorded. Unknown
     // access still goes to the service, which may return a definitive revocation.
     if (scope.kind === 'individual') {
@@ -253,8 +253,8 @@ export class AccountRoutingSession {
       if (scope.kind === 'organization' && refusedBusinessScope(error))
         throw admissionRefusal('not_a_member', 'You are not a member of this business, so the Nectovia Agent cannot work for it.');
       throw admissionRefusal('entitlement_unknown', scope.kind === 'individual'
-        ? 'The account service could not be reached, so the Nectovia Agent could not confirm your plan includes it. Nothing was sent.'
-        : 'The account service could not be reached, so the Nectovia Agent could not confirm this business includes it. Nothing was sent.');
+        ? 'The account service couldn\'t be reached, so the Nectovia Agent couldn\'t confirm your plan includes it.'
+        : 'The account service couldn\'t be reached, so the Nectovia Agent couldn\'t confirm this business\'s plan includes it.');
     }
     this.assertScope(work.projectId, person, scope);
     const parsed = admissionSchema.safeParse(raw);
@@ -262,7 +262,7 @@ export class AccountRoutingSession {
         parsed.data.pins.scope.id !== scope.id || parsed.data.pins.organizationId !== (scope.kind === 'organization' ? scope.id : null) ||
         (scope.kind === 'individual' && parsed.data.pins.tenantId !== person) || parsed.data.pins.rootJobId !== work.rootJobId ||
         Date.parse(parsed.data.validUntil) <= this.now())
-      throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
+      throw new EngineError('ACCOUNT_CHANGED', 'The account service didn\'t return a current admission for this work.', false);
     const answer = parsed.data;
     const cycle = answer.billingCycle;
     const access = this.individualAccess?.value;
@@ -275,7 +275,7 @@ export class AccountRoutingSession {
         !answer.decision.validUntil || !Number.isFinite(Date.parse(answer.decision.validUntil)) ||
         Date.parse(answer.decision.validUntil) < Date.parse(answer.validUntil) ||
         Date.parse(answer.validUntil) > Date.parse(cycle.endsAt)))
-      throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current Individual billing period for this work. Nothing was sent.', false);
+      throw new EngineError('ACCOUNT_CHANGED', 'The account service didn\'t return a current Individual billing period for this work.', false);
     if (!answer.decision.admitted) {
       if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
       else await this.session.confirmPersonalDowngrade(answer.decision.code);

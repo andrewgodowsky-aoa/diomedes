@@ -110,7 +110,7 @@ test('PACK-UI-01: installed packs, a dependency asked about, and activation that
   const section = await openCapabilities(page);
   const engineering = section.locator('[data-pack="diomedes.software-engineering"]');
   await expect(engineering.locator('.pack-state')).toHaveText('0.1.0 · off');
-  await expect(engineering).toContainText('Requests · Trust decides at use');
+  await expect(engineering).toContainText('Requested permissions · approval required when used');
   await expect(engineering).toContainText('read-project-files');
 
   const carpentry = section.locator('[data-pack="diomedes.industry.carpentry"]');
@@ -148,7 +148,7 @@ test('PACK-UI-02: a local folder installs, updates, rolls back and uninstalls, e
   await input.fill(v1);
   await section.getByRole('button', { name: 'Check folder' }).click();
   const inspected = section.locator('.pack-inspected');
-  await expect(inspected).toContainText('Acme · digest verified');
+  await expect(inspected).toContainText("Acme · file contents verified");
   await expect(inspected).toContainText('read-accounting');
   await inspected.getByRole('button', { name: 'Install 1.0.0' }).click();
   const bookkeeping = section.locator('.pack[data-pack="acme.bookkeeping"]').first();

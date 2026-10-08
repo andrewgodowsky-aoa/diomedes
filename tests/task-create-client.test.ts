@@ -80,7 +80,7 @@ describe('Console task creation transport', () => {
 
   test('keeps uncertain requests through module reload and rejects a changed payload', async () => {
     send.mockRejectedValue(new TypeError('Offline'));
-    await expect(createTask(projectId, input)).rejects.toThrow('could not be confirmed');
+    await expect(createTask(projectId, input)).rejects.toThrow('couldn\'t be confirmed');
     expect(pendingTaskCreation(projectId)).toEqual(input);
     const commandId = bodyAt().commandId;
     vi.resetModules();
@@ -110,21 +110,21 @@ describe('Console task creation transport', () => {
     send.mockImplementation(
       async () => new Response(JSON.stringify({ id: 'T1' }), { status: 200 }),
     );
-    await expect(createTask(projectId, input)).rejects.toThrow('could not be confirmed');
+    await expect(createTask(projectId, input)).rejects.toThrow('couldn\'t be confirmed');
     expect(values.has(key)).toBe(true);
     send.mockImplementation(async (url, options) => {
       const response = await accepted(url, options).json();
       response.creationReceipt.projectId = 'other';
       return new Response(JSON.stringify(response));
     });
-    await expect(createTask(projectId, input)).rejects.toThrow('could not be confirmed');
+    await expect(createTask(projectId, input)).rejects.toThrow('couldn\'t be confirmed');
     expect(values.has(key)).toBe(true);
   });
 
   test('a saved request keeps its document; the retry re-sends exactly that document', async () => {
     const withDocument = { ...input, sourceDocument: 'Reopening plan.md' };
     send.mockRejectedValue(new TypeError('Offline'));
-    await expect(createTask(projectId, withDocument)).rejects.toThrow('could not be confirmed');
+    await expect(createTask(projectId, withDocument)).rejects.toThrow('couldn\'t be confirmed');
     expect(pendingTaskCreation(projectId)).toEqual(withDocument);
     expect(bodyAt()).toMatchObject({ protocolVersion: 1, owner: 'you', ...withDocument });
     // The same words without the document are a different request, not a retry.
@@ -140,7 +140,7 @@ describe('Console task creation transport', () => {
     async (extra) => {
       await expect(
         createTask(projectId, { ...input, ...extra } as Parameters<typeof createTask>[1]),
-      ).rejects.toThrow('could not be checked');
+      ).rejects.toThrow('couldn\'t be checked');
       expect(send).not.toHaveBeenCalled();
       expect(values.size).toBe(0);
     },
@@ -148,8 +148,8 @@ describe('Console task creation transport', () => {
 
   test('malformed saved input is retained and never sent', async () => {
     values.set(key, '{broken');
-    expect(() => pendingTaskCreation(projectId)).toThrow('could not be checked');
-    await expect(createTask(projectId, input)).rejects.toThrow('could not be checked');
+    expect(() => pendingTaskCreation(projectId)).toThrow('couldn\'t be checked');
+    await expect(createTask(projectId, input)).rejects.toThrow('couldn\'t be checked');
     expect(values.get(key)).toBe('{broken');
     expect(send).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe('Console task creation transport', () => {
     vi.spyOn(storage, 'removeItem').mockImplementation(() => {
       throw new Error('Blocked cleanup');
     });
-    await expect(createTask(projectId, input)).rejects.toThrow('could not clear');
+    await expect(createTask(projectId, input)).rejects.toThrow('couldn\'t clear');
     expect(send).toHaveBeenCalledTimes(1);
     expect(values.has(key)).toBe(true);
   });

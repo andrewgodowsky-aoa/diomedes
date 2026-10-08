@@ -108,7 +108,7 @@ describe('AWS Bedrock setup view', () => {
     const base = view();
     const rows = byKey(awsStateRows(view({ spend: { ...base.spend!, capMicroUsd: 0, availableMicroUsd: 0 } }), NOW));
     expect(rows.connection).toMatchObject({ value: 'ok', text: '123456789012 · us-east-1 · us.openai.gpt-5.6-luna' });
-    expect(rows.limit).toMatchObject({ value: 'waiting', text: 'Not approved: nothing can be sent' });
+    expect(rows.limit).toMatchObject({ value: 'waiting', text: 'Approval required' });
   });
 
   test('an exhausted limit blocks, and an expired or expiring key is named', () => {

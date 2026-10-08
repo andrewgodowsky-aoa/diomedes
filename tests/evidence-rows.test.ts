@@ -82,7 +82,7 @@ describe('the inspector projection', () => {
     const rows = evidenceRows(view());
     const reviewer = rows.find((row) => row.label === 'Reviewed by')!;
     expect(reviewer.unknown).toBe(true);
-    expect(reviewer.value).toContain('reviewed');
+    expect(reviewer.value).toBe('No reviewer recorded.');
   });
 
   test('the four roles stay four rows', () => {

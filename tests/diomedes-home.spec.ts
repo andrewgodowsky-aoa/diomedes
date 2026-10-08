@@ -224,7 +224,7 @@ test('across all projects there is nowhere to start work, so nothing starts', as
   await open(page);
   await say(page, 'ACT tidy the plan');
   const card = page.locator('.dio-card');
-  await expect(card).toContainText('Nothing was started');
+  await expect(card).toContainText("Couldn't start this work");
   await expect(card.getByRole('button')).toHaveCount(0);
   const after = await state();
   expect([after.tasks.length, after.sessions.length]).toEqual([0, 0]);

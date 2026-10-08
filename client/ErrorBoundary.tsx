@@ -7,10 +7,10 @@
  * crashes shipped.
  *
  * What it says is deliberately small. A person reading it has lost the screen
- * they were working in, so it tells them what happened, that their files and
- * their work were not touched by it, and gives them the one action that gets
- * them back. The error's own text is shown because a support request needs
- * something to name — but only its name and the first line of its message,
+ * they were working in, so it gives them the action that reopens it.
+ * A render error does not prove whether earlier work or requests completed.
+ * The error's own text is shown because a support request needs
+ * something to name, but only its name and the first line of its message,
  * with this computer's paths taken out: an exception carries whatever the code
  * that threw put into it, and this screen is the one place nobody is checking
  * that against a contract.
@@ -102,12 +102,11 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     const leave = this.props.onLeave;
     return (
       <div className="initial-state" role="alert">
-        <h1>{screen ? 'This screen stopped' : 'Nectovia stopped drawing'}</h1>
+        <h1>{screen ? 'This screen stopped' : 'Nectovia couldn\'t display the window'}</h1>
         <p className="prose">
           {screen
-            ? 'Something in this screen failed while it was being drawn, so Nectovia closed it rather than showing you half of it.'
-            : 'Something failed while the window was being drawn, so there is nothing on it.'}{' '}
-          Your files and your work were not changed by this, and nothing was sent.
+            ? 'Reload Nectovia to reopen this screen.'
+            : 'Reload Nectovia to reopen the window.'}
         </p>
         <p className="code caption">{failure}</p>
         <div className="actions">

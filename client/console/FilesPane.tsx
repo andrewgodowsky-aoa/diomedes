@@ -115,7 +115,7 @@ function changedLabel(iso: string): string {
 /** What the row says about a file beyond its name, or nothing at all. */
 function marks(file: DocumentInfo): string[] {
   return [
-    ...(file.hasChangesWaiting ? ['changes waiting'] : []),
+    ...(file.hasChangesWaiting ? ['changes need review'] : []),
     ...(file.recorded ? ['recorded'] : []),
   ];
 }
@@ -371,7 +371,7 @@ function Viewer({
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        setFailure(e instanceof Error ? e.message : 'This document could not be read.');
+        setFailure(e instanceof Error ? e.message : "This document couldn't be read.");
       });
     return () => {
       alive = false;
@@ -450,8 +450,7 @@ function Viewer({
       )}
       {!readable && preview !== 'image' && preview !== 'pdf' && preview !== 'xlsx' && (
         <p className="caption files-external">
-          Open in the app that owns it — this window has no hand-off to the desktop shell, so
-          Nectovia cannot start it for you.
+          Open this file from its project folder in another app.
         </p>
       )}
       {history && onOpenVersion && (
@@ -579,7 +578,7 @@ function ProjectFilesPane({
       onOpen(result.files[0]?.path ?? null);
     } catch (error) {
       setDropNote({
-        text: error instanceof Error ? error.message : 'Files could not add these files.',
+        text: error instanceof Error ? error.message : "Files couldn't add these files.",
         failed: true,
         opened: null,
       });

@@ -531,7 +531,7 @@ test('Fork is refused with the reason where Codex cannot fork, and nothing is ma
     performedBy: null,
     refusal: {
       code: 'route-refused',
-      reason: `Codex did not accept a fork of thread ${kept.nativeThread!.id} (it may no longer have it), so no fork was made.`,
+      reason: `Codex rejected the copy of conversation ${kept.nativeThread!.id}. The original may no longer be available.`,
     },
   });
   expect((await state()).tasks).toHaveLength(tasksBefore);

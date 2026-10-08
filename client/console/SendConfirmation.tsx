@@ -68,9 +68,9 @@ export function SendConfirmation({
       </p>
       <p className="prose">
         {mode === 'ask'
-          ? 'Nothing in the project changes.'
+          ? 'Read-only answer.'
           : mode === 'plan'
-            ? 'The returned plan is saved for you to read before work begins.'
+            ? 'Review the saved plan before starting work.'
             : "File proposals follow the task's existing approval and scope requirements."}
       </p>
       <div className="dialog-actions">

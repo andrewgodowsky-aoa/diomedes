@@ -300,8 +300,8 @@ describe('settling included allowance over HTTP', () => {
     const answer = await post('settle', settle());
     expect(answer.status).toBe(403);
     expect(answer.data.code).toBe('direct_settle_refused');
-    expect(answer.data.error).toMatch(/can’t settle this business’s usage yourself/i);
-    expect(answer.data.error).toMatch(/Nothing was changed\.$/);
+    expect(answer.data.error).toMatch(/You can’t settle it directly/i);
+    expect(answer.data.error).toMatch(/Nectovia records usage when your work finishes\./);
     const summary = ledger.summary(ORG, PERIOD);
     expect(summary.pendingMicroUsd).toBe(dollars(1));
     expect(summary.settledMicroUsd).toBe(0);

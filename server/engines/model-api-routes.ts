@@ -120,7 +120,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
       : null;
     // The spend limit comes before the route check sentence: the checks cannot run without one.
     const next = !protectedStorage
-      ? 'Open the Diomedes desktop app to connect AWS: this process has no protected credential storage.'
+      ? 'Open the Nectovia desktop app to connect AWS and save its credentials securely.'
       : retired
         ? retired.message
         : !connection
@@ -163,7 +163,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
               uncertainMicroUsd: summary.uncertainMicroUsd,
               writtenOffMicroUsd: summary.writtenOffMicroUsd,
               availableMicroUsd: summary.availableMicroUsd,
-              note: 'Estimated from AWS list prices and the usage AWS reports for each call. It is Diomedes’ own limit, not an AWS billing cap, and not your invoice.',
+              note: 'Estimated from AWS list prices and reported usage. This Nectovia spending limit applies separately from AWS billing; your invoice comes from AWS.',
               recent: exposure
                 .list(connection.id)
                 .slice(-RECENT_HOLDS)
@@ -195,7 +195,7 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
         const body = connectBody.parse(req.body);
         const { connections, secrets } = api();
         if (!secrets.available())
-          throw new ApiError(409, 'Protected credential storage is available only in the Diomedes desktop app. Nothing was saved.');
+          throw new ApiError(409, 'Open the Nectovia desktop app to save credentials securely.');
         // Reconnecting over a retired connection continues its revision and first-saved time.
         const { connection: current, retired } = await savedConnection(connections);
         const previous = current ?? retired?.retired ?? null;

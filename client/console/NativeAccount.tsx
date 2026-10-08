@@ -25,7 +25,7 @@ export function NativeAccount() {
       if (active) setState(next);
     });
     const removeError = bridge.onAuthError(() => {
-      if (active) setError('Sign-in could not finish. Try again.');
+      if (active) setError("Sign-in couldn't finish. Try again.");
     });
     const initial = revision;
     void bridge
@@ -73,8 +73,8 @@ export function NativeAccount() {
       )}
       <p className="caption">
         {state.status === 'signed-in'
-          ? 'Signed in to WorkOS. Business workspace access is not connected on this installation.'
-          : state.message || 'Sign in to your account. Personal stays on this computer.'}
+          ? "Signed in. Business access isn't connected on this installation."
+          : state.message || 'Sign in to your account.'}
       </p>
       {state.status === 'signed-out' && (
         <Button disabled={busy} onClick={() => void run('signIn')}>

@@ -225,14 +225,14 @@ describe('a binding that broke', () => {
     },
   };
 
-  it('names the installation that disappeared and refuses to move on its own', () => {
+  it('names the missing installation and asks for a new choice', () => {
     const text = repairText({ ...bound, repair: 'selected-missing' });
     expect(text).toContain('C:\\Tools\\opencode.exe');
-    expect(text).toContain('will not switch to another copy on its own');
+    expect(text).toContain('Choose an installation again');
   });
 
   it('names the installation that changed', () => {
-    expect(repairText({ ...bound, repair: 'selected-changed' })).toContain('has changed since you chose it');
+    expect(repairText({ ...bound, repair: 'selected-changed' })).toContain('has changed');
     expect(repairText({ ...bound, repair: 'selected-unverified' })).toContain(
       'version and integrity checks',
     );
@@ -298,9 +298,9 @@ describe('how an installation is described', () => {
 
   it('says plainly that an unverified copy has an unproven publisher', () => {
     expect(provenanceText('unverified')).toBe(
-      'Your own copy; Nectovia did not verify its publisher.',
+      "Your own copy. Nectovia hasn't verified its publisher.",
     );
-    expect(provenanceText('reviewed-release')).toContain('verified these bytes');
+    expect(provenanceText('reviewed-release')).toBe('Matches the verified release.');
   });
 
   it('names a WSL copy and a desktop application as what they are', () => {
@@ -337,7 +337,7 @@ describe('a different account route', () => {
     );
     expect(sentences[0]).toBe('OpenCode reported zen, anthropic.');
     expect(sentences[1]).toContain('opencode-go');
-    expect(sentences[1]).toContain('not used here');
+    expect(sentences[1]).toBe('This connection requires opencode-go.');
     // Never a sign-out claim, and never an instruction to buy anything.
     expect(sentences.join(' ')).not.toMatch(/sign(ed)? in|sign(ed)? out|buy|subscribe|upgrade/i);
   });
@@ -350,8 +350,8 @@ describe('a different account route', () => {
 describe('where an attempt stopped', () => {
   it('separates the local service from the provider account', () => {
     expect(stageText('local-handshake')).toContain("tool's own service on this computer");
-    expect(stageAction('local-handshake')).toContain('not your provider account');
-    expect(stageAction('provider-auth')).toContain('Check the account this route uses');
+    expect(stageAction('local-handshake')).toContain("tool's connection on this computer");
+    expect(stageAction('provider-auth')).toContain('Check the account used for this connection');
   });
 
   it('never answers a staged failure with a blanket sign-in instruction', () => {
@@ -372,7 +372,7 @@ describe('where an attempt stopped', () => {
   });
 
   it('warns that a dispatched request may already have been answered', () => {
-    expect(stageAction('dispatch')).toContain('reached the provider');
+    expect(stageAction('dispatch')).toContain('reached the service');
     expect(stageAction('cleanup')).toContain('may still be running');
   });
 });
@@ -390,12 +390,12 @@ describe('how old a check is', () => {
 
   it('asks for a fresh check when the timestamp is unreadable or in the future', () => {
     expect(checkedSentence({ ...base, checkedAt: 'not a date' }, NOW, time)).toBe(
-      'The last check carries no usable time. Check again.',
+      'The last check has no valid time. Check again.',
     );
     expect(checkedSentence({ ...base, checkedAt: new Date(NOW + 60_000).toISOString() }, NOW, time)).toBe(
-      'The last check carries no usable time. Check again.',
+      'The last check has no valid time. Check again.',
     );
-    expect(checkedSentence({ ...base, checkedAt: null }, NOW, time)).toBe('Not checked yet');
+    expect(checkedSentence({ ...base, checkedAt: null }, NOW, time)).toBe('Not checked');
   });
 });
 
@@ -628,10 +628,10 @@ describe('what a failed action says about itself', () => {
 
   it('names the stage and its action in one sentence, and omits an absent code', () => {
     expect(attemptSentence({ stage: 'provider-auth', code: 'PROVIDER_DENIED' })).toBe(
-      'The last attempt stopped while the provider checking the account (PROVIDER_DENIED). The provider refused this account for this route. Check the account this route uses.',
+      'The last attempt stopped while the provider checking the account (PROVIDER_DENIED). The service refused this account. Check the account used for this connection.',
     );
     expect(attemptSentence({ stage: 'dispatch', code: '' })).toBe(
-      'The last attempt stopped while sending the request. The request reached the provider and did not finish.',
+      "The last attempt stopped while sending the request. The request reached the service and didn't finish.",
     );
   });
 });

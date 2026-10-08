@@ -58,11 +58,11 @@ export const QUESTION_SET_CHANGES: readonly QuestionSetChange[] = Object.freeze(
 
 /** The refusal for a setup saved by a newer version of the questions. Nothing is changed. */
 export const SETUP_NEWER_REASON =
-  'This setup was saved by a newer version of Nectovia, which asks different questions. Update Nectovia on this computer to continue it. Nothing in it was changed.';
+  'This setup was saved by a newer version of Nectovia, which asks different questions. Update Nectovia on this computer to continue it.';
 
 /** The refusal for a setup at a revision this build does not carry. Nothing is changed. */
 export const SETUP_UNREADABLE_REASON =
-  "This setup was saved in a form this version of Nectovia can't read, so it can't be continued here. Nothing in it was changed.";
+  "This version of Nectovia can't read or continue the saved setup.";
 
 /** The refusal for answering a setup saved under earlier questions before it is resumed. */
 export const SETUP_EARLIER_REASON =

@@ -106,7 +106,7 @@ describe('binary engine discovery', () => {
       found: true,
       available: false,
       status: 'Installed',
-      detail: 'Claude Code 2.1.0 is installed. Diomedes cannot run it yet.',
+      detail: 'Nectovia can\'t run Claude Code 2.1.0.',
       installedVersion: '2.1.0',
       location: 'C:\\tools\\claude.exe',
       signIn: 'first-use',
@@ -179,7 +179,7 @@ describe('binary engine discovery', () => {
       found: true,
       available: false,
       status: 'Installed',
-      detail: 'OpenCode is installed. Its version could not be read. Diomedes cannot run it yet.',
+      detail: 'OpenCode\'s version couldn\'t be read. Nectovia can\'t run this tool.',
       location: 'C:\\tools\\opencode.exe',
     });
     expect(opencode.installedVersion).toBeUndefined();
@@ -201,7 +201,7 @@ describe('binary engine discovery', () => {
     expect(cursor).toMatchObject({
       found: true,
       status: 'Installed',
-      detail: 'Cursor 2026.08.11-e8db854 is installed. Diomedes cannot run it yet.',
+      detail: 'Nectovia can\'t run Cursor 2026.08.11-e8db854.',
       location: 'C:\\tools\\agent.cmd',
       available: false,
       adapter: 'planned',
@@ -253,7 +253,7 @@ describe('binary engine discovery', () => {
     expect(claude.found).toBe(true);
     expect(claude.installedVersion).toBeUndefined();
     expect(claude.detail).toBe(
-      'Claude Code is installed. Its version could not be read. Diomedes cannot run it yet.',
+      'Claude Code\'s version couldn\'t be read. Nectovia can\'t run this tool.',
     );
   });
 
@@ -312,7 +312,7 @@ describe('loopback service discovery', () => {
       found: true,
       available: false,
       status: 'Running',
-      detail: 'Hermes is running on this computer. Diomedes does not use it.',
+      detail: 'Nectovia doesn\'t use Hermes.',
       location: 'http://127.0.0.1:8642/',
       signIn: 'not-needed',
       adapter: 'none',
@@ -346,7 +346,7 @@ describe('loopback service discovery', () => {
       found: true,
       available: false,
       status: 'Installed',
-      detail: 'Ollama 0.9.0 is installed but not running. Diomedes does not use it.',
+      detail: 'Nectovia doesn\'t use Ollama 0.9.0.',
       location: 'C:\\tools\\ollama.exe',
       signIn: 'not-needed',
       adapter: 'none',
@@ -362,7 +362,7 @@ describe('loopback service discovery', () => {
     expect(running.engines.find((entry) => entry.id === 'ollama')).toMatchObject({
       found: true,
       status: 'Running',
-      detail: 'Ollama 0.9.0 is running. Diomedes does not use it.',
+      detail: 'Nectovia doesn\'t use Ollama 0.9.0.',
     });
   });
 

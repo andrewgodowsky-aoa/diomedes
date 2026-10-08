@@ -37,7 +37,7 @@ export function OrganizationExport({
     try {
       setDone(await api<OrganizationExportResult>(`/workspace/organizations/${organizationId}/export`, 'POST', { projectId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The export could not be completed.');
+      setError(e instanceof Error ? e.message : "The export couldn't be completed.");
       report(e);
     } finally {
       setWorking(false);
@@ -48,9 +48,7 @@ export function OrganizationExport({
     <section className="ws-section ws-export">
       <h3>{name}&apos;s records</h3>
       <p className="caption">
-        A copy of the business&apos;s people, plan and phones, every revision of its setup, the history of who
-        joined or left, and this computer&apos;s configuration, written as files you keep. Taking a copy changes
-        nothing, and it never holds a password, key or sign-in.
+        Save the business&apos;s account and setup history as files. The copy excludes credentials.
       </p>
       {output ? (
         <div className="ws-actions">
@@ -59,7 +57,7 @@ export function OrganizationExport({
           </Button>
         </div>
       ) : (
-        <p className="caption ws-boundary">Choose where this business writes, above. The copy goes into that project.</p>
+        <p className="caption ws-boundary">Choose this business’s project to save the copy.</p>
       )}
       {done && (
         <p className="ws-export-done" role="status">

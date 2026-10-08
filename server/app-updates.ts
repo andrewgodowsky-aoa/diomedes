@@ -132,12 +132,12 @@ function assertTrustedUrl(value: string): URL {
   try {
     parsed = new URL(value);
   } catch {
-    throw new ApiError(502, 'The installer resolved to an untrusted location. Nothing was saved.');
+    throw new ApiError(502, 'The installer download address failed the safety check.');
   }
   if (parsed.protocol !== 'https:' || parsed.username || parsed.password)
-    throw new ApiError(502, 'The installer resolved to an untrusted location. Nothing was saved.');
+    throw new ApiError(502, 'The installer download address failed the safety check.');
   if (!UPDATE_DOWNLOAD_HOSTS.includes(parsed.host))
-    throw new ApiError(502, 'The installer resolved to an untrusted location. Nothing was saved.');
+    throw new ApiError(502, 'The installer download address failed the safety check.');
   return parsed;
 }
 
@@ -192,7 +192,7 @@ async function productionFetchRelease(signal: AbortSignal | undefined): Promise<
       throw new ApiError(504, 'The release channel timed out. Check again when online.');
     throw new ApiError(
       503,
-      'Diomedes could not reach the release channel. Check the connection and try again.',
+      'Nectovia couldn\'t check for updates. Check your connection and try again.',
     );
   }
   if (response.status === 404) throw new ApiError(404, 'NO_RELEASE', { code: 'no-release' });
@@ -249,15 +249,15 @@ async function productionDownloadAsset(
     }
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       if (hop === REDIRECT_LIMIT)
-        throw new ApiError(502, 'The installer redirected too many times. Nothing was saved.');
+        throw new ApiError(502, 'The installer download redirected too many times.');
       const location = response.headers.get('location');
       if (!location)
-        throw new ApiError(502, 'The installer redirect was invalid. Nothing was saved.');
+        throw new ApiError(502, 'The installer download redirected to an invalid address.');
       let next: string;
       try {
         next = new URL(location, current).toString();
       } catch {
-        throw new ApiError(502, 'The installer redirect was invalid. Nothing was saved.');
+        throw new ApiError(502, 'The installer download redirected to an invalid address.');
       }
       // Validate before the next fetch; never follow blindly.
       assertTrustedUrl(next);
@@ -276,7 +276,7 @@ async function productionDownloadAsset(
     if (!Number.isSafeInteger(length) || length !== expectedSize)
       throw new ApiError(
         502,
-        'The installer size does not match the release record. Nothing was saved.',
+        'The installer size doesn\'t match the release record. Download it again.',
       );
   }
   // Observation only: how much of what the response declared has arrived. The
@@ -295,7 +295,7 @@ async function productionDownloadAsset(
     if (bytes.length !== expectedSize || bytes.length > UPDATE_MAX_ASSET_BYTES)
       throw new ApiError(
         502,
-        'The installer size does not match the release record. Nothing was saved.',
+        'The installer size doesn\'t match the release record. Download it again.',
       );
     observe(bytes.length);
     return { bytes, finalUrl: current };
@@ -311,7 +311,7 @@ async function productionDownloadAsset(
       await reader.cancel().catch(() => undefined);
       throw new ApiError(
         502,
-        'The installer size does not match the release record. Nothing was saved.',
+        'The installer size doesn\'t match the release record. Download it again.',
       );
     }
     chunks.push(next.value);
@@ -320,7 +320,7 @@ async function productionDownloadAsset(
   if (total !== expectedSize)
     throw new ApiError(
       502,
-      'The installer size does not match the release record. Nothing was saved.',
+      'The installer size doesn\'t match the release record. Download it again.',
     );
   const bytes = new Uint8Array(total);
   let offset = 0;
@@ -682,7 +682,7 @@ export class AppUpdateService {
     if (bytes.length !== record.assetSize)
       throw new ApiError(
         502,
-        'The installer size does not match the release record. Nothing was saved.',
+        'The installer size doesn\'t match the release record. Download it again.',
       );
     if (bytes.length > UPDATE_MAX_ASSET_BYTES)
       throw new ApiError(502, 'The installer is larger than the supported bound.');
@@ -690,7 +690,7 @@ export class AppUpdateService {
     if (digest !== record.publishedDigest)
       throw new ApiError(
         502,
-        'The installer digest does not match the published digest. Nothing was saved.',
+        'The installer doesn\'t match the published release. Download it again.',
       );
     const { ownedDir, stagedPath } = this.ownedStagedPath(record.assetName);
     await fs.mkdir(ownedDir, { recursive: true });
@@ -816,7 +816,7 @@ export class AppUpdateService {
     if (!SHA_PATTERN.test(record.publishedDigest) || record.stagedSha256 !== record.publishedDigest)
       throw new ApiError(
         502,
-        'The staged installer has no trusted expected digest. Nothing was launched.',
+        'The downloaded installer couldn\'t be verified. Download it again.',
       );
     if (compareVersions(record.version, this.currentVersion) <= 0)
       throw new ApiError(409, 'That version is already installed. No downgrade is offered.');
@@ -825,7 +825,7 @@ export class AppUpdateService {
     if (path.resolve(record.stagedPath) !== stagedPath)
       throw new ApiError(
         502,
-        'The staged installer changed after verification. Nothing was launched.',
+        'The downloaded installer changed after verification. Download it again.',
       );
     let linkStat: Awaited<ReturnType<typeof fs.lstat>>;
     try {
@@ -836,13 +836,13 @@ export class AppUpdateService {
     if (linkStat.isSymbolicLink() || !linkStat.isFile() || linkStat.nlink > 1)
       throw new ApiError(
         502,
-        'The staged installer changed after verification. Nothing was launched.',
+        'The downloaded installer changed after verification. Download it again.',
       );
     await this.verifyStagingDirectory(ownedDir);
     if (linkStat.size !== record.assetSize)
       throw new ApiError(
         502,
-        'The staged installer changed after verification. Nothing was launched.',
+        'The downloaded installer changed after verification. Download it again.',
       );
     let staged: Uint8Array;
     try {
@@ -853,13 +853,13 @@ export class AppUpdateService {
     if (staged.length !== record.assetSize)
       throw new ApiError(
         502,
-        'The staged installer changed after verification. Nothing was launched.',
+        'The downloaded installer changed after verification. Download it again.',
       );
     const digest = createHash('sha256').update(staged).digest('hex');
     if (digest !== record.stagedSha256 || digest !== record.publishedDigest)
       throw new ApiError(
         502,
-        'The staged installer changed after verification. Nothing was launched.',
+        'The downloaded installer changed after verification. Download it again.',
       );
     // Recheck idle work and generation immediately before admission: async
     // verification must not let new work or a new feed slip in.

@@ -65,15 +65,15 @@ export function memorySentence(preview: ConversationUpdatePreview): string {
   if (preview.carried)
     return `History sharing is on for ${route}, so ${AGENT_NAME} will carry over your most recent messages.`;
   if (preview.reason === 'history-off')
-    return `History sharing is off for ${route}, so your earlier messages stay on screen but ${AGENT_NAME} won't remember them. Updating doesn't turn sharing on.`;
+    return `History sharing is off for ${route}. This update excludes earlier messages and keeps sharing off.`;
   if (preview.reason === 'other-route')
-    return `Your earlier messages were answered on another service, so ${AGENT_NAME} won't carry them over to ${route}. They stay on screen.`;
-  return `Your earlier messages stay on screen, but ${AGENT_NAME} won't remember them.`;
+    return `${route} won't receive messages answered on another service.`;
+  return `${AGENT_NAME} won't receive your earlier messages after updating.`;
 }
 
 /** Said when an update went out and its answer never arrived. */
 export const UNANSWERED =
-  "The update's answer didn't arrive. Press Update again to check whether it went through; it's never done twice.";
+  "The update's answer didn't arrive. Press Update again to check the original request.";
 /** Said on opening the confirmation again after that, when nothing is left to update. */
 export const CHECK_UNANSWERED =
-  'Your last update may have gone through already. Press Update to check; nothing is done twice.';
+  'Your last update may have gone through. Press Update to check the original request.';

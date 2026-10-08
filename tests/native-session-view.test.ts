@@ -80,7 +80,7 @@ describe('what the Console says about a native session (H03)', () => {
   it('labels a queued message by what the record says became of it', () => {
     const at = new Date().toISOString();
     expect(queuedLabel({ commandId: 'c', state: 'pending', detail: 'x', at })).toBe(
-      'Queued: sent when the current answer finishes',
+      "Sends after the current answer",
     );
     expect(queuedLabel({ commandId: 'c', state: 'delivered', detail: 'x', at })).toBe('Sent');
     expect(queuedLabel({ commandId: 'c', state: 'cancelled', detail: 'Withdrawn by Stop before it was sent.', at })).toBe(

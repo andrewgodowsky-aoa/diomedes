@@ -154,7 +154,7 @@ export function claudeArguments(persistent = false, scope?: ReadScope, team?: Cl
   if (team && (scope || persistent))
     throw new EngineError(
       'POLICY_MISMATCH',
-      'Team tools ride only on a single Work turn, never with a read scope or a native session.',
+      'Team tools are available only in a single Work turn without a read scope or native session.',
       false,
       'launch',
     );

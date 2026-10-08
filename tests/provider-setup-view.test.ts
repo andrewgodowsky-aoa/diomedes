@@ -100,7 +100,7 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
     expect(rows[2]).toMatchObject({ value: 'ok', text: '$1.00 approved, $1.00 left' });
     const or = providerStateRows(openrouter({ spend: { ...spend, capMicroUsd: 0, availableMicroUsd: 0 } }), NOW);
     expect(or[0].text).toBe('vendor/model-a (upstream-one)');
-    expect(or[2]).toMatchObject({ value: 'waiting', text: 'Not approved: nothing can be sent' });
+    expect(or[2]).toMatchObject({ value: 'waiting', text: 'Approval required' });
   });
 
   test('prices are required, cache prices optional, and a source is always said', () => {

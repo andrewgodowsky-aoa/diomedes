@@ -224,7 +224,7 @@ export class EngineInstaller {
         account: 'Sign in through the native Cursor CLI with agent login.',
         available: false,
         detail:
-          'Install Cursor from cursor.com, then check this computer again. Diomedes does not install Cursor.',
+          'Install Cursor from cursor.com, then check this computer again.',
       };
     if (engine === 'devin')
       return {
@@ -239,7 +239,7 @@ export class EngineInstaller {
           'Sign in through the Devin browser flow. Devin ACP authenticates each session and does not reuse the Devin CLI sign-in.',
         available: false,
         detail:
-          'Install Devin Desktop or the Devin CLI, then check this computer again. Diomedes does not install Devin.',
+          'Install Devin Desktop or the Devin CLI, then check this computer again.',
       };
     const release = this.offers.get(engine) ?? reviewedRelease(engine);
     const available =
@@ -318,7 +318,7 @@ export class EngineInstaller {
           if (!(error instanceof EngineError && error.code === 'INSTALL_CHECKSUM'))
             throw new EngineError(
               'INSTALL_UNREADABLE',
-              'The private copy could not be read just now, so nothing was changed. Close anything using it and try again.',
+              'The Nectovia copy couldn\'t be read. Close anything using it and try again.',
               false,
               'runtime-verification',
             );
@@ -359,7 +359,7 @@ export class EngineInstaller {
           if (bytes > 350_000_000)
             throw new EngineError(
               'INSTALL_SIZE',
-              'The release exceeded its download limit. Nothing was activated.',
+              'The release exceeded its download limit.',
             );
           digest.update(item.value);
           await file.writeFile(item.value);
@@ -371,7 +371,7 @@ export class EngineInstaller {
       if (digest.digest('hex') !== release.sha256)
         throw new EngineError(
           'INSTALL_CHECKSUM',
-          'The official release checksum did not match. Nothing was activated.',
+          'The download doesn\'t match the official release checksum.',
         );
       const binary = path.join(staging, release.binary);
       if (release.archive)
@@ -386,7 +386,7 @@ export class EngineInstaller {
       for await (const bytes of createReadStream(binary)) binaryDigest.update(bytes);
       const receipt = { version: release.version, sha256: binaryDigest.digest('hex'), source: release.source, artifactSha256: release.sha256 };
       if (receipt.sha256 !== legacyReceipts[engine].sha256)
-        throw new EngineError('INSTALL_CHECKSUM', 'The executable does not match the reviewed release. Nothing was activated.');
+        throw new EngineError('INSTALL_CHECKSUM', 'The executable doesn\'t match the reviewed release.');
       try { await fs.link(binary, destination); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         // Recover an interrupted activation only when the existing bytes match
@@ -394,7 +394,7 @@ export class EngineInstaller {
         const existing = createHash('sha256');
         for await (const bytes of createReadStream(destination)) existing.update(bytes);
         if (existing.digest('hex') !== receipt.sha256)
-          throw new EngineError('INSTALL_CHECKSUM', 'The destination differs from the current official release. Nothing was activated.');
+          throw new EngineError('INSTALL_CHECKSUM', 'The destination differs from the current official release.');
       }
       const pendingReceipt = path.join(staging, 'receipt.json');
       await fs.writeFile(pendingReceipt, JSON.stringify(receipt, null, 2) + '\n');

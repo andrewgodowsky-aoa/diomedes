@@ -191,7 +191,7 @@ test('a Codex build that advertises steer, resume and fork is offered all three,
   const when = followUps(page).getByRole('radiogroup', { name: 'When this follow-up runs' });
   await when.getByRole('radio', { name: 'now, into this turn' }).click();
   await followUps(page)
-    .getByRole('textbox', { name: 'Steer the running turn' })
+    .getByRole('textbox', { name: "Change the current instruction" })
     .fill('Mention the cider pairing.');
   await followUps(page).getByRole('button', { name: 'Steer', exact: true }).click();
   await expect(receipt(page, 'steer')).toHaveAttribute('data-outcome', 'applied');
@@ -271,7 +271,7 @@ test('a Codex build without them offers Queue and a labelled fresh-start Resume,
   const when = followUps(page).getByRole('radiogroup', { name: 'When this follow-up runs' });
   await expect(when.getByRole('radio')).toHaveText(['after this turn', 'after the task is done']);
   await expect(followUps(page).locator('.follow-up-steer-note')).toHaveText(
-    'Codex can’t steer a running turn, so a message waits for the turn to end.',
+    "Codex accepts your next message after the current answer finishes.",
   );
 
   await liveRecord(page).getByRole('button', { name: 'Stop', exact: true }).click();

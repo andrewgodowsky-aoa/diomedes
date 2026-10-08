@@ -146,7 +146,7 @@ const savedPolicy = async (route: string) =>
   (await api<{ services?: Record<string, unknown> }>('/settings')).services?.[`${route}CachePolicy`] ?? null;
 
 test('PC-01: AWS shows the three settings, the model card’s facts with their source, and saves the owner’s choice', async ({ page }) => {
-  const card = await openCard(page, 'AWS Bedrock (Kimi K3)');
+  const card = await openCard(page, 'AWS Bedrock');
   const block = card.locator('.ai-prompt-caching');
   await expect(block.getByRole('heading', { name: 'Prompt caching' })).toBeVisible();
   const group = block.getByRole('radiogroup', { name: 'Prompt caching' });
@@ -154,7 +154,7 @@ test('PC-01: AWS shows the three settings, the model card’s facts with their s
   await expect(group.getByRole('radio', { name: /Provider default/ })).toBeChecked();
   await expect(group.getByRole('radio', { name: /^Off/ })).not.toBeChecked();
   await expect(group.getByRole('radio', { name: /Explicit prefix/ })).not.toBeChecked();
-  await expect(block).toContainText('Every call is sent with store set to false, so the provider keeps no response object. That is not the same as caching off.');
+  await expect(block).toContainText('Each request disables saved responses. Prompt caching has its own setting.');
 
   const facts = block.getByRole('region', { name: `What ${K3} can do` });
   await expect(facts.locator('[data-fact="context"]')).toContainText('1,000,000 tokens');
@@ -168,7 +168,7 @@ test('PC-01: AWS shows the three settings, the model card’s facts with their s
   }
   await expect(facts.locator('[data-fact="parallel"]')).toContainText('This build sends one tool call at a time.');
   await expect(facts.locator('[data-fact="structured"]')).toContainText('This build asks for text answers only.');
-  await expect(facts.locator('[data-verdict="off"]')).toHaveText('No current route check has tried caching off on this connection.');
+  await expect(facts.locator('[data-verdict="off"]')).toHaveText("Caching off hasn't been checked on this connection.");
 
   await group.getByRole('radio', { name: /^Off/ }).click();
   await expect(group.getByRole('radio', { name: /^Off/ })).toBeChecked();
@@ -176,16 +176,16 @@ test('PC-01: AWS shows the three settings, the model card’s facts with their s
   await expect(facts.locator('.ai-cache-preview')).toHaveText('Caching is set to off. No route check on this connection has confirmed it yet.');
 
   // The choice is read back from the host on a fresh load.
-  const again = await openCard(page, 'AWS Bedrock (Kimi K3)');
+  const again = await openCard(page, 'AWS Bedrock');
   await expect(again.locator('.ai-prompt-caching').getByRole('radio', { name: /^Off/ })).toBeChecked();
 });
 
 test('PC-02: route checks run from the card confirm caching off and fill in what they observed', async ({ page }) => {
-  const card = await openCard(page, 'AWS Bedrock (Kimi K3)');
-  await card.getByRole('button', { name: 'Run route checks' }).click();
+  const card = await openCard(page, 'AWS Bedrock');
+  await card.getByRole('button', { name: 'Run connection tests' }).click();
   const facts = card.locator('.ai-prompt-caching').getByRole('region', { name: `What ${K3} can do` });
   await expect(facts.locator('[data-verdict="off"]')).toHaveText(
-    'Caching off is confirmed. The newest route check saw no cache reads or writes with it.',
+    'The latest check confirmed caching was off.',
   );
   await expect(facts.locator('[data-fact="tools"]')).toHaveAttribute('data-source', 'observed');
   await expect(facts.locator('[data-fact="tools"]')).toContainText(/Observed by a route check\. Route check rq_[a-z0-9]+, /);

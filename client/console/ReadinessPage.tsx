@@ -108,9 +108,9 @@ function CapabilityCard({ capability }: { capability: ReadinessCapability }) {
 function blockerSummary(blocker: WorkflowReadiness['blockers'][number]): string {
   if (blocker.code === 'knowledge-conflict')
     return 'The saved capability information needs updating.';
-  if (blocker.code === 'capability-missing') return 'A required tool is unavailable in this build.';
+  if (blocker.code === 'capability-missing') return 'A required tool is unavailable.';
   if (blocker.code === 'control-missing')
-    return 'This workflow needs safeguards the tool cannot currently enforce.';
+    return "This workflow needs safeguards the tool can't enforce.";
   if (blocker.code === 'command-unsupported' || blocker.code === 'operation-missing')
     return 'A required action is unavailable for this tool.';
   if (blocker.code === 'axis-missing') {
@@ -119,7 +119,7 @@ function blockerSummary(blocker: WorkflowReadiness['blockers'][number]): string 
     if (axis === 'authorized') return 'Permission or account setup is still needed in Settings.';
     if (axis === 'installed') return 'Check installed tools in Settings.';
     if (axis === 'healthy') return 'A successful tool check is needed in Settings.';
-    if (axis === 'implemented') return 'A required capability is unavailable in this build.';
+    if (axis === 'implemented') return 'A required feature is unavailable.';
   }
   return blocker.detail;
 }
@@ -181,7 +181,7 @@ export function ReadinessPage({ projectId }: { projectId?: string }) {
       if (started === epoch.current && !request.signal.aborted) setProjection(result.readiness);
     } catch (failure) {
       if (started === epoch.current && !request.signal.aborted)
-        setError(failure instanceof Error ? failure.message : 'Readiness could not be read.');
+        setError(failure instanceof Error ? failure.message : "Readiness couldn't be read.");
     } finally {
       if (started === epoch.current && !request.signal.aborted) setLoading(false);
     }
@@ -219,7 +219,7 @@ export function ReadinessPage({ projectId }: { projectId?: string }) {
           Include this project's saved connection status
         </label>
       )}
-      <p className="ready-note">Refresh uses the latest saved checks.</p>
+      <p className="ready-note">Refresh to read the latest saved checks.</p>
       {error && <p role="alert">{error}</p>}
       {loading && !projection && <p role="status">Reading saved readiness...</p>}
       {projection && (

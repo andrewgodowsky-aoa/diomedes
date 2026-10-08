@@ -506,7 +506,7 @@ describe('native harness through the real host', () => {
     expect(state().sessions[0].state).toBe('waiting');
     expect(state().tasks[0]).toMatchObject({ state: 'waiting', reason: 'went-wrong' });
     expect(
-      state().sessions[0].log.some((line) => line.sentence.includes('Check before starting again')),
+      state().sessions[0].log.some((line) => line.sentence.includes('Check what happened before starting again')),
     ).toBe(true);
     await expect(host().runs.complete(run.id, run.owner!, { text: 'wrong' })).rejects.toThrow(
       /reconciliation/,

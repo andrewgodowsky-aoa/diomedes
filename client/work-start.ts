@@ -27,7 +27,7 @@ const invalid = () => new Error('Stored work-start command is invalid; the reque
 const unavailable = () => new Error('Work start storage is unavailable; the request was not sent.');
 const unresolved = () =>
   new Error(
-    'Work start could not be confirmed. The request may have been accepted; ' +
+    'Work start couldn\'t be confirmed. The request may have been accepted; ' +
       'retrying the same task checks the original request.',
   );
 function record(value: unknown): value is Record<string, unknown> {
@@ -123,8 +123,8 @@ function clearPending(storage: Storage, key: string, accepted: boolean) {
   } catch {
     throw new Error(
       accepted
-        ? 'Work was accepted, but this browser could not clear its saved request. Check Work before starting again.'
-        : 'The request was refused, but this browser could not clear its saved request.',
+        ? 'Work was accepted, but this browser couldn\'t clear its saved request. Check Work before starting again.'
+        : 'The request was refused, but this browser couldn\'t clear its saved request.',
     );
   }
 }
@@ -160,7 +160,7 @@ export function reconcileWorkStarts(
     }
   } catch {
     return new Error(
-      'Saved Work requests could not be checked because browser storage is unavailable. Check Work before starting again.',
+      'Saved Work requests couldn\'t be checked because browser storage is unavailable. Check Work before starting again.',
     );
   }
   if (!keys.length) return;
@@ -181,7 +181,7 @@ export function reconcileWorkStarts(
       // Keep the damaged record and report it. Independent confirmed records can
       // still reconcile, and a storage fault must not block unrelated state UI.
       issue ??= new Error(
-        'A saved Work request could not be checked. It has been kept; check Work before starting again.',
+        'A saved Work request couldn\'t be checked. It has been kept; check Work before starting again.',
         { cause: error },
       );
     }

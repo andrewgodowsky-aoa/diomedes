@@ -252,19 +252,19 @@ test('managed usage stays preferred in Engines and Account, with commercial cred
   await page.route(BASE, (route) => route.fulfill({ json: detected }));
   await openEngines(page);
   const policy = page.getByRole('region', { name: 'Nectovia-managed AI', exact: true });
-  await expect(policy).toContainText("Nectovia's current usage rate");
-  await expect(policy).toContainText('monthly spending cap');
-  await expect(policy).toContainText('never starts automatically');
+  await expect(policy).toContainText("Nectovia's current rate");
+  await expect(policy).toContainText('monthly spending limit');
+  await expect(policy).toContainText("needs your business's approval");
   const advanced = policy.locator('details');
   await expect(advanced).not.toHaveAttribute('open');
   await advanced.locator('summary').click();
-  await expect(advanced).toContainText('optional, contract-specific');
-  await expect(advanced).toContainText('cannot fund shared organization-wide');
+  await expect(advanced).toContainText('arrange a supported business AI account');
+  await expect(advanced).toContainText("can't fund shared Agent work");
   await expect(policy).not.toContainText(/markup|provider cost|\$0\./i);
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   const accountPolicy = page.getByRole('region', { name: 'Nectovia-managed AI', exact: true }).first();
   await expect(accountPolicy).toBeVisible();
-  await expect(accountPolicy).toContainText('included allowance is used first');
+  await expect(accountPolicy).toContainText('draws from your included allowance first');
   await expect(accountPolicy.locator('details')).not.toHaveAttribute('open');
 });
 

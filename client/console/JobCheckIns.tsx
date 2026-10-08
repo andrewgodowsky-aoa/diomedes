@@ -110,8 +110,8 @@ export function JobCheckIns({ organizationId }: { organizationId: string }) {
     <section className="block" aria-labelledby="job-check-ins-title">
       <h2 id="job-check-ins-title">Job check-ins</h2>
       <p className="prose">
-        A job asks whether to keep going once it has used its amount. Keep going lets that one job use the same amount
-        again. Leave a box empty to use Nectovia’s amount. A change applies to jobs that start after it.
+        Each job asks before spending more than this number of credits. Keep going adds the same number for that job.
+        Leave a box empty to use Nectovia’s default. Changes apply to new jobs.
       </p>
       {JOB_TIERS.map((tier) => (
         <label className="caption" key={tier}>
@@ -126,8 +126,8 @@ export function JobCheckIns({ organizationId }: { organizationId: string }) {
           />
           <span className="caption">
             {view.effective.source[tier] === 'business'
-              ? `Your amount. Nectovia’s is ${credits(view.defaults[tier])}.`
-              : `Nectovia’s amount is ${credits(view.defaults[tier])}.`}
+              ? `Business setting. Nectovia’s default is ${credits(view.defaults[tier])}.`
+              : `Nectovia’s default is ${credits(view.defaults[tier])}.`}
           </span>
         </label>
       ))}

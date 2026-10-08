@@ -112,12 +112,12 @@ export function openHandoff(input: {
   if (input.depth >= MAX_DELEGATION_DEPTH)
     return {
       ok: false,
-      reason: `This work has already been passed on far enough. Diomedes stops after ${MAX_DELEGATION_DEPTH} steps so a job cannot keep starting more of itself.`,
+      reason: `This work has reached Nectovia's limit of ${MAX_DELEGATION_DEPTH} delegation steps.`,
     };
   if (input.siblings >= MAX_CHILDREN_PER_HANDOFF)
     return {
       ok: false,
-      reason: `This step already has ${MAX_CHILDREN_PER_HANDOFF} workers, which is as many as Diomedes runs at once.`,
+      reason: `This step has reached Nectovia's limit of ${MAX_CHILDREN_PER_HANDOFF} workers.`,
     };
   if (!input.from.produces.includes(input.artifact))
     return {
@@ -182,7 +182,7 @@ export function acceptHandoff(
     return {
       ok: false,
       reason:
-        'This work belongs to a different business than the worker being asked to continue it. Nothing was shared.',
+        'This work and the worker asked to continue it belong to different businesses.',
     };
   if (envelope.tenantId !== null && child.membershipState !== 'active')
     return {
@@ -195,7 +195,7 @@ export function acceptHandoff(
   if (missing.length > 0)
     return {
       ok: false,
-      reason: `This step needs ${missing.join(', ')}, which that worker does not hold. Being on the team is not permission.`,
+      reason: `This step needs ${missing.join(', ')}, which this worker isn't allowed to use.`,
     };
   return { ok: true, reason: 'Ready to continue.' };
 }

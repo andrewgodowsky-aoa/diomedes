@@ -55,7 +55,7 @@ export function readPending(
   const parsed = inventoryReceiveSchema.safeParse(value);
   if (!parsed.success)
     throw new Error(
-      'Saved receipt intent is unreadable. Preserve it and reconcile before receiving more stock.',
+      'The saved receipt request can\'t be read. Keep it and confirm what happened before receiving more stock.',
     );
   return parsed.data;
 }
@@ -111,9 +111,9 @@ export class InventoryReceiptClient {
         (result.status === 'applied' || result.status === 'already-applied') &&
         result.receipt.operationId !== command.operationId
       )
-        throw new Error('Receipt identity does not match the pending operation.');
+        throw new Error('The reply belongs to a different receipt. Check the original receipt\'s status.');
       if (result.status === 'uncertain' && result.operationId !== command.operationId)
-        throw new Error('Uncertain receipt identity does not match the pending operation.');
+        throw new Error('The uncertain reply belongs to a different receipt. Check the original receipt\'s status.');
       return result;
     } catch {
       // A timeout, invalid reply, or server failure can follow the durable replacement.
@@ -133,7 +133,7 @@ export class InventoryReceiptClient {
       (result.status === 'applied' && result.receipt.operationId !== operationId) ||
       ('operationId' in result && result.operationId !== operationId)
     )
-      throw new Error('Status response does not match the pending operation.');
+      throw new Error('The status belongs to a different receipt. Check the original receipt\'s status.');
     return result;
   }
 }

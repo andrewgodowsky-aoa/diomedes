@@ -99,7 +99,7 @@ export function BoardPane({
                 Close
               </button>
             </div>
-            <p className="art-status">Counted from task records as they change.</p>
+            <p className="art-status">Current task totals</p>
           </div>
           <div className="art-body">
             <ProgressBoard board={board} />

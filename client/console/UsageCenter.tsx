@@ -88,7 +88,7 @@ export function UsageCenterBar({ state, now }: { state: UsageState; now: number 
     return (
       <section className="uc-section" aria-label="Agent usage">
         <h2>Agent usage</h2>
-        <p className="uc-line">No monthly credits this month.</p>
+        <p className="uc-line">No included credits for this month.</p>
       </section>
     );
   }

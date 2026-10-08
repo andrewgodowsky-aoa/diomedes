@@ -80,7 +80,7 @@ export interface AdmissionRequest {
 
 export const DIRECT_RESERVATION_REFUSED = 'direct_reservation_refused';
 export const DIRECT_RESERVATION_REASON =
-  'You can’t reserve this business’s included usage yourself. Your work in the app draws on it as it runs. Nothing was held.';
+  'You can’t reserve this business’s included usage directly. Nectovia reserves it when work starts.';
 
 /**
  * The account service's word on usage a business bought outright, for the person signed in here.
@@ -125,7 +125,7 @@ const PURCHASED_OTHER_PERSON_REASON =
 /** Settling is a person's word about what a hold cost, so it is closed to people the same way. */
 export const DIRECT_SETTLE_REFUSED = 'direct_settle_refused';
 export const DIRECT_SETTLE_REASON =
-  'You can’t settle this business’s usage yourself. Your work in the app settles as it finishes. Nothing was changed.';
+  'Nectovia records usage when your work finishes. You can’t settle it directly.';
 
 /**
  * Renewing a hold keeps usage the business bought outright from lapsing while its work runs. A hold
@@ -218,7 +218,7 @@ export class ManagedGateway {
     if (!this.deps.memberOf(organizationId, personId))
       return refuse(
         'not_a_member',
-        'You are not an active member of this business, so nothing runs on its account.',
+        'You aren\'t an active member of this business. Its account can\'t fund this work.',
       );
     const tenantId = this.deps.tenantFor(organizationId);
     if (!tenantId)
@@ -242,7 +242,7 @@ export class ManagedGateway {
     if (policy.processing === 'local-only' && !isLocal(request.route))
       return refuse(
         'data_route_refused',
-        'This business keeps its work on its own computers, and that route sends work elsewhere. Nothing was sent and nothing was downgraded quietly.',
+        'This business requires work to stay on its own computers. The selected connection sends work elsewhere.',
         payer.payer,
       );
 
@@ -266,7 +266,7 @@ export class ManagedGateway {
     if (!Number.isFinite(Date.parse(request.at)))
       return refuse(
         'invalid_clock',
-        'The request time is not readable; nothing was reserved and nothing was admitted.',
+        'The request time couldn\'t be read.',
         'managed',
       );
 
@@ -294,7 +294,7 @@ export class ManagedGateway {
     if (request.parentTaskId === null && request.maxMicroUsd > jobCap)
       return refuse(
         'job_cap_reached',
-        'This call could cost more than one job is capped at. Nothing was held and nothing was sent.',
+        'This request could exceed the job’s spending limit.',
         'managed',
       );
     // A person asking to hold the company's allowance themselves stops here,

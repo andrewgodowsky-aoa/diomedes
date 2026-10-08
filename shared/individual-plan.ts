@@ -192,11 +192,11 @@ export type CoveredAccessView = Omit<AccessView, 'grants'> & {
 
 /** Personal work, for a person who holds the Agent through a business but has no Individual plan. */
 export const AGENT_PERSONAL_INDIVIDUAL_REASON =
-  "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it. Nothing was sent.";
+  "The Nectovia Agent isn't part of your personal work here. It comes with an Individual plan of your own, or with a business workspace that includes it.";
 
 /** Legacy Personal admission cannot bind a managed request to its Individual billing scope. */
 export const MANAGED_USAGE_NOT_INCLUDED_PERSONAL =
-  'Managed Personal work requires Individual account routing and setup. Refresh your account in a current app to continue. Nothing was sent.';
+  'Your Personal account setup needs an update. Refresh your account in a current app to continue.';
 
 /** Staff tried to issue the Individual plan to a business. */
 export const INDIVIDUAL_PLAN_NOT_FOR_BUSINESS =
@@ -207,8 +207,8 @@ export const BUSINESS_PLAN_NOT_FOR_PERSON = 'That plan is issued to a business, 
 
 /** The person's own access, when they hold no Individual plan. */
 export const INDIVIDUAL_NONE_REASON = AGENT_FREE_VERSION_REASON;
-export const INDIVIDUAL_EXPIRED_REASON = 'Your Individual plan has ended, so the Nectovia Agent is not available for your personal work. Your files and history are unchanged.';
-export const INDIVIDUAL_REVOKED_REASON = 'Your Individual plan was withdrawn, so the Nectovia Agent is not available for your personal work. Your files and history are unchanged.';
+export const INDIVIDUAL_EXPIRED_REASON = 'Your Individual plan has ended, so the Nectovia Agent isn\'t available for your personal work.';
+export const INDIVIDUAL_REVOKED_REASON = 'Your Individual plan was withdrawn, so the Nectovia Agent isn\'t available for your personal work.';
 
 /**
  * A person with no Individual plan, as a host records it when the account service it talks to

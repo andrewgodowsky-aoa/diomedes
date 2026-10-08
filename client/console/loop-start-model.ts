@@ -123,7 +123,7 @@ export function loopStartCommand(input: {
   if (input.review && input.review.profileId !== LOOP_REVIEW_PROFILE)
     throw new Error('Only the inventory reconciliation review is available here.');
   if (input.nectovia && (input.persistentTeam || input.team || input.review))
-    throw new Error('Choose Nectovia roles or a Team, not both.');
+    throw new Error('Choose either Nectovia roles or a Team.');
   return {
     protocolVersion: 1,
     commandId: input.commandId,

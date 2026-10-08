@@ -382,7 +382,7 @@ describe("a phone's commands on this computer (relay plan steps 3 and 4)", () =>
     const recorded = decided.history.filter((item) => item.taskId === task.id && ['decision', 'phone-decision'].includes(item.kind));
     expect(recorded.map((item) => [item.kind, item.sentence])).toEqual([
       ['decision', `You said go ahead: ${need.what}`],
-      ['phone-decision', 'You went ahead from your phone'],
+      ['phone-decision', 'You approved from your phone'],
     ]);
     expect(recorded[1]).toMatchObject({ approvalId: need.id, origin: { executorId: 'diomedes:phone-relay', producerId: `person:${ownerId}` } });
 

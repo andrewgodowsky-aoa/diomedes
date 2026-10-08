@@ -401,8 +401,8 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   await expect(
     inspector.getByText(/The worker was picked by hand|Nectovia picked the worker/),
   ).toBeVisible();
-  await expect(inspector.getByText(/Nothing records which rules governed it/)).toBeVisible();
-  await expect(inspector.getByText(/Nothing records who paid/)).toBeVisible();
+  await expect(inspector.getByText(/No record of which rules governed it/)).toBeVisible();
+  await expect(inspector.getByText(/No record of who paid/)).toBeVisible();
   await inspector
     .getByRole('term')
     .filter({ hasText: /^Worker$/ })
@@ -662,7 +662,7 @@ test('long names hold at 800px; Stop is truthful and inspector refresh stays hon
   );
   await page.reload();
   await expect(page.getByRole('alert')).toContainText(
-    'A saved approval request could not be checked',
+    'A saved approval request couldn\'t be checked',
   );
   await page.screenshot({
     path: testInfo.outputPath('stale-evidence.png'),

@@ -144,7 +144,7 @@ describe('work-start client', () => {
       storage.setItem(key, '{broken');
       fetchMock.mockRejectedValue(new TypeError('lost both responses'));
       await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow(
-        'could not be confirmed',
+        'couldn\'t be confirmed',
       );
       const session: Session = {
         ...okSession(),
@@ -161,7 +161,7 @@ describe('work-start client', () => {
           admittedAt: '2026-09-08T00:00:00.000Z',
         },
       };
-      expect(reconcileWorkStarts(TARGET_PROJECT, [session])?.message).toContain('could not be checked');
+      expect(reconcileWorkStarts(TARGET_PROJECT, [session])?.message).toContain('couldn\'t be checked');
       expect(storage.getItem(key)).toBe('{broken');
       expect(readPending()).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -175,7 +175,7 @@ describe('work-start client', () => {
 
   test('reload reconciles an ambiguous start from host state without another request', async () => {
     fetchMock.mockRejectedValue(new TypeError('lost both responses'));
-    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('could not be confirmed');
+    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('couldn\'t be confirmed');
     const commandId = readPending()!.commandId;
     await freshModule();
     const session: Session = {
@@ -205,7 +205,7 @@ describe('work-start client', () => {
 
   test('a snapshot with no matching receipt keeps the unresolved request', async () => {
     fetchMock.mockRejectedValue(new TypeError('host offline'));
-    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('could not be confirmed');
+    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('couldn\'t be confirmed');
     reconcileWorkStarts(TARGET_PROJECT, [okSession()]);
     expect(readPending()?.commandId).toBe('test-uuid-1');
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -234,7 +234,7 @@ describe('work-start client', () => {
     fetchMock.mockRejectedValue(new TypeError('down'));
     const err = await startWork(TARGET_PROJECT, baseInput()).catch((e) => e as Error);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String((err as Error).message)).toContain('Work start could not be confirmed');
+    expect(String((err as Error).message)).toContain('Work start couldn\'t be confirmed');
     expect(String((err as Error).message)).toContain(
       'retrying the same task checks the original request',
     );
@@ -413,7 +413,7 @@ describe('work-start client', () => {
   });
   test('a response without the matching receipt stays uncertain and keeps the command', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => okSession() });
-    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('could not be confirmed');
+    await expect(startWork(TARGET_PROJECT, baseInput())).rejects.toThrow('couldn\'t be confirmed');
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(readPending()).not.toBeNull();
   });

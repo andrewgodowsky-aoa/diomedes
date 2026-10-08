@@ -167,7 +167,7 @@ describe('approved read connectors', () => {
     ] as const) {
       const refused = await call(route, method, body);
       expect(refused.status).toBe(409);
-      expect(refused.text).toContain('nothing was changed');
+      expect(refused.text).toContain('can\'t be read. Fix or remove it first.');
     }
     expect(await fs.readFile(file, 'utf8')).toBe(broken);
     // A well-formed file of the wrong shape is refused the same way.

@@ -68,7 +68,7 @@ export function AccountSettings() {
       </p>
       <p className="caption">
         {state.backend.label}
-        {state.backend.kind === 'faux' ? '. Test data on this computer; nothing here was bought.' : '.'}{' '}
+        {state.backend.kind === 'faux' ? '. Sample accounts on this computer.' : '.'}{' '}
         {state.remember
           ? 'This computer keeps your sign-in, sealed by its protected storage.'
           : 'This computer does not keep your sign-in; you will enter your password next time.'}
@@ -102,7 +102,7 @@ export function AccountSettings() {
           <p className="prose">You don't belong to a business yet.</p>
         ) : (
           <p className="prose">
-            You do not belong to a business yet. Personal work uses your own AI tools directly; the Nectovia
+            You don't belong to a business yet. Personal work uses your own AI tools directly; the Nectovia
             Agent works for a business whose plan includes it.
           </p>
         ))}

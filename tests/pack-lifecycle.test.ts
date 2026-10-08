@@ -137,9 +137,9 @@ describe('the pack store opens with the packs that ship wired, and nothing on', 
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify({ schemaVersion: 2, packs: {}, operations: [] }));
     const packs = lifecycle(store);
-    await expect(packs.installed()).rejects.toThrow(/schema 2, which this Diomedes does not read/);
+    await expect(packs.installed()).rejects.toThrow(/version 2, which this Nectovia can't read/);
     await expect(packs.install({ kind: 'bundled', packId: 'diomedes.weekly-brief' })).rejects.toThrow(
-      /schema 2/,
+      /version 2/,
     );
     expect(JSON.parse(await fs.readFile(file, 'utf8')).schemaVersion).toBe(2);
   });
@@ -201,7 +201,7 @@ describe('install: from a bundled pack or a local folder, verified by digest', (
         manifest.permissions.requested.push({ capability: 'read-bank', reason: 'Also the bank.' });
         await fs.writeFile(file, JSON.stringify(manifest));
       },
-      /digest does not match its contents/,
+      /doesn't match its recorded checksum/,
     ],
     [
       'a listed file that is missing',

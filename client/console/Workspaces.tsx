@@ -51,7 +51,7 @@ export function WorkspaceMark({ view, onOpen }: { view: WorkspaceView | null; on
         <span className="ws-name">{label}</span>
         <span className="ws-open mono">Change</span>
       </button>
-      {fixture && <p className="caption ws-fixture">Development identity — not verified</p>}
+      {fixture && <p className="caption ws-fixture">Unverified test account</p>}
     </div>
   );
 }
@@ -103,7 +103,7 @@ export function WorkspacePanel({
       try {
         onChanged(await action());
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'That could not be completed.');
+        setError(e instanceof Error ? e.message : "That couldn't be completed.");
         report(e);
       } finally {
         setWorking(false);
@@ -206,7 +206,7 @@ export function WorkspacePanel({
           {view.person.name} ·{' '}
           {view.person.assurance === 'hosted'
             ? 'Verified identity'
-            : 'Development identity — not verified'}
+            : 'Unverified test account'}
         </p>
         {/* No entitlement banner here. Managed access says what it is, and what
             this installation can offer, in its own section below — where the
@@ -219,8 +219,7 @@ export function WorkspacePanel({
               <div className="ws-row-text">
                 <strong>Personal</strong>
                 <span className="caption">
-                  Your own workspace: your projects, settings and history. It never asks the
-                  business questions.
+                  Your Personal projects and settings.
                 </span>
               </div>
               {active.kind === 'personal' ? (
@@ -295,8 +294,7 @@ export function WorkspacePanel({
           <section className="ws-section">
             <h3>Set up {activeOrganization.organization.name}</h3>
             <p className="caption">
-              A short set of questions about the work, asked once for the business. It records
-              answers; it does not change permissions, spending or access.
+              Answer questions to prepare the business setup. Permissions need separate approval.
             </p>
             <div className="ws-actions">
               <Button
@@ -385,8 +383,7 @@ export function WorkspacePanel({
           <section className="ws-section">
             <h3>Where {activeOrganization.organization.name} writes</h3>
             <p className="caption">
-              Work for this business is saved into one project, for you to read before anything is
-              sent anywhere. It is chosen once, here, so a run cannot land somewhere nobody picked.
+              Choose the project where this business saves draft work for review before sending.
             </p>
             {activeOrganization.output && (
               <p className="ws-bound">
@@ -504,8 +501,7 @@ export function WorkspacePanel({
           <section className="ws-section">
             <h3>Invite someone</h3>
             <p className="caption">
-              An invitation is a single code that expires. An email address or a matching domain
-              never joins anyone.
+              Share a single-use invitation code. Each code expires.
             </p>
             <div className="ws-actions">
               {(['member', 'admin'] as const).map((role) => (
@@ -523,7 +519,7 @@ export function WorkspacePanel({
                     )
                       .then(setInvite)
                       .catch((e) => {
-                        setError(e instanceof Error ? e.message : 'That could not be completed.');
+                        setError(e instanceof Error ? e.message : "That couldn't be completed.");
                         report(e);
                       })
                       .finally(() => setWorking(false));
@@ -535,7 +531,7 @@ export function WorkspacePanel({
             </div>
             {invite && (
               <p className="caption ws-code">
-                Code <span className="mono">{invite.code}</span> — single use, {invite.role}.
+                Code <span className="mono">{invite.code}</span>, single use, {invite.role}.
               </p>
             )}
           </section>
@@ -588,8 +584,7 @@ export function WorkspacePanel({
         <section className="ws-section">
           <h3>Join a business workspace</h3>
           <p className="caption">
-            Paste the invitation code an owner gave you. Joining does not change your Personal
-            workspace.
+            Paste the invitation code an owner gave you.
           </p>
           <div className="ws-form">
             <label>
@@ -637,12 +632,12 @@ function setupSentence(
   required: number,
   questions?: 'earlier' | 'newer' | 'unreadable',
 ): string {
-  if (questions === 'newer') return 'Setup saved by a newer version of Nectovia — update to continue it';
+  if (questions === 'newer') return 'Update Nectovia to continue this setup';
   if (questions === 'unreadable') return "Setup saved in a form this version can't read";
-  if (questions === 'earlier') return 'Setup saved under earlier questions — resume to carry the answers across';
-  if (state === 'not-started') return 'Setup has not started';
-  if (state === 'proposal-ready') return 'Setup answered — ready to review';
-  return `Setup in progress — ${answered} of ${required} needed answers`;
+  if (questions === 'earlier') return 'Resume setup to check the revised questions';
+  if (state === 'not-started') return "Setup hasn't started";
+  if (state === 'proposal-ready') return 'Review the proposed setup';
+  return `Setup in progress: ${answered} of ${required} required answers`;
 }
 
 /**

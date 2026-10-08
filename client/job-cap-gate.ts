@@ -103,7 +103,7 @@ export async function afterStop(deps: OverrunDeps): Promise<GateResult> {
 /** The person chose Cancel (or Stop here) at a job-cap question: nothing was sent, and the words are theirs. */
 export class CapDeclined extends Error {
   constructor() {
-    super('Nothing was sent.');
+    super('Message canceled.');
     this.name = 'CapDeclined';
   }
 }

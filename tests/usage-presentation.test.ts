@@ -17,7 +17,7 @@ function baseSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
     thread: null,
     source: 'none',
     detail:
-      'Codex has not reported its allowance yet. It appears after the next connection check or turn.',
+      'Codex hasn\'t reported its allowance. It refreshes after a connection check or answer.',
     ...overrides,
   };
 }

@@ -125,7 +125,7 @@ test('H14-UI-01: a worker that failed stops its lead, and the Team view says whi
   await expect(workers.nth(0).locator('.lw-files')).toHaveText('delivery.md');
   await expect(workers.nth(0).locator('.lw-answer')).toHaveText('delivery.md: Delivered 94 napkins. Six napkins short.');
   await expect(workers.nth(0).locator('.lw-budget')).toContainText('turns 2 of 4');
-  await expect(workers.nth(0).locator('.lw-meta')).toContainText('None: a fixed local script');
+  await expect(workers.nth(0).locator('.lw-meta')).toContainText("Fixed local script");
   // The lead did not finish, so an answer is still only a claim.
   await expect(workers.nth(0).locator('[data-verification]')).toHaveText('Not verified');
   await expect(workers.nth(0).locator('[data-verification]')).toHaveAttribute('title', /A worker’s answer is a claim/);

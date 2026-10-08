@@ -66,7 +66,7 @@ export const SETUP_SAVE_CONFLICT = 'Someone else changed this setup while you we
 
 /** This computer's own files failed, not the service: said as such, and never as a blank setup. */
 export const SETUP_LOCAL_ERROR_REASON =
-  "This computer couldn't open its copy of this business's setup. Nothing was reset. Try again.";
+  "This computer couldn't open its copy of this business's setup. Try again.";
 
 /** A save that lost to someone else's. `load` is what the business holds now, when it could be read. */
 export class SetupConflict extends ApiError {

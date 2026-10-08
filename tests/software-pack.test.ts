@@ -270,7 +270,7 @@ describe('worktrees', () => {
     await settle();
     const refused = store().state(projectId).softwarePack!.worktreeRequests.at(-1)!;
     expect(refused.state).toBe('refused');
-    expect(refused.detail).toMatch(/1 file with uncommitted changes \(draft\.txt\).*never force-removes.*Nothing was removed\./);
+    expect(refused.detail).toMatch(/1 file with uncommitted changes \(draft\.txt\).*Commit or discard them yourself first\./);
     expect(await fs.readFile(path.join(worktree, 'draft.txt'), 'utf8')).toBe('not committed\n');
     expect(store().state(projectId).softwarePack!.worktrees[0]!.removedAt).toBeNull();
 
@@ -337,7 +337,7 @@ describe('declared commands', () => {
     expect([second.status, second.data.code]).toEqual([409, 'command_pending']);
     expect((await answer('runs', first.data.id, 'declined', first.data.intentHash)).status).toBe(200);
     await settle();
-    expect(latestRun()).toMatchObject({ state: 'declined', detail: 'You declined. Nothing ran.' });
+    expect(latestRun()).toMatchObject({ state: 'declined', detail: 'You declined.' });
     await expect(fs.access(path.join(folder, 'ran-pass.txt'))).rejects.toThrow();
 
     // Green: approved, it runs, as exactly those words, and its result is recorded.
@@ -445,7 +445,7 @@ describe('declared commands', () => {
     await store().persist(state);
     const shown = await view();
     expect(shown.runs[0]).toMatchObject({ id: asked.data.id, state: 'uncertain' });
-    expect(shown.runs[0]!.detail).toMatch(/not confirmed\. It will not run it again on its own\./);
+    expect(shown.runs[0]!.detail).toMatch(/Its result isn't confirmed\. Check what happened before trying again\./);
     await expect(fs.access(path.join(folder, 'ran-pass.txt'))).rejects.toThrow();
     expect((await ask(id)).data.state).toBe('waiting-approval');
   });

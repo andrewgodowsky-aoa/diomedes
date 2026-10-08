@@ -505,7 +505,7 @@ describe('refused before any role is admitted or sent', () => {
     });
     const named = await localStart(projectId, taskId, { team: { worker: { ...TIERED.worker, model: 'any-model' }, advisor: null } });
     expect(named.status).toBe(409);
-    expect(named.data).toMatchObject({ error: 'The Nectovia model is managed. Send without choosing one.', code: 'route_refused', role: 'worker' });
+    expect(named.data).toMatchObject({ error: 'Nectovia chooses the AI for this job. Send without choosing a model.', code: 'route_refused', role: 'worker' });
     const unconfirmed = await localStart(projectId, taskId, { consent: false, team: TIERED });
     expect(unconfirmed.status).toBe(409);
     expect(unconfirmed.data).toMatchObject({ error: nectoviaRoleConsentText('worker', 'focused'), consentRequired: true, role: 'worker' });
@@ -802,7 +802,7 @@ describe('the words a Nectovia role is shown with', () => {
       commandId: 'console-loop-3', taskId: 'task-1', goal: 'Count.', route: 'azure-openai', sources: ['order.md'],
       consent: true, maxTurns: null, team: { scope: ['order.md'], worker: { profileId: 'helper-1' }, advisor: null },
       nectovia: { worker: 'focused', advisor: null },
-    })).toThrow('Choose Nectovia roles or a Team, not both.');
+    })).toThrow('Choose either Nectovia roles or a Team.');
 
     expect(nectoviaRolesConsentText('Azure OpenAI', { worker: 'focused', advisor: 'thorough' })).toBe(
       'Send the goal and the files it reads to Azure OpenAI. This loop hands tasks to Nectovia Focused with the files they need. ' +

@@ -6,5 +6,5 @@
  * customer can reach is built here, so the wording stays the same everywhere.
  */
 export function routeUnavailable(provider: string): string {
-  return `${provider} is unavailable right now. Please contact support and check that your account is connected and has credits remaining.`;
+  return `${provider} is unavailable right now. Check your connection and credits, then contact support if it still fails.`;
 }

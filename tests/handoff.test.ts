@@ -94,7 +94,7 @@ describe('opening a handoff', () => {
     const tooDeep = open({ depth: MAX_DELEGATION_DEPTH });
     expect(tooDeep.ok).toBe(false);
     if (tooDeep.ok) return;
-    expect(tooDeep.reason).toContain('far enough');
+    expect(tooDeep.reason).toContain('delegation steps');
   });
 
   test('the number of children at one step is bounded', () => {

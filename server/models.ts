@@ -95,7 +95,7 @@ export function codexCatalog(): EngineCatalog {
     return {
       engine: 'codex',
       models: [],
-      detail: 'Codex has not written its list yet. It appears after the next Codex run.',
+      detail: 'Codex hasn\'t reported its models. Send a message to refresh the list.',
     };
   }
   const key = `${file}:${stat.mtimeMs}:${stat.size}`;
@@ -117,7 +117,7 @@ export function codexCatalog(): EngineCatalog {
       : 'Codex reported no choices for this account.';
   } catch {
     models = [];
-    detail = 'Codex list could not be read. It is rewritten after the next Codex run.';
+    detail = 'The Codex list couldn\'t be read. Codex rewrites it after its next run.';
   }
   const catalog: EngineCatalog = { engine: 'codex', models, detail };
   cached = { key, catalog };

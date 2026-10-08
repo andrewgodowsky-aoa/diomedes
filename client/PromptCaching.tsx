@@ -12,7 +12,7 @@ import {
 } from './route-cache-view';
 
 const messageOf = (error: unknown) =>
-  error instanceof ApiError || error instanceof Error ? error.message : 'The request could not be completed.';
+  error instanceof ApiError || error instanceof Error ? error.message : "The request couldn't be completed.";
 
 /**
  * DIO-215: the owner's Prompt caching setting for one route, and what each model of its
