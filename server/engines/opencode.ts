@@ -174,6 +174,14 @@ export const OPENCODE_READ_TOOLS = ['read', 'glob', 'grep', 'list'] as const;
 export const OPENCODE_WEB_TOOLS = ['webfetch', 'websearch'] as const;
 /** Tool steps a read turn may take before OpenCode itself stops the agent. */
 export const OPENCODE_READ_STEPS = 16;
+/**
+ * The text-only route's step limit. On the step that reaches an agent's limit, OpenCode 1.18.4
+ * adds its own instruction that the steps are spent and the model must summarise its work
+ * instead (packages/opencode/src/session/prompt.ts:1178-1281, MAX_STEPS_PROMPT), so a limit of
+ * one put that instruction on every message and every answer was that summary. A text-only
+ * answer is one step; the limit sits past it, and with every tool off a second never comes.
+ */
+export const OPENCODE_TEXT_STEPS = 2;
 /** OpenCode names an MCP tool `<server>_<tool>`. */
 const mcpToolName = (server: string, tool: string) => `${server}_${tool}`;
 /**
@@ -192,7 +200,7 @@ export function opencodeAllowedTools(scope: ReadScope): string[] {
 }
 /**
  * The whole configuration, passed inline. Without a scope it is the text-only
- * route: every tool off and denied, one step. With one, the web tools and the
+ * route: every tool off and denied, one answer. With one, the web tools and the
  * owner's approved MCP read tools are the only ones on and allowed; file reads,
  * edit, bash, task and everything else stay off and denied, and a turn may take
  * a bounded number of steps.
@@ -228,7 +236,7 @@ export function configContent(scope?: ReadScope): string {
       diomedes: {
         mode: 'primary',
         description: scope ? 'Read-only Diomedes route.' : 'Text-only Diomedes route.',
-        steps: scope ? OPENCODE_READ_STEPS : 1,
+        steps: scope ? OPENCODE_READ_STEPS : OPENCODE_TEXT_STEPS,
         tools: { '*': false, ...on },
         permission: {
           edit: 'deny',
