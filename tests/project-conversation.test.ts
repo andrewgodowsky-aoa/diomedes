@@ -9,6 +9,7 @@ import { EngineService } from '../server/engines/service';
 import { Store } from '../server/store';
 import { desktopRelayPorts } from '../server/relay/ports';
 import { diomedesThread } from '../shared/diomedes-thread';
+import { DEFAULT_AGENT } from '../shared/agents';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 
 // A project's own Diomedes conversation, provisioned on the Nectovia default (2026-09-25),
@@ -393,7 +394,7 @@ test.each(['plan', 'build'] as const)(
     const binding = await provision(mine.id);
     await api(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', {
       mode,
-      ...(mode === 'plan' ? { requested: { model: null, effort: null, agent: 'planner' } } : {}),
+      ...(mode === 'plan' ? { requested: { model: null, effort: null, agent: DEFAULT_AGENT.plan } } : {}),
     });
     expect(byId(mine.id, binding.threadId).turns).toEqual([]);
     expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);

@@ -342,15 +342,16 @@ describe('the Agent control and the thread', () => {
     expect(conversationKindOf('diomedes.builder')).toBe('auto');
     expect(conversationKindOf('acme.unknown')).toBe('auto');
   });
-  it('holds another Agent back from a project conversation that has not spoken, which its kind would lose', () => {
-    // Why: the page and the provisioner find a conversation that hasn't spoken by its Automatic kind.
-    expect(diomedesThread([thread({ mode: 'ask' })])).toBeNull();
+  it('holds another Agent back from a project conversation that has not spoken', () => {
+    // The wait dates from when a conversation that hadn't spoken was found by its Automatic kind.
+    // Its marker finds it now (DIO-299), whatever its kind, so the wait can be relaxed later.
+    expect(diomedesThread([thread({ mode: 'ask', conversation: 'project' })])?.id).toBe('C1');
     expect(canSaveAgent('p1', thread(), 'diomedes.researcher')).toBe(false);
     expect(canSaveAgent('p1', null, 'diomedes.architect')).toBe(false);
-    // Auto keeps the kind, a thread that has spoken is found by its lineages, and home by its binding.
+    // Auto keeps the kind, a thread that has spoken takes any Agent, and home is found by its binding.
     expect(canSaveAgent('p1', thread(), 'auto')).toBe(true);
     expect(canSaveAgent('p1', thread({ lineages: spoken }), 'diomedes.researcher')).toBe(true);
-    expect(diomedesThread([thread({ mode: 'ask', lineages: spoken })])?.id).toBe('C1');
+    expect(diomedesThread([thread({ mode: 'ask', lineages: spoken })])).toBeNull();
     expect(canSaveAgent(null, thread(), 'diomedes.researcher')).toBe(true);
   });
 });
