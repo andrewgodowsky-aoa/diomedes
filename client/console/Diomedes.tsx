@@ -390,10 +390,7 @@ export function Diomedes({
                   )}
                   {unconfirmed !== null && !pending && (
                     <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
-                      <p>
-                        Nectovia could not confirm your last message. Sending it again checks what
-                        happened and never asks twice.
-                      </p>
+                      <p>Nectovia couldn't confirm your last message.</p>
                       <p className="dio-quote" title={unconfirmed}>
                         {unconfirmed}
                       </p>

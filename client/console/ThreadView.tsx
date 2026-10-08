@@ -838,10 +838,7 @@ export function ThreadView({
           )}
           {unconfirmed && !streaming && !busy && (
             <div role="group" aria-label="A message that was not confirmed">
-              <p className="caption">
-                Nectovia could not confirm your last message. Sending it again checks what
-                happened and never asks twice.
-              </p>
+              <p className="caption">Nectovia couldn't confirm your last message.</p>
               <p className="caption" title={unconfirmed.text}>
                 {unconfirmed.text}
               </p>
