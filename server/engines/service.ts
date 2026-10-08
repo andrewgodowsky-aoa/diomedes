@@ -59,6 +59,7 @@ import type {
   TextResponse,
 } from './contract.js';
 import { contextMessage } from './contract.js';
+import { localPromptProgressSink } from './local-progress.js';
 import type { ToolRegistry } from '../harness/tools.js';
 import { TEAM_CARRIAGE, teamRouteRefusal } from '../../shared/team-routes.js';
 import type { OpenCodeSessionCheckpoint } from './opencode-session.js';
@@ -2555,7 +2556,7 @@ export class EngineService {
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
         activity:
-          input.onPreview || input.onActivity || input.onReasoning
+          input.onPreview || input.onActivity || input.onReasoning || (route === LOCAL_MODEL_ROUTE && input.onPromptProgress)
             ? (context, stepId) => {
                 const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
                 const sinks = fencedSinks(
@@ -2565,12 +2566,14 @@ export class EngineService {
                   signal,
                   MODEL_API_REASONING[route] === 'reasoning-delta',
                   this.deps.redactFor?.(route),
+                  route === LOCAL_MODEL_ROUTE,
                 );
                 thinking = sinks.onReasoningDelta;
                 return {
                   onDelta: (text) => sinks.onDelta?.(text),
                   onToolActivity: (raw) => sinks.onToolActivity?.(raw),
                   onReasoningDelta: sinks.onReasoningDelta,
+                  onPromptProgress: sinks.onPromptProgress,
                   finish: sinks.finish,
                 };
               }
@@ -2655,6 +2658,9 @@ export class EngineService {
             { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, fence: context.fence },
             context,
             attemptSignal,
+            false,
+            undefined,
+            route === LOCAL_MODEL_ROUTE,
           );
           let result: Omit<RespondResult, 'reservation'>;
           try {
@@ -2664,13 +2670,14 @@ export class EngineService {
               exposure: handle.exposure(exposure, runId),
               attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
               instructions: input.instructions,
-              messages: [{ role: 'user', content: contextMessage(input) }],
+              messages: [{ role: 'user', content: contextMessage(input,
+                route === LOCAL_MODEL_ROUTE ? api.bonsai?.runtime.profile(admission.model) : undefined) }],
               tools: [],
               effort: route === LOCAL_MODEL_ROUTE || route === AZURE_OPENAI_ROUTE ? input.effort : selectedEffortOf(input.effort),
               limits: route === LOCAL_MODEL_ROUTE ? localLimits(api.bonsai?.runtime.profile(admission.model), WORK_LIMITS) : WORK_LIMITS,
               signal: attemptSignal,
               transport: api.transport,
-              sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
+              sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity, onPromptProgress: sinks.onPromptProgress },
               // A Work turn has no stable prefix: an explicit setting marks its whole instructions.
               ...(await cacheCall(handle, admission.model, input.projectId ?? null, input.instructions)),
             });
@@ -2732,7 +2739,8 @@ export class EngineService {
         prefix: route,
         card,
         instructions: input.instructions,
-        messages: [{ role: 'user', content: contextMessage(input) }],
+        messages: [{ role: 'user', content: contextMessage(input,
+          route === LOCAL_MODEL_ROUTE ? this.modelApi?.bonsai?.runtime.profile(input.model) : undefined) }],
         tools: [],
         limits: route === LOCAL_MODEL_ROUTE ? localLimits(this.modelApi?.bonsai?.runtime.profile(input.model), WORK_LIMITS) : WORK_LIMITS,
       });
@@ -2834,6 +2842,7 @@ export class EngineService {
   async loopAdapter(
     route: ModelApiRoute,
     request: { projectId: string; runId: string; model: string; accountRoute: string; instructions: string;
+      purpose?: 'loop' | 'delegate' | 'worker' | 'advisor'; readFold?: import('../../shared/harness.js').LocalReadFoldPolicy;
       rootRunId?: string; rootJobId?: string; threadId?: string | null; scopedLedger?: SpendExposure;
       effort?: string | null; callLimits?: RespondLimits; ownedTeamObservation?: OwnedTeamObservation;
       /** A Nectovia role under another lead: its tier and its role, read again on every step. */
@@ -2859,8 +2868,11 @@ export class EngineService {
       : route === AZURE_OPENAI_ROUTE ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
     if (effort !== undefined && !supportedEfforts.includes(effort))
       throw new HarnessError('collaboration_refused', 'The pinned model effort is unsupported on this API route.');
+    // DIO-254: a loop's call on the local model that won't fit its window makes room before it is refused.
     const callOptions = { instructions: request.instructions, effort,
-      transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}) };
+      transport: api.transport, ...(request.callLimits ? { limits: request.callLimits } : {}),
+      ...(route === LOCAL_MODEL_ROUTE ? { makeRoom: true,
+        ...(request.purpose === 'loop' && request.readFold ? { readFold: request.readFold } : {}) } : {}) };
     const admission = await this.admitModelApi(
       route,
       { ...request, requestId: request.runId, threadId },
@@ -3035,6 +3047,9 @@ interface RouteCallOptions {
   stablePrefix?: string | null;
   /** Told what each answered call's cache breakpoint marked (a conversation turn's record). */
   onCacheMarked?: (marked: CacheMark) => void;
+  /** An Agent loop's call on the local model (DIO-254): it makes room before it is refused. Other routes ignore it. */
+  makeRoom?: boolean;
+  readFold?: import('../../shared/harness.js').LocalReadFoldPolicy;
 }
 type ConnectedRoute = {
   connected: true;
@@ -3528,6 +3543,8 @@ function fencedSinks(
   reasoning = false,
   /** The route's redaction (`redactFor`), applied to every frame and to the saved thinking. */
   redact?: (text: string) => string,
+  /** The local route's reading counters; they carry no text, so they skip the live order. */
+  local = false,
 ) {
   let accepting = true;
   let pending = Promise.resolve();
@@ -3578,10 +3595,15 @@ function fencedSinks(
           onReasoning: (frame) => publish(() => input.onReasoning?.(frame)),
         })
       : undefined;
+  const onPromptProgress = local && input.onPromptProgress
+    ? localPromptProgressSink({ identity: stamped, signal,
+        publish: frame => publish(() => input.onPromptProgress?.(frame)) })
+    : undefined;
   return {
     onDelta,
     onToolActivity,
     onReasoningDelta,
+    onPromptProgress,
     finish: async () => {
       order.flush();
       accepting = false;

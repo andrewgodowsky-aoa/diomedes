@@ -1,3 +1,4 @@
+import { localContextBudget, localSourceRefusal, type LocalModelProfile } from '../shared/local-model.js';
 import { repairWriting, type PlainWritingRecord } from './plain-writing.js';
 import fs from 'node:fs/promises';
 import { directOrigin } from '../shared/attribution.js';
@@ -423,7 +424,7 @@ export class NativeWorkService {
     /** Exact-model Agent profiles (H09). Absent leaves route and model to the caller. */
     private profiles?: AgentProfileService,
     /** Host-discovered local providers have no cloud service switch or payer. */
-    private localRoute?: (engine: Exclude<Route, 'sample'>) => { accountRoute: string } | null,
+    private localRoute?: (engine: Exclude<Route, 'sample'>) => { accountRoute: string; profile?: (model: unknown) => LocalModelProfile | undefined } | null,
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -536,6 +537,8 @@ export class NativeWorkService {
     if (profile) input = withProfile(input, profile);
     const engine = input.engine ?? 'codex';
     const local = this.localRoute?.(engine);
+    const localProfile = local?.profile?.(this.requestedModel({ engine, requested: input.requested }));
+    const localBudget = localProfile ? localContextBudget(localProfile) : undefined;
     if (!local && this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
     // Team work runs on every route that can carry the team tools (shared/team-routes.ts).
@@ -590,7 +593,8 @@ export class NativeWorkService {
         throw new ApiError(415, 'Select supported text documents for this proposal.');
       const document = await this.store.readDocument(projectId, name);
       bytes += Buffer.byteLength(document.text);
-      if (bytes > MAX_BYTES) throw new ApiError(413, 'Select no more than 128 KB of source text.');
+      if (bytes > (localBudget?.sourceBytes ?? MAX_BYTES)) throw new ApiError(413, localBudget
+        ? localSourceRefusal('Select no more than', localBudget.sourceBytes) : 'Select no more than 128 KB of source text.');
       sources.push({ path: document.path, text: document.text, sha: document.sha });
     }
     // The project's own instruction files, resolved through the rule path and
@@ -605,7 +609,7 @@ export class NativeWorkService {
     // before anything paid or model-facing happens, and the project
     // instructions are assembled from what is left. This rejects an over-budget
     // skill here, before the session, the run or any generator call exists.
-    const sectionBudget = instructionSectionBudget(bytes);
+    const sectionBudget = instructionSectionBudget(bytes, localBudget?.requestBytes);
     const skillSection = input.skill?.section;
     const skillBytes = skillSection ? Buffer.byteLength(skillSection) : 0;
     if (skillSection && skillBytes > sectionBudget)
@@ -858,7 +862,7 @@ export class NativeWorkService {
    * The model a run is sent to: the thread's own choice, else the saved default
    * for this route, else none, which leaves the runtime its own default.
    */
-  private requestedModel(run: NativeRun): string | undefined {
+  private requestedModel(run: Pick<NativeRun, 'engine' | 'requested'>): string | undefined {
     const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)?.[
       `${run.engine}Model`
     ];

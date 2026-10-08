@@ -122,8 +122,24 @@ export interface SystemPart {
   providerOptions?: Record<string, Record<string, unknown>>;
 }
 
-/** Where the breakpoint went, so the run record says what was actually marked. */
-export type CacheMark = 'stable-prefix' | 'whole-instructions' | null;
+/**
+ * Where the breakpoints went, so the run record says what was actually marked: the stable prefix,
+ * or the whole instructions. With `-and-files`, a second breakpoint marks the end of the host's
+ * reads of the files attached to a conversation message, which lead its messages.
+ */
+export type CacheMark =
+  | 'stable-prefix'
+  | 'whole-instructions'
+  | 'stable-prefix-and-files'
+  | 'whole-instructions-and-files'
+  | null;
+
+/** The mark once the host's reads of the attached files carry a breakpoint as well. */
+export function withFilesMarked(marked: CacheMark): CacheMark {
+  if (marked === 'stable-prefix') return 'stable-prefix-and-files';
+  if (marked === 'whole-instructions') return 'whole-instructions-and-files';
+  return marked;
+}
 
 /**
  * The system text one request sends, and what it marked. With no breakpoint it is the
@@ -316,7 +332,11 @@ export function cacheAccount(policy: CachePolicy, record: RouteCapability | null
         note:
           marked === 'stable-prefix'
             ? 'The stable start of the instructions is marked for caching for 30 minutes, under a key kept to this business and route.'
-            : 'The whole instructions are marked for caching for 30 minutes, so reuse holds only while they stay the same.',
+            : marked === 'stable-prefix-and-files'
+              ? 'The stable start of the instructions and the attached files read before the message are marked for caching for 30 minutes, under a key kept to this business and route.'
+              : marked === 'whole-instructions-and-files'
+                ? 'The whole instructions and the attached files read before the message are marked for caching for 30 minutes, so reuse holds only while the instructions stay the same.'
+                : 'The whole instructions are marked for caching for 30 minutes, so reuse holds only while they stay the same.',
       };
   }
 }

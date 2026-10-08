@@ -75,7 +75,7 @@ import { ExternalWorkerGate, externalWorkerAdapter, routeName, type ExternalWork
 import { NECTOVIA_ROUTE } from '../../../shared/model-api.js';
 import type { EscalationRole } from '../../../shared/escalation-controls.js';
 import type { RoleTier } from '../../../shared/escalation-roles.js';
-import { LOCAL_MODEL_ROUTE, type LocalModelProfile } from '../../../shared/local-model.js';
+import { LOCAL_MODEL_ROUTE, localContextBudget, localReadCoverageSchema, localReadSlice, type LocalModelProfile } from '../../../shared/local-model.js';
 import { localModelWindow } from '../context-assembly.js';
 import { reserveRefusal } from '../../../shared/subscription-workers.js';
 import { CODEX_ACCOUNT_ROUTE } from '../../engines/codex-session.js';
@@ -181,6 +181,9 @@ const READ_OUTPUT = z.union([
     bytes: z.number().int().nonnegative(),
     text: z.string(),
     truncated: z.boolean(),
+    /** A reader on the local model is told when a read was cut, with both sizes (DIO-255). */
+    note: z.string().optional(),
+    coverage: localReadCoverageSchema.optional(),
   }),
 ]) as unknown as z.ZodType<Json>;
 
@@ -198,7 +201,11 @@ export async function readFor(
   input: string,
   /** H14: the explicit files this run may read; null is the whole project as the route allows. */
   scope: readonly string[] | null = null,
+  localProfile?: LocalModelProfile,
 ): Promise<Json> {
+  const routeList = typeof routes === 'string' ? [routes] : routes;
+  const maxReadChars = localProfile && routeList.length > 0 && routeList.every(route => route === LOCAL_MODEL_ROUTE)
+    ? localContextBudget(localProfile).sourceChars : READ_MAX_CHARS;
   let path: string;
   try {
     path = relativeName(input);
@@ -221,13 +228,16 @@ export async function readFor(
     return { path, refused: error instanceof Error ? error.message : 'The path guard refused this file.' };
   }
   if (text === null) return { path, found: false };
+  const cut = text.length > maxReadChars;
   return {
     path,
     found: true,
     sha: hash(text),
     bytes: Buffer.byteLength(text),
-    text: text.length > READ_MAX_CHARS ? text.slice(0, READ_MAX_CHARS) : text,
-    truncated: text.length > READ_MAX_CHARS,
+    text: cut ? text.slice(0, maxReadChars) : text,
+    truncated: cut,
+    // DIO-255: a reader on the local model is told a cut read was cut. Any other reader's is as before.
+    ...(localProfile ? localReadSlice(text, maxReadChars) : {}),
   };
 }
 
@@ -265,7 +275,8 @@ const childInput = (run: Pick<HarnessRun, 'input'>): LoopChildInput => {
  * `runId`: the loop binds them, and the tool checks at dispatch that it is the
  * running step of a loop run in that project, the way `propose_write` does.
  */
-export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunService) {
+export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunService,
+  localProfile?: (model: unknown) => LocalModelProfile | undefined) {
   const read = {
     version: 'v1',
     effect: 'read',
@@ -314,12 +325,17 @@ export function registerLoopTools(tools: ToolRegistry, store: Store, runs: RunSe
   tools.register({
     ...read,
     name: 'read_project_file',
+    // The registry is shared across runs. readFor still enforces each run's route-specific
+    // text allowance before this hard serialization ceiling is checked.
+    limits: { maxOutputBytes: 8 * 1024 * 1024 },
     outputSchema: READ_OUTPUT,
     description: 'Read one project file as text.',
     schema: scope.extend({ path: z.string().trim().min(1).max(400) }),
     execute: async (context) => {
       const run = await ownRun(context, context.input, 'read_project_file');
-      return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run));
+      const input = run.capabilityId === NATIVE_LOOP.id ? loopInput(run) : childInput(run);
+      return readFor(store, run.projectId, routeOf(run), context.input.path, scopeOf(run),
+        input.route === LOCAL_MODEL_ROUTE ? localProfile?.(input.model) : undefined);
     },
   });
   const proposal = scope.extend({
@@ -433,6 +449,8 @@ export function delegateRegistry(
   projectId: string,
   route: string | readonly string[],
   scope: readonly string[] | null = null,
+  /** The child's own local profile, when it runs on the local model: its reads follow that allowance. */
+  localProfile?: LocalModelProfile,
 ): ToolRegistry {
   const registry = new ToolRegistry();
   const read = {
@@ -456,10 +474,12 @@ export function delegateRegistry(
   registry.register({
     ...read,
     name: 'read_project_file',
+    // A local child's read may be as long as its profile allows, past the default serialization limit.
+    ...(localProfile ? { limits: { maxOutputBytes: 8 * 1024 * 1024 } } : {}),
     outputSchema: READ_OUTPUT,
     description: 'Read one project file as text, by its path.',
     schema: z.strictObject({ path: z.string().trim().min(1).max(400) }),
-    execute: ({ input }) => readFor(store, projectId, route, input.path, scope),
+    execute: ({ input }) => readFor(store, projectId, route, input.path, scope, localProfile),
   });
   return registry;
 }
@@ -635,6 +655,7 @@ export interface LoopRouteRequest {
   readonly accountRoute: string | null;
   readonly instructions: string;
   readonly purpose: 'loop' | 'delegate' | 'worker' | 'advisor';
+  readonly readFold?: import('../../../shared/harness.js').LocalReadFoldPolicy;
   readonly rootRunId?: string;
   readonly rootJobId?: string;
   readonly threadId?: string | null;
@@ -876,17 +897,33 @@ export function createLoopProcedure(deps: {
   const changeSets = new ChangeSetService(store, sandboxes);
   // H14: a lead's workers and advisor, and the append-only record of every handoff.
   const ledger = new HandoffLedger(store.dataDir);
+  /** A child's own local profile, when its role runs on the local model; any other child reads as before. */
+  const localReader = (child: { route: string; model: unknown }) =>
+    child.route === LOCAL_MODEL_ROUTE ? deps.localProfile?.(child.model) : undefined;
+  /**
+   * DIO-255: how a child on the local model reads in its sandbox. With every route its reads reach on
+   * the local model, up to its profile's allowance; reading for a cloud lead, the sandbox's fixed cap.
+   * Either way a cut read says so. Undefined for any other child: its reads are as before.
+   */
+  const sandboxRead = (child: { route: string; model: unknown }, routes: readonly string[]) => {
+    const profile = localReader(child);
+    if (!profile) return undefined;
+    return routes.every((route) => route === LOCAL_MODEL_ROUTE)
+      ? { maxChars: localContextBudget(profile).sourceChars, note: true }
+      : { note: true };
+  };
   const team = createTeamPort({
     store,
     runs,
     ledger,
+    localProfile: (model) => deps.localProfile?.(model),
     // A child on the person's own engine is admitted by that engine; every other route as before.
     admit: (route, input) => (isExternalWorkerRoute(route) ? admitWorkerChild(route, input) : admit(route, input)),
     adapterFor: (route, request, stop, script) => adapterFor(route, request, stop, script),
     heartbeat: (runId, owner) => heartbeat(runId, owner),
-    registry: (projectId, routes, scope) => delegateRegistry(store, projectId, routes, scope),
+    registry: (projectId, routes, scope, child) => delegateRegistry(store, projectId, routes, scope, localReader(child)),
     // Decision 2026-09-24: a worker works in its own sandbox and hands back a change set.
-    sandbox: async ({ lead, childRunId, routes, scope, canWrite, create }) => {
+    sandbox: async ({ lead, childRunId, routes, scope, canWrite, create, child }) => {
       let manifest = await sandboxes.read(lead.projectId, childRunId);
       if (!manifest || manifest.state === 'creating') {
         if (!create && !manifest) return { refusal: 'Its sandbox is no longer there, so it was stopped.' };
@@ -907,7 +944,8 @@ export function createLoopProcedure(deps: {
         }
       }
       if (manifest.state !== 'open') return { refusal: 'Its sandbox was already collected.' };
-      return { registry: sandboxes.registry(manifest, { readable: readableFor(lead.projectId, routes), write: canWrite }) };
+      return { registry: sandboxes.registry(manifest, { readable: readableFor(lead.projectId, routes), write: canWrite,
+        read: sandboxRead(child, routes) }) };
     },
     settle: async ({ lead, child, handoffId }) => {
       const manifest = await sandboxes.read(lead.projectId, child.id);
@@ -1254,7 +1292,8 @@ export function createLoopProcedure(deps: {
    * this delegate's own copy.
    */
   const childRegistry = (manifest: SandboxManifest, routes: readonly string[], canWrite: boolean, spec: DelegateSpec): ToolRegistry => {
-    const registry = sandboxes.registry(manifest, { readable: readableFor(manifest.projectId, routes), write: canWrite });
+    const registry = sandboxes.registry(manifest, { readable: readableFor(manifest.projectId, routes), write: canWrite,
+      read: sandboxRead(spec.target, routes) });
     if (spec.depth >= LOOP_LIMITS.delegationDepth) return registry;
     const units = NESTED_UNITS;
     registry.register({
@@ -1410,6 +1449,8 @@ export function createLoopProcedure(deps: {
      */
     close(): void;
     admit: typeof admit;
+    /** The app's local model profile a slug names, or undefined; a loop start checks its sources against it. */
+    localProfile(model: unknown): LocalModelProfile | undefined;
     recoverChild(run: HarnessRun): Promise<void>;
     sweep(projectId: string): Promise<void>;
     sandboxes: SandboxStore;
@@ -1457,6 +1498,16 @@ export function createLoopProcedure(deps: {
             accountRoute: input.accountRoute,
             instructions,
             purpose: 'loop',
+            scope: input.team?.scope ?? null,
+            ...(input.route === LOCAL_MODEL_ROUTE ? { readFold: {
+              scope: input.team?.scope ?? null,
+              verifySnapshot: async (snapshot: { path: string; sha: string; bytes: number }) => {
+                // Reuse the same path/scope/sharing guard. This check grants no new read authority.
+                const current = await readFor(store, run.projectId, input.route, snapshot.path, input.team?.scope ?? null);
+                return !!current && typeof current === 'object' && !Array.isArray(current) && current.found === true &&
+                  current.sha === snapshot.sha && current.bytes === snapshot.bytes;
+              },
+            } } : {}),
           },
           stop.signal,
           () => loopFixtureAdapter(input.sources, Boolean(input.team), input.goal),
@@ -1577,6 +1628,7 @@ export function createLoopProcedure(deps: {
       verification = port;
     },
     admit,
+    localProfile: (model) => deps.localProfile?.(model),
     /** Startup only: invalidate a dead child's lease so its parent's replay can drive it again. */
     async recoverChild(run) {
       if (!CHILD_CAPABILITIES.includes(run.capabilityId) || !['reconcile_required', ...ACTIVE].includes(run.state)) return;

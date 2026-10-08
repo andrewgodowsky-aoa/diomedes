@@ -285,6 +285,39 @@ export interface ModelRequest {
 export type ModelResponse =
   | { type: 'final'; text: string }
   | { type: 'tool'; name: string; input: Json };
+/**
+ * DIO-254: what an Agent loop's call on the local model left out to fit its window, recorded on its
+ * model step. Absent when the call fit as it was, which is every call on any other route.
+ */
+export interface ModelRoom {
+  v: 1;
+  policy: 'local-post-advice-v1';
+  stage: 'reasoning' | 'read';
+  counts: number[];
+  budget: { nativeTotalWindow: number; qualifiedTaskTotalWindow: number; configuredTotalWindow: number;
+    totalWindow: number; outputReserve: number; protocolAndNextToolReserve: number; safetyMargin: number };
+  originalHash: string;
+  projectedHash: string;
+  /** The immutable transcript still contains every original message and read body. */
+  originalTranscript?: ProviderTranscriptRef;
+  /** The prompt's tokens as first counted, the input room it had, and the tokens it was sent with. */
+  counted: number;
+  room: number;
+  sent: number;
+  /** The earlier assistant turns whose reasoning was left out, newest first, by position in the call's messages. */
+  reasoning: { message: number; chars: number }[];
+  /** The reads folded into a stub, newest first: their position, the file, and the characters and bytes left out. */
+  folded: { message: number; path: string; sha: string; chars: number; bytes: number;
+    resultHash: string; advisorRunId: string; advisorStepId: string; snapshotCheckedAt: string | null }[];
+}
+
+/** Supplied only by the host for the lead role. Children may remove completed reasoning only. */
+export interface LocalReadFoldPolicy {
+  scope: readonly string[] | null;
+  /** Recheck through the existing guarded project reader immediately before dispatch. */
+  verifySnapshot: (snapshot: { path: string; sha: string; bytes: number }) => Promise<boolean>;
+}
+
 export interface ModelResult {
   response: ModelResponse;
   /** Immutable gateway receipts; current configuration never rewrites these. */
@@ -292,6 +325,8 @@ export interface ModelResult {
   transcript?: ProviderTranscriptRef | null;
   /** Cache counts are parts of `inputTokens` (`nectovia-usage/1`), kept apart when reported. */
   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | null;
+  /** DIO-254: what this call left out to fit, when it had to. */
+  room?: ModelRoom;
 }
 
 /** A harness run in the words the Workbook and Console already use. */

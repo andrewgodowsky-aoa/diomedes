@@ -1,15 +1,19 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import type { ModelMessage } from 'ai';
-import { findLocalProfile, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
-  type LocalModelProfile } from '../../shared/local-model.js';
+import { findLocalProfile, localContextBudget, localCallCeiling, localDeadlines, localProfileRefusal, LOCAL_MODEL_ACCOUNT, LOCAL_MODEL_ROUTE, LOCAL_MODEL_UNKNOWN_PROFILE,
+  localReadResultSchema, type LocalModelProfile } from '../../shared/local-model.js';
 import { MODEL_IMAGE_COUNT, MODEL_IMAGE_LIMIT, type ModelImage } from '../../shared/model-images.js';
-import type { ToolDescriptor } from '../../shared/harness.js';
+import type { LocalReadFoldPolicy, ModelRoom, ToolDescriptor } from '../../shared/harness.js';
+import { childReadCoverageSchema } from '../../shared/team-delegation.js';
+import { canonicalJson } from '../../shared/guidance.js';
 import type { ModelRateCard } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from '../harness/model-api-adapter.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import { ModelApiError, CONVERSATION_LIMITS, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { chatUsage } from './openrouter.js';
 import { LocalModelError, LOCAL_MODEL_NOT_INSTALLED, type LocalModelRuntime } from '../bonsai/runtime.js';
+import { readLocalStream } from './local-stream.js';
 
 // Saved records carry these identifiers, so they keep the values they were first written with.
 export const LOCAL_MODEL_CONNECTION = 'bonsai-local';
@@ -41,7 +45,9 @@ function profileOf(runtime: LocalModelRuntime, model: string): LocalModelProfile
 /** Host-selected local allowance. Explicit per-call limits and the Runtime turn deadline still bound it. */
 export function localLimits(profile: LocalModelProfile | undefined, base: RespondLimits = CONVERSATION_LIMITS): RespondLimits {
   if (!profile) throw refused(LOCAL_MODEL_UNKNOWN_PROFILE);
-  return { ...base, maxOutputTokens: profile.maxOutputTokens, callWallMs: Math.max(base.callWallMs, profile.callTimeoutMs) };
+  return { ...base, maxRequestBytes: localContextBudget(profile).requestBytes,
+    maxResponseBytes: localContextBudget(profile).responseBytes,
+    maxOutputTokens: profile.maxOutputTokens, callWallMs: Math.max(base.callWallMs, profile.callTimeoutMs) };
 }
 
 export function localRateCard(profile: LocalModelProfile | undefined): ModelRateCard {
@@ -119,17 +125,117 @@ async function jsonRequest(url: string, payload: unknown, signal: AbortSignal, t
   catch { throw refused('The local model returned an invalid JSON response.', dispatched); }
 }
 
-const replySchema = z.object({ id: z.string(), model: z.string(), usage: z.unknown(),
+const replySchema = z.object({ id: z.string(), model: z.string(), usage: z.unknown(), timings: z.unknown().optional(),
   choices: z.array(z.object({ finish_reason: z.enum(['stop', 'tool_calls']), message: z.object({
     content: z.string().nullish(), reasoning_content: z.string().nullish(),
     tool_calls: z.array(z.object({ id: z.string().min(1), type: z.literal('function'),
       function: z.object({ name: z.string(), arguments: z.string() }) })).max(1).optional(),
   }) })).length(1) });
 
+/** A call's messages as its template is counted: each image a placeholder, its tokens reserved apart. */
+const countable = (messages: readonly ChatMessage[]): ChatMessage[] => messages.map(m => ({ ...m, content: Array.isArray(m.content)
+  ? m.content.map(p => p.type === 'image_url' ? { type: 'text', text: '[image]' } : p) : m.content }));
+
+/** What a read folded to make room says in its place (DIO-254). */
+export const localFoldedRead = (path: string, chars: number) =>
+  `The ${chars.toLocaleString('en-US')} characters read from ${path} were left out here to make room. Read it again with read_project_file if you need its exact lines.`;
+
+const jsonValue = (content: unknown): unknown => {
+  if (typeof content !== 'string') return null;
+  try { return JSON.parse(content); } catch { return null; }
+};
+const projectionHash = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+const callSchema = z.object({ id: z.string(), function: z.object({ name: z.string(), arguments: z.string() }) });
+const callsIn = (message: ChatMessage) => z.array(callSchema).safeParse(message.tool_calls ?? []).data ?? [];
+
+/** One completed, fully read snapshot, used by a visible draft and checked by a completed advisor. */
+function eligibleRead(messages: readonly ChatMessage[], policy?: LocalReadFoldPolicy) {
+  if (!policy) return null;
+  const advice = messages.at(-1), draft = messages.at(-2);
+  if (!advice || advice.role !== 'tool' || !draft || draft.role !== 'assistant' ||
+      typeof draft.content !== 'string' || !draft.content.trim()) return null;
+  const calls = callsIn(draft);
+  if (calls.length !== 1 || calls[0].id !== advice.tool_call_id || calls[0].function.name !== 'consult_advisor') return null;
+  const parsed = z.object({ outcome: z.literal('completed'), advice: z.string().trim().min(1),
+    readCoverage: childReadCoverageSchema }).safeParse(jsonValue(advice.content));
+  if (!parsed.success || parsed.data.readCoverage.status !== 'complete' || parsed.data.readCoverage.warning) return null;
+  const coverage = parsed.data.readCoverage;
+  const scopeKey = (scope: readonly string[] | null) => scope === null ? 'null' : canonicalJson([...scope].sort());
+  if (scopeKey(coverage.scope) !== scopeKey(policy.scope)) return null;
+  // Only the read immediately before this draft/advice exchange is eligible. An intervening
+  // tool, source change, or newer partial read must not make an older snapshot eligible.
+  const i = messages.length - 3;
+  if (i > 1) {
+    const message = messages[i], previous = messages[i - 1];
+    if (message.role !== 'tool' || previous.role !== 'assistant') return null;
+    const readCalls = callsIn(previous);
+    if (readCalls.length !== 1 || readCalls[0].id !== message.tool_call_id || readCalls[0].function.name !== 'read_project_file') return null;
+    const value = localReadResultSchema.safeParse(jsonValue(message.content));
+    if (!value.success) return null;
+    const read = value.data;
+    if (read.truncated || read.coverage.end !== read.coverage.totalChars || read.coverage.end !== read.text.length ||
+        read.coverage.returnedBytes !== Buffer.byteLength(read.text) || read.bytes !== Buffer.byteLength(read.text) ||
+        read.sha !== createHash('sha256').update(read.text).digest('hex') ||
+        (policy.scope !== null && !policy.scope.includes(read.path))) return null;
+    const args = z.object({ path: z.literal(read.path) }).safeParse(jsonValue(readCalls[0].function.arguments));
+    if (!args.success) return null;
+    const resultHash = projectionHash(read);
+    const matched = coverage.reads.find(item => item.path === read.path && item.sha === read.sha &&
+      item.bytes === read.bytes && !item.truncated && item.resultHash === resultHash &&
+      canonicalJson(item.coverage) === canonicalJson(read.coverage));
+    if (matched) return { message: i, read, matched, resultHash };
+  }
+  return null;
+}
+
+/** At most three exact counts: original, completed reasoning removed, one eligible read folded. */
+async function makeRoom(messages: readonly ChatMessage[], count: (chat: ChatMessage[]) => Promise<number>,
+  budget: ReturnType<typeof localContextBudget>, counted: number, readFold?: LocalReadFoldPolicy
+): Promise<{ messages: ChatMessage[]; record: ModelRoom } | null> {
+  const next = messages.map(message => ({ ...message }));
+  const { nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow, totalWindow, outputReserve,
+    protocolAndNextToolReserve, safetyMargin, inputRoom: room } = budget;
+  const record: ModelRoom = { v: 1, policy: 'local-post-advice-v1', stage: 'reasoning', counts: [counted],
+    budget: { nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow, totalWindow, outputReserve,
+      protocolAndNextToolReserve, safetyMargin }, originalHash: projectionHash(messages), projectedHash: '',
+    counted, room, sent: counted, reasoning: [], folded: [] };
+  let needed = counted;
+  for (let i = next.length - 1; i > 0; i--) {
+    const { reasoning_content: reasoning, ...rest } = next[i];
+    if (next[i].role !== 'assistant' || !reasoning) continue;
+    const calls = callsIn(next[i]);
+    const results: string[] = [];
+    for (let j = i + 1; j < next.length && next[j].role === 'tool'; j++) results.push(next[j].tool_call_id ?? '');
+    if (!calls.length || calls.some(call => !results.includes(call.id))) continue;
+    next[i] = rest;
+    record.reasoning.push({ message: i - 1, chars: reasoning.length });
+  }
+  if (record.reasoning.length) { needed = await count(next); record.counts.push(needed); }
+  const eligible = needed > room ? eligibleRead(messages, readFold) : null;
+  if (eligible) {
+    const { message: i, read, matched, resultHash } = eligible;
+    const { text: omitted, ...metadata } = read;
+    next[i] = { ...next[i], content: JSON.stringify({ ...metadata, textOmitted: true, resultHash,
+      originalMessage: i - 1, note: localFoldedRead(read.path, omitted.length) }) };
+    record.folded.push({ message: i - 1, path: read.path, sha: read.sha, chars: omitted.length, bytes: read.bytes,
+      resultHash, advisorRunId: matched.runId, advisorStepId: matched.stepId, snapshotCheckedAt: null });
+    needed = await count(next);
+    record.counts.push(needed);
+    record.stage = 'read';
+  }
+  if (needed > room) return null;
+  record.sent = needed;
+  record.projectedHash = projectionHash(next);
+  return { messages: next, record };
+}
+
 export async function respondLocal(input: {
   runtime: LocalModelRuntime; model: string; instructions: string; effort?: string;
   messages: ModelMessage[]; tools: readonly ToolDescriptor[]; signal: AbortSignal;
   limits?: RespondLimits; transport?: typeof fetch;
+  /** An Agent loop's call (DIO-254): one that won't fit its window makes room before it is refused. */
+  makeRoom?: boolean;
+  readFold?: LocalReadFoldPolicy;
 } & StreamSinks): Promise<LocalModelReply> {
   const chosen = profileOf(input.runtime, input.model);
   const effort = input.effort ?? chosen.defaultEffort!;
@@ -140,13 +246,14 @@ export async function respondLocal(input: {
   const tools = input.tools.map(tool => ({ type: 'function', function: { name: tool.name,
     description: tool.description, parameters: tool.inputSchema } }));
   const limits = input.limits ?? localLimits(chosen);
-  const max_tokens = Math.min(chosen.maxOutputTokens, limits.maxOutputTokens);
+  const effortBudget = chosen.effortBudgets?.[effort as 'medium' | 'xhigh'];
+  const max_tokens = Math.min(chosen.maxOutputTokens, limits.maxOutputTokens, effortBudget?.outputTokens ?? chosen.maxOutputTokens);
   const request = { messages, tools, tool_choice: 'auto', parallel_tool_calls: false,
-    stream: false, max_tokens, reasoning_effort: effort,
-    chat_template_kwargs: { reasoning_effort: effort }, cache_prompt: false };
+    stream: true, stream_options: { include_usage: true }, return_progress: true, max_tokens, reasoning_effort: effort,
+    chat_template_kwargs: { reasoning_effort: effort, ...(effortBudget ? { enable_thinking: effortBudget.thinking } : {}) },
+    ...(effortBudget ? { reasoning_budget_tokens: Math.min(effortBudget.reasoningTokens, Math.max(0, max_tokens - 1)) } : {}), cache_prompt: true };
   const imageCount = messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url').length : 0), 0);
-  const textMessages = messages.map(m => ({ ...m, content: Array.isArray(m.content)
-    ? m.content.map(p => p.type === 'image_url' ? { type: 'text', text: '[image]' } : p) : m.content }));
+  const textMessages = countable(messages);
   if (imageCount > MODEL_IMAGE_COUNT || Buffer.byteLength(JSON.stringify(request)) > 24_000_000 ||
       Buffer.byteLength(JSON.stringify({ ...request, messages: textMessages })) > limits.maxRequestBytes)
     throw refused('This message exceeds the local model attachment or text limit.');
@@ -159,16 +266,45 @@ export async function respondLocal(input: {
       const model = status.model ?? descriptor.model;
       // The running profile's context, as the server reported it.
       const window = status.contextTokens ?? profile.contextTokens;
-      const body = { model, ...request };
+      const budget = localContextBudget(profile, { nativeTotalWindow: window, outputReserve: max_tokens });
+      let body = { model, ...request };
       // Tokenize the actual chat template before inference; reserve a 1024-token cap per image.
-      const template = z.object({ prompt: z.string() }).parse(await jsonRequest(`${descriptor.serverRoot}/apply-template`,
-        { ...body, messages: textMessages }, signal, transport, false));
-      const tokens = z.object({ tokens: z.array(z.number().int()).max(1_000_000) }).parse(await jsonRequest(`${descriptor.serverRoot}/tokenize`,
-        { content: template.prompt, add_special: true }, signal, transport, false, 12_000_000));
-      if (tokens.tokens.length + imageCount * 1024 + max_tokens > window)
+      const count = async (chat: ChatMessage[]) => {
+        const template = z.object({ prompt: z.string() }).parse(await jsonRequest(`${descriptor.serverRoot}/apply-template`,
+          { ...body, messages: chat }, signal, transport, false, budget.templateResponseBytes));
+        const tokens = z.object({ tokens: z.array(z.number().int()).max(1_000_000) }).parse(await jsonRequest(`${descriptor.serverRoot}/tokenize`,
+          { content: template.prompt, add_special: true }, signal, transport, false, 12_000_000));
+        return tokens.tokens.length + imageCount * 1024;
+      };
+      let needed = await count(textMessages);
+      let room: ModelRoom | undefined;
+      // DIO-254: only a call that won't fit changes; one that fits is sent exactly as it was.
+      if (needed > budget.inputRoom && input.makeRoom) {
+        const made = await makeRoom(messages, chat => count(countable(chat)), budget, needed, input.readFold);
+        if (made) {
+          body = { ...body, messages: made.messages };
+          room = made.record;
+          needed = made.record.sent;
+        }
+      }
+      if (needed > budget.inputRoom)
         throw refused(`This message and its answer need more than ${window.toLocaleString('en-US')} tokens. Start a new thread or reduce its sources.`);
+      for (const folded of room?.folded ?? []) {
+        // Historical agreement does not establish freshness. Check after the final count so
+        // a file changed while advice or tokenization was in flight cannot authorize omission.
+        if (!await input.readFold?.verifySnapshot(folded))
+          throw refused('The source changed or could not be checked after advice. This call cannot safely omit its read.');
+        folded.snapshotCheckedAt = new Date().toISOString();
+      }
+      signal.throwIfAborted();
       dispatched = true;
-      const raw = await jsonRequest(`${descriptor.baseUrl}/chat/completions`, body, signal, transport, true, limits.maxResponseBytes);
+      const ceiling = localCallCeiling({ measuredRates: profile.measuredRates,
+        callTimeoutMs: localDeadlines(profile.maxOutputTokens).callTimeoutMs }, needed - imageCount * 1024, max_tokens);
+      const raw = await readLocalStream({ url: `${descriptor.baseUrl}/chat/completions`, body, model,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(limits.callWallMs, ceiling))]),
+        transport, maxResponseBytes: limits.maxResponseBytes,
+        onDelta: input.onDelta, onReasoningDelta: input.onReasoningDelta,
+        onToolActivity: input.onToolActivity, onPromptProgress: input.onPromptProgress });
       const parsed = replySchema.safeParse(raw);
       if (!parsed.success || parsed.data.model !== model)
         throw refused('The local model did not return a complete answer from the selected model. Its answer was not used.', true);
@@ -177,7 +313,7 @@ export async function respondLocal(input: {
       if (!usage) throw refused('The local model returned no usable token accounting. Its answer was not used.', true);
       const call = message.tool_calls?.[0];
       const content: Exclude<Extract<ModelMessage, { role: 'assistant' }>['content'], string> = [];
-      if (message.reasoning_content) { input.onReasoningDelta?.(message.reasoning_content); content.push({ type: 'reasoning', text: message.reasoning_content }); }
+      if (message.reasoning_content) content.push({ type: 'reasoning', text: message.reasoning_content });
       if (message.content) content.push({ type: 'text', text: message.content });
       let outcome: LocalModelReply['outcome'];
       if (call) {
@@ -188,15 +324,14 @@ export async function respondLocal(input: {
         if (!data.success) throw refused('The local model returned invalid tool arguments.', true);
         content.push({ type: 'tool-call', toolCallId: call.id, toolName: call.function.name, input: data.data });
         outcome = { kind: 'tool', callId: call.id, name: call.function.name, input: data.data };
-        input.onToolActivity?.({ callId: call.id, tool: call.function.name, phase: 'started', summary: call.function.name });
       } else {
         if (!message.content?.trim()) throw refused('The local model produced no final answer.', true);
         outcome = { kind: 'final', text: message.content };
-        input.onDelta?.(message.content);
       }
-      return { outcome, usage, rawUsage: { provider: response.usage, local: { profile: profile.slug, inferenceCostMicroUsd: 0 } },
+      return { outcome, usage, rawUsage: { provider: response.usage, local: { profile: profile.slug, inferenceCostMicroUsd: 0,
+        ...(response.timings !== undefined ? { timings: response.timings } : {}) } },
         reportedModel: model, responseId: response.id, providerRequestId: response.id,
-        responseMessages: [{ role: 'assistant', content }], warnings: 0, servedBy: 'local' };
+        responseMessages: [{ role: 'assistant', content }], warnings: 0, servedBy: 'local', ...(room ? { room } : {}) };
     });
   } catch (error) {
     if (error instanceof LocalModelError) throw new ModelApiError(`${PREFIX}_${error.state}`, error.message, dispatched);
@@ -208,6 +343,9 @@ export function createLocalAdapter(input: {
   runtime: LocalModelRuntime; model: string; instructions: string; effort?: string; transcripts: ModelTranscripts;
   images?: readonly ModelImage[]; loadImage?: (image: ModelImage) => Promise<string>;
   limits?: RespondLimits; transport?: typeof fetch; sinks?: StreamSinks;
+  /** An Agent loop's calls (DIO-254): one that won't fit its window makes room before it is refused. */
+  makeRoom?: boolean;
+  readFold?: LocalReadFoldPolicy;
 }) {
   const descriptor = input.runtime.descriptor();
   if (!descriptor) throw refused(LOCAL_MODEL_NOT_INSTALLED);
@@ -218,14 +356,18 @@ export function createLocalAdapter(input: {
   return createModelApiAdapter({ route: LOCAL_MODEL_ROUTE, prefix: PREFIX, label: LABEL, sdk: LOCAL_MODEL_SDK,
     protocol: 'local-chat-completions', contract: LOCAL_MODEL_CONTRACT, connectionId: LOCAL_MODEL_CONNECTION, revision: 1,
     requestedModel: profile.slug, destination: 'local',
+    preparedRequestMaxBytes: localContextBudget(profile).requestBytes,
     profile: { model: profile.slug, alias: descriptor.model, mode: profile.mode, context: profile.contextTokens,
+      budget: localContextBudget(profile), effortBudgets: profile.effortBudgets,
       effort: input.effort ?? profile.defaultEffort, account: LOCAL_MODEL_ACCOUNT, images },
-    transcripts: input.transcripts, notes: ['Local inference; tools remain owned by Nectovia Runtime and Trust.'],
+    transcripts: input.transcripts.withLocalByteLimit?.(localContextBudget(profile).transcriptBytes) ?? input.transcripts,
+    notes: ['Local inference; tools remain owned by Nectovia Runtime and Trust.'],
     sinks: input.sinks,
     respond: async request => {
       const messages = structuredClone(request.messages);
       if (images.length) {
-        const first = messages.find(m => m.role === 'user');
+        // The person's message, which follows the host's reads of the attached text files.
+        const first = request.stableMessages ? messages[request.stableMessages] : messages.find(m => m.role === 'user');
         if (!first || first.role !== 'user') throw refused('This image request has no user message.');
         const content = typeof first.content === 'string' ? [{ type: 'text' as const, text: first.content }] : [...first.content];
         for (const image of images) content.push({ type: 'image', image: await input.loadImage!(image), mediaType: image.mediaType });

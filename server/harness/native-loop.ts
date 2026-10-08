@@ -36,6 +36,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
+import { LOCAL_MODEL_ROUTE } from '../../shared/local-model.js';
 import type {
   HarnessBudget,
   HarnessPrincipal,
@@ -424,6 +425,7 @@ export class NativeLoop {
       transcript: copy(transcript),
     };
     const prepare = this.adapter.prepare?.bind(this.adapter);
+    const maxBytes = this.adapter.contract.routeId === LOCAL_MODEL_ROUTE ? this.adapter.preparedRequestMaxBytes : undefined;
     const effective = prepare
       ? validatePrepared(
           original,
@@ -440,9 +442,10 @@ export class NativeLoop {
               cost: 0,
               origin: applicationOrigin(),
             },
-            async ({ signal }) => validatePrepared(original, await prepare(copy(original), signal)),
+            async ({ signal }) => validatePrepared(original, await prepare(copy(original), signal), maxBytes),
             principal,
           ),
+          maxBytes,
         )
       : original;
     await this.adapter.validatePrepared?.(copy(effective));
@@ -503,6 +506,8 @@ export class NativeLoop {
           ...(result.transcript
             ? { transcript: transcriptSchema.parse(result.transcript), inputTranscript: copy(effective.transcript) }
             : {}),
+          // DIO-254: what a local call left out to fit its window, on the record this step already writes.
+          ...(result.room ? { room: result.room } : {}),
         };
       },
       principal,
@@ -898,6 +903,7 @@ export class NativeLoop {
           files: [...item.scope],
           outcome: item.refusal ? 'refused' : (result?.outcome ?? 'running'),
           answer: result?.text ?? null,
+          ...(result?.readCoverage ? { readCoverage: result.readCoverage as unknown as Json } : {}),
           ...(item.refusal || result?.reason ? { reason: item.refusal ?? result?.reason ?? null } : {}),
         };
       }),
@@ -967,6 +973,7 @@ export class NativeLoop {
     );
     const feedback: Json = {
       advice: result.text,
+      ...(result.readCoverage ? { readCoverage: result.readCoverage as unknown as Json } : {}),
       outcome: result.outcome,
       note: 'Advice is evidence for you to weigh. It is not a permission and changes nothing by itself.',
       ...(result.reason ? { reason: result.reason } : {}),

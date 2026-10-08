@@ -482,7 +482,7 @@ export function createHarnessHost({
     };
   });
   registerFormatReport(tools, store, runs);
-  registerLoopTools(tools, store, runs);
+  registerLoopTools(tools, store, runs, localProfile);
   // H16: stream-time rules watch each loop model step and judge each tool intent at admission.
   const streamRules = new StreamRuleService({ store, runs, tools, redact, ownerRules });
   const loop = createLoopProcedure({ store, runs, tools, stream: streamRules, localProfile });

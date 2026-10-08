@@ -37,7 +37,9 @@
 - Off adds the explicit mode alone: no key, so no routing hint, and no breakpoint, so no block is
   marked for caching.
 - Explicit prefix sends the scoped key, the explicit mode with the 30-minute lifetime
-  (`EXPLICIT_CACHE_TTL`), and exactly one breakpoint, on the first system part. The options go under
+  (`EXPLICIT_CACHE_TTL`), and one breakpoint, on the first system part. Since DIO-247.N4 a
+  conversation message that attaches text files carries a second one, on the result of the host's
+  last read of them (`2026-10-06-conversation-prefix-cache.md`). The options go under
   the namespace the binding's SDK model reads (`cacheNamespace(route, protocol)`): `openai` on AWS
   for both protocols, `azure` on Azure.
 
@@ -92,7 +94,8 @@ Each is a `ModelApiError` with `dispatched: false`:
     and no breakpoint.
   - Explicit prefix: the derived key and `{ mode: 'explicit', ttl: '30m' }` at the top level, and
     exactly one breakpoint, at `messages[0].content[0]` or `input[0].content[0]`, whose message is a
-    system or developer message.
+    system or developer message. A call that carries the host's reads of attached files has exactly
+    one more, on the last read's result (DIO-247.N4).
 
 The SDK drops cache options and breakpoints under the wrong namespace without a word. The guard
 check refuses that too, because the body then lacks what the call asked for.

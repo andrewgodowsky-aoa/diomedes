@@ -32,6 +32,17 @@ export const LOCAL_MODEL_EFFORTS = [
 ] as const;
 const DEFAULT_EFFORT = 'medium';
 
+export interface LocalEffortBudget {
+  thinking: boolean;
+  reasoningTokens: number;
+  outputTokens: number;
+}
+export interface LocalMeasuredRates {
+  occupiedContextTokens: number;
+  prefillTokensPerSecond: number;
+  decodeTokensPerSecond: number;
+}
+
 /** One of the descriptor's profiles, as an entry in the local route's catalogue. */
 export interface LocalModelProfile extends EngineModel {
   /** `local:` and the profile's name in lower case: `local:gaming`. */
@@ -43,6 +54,10 @@ export interface LocalModelProfile extends EngineModel {
   maxOutputTokens: number;
   callTimeoutMs: number;
   turnTimeoutMs: number;
+  effortBudgets?: Record<'medium' | 'xhigh', LocalEffortBudget>;
+  measuredRates?: LocalMeasuredRates;
+  qualifiedTaskTotalWindow?: number;
+  configuredTotalWindow?: number;
   inputModalities: readonly ('text' | 'image')[];
 }
 
@@ -114,11 +129,24 @@ export class LocalModelDescriptorError extends Error {
 
 // Read only what is used. Every object strips the keys it does not name, so an installer may
 // write more than this without the descriptor being refused.
+const effortBudgetSchema = z.object({
+  thinking: z.boolean(),
+  reasoningTokens: z.number().int().min(0).max(1_000_000),
+  outputTokens: z.number().int().min(1).max(1_000_000),
+});
 const profileSchema = z.object({
   contextTokens: z.number().int().min(512).max(10_000_000),
   inputModalities: z.array(z.string()).min(1).max(8),
   outputTokens: z.number().int().min(1).max(1_000_000),
   defaultReasoningEffort: z.string().max(40).optional(),
+  effortBudgets: z.strictObject({ medium: effortBudgetSchema, xhigh: effortBudgetSchema }).optional(),
+  measuredRates: z.object({
+    occupiedContextTokens: z.number().int().min(1).max(10_000_000),
+    prefillTokensPerSecond: z.number().positive().max(10_000_000),
+    decodeTokensPerSecond: z.number().positive().max(10_000_000),
+  }).optional(),
+  qualifiedTaskTotalWindow: z.number().int().min(512).max(10_000_000).optional(),
+  configuredTotalWindow: z.number().int().min(512).max(10_000_000).optional(),
 });
 const descriptorSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -224,6 +252,71 @@ export function localDeadlines(outputTokens: number): { callTimeoutMs: number; t
   return { callTimeoutMs, turnTimeoutMs: Math.min(30 * MINUTE, 4 * callTimeoutMs) };
 }
 
+/** NC-MEM-LC section 8 terms, kept separate from serialization admission. */
+export function localContextBudget(profile: LocalModelProfile, options: {
+  nativeTotalWindow?: number; outputReserve?: number;
+} = {}) {
+  const nativeTotalWindow = Math.min(profile.contextTokens, options.nativeTotalWindow ?? profile.contextTokens);
+  const qualifiedTaskTotalWindow = profile.qualifiedTaskTotalWindow ?? profile.contextTokens;
+  const configuredTotalWindow = profile.configuredTotalWindow ?? profile.contextTokens;
+  const totalWindow = Math.min(nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow);
+  const outputReserve = options.outputReserve ?? profile.maxOutputTokens;
+  const protocolAndNextToolReserve = 2_048;
+  const safetyMargin = 1_024;
+  const inputRoom = Math.max(0, totalWindow - outputReserve - protocolAndNextToolReserve - safetyMargin);
+  // 2.49883 bytes/token on the ledger; four adds margin. These are not token counts.
+  const sourceBytes = Math.min(8_000_000, inputRoom * 4);
+  const requestBytes = Math.min(24_000_000, sourceBytes * 2 + 64_000);
+  return { nativeTotalWindow, qualifiedTaskTotalWindow, configuredTotalWindow,
+    totalWindow, outputReserve, protocolAndNextToolReserve, safetyMargin, inputRoom,
+    sourceBytes, sourceChars: sourceBytes, toolChars: sourceBytes,
+    turnChars: sourceBytes + 16_384, requestBytes, templateResponseBytes: requestBytes,
+    transcriptBytes: Math.min(24_000_000, requestBytes * 2 + 2_097_152),
+    responseBytes: Math.min(24_000_000, Math.max(1_048_576, outputReserve * 1_024)) };
+}
+
+/** A local allowance in the KB the fixed limits already use (128 KB is 128,000 bytes), rounded down. */
+export const localKilobytes = (bytes: number) => `${Math.floor(bytes / 1_000).toLocaleString('en-US')} KB`;
+
+/** The refusal for selected sources past the local profile's reading allowance, in each surface's own verb. */
+export const localSourceRefusal = (verb: 'Select no more than' | 'Choose less than', bytes: number) =>
+  `${verb} ${localKilobytes(bytes)} of source text for this local model profile.`;
+
+/** What a reader on the local model is told when a file read was cut short, with both sizes. */
+export const localReadCutNote = (shown: number, total: number) =>
+  `This read stopped at ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} characters. The rest of the file wasn’t read.`;
+
+/** Read ranges count UTF-16 code units; byte counts describe the returned UTF-8 text. */
+export const localReadCoverageSchema = z.strictObject({
+  v: z.literal(1), unit: z.literal('utf16'), totalChars: z.number().int().nonnegative(),
+  start: z.literal(0), end: z.number().int().nonnegative(), returnedBytes: z.number().int().nonnegative(),
+}).refine(value => value.end <= value.totalChars);
+export type LocalReadCoverage = z.infer<typeof localReadCoverageSchema>;
+
+export const localReadResultSchema = z.strictObject({
+  path: z.string(), found: z.literal(true), sha: z.string(), bytes: z.number().int().nonnegative(),
+  text: z.string(), truncated: z.boolean(), coverage: localReadCoverageSchema, note: z.string().optional(),
+});
+
+/** Shared by project and sandbox readers. Never cut between a surrogate pair. */
+export function localReadSlice(source: string, maxChars: number) {
+  let end = Math.min(source.length, maxChars);
+  if (end < source.length && end > 0 && /[\uD800-\uDBFF]/.test(source[end - 1]) && /[\uDC00-\uDFFF]/.test(source[end])) end--;
+  const text = source.slice(0, end), truncated = end < source.length;
+  const coverage: LocalReadCoverage = { v: 1, unit: 'utf16', totalChars: source.length, start: 0, end,
+    returnedBytes: new TextEncoder().encode(text).byteLength };
+  return { text, truncated, coverage, ...(truncated ? { note: localReadCutNote(end, source.length) } : {}) };
+}
+
+/** Rates affect time only; they do not qualify other tasks or widen their input room. */
+export function localCallCeiling(profile: Pick<LocalModelProfile, 'measuredRates' | 'callTimeoutMs'>,
+  promptTokens: number, outputTokens: number): number {
+  if (!profile.measuredRates) return profile.callTimeoutMs;
+  const rates = profile.measuredRates;
+  return Math.max(profile.callTimeoutMs, Math.ceil(1_500 *
+    (promptTokens / rates.prefillTokensPerSecond + outputTokens / rates.decodeTokensPerSecond)) + 30_000);
+}
+
 /** What a profile takes and holds, in the words the ask row uses. */
 const profileLine = (images: boolean, context: number) =>
   `${images ? 'Text and images' : 'Text only'}, ${formatTokens(context)} context.`;
@@ -269,10 +362,32 @@ export function parseLocalModelDescriptor(raw: unknown, folder: string): LocalMo
       refuse(`profiles.${name}.inputModalities in ${FILE} must include text.`);
     if (profile.outputTokens >= profile.contextTokens)
       refuse(`profiles.${name}.outputTokens in ${FILE} must be smaller than its contextTokens.`);
+    for (const field of ['qualifiedTaskTotalWindow', 'configuredTotalWindow'] as const) {
+      const window = profile[field];
+      if (window !== undefined && (window > profile.contextTokens || window <= profile.outputTokens))
+        refuse(`profiles.${name}.${field} in ${FILE} must exceed outputTokens and not exceed contextTokens.`);
+    }
+    if (profile.measuredRates && profile.measuredRates.occupiedContextTokens > profile.contextTokens)
+      refuse(`profiles.${name}.measuredRates.occupiedContextTokens in ${FILE} must not exceed contextTokens.`);
+    if (profile.effortBudgets) for (const effort of ['medium', 'xhigh'] as const) {
+      const budget = profile.effortBudgets[effort];
+      if (budget.outputTokens > profile.outputTokens)
+        refuse(`profiles.${name}.effortBudgets.${effort}.outputTokens in ${FILE} must not exceed the profile's outputTokens.`);
+      if (budget.reasoningTokens >= budget.outputTokens || (!budget.thinking && budget.reasoningTokens !== 0))
+        refuse(`profiles.${name}.effortBudgets.${effort}.reasoningTokens in ${FILE} must leave room for an answer and be zero when thinking is off.`);
+    }
     const inputModalities: ('text' | 'image')[] = profile.inputModalities.includes('image') ? ['text', 'image'] : ['text'];
     const defaultEffort = LOCAL_MODEL_EFFORTS.some((level) => level.id === profile.defaultReasoningEffort)
       ? profile.defaultReasoningEffort!
       : DEFAULT_EFFORT;
+    const deadlines = localDeadlines(profile.outputTokens);
+    if (profile.measuredRates) {
+      deadlines.callTimeoutMs = localCallCeiling({ ...deadlines, measuredRates: profile.measuredRates },
+        profile.contextTokens, profile.outputTokens);
+      deadlines.turnTimeoutMs = 4 * deadlines.callTimeoutMs;
+      if (deadlines.turnTimeoutMs > 2_147_483_647 - 60_000)
+        refuse(`profiles.${name}.measuredRates in ${FILE} imply a deadline beyond the supported timer limit.`);
+    }
     return {
       slug,
       name: `${value.model} ${name}`,
@@ -282,7 +397,11 @@ export function parseLocalModelDescriptor(raw: unknown, folder: string): LocalMo
       contextTokens: profile.contextTokens,
       maxOutputTokens: profile.outputTokens,
       inputModalities,
-      ...localDeadlines(profile.outputTokens),
+      ...deadlines,
+      ...(profile.effortBudgets ? { effortBudgets: profile.effortBudgets } : {}),
+      ...(profile.measuredRates ? { measuredRates: profile.measuredRates } : {}),
+      ...(profile.qualifiedTaskTotalWindow !== undefined ? { qualifiedTaskTotalWindow: profile.qualifiedTaskTotalWindow } : {}),
+      ...(profile.configuredTotalWindow !== undefined ? { configuredTotalWindow: profile.configuredTotalWindow } : {}),
       defaultEffort,
       efforts: LOCAL_MODEL_EFFORTS.map((level) => ({ ...level })),
     };

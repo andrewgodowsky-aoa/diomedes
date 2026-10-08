@@ -52,6 +52,7 @@ import {
   type AnsweredTurn,
   type BoundedHistory,
 } from './conversation-history.js';
+import { HOST_READ_STEP } from './native-agent.js';
 
 /** How many of a lineage's newest messages a history always keeps. */
 export const RECENT_KEEP = 6;
@@ -330,9 +331,10 @@ const count_ = (value: number) => value.toLocaleString('en-US');
 /**
  * The account's cache line under the owner's setting: the setting, whether `off` is verified on
  * this identity, what the breakpoint marked and `cacheAccount`'s sentence. When the marked start
- * (the tool definitions and the marked system text, by the estimator) is under the record's
- * declared minimum for a cache checkpoint, the note says it is too short to be cached. With no
- * report the account is returned as it was.
+ * (the tool definitions and the marked system text, by the estimator, and the attached files read
+ * before the message when a breakpoint follows them) is under the record's declared minimum for a
+ * cache checkpoint, the note says it is too short to be cached. With no report the account is
+ * returned as it was.
  */
 export function withCacheSetting(
   account: ContextAccount,
@@ -343,9 +345,18 @@ export function withCacheSetting(
   const line = cacheAccount(report.policy, report.record, report.marked);
   const minimum = report.record?.cache.minimumTokens.value ?? null;
   const markedText =
-    line.marked === 'stable-prefix' ? system.prefix : line.marked === 'whole-instructions' ? system.instructions : null;
+    line.marked === 'stable-prefix' || line.marked === 'stable-prefix-and-files'
+      ? system.prefix
+      : line.marked === 'whole-instructions' || line.marked === 'whole-instructions-and-files'
+        ? system.instructions
+        : null;
   const tools = account.sections.find((item) => item.id === 'tools')?.estimatedTokens ?? 0;
-  const markedTokens = markedText === null ? null : tools + estimateTokens(markedText);
+  // The longest marked start decides: with the files marked it runs to the end of their reads.
+  const files =
+    line.marked === 'stable-prefix-and-files' || line.marked === 'whole-instructions-and-files'
+      ? (account.sections.find((item) => item.id === 'project-files')?.estimatedTokens ?? 0)
+      : 0;
+  const markedTokens = markedText === null ? null : tools + estimateTokens(markedText) + files;
   const note =
     minimum !== null && markedTokens !== null && markedTokens < minimum
       ? `${line.note} The marked start is about ${count_(markedTokens)} tokens, under this model’s minimum of ${count_(minimum)} tokens for a cache checkpoint, so it is too short to be cached.`
@@ -390,6 +401,11 @@ export function accountContext(input: {
   separatorBytes: number;
   documents: number;
   images?: number;
+  /**
+   * The host's reads of the attached text files, sent on the first call before the history: how
+   * many, and the bytes of their opener, calls and results. Counted with the project files.
+   */
+  reads?: { count: number; bytes: number };
   requestLimitBytes: number | null;
   prefix: { sha: string; bytes: number };
   previousPrefixSha: string | null;
@@ -408,8 +424,9 @@ export function accountContext(input: {
     section('tools', input.tools.length ? utf8Bytes(JSON.stringify(input.tools)) : 0),
     section(
       'project-files',
-      utf8Bytes(input.parts.files),
+      utf8Bytes(input.parts.files) + (input.reads?.bytes ?? 0),
       input.images ? `${input.documents} attached, including ${input.images} images sent as bytes. Image tokens are excluded from the text estimate.`
+        : input.reads?.count ? `${input.documents} attached, read before the message`
         : input.documents ? `${input.documents} attached, read through tools` : undefined,
     ),
     section('history', utf8Bytes(input.parts.history), historyDetail),
@@ -445,7 +462,10 @@ const count = (value: unknown) => (typeof value === 'number' && Number.isSafeInt
  */
 export function reconcileContext(account: ContextAccount, child: Pick<HarnessRun, 'steps'>): ContextAccount {
   const models = child.steps.filter((step) => step.intent.kind === 'model' && step.state === 'succeeded');
-  const tools = child.steps.filter((step) => step.intent.kind === 'tool' && step.state === 'succeeded');
+  // The host's reads went on the first call and are counted with the project files already.
+  const tools = child.steps.filter(
+    (step) => step.intent.kind === 'tool' && step.state === 'succeeded' && !step.intent.stepId.startsWith(HOST_READ_STEP),
+  );
   const provider = {
     calls: models.length,
     reportedCalls: 0,
