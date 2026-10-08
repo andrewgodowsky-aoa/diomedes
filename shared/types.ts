@@ -726,6 +726,8 @@ export interface Conversation {
    * choice is preserved across provisioning and restart.
    */
   engineChoice?: 'person';
+  /** Host-owned project conversation identity, independent of its Agent, route and work. */
+  conversation?: 'project';
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];
@@ -822,6 +824,8 @@ export interface ProjectState {
   history: HistoryEntry[];
   changes: Change[];
   conversations: Conversation[];
+  /** The legacy project-conversation selection ran once, including when it found nothing. */
+  projectConversationIdentity?: 1;
   /** Absent in projects written before the follow-up queue existed. */
   followUps?: FollowUpCommand[];
   /** Receipts for Steer, Queue, Stop, Resume, Retry and Fork (H08). Append-only; absent before 2026-09-24. */

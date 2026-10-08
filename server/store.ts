@@ -7,6 +7,7 @@ import { validateAgentResolutions } from './agents.js';
 import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
+import { migrateProjectConversation } from './project-conversation.js';
 import { needsYou, WAITING_NAMED } from '../shared/needs-you.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
@@ -501,6 +502,8 @@ export class Store extends EventEmitter {
     await this.recover();
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
+      // Recover prepared writes first: their newer snapshot may contain the conversation.
+      migrateProjectConversation(state, this.isHomeProject(state.project.id));
       for (const session of state.sessions.filter((item) =>
         ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
@@ -552,6 +555,7 @@ export class Store extends EventEmitter {
       validateAgentResolutions(fresh);
       fresh.teamMeta ??= emptyTeamMeta();
       this.states.set(id, fresh);
+      if (migrateProjectConversation(fresh, this.isHomeProject(id))) await this.persist(fresh);
     }
     await this.interruptUnpreparedApprovals();
     this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
@@ -932,6 +936,7 @@ export class Store extends EventEmitter {
       history: [],
       changes: [],
       conversations: [],
+      projectConversationIdentity: 1,
       autoUpdate: false,
       team: emptyTeam(),
       teamMeta: emptyTeamMeta(),
@@ -1066,7 +1071,7 @@ export class Store extends EventEmitter {
   }
   /**
    * A project's own Diomedes conversation: the thread `diomedesThread` picks,
-   * adopted when it is already there and made once when it is not. Two windows
+   * identified by its durable marker and made once when it is not there. Two windows
    * sending their first message in a fresh project both arrive here, and one
    * locked sequence is what makes that one conversation rather than two.
    *
@@ -1091,6 +1096,7 @@ export class Store extends EventEmitter {
           attachedTo: { kind: 'project', ref: projectId },
           turns: [],
           name: PROJECT_THREAD_NAME,
+          conversation: 'project',
           createdAt: stamped,
           updatedAt: stamped,
           taskId: null,
@@ -1752,6 +1758,10 @@ export class Store extends EventEmitter {
         }
       }
       carryRememberedDecisions(journal.state, currentState);
+      const loadTime = now();
+      for (const conversation of journal.state.conversations ?? [])
+        migrateConversation(conversation, journal.state.tasks ?? [], loadTime);
+      migrateProjectConversation(journal.state, this.isHomeProject(journal.projectId));
       await this.persist(journal.state);
       this.invalidateDocuments(journal.projectId);
       await fs.unlink(path.join(pending, name));
