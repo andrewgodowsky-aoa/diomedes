@@ -78,7 +78,7 @@ export interface PaletteContext {
    */
   skills?: { active: boolean; name: string; list: readonly PackSkill[] };
   members: TeamMember[];
-  /** engine id -> live catalogue (GET /engines/:id/models), as the Picker reads it. */
+  /** engine id -> live catalogue (GET /engines/:id/models), as the ask row reads it. */
   catalogs: Record<string, EngineCatalog>;
   integrations: IntegrationStatus[];
   /** Open projects, from App. */

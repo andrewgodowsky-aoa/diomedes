@@ -291,7 +291,7 @@ test('A verified route carries the person to a composer, chooses itself for the 
     await expect(composer).toHaveValue('');
 
     // The thread now requests the route and model that were tested, through the
-    // same record the Picker reads.
+    // same record the ask row reads.
     await expect
       .poll(async () => {
         const state = await api<ProjectState>(`/projects/${project.id}/state`);

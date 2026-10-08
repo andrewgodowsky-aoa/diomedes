@@ -203,7 +203,7 @@ function integrationReady(id: string, integrations: readonly IntegrationStatus[]
 
 /**
  * Whether the row offers an engine: the same facts the setup screen calls connected, so the
- * row never offers a route Settings > Engines refuses (Picker.tsx `offered`).
+ * row never offers a route Settings > Engines refuses.
  */
 export function offeredEngine(
   id: string,
