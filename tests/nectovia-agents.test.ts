@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { AGENT_CATALOG, agentCompatibility } from '../shared/agents.js';
+import { AGENT_CATALOG, agentCompatibility, listedAgents } from '../shared/agents.js';
 import { fullAccessEligibility, ROUTE_CAPABILITIES } from '../shared/capabilities.js';
 import { enforcementFor } from '../shared/rule-authority.js';
 import { NECTOVIA_ROUTE } from '../shared/model-api.js';
@@ -47,22 +47,25 @@ describe('the Nectovia capability row', () => {
   });
 });
 
-describe('the Build and Fix workers on Nectovia', () => {
+describe('the agents that change files, on Nectovia', () => {
   const byId = (id: string) => AGENT_CATALOG.find((agent) => agent.id === id)!;
 
-  test('Change Builder and Problem Debugger are grayed, with one plain reason each', () => {
-    expect(nectoviaAgentGap(byId('diomedes.builder'), NECTOVIA_ROUTE)).toBe("Build isn't on Nectovia yet.");
-    expect(nectoviaAgentGap(byId('diomedes.debugger'), NECTOVIA_ROUTE)).toBe("Fix isn't on Nectovia yet.");
+  // DIO-292: the reason names the agent, since there are no Build and Fix modes to name.
+  test('Builder, Fixer and Writer are grayed, each with one plain reason by name', () => {
+    expect(nectoviaAgentGap(byId('diomedes.builder'), NECTOVIA_ROUTE)).toBe("Builder isn't on Nectovia yet.");
+    expect(nectoviaAgentGap(byId('diomedes.debugger'), NECTOVIA_ROUTE)).toBe("Fixer isn't on Nectovia yet.");
+    expect(nectoviaAgentGap(byId('diomedes.writer'), NECTOVIA_ROUTE)).toBe("Writer isn't on Nectovia yet.");
   });
 
-  test('the other six stay pickable on Nectovia', () => {
-    const open = AGENT_CATALOG.filter((agent) => nectoviaAgentGap(agent, NECTOVIA_ROUTE) === null).map((a) => a.id);
+  test('the five that read stay pickable on Nectovia', () => {
+    const open = listedAgents(AGENT_CATALOG)
+      .filter((agent) => nectoviaAgentGap(agent, NECTOVIA_ROUTE) === null)
+      .map((a) => a.id);
     expect(open).toEqual([
-      'diomedes.general',
-      'diomedes.architect',
       'diomedes.researcher',
-      'diomedes.explorer',
+      'diomedes.architect',
       'diomedes.reviewer',
+      'diomedes.explorer',
       'diomedes.analyst',
     ]);
   });
@@ -72,9 +75,11 @@ describe('the Build and Fix workers on Nectovia', () => {
       for (const agent of AGENT_CATALOG) expect(nectoviaAgentGap(agent, route)).toBeNull();
   });
 
-  test('a person-made worker that leads with Build is grayed the same way', () => {
-    expect(nectoviaAgentGap({ modes: ['build', 'ask'] }, NECTOVIA_ROUTE)).toBe("Build isn't on Nectovia yet.");
-    expect(nectoviaAgentGap({ modes: ['ask', 'build'] }, NECTOVIA_ROUTE)).toBeNull();
-    expect(nectoviaAgentGap({ modes: [] }, NECTOVIA_ROUTE)).toBeNull();
+  test('a person-made agent whose kind is Build is grayed the same way, by its own name', () => {
+    expect(nectoviaAgentGap({ name: 'Menu Maker', modes: ['build', 'ask'] }, NECTOVIA_ROUTE)).toBe(
+      "Menu Maker isn't on Nectovia yet.",
+    );
+    expect(nectoviaAgentGap({ name: 'Menu Checker', modes: ['ask', 'build'] }, NECTOVIA_ROUTE)).toBeNull();
+    expect(nectoviaAgentGap({ name: 'Empty', modes: [] }, NECTOVIA_ROUTE)).toBeNull();
   });
 });

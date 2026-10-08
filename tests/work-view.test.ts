@@ -142,7 +142,7 @@ describe('the board beside a thread', () => {
         state,
         task: null,
         taskWorker: '',
-        mode: 'build',
+        kind: 'build',
         running: false,
         latest: null,
         openNeeds: records.needs,

@@ -294,7 +294,7 @@ describe('a lead with workers and an advisor on the fixture route', () => {
       startBody({ team: { worker: {}, advisor: { agentId: 'diomedes.builder' } } }),
     );
     expect(advisor.status).toBe(409);
-    expect(advisor.data.error).toBe('Change Builder may change things, so it cannot be an advisor. An advisor only reads.');
+    expect(advisor.data.error).toBe('Builder may change things, so it cannot be an advisor. An advisor only reads.');
     const budget = await call<{ error: string }>('/loop/start', 'POST', startBody({ team: { worker: { budget: { turns: 99 } } } }));
     expect(budget.status).toBe(400);
     expect(budget.data.error).toBe('A worker takes between 1 and 8 turns.');

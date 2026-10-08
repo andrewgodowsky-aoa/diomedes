@@ -77,11 +77,17 @@ export interface PhoneRelayPorts {
   /** Stops a task's work, or one run of it, through Work control. */
   stop(projectId: string, target: StopTarget): Promise<void>;
   /** The home conversation's thread, or a project's own Nectovia conversation, made once if it isn't there. */
-  thread(conversation: Exclude<ConversationRef, { kind: 'member' }>): Promise<{ projectId: string; threadId: string; mode: ConversationMode }>;
+  /** The thread a phone message goes to, and the kind and Agent it is sent as (DIO-292). */
+  thread(
+    conversation: Exclude<ConversationRef, { kind: 'member' }>,
+  ): Promise<{ projectId: string; threadId: string; mode: ConversationMode; agent?: string }>;
   /** Whether a message on this thread would stop at the job cap's question first. */
   messageWarns(projectId: string, threadId: string, text: string, mode: ConversationMode): Promise<boolean>;
   /** Sends a message as if typed on this computer. `done` settles once the phone no longer follows it. */
-  message(input: { projectId: string; threadId: string; commandId: string; text: string; mode: ConversationMode }, done: Promise<void>): Promise<RelayTurnResult>;
+  message(
+    input: { projectId: string; threadId: string; commandId: string; text: string; mode: ConversationMode; agent?: string },
+    done: Promise<void>,
+  ): Promise<RelayTurnResult>;
   /** Puts a message in a Team member's mailbox, as the owner. */
   memberMessage(projectId: string, slotId: string, text: string): Promise<void>;
   /** Whether waking this member would stop at the job cap's question first. */
@@ -419,7 +425,19 @@ export class PhoneRelayMessages {
       release = resolve;
     });
     const finished = this.ports
-      .mutation(() => this.ports.message({ projectId: thread.projectId, threadId: thread.threadId, commandId, text, mode: thread.mode }, done))
+      .mutation(() =>
+        this.ports.message(
+          {
+            projectId: thread.projectId,
+            threadId: thread.threadId,
+            commandId,
+            text,
+            mode: thread.mode,
+            ...(thread.agent ? { agent: thread.agent } : {}),
+          },
+          done,
+        ),
+      )
       .finally(() => {
         off();
         release();

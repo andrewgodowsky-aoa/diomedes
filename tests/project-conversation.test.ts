@@ -9,6 +9,7 @@ import { EngineService } from '../server/engines/service';
 import { Store } from '../server/store';
 import { desktopRelayPorts } from '../server/relay/ports';
 import { diomedesThread } from '../shared/diomedes-thread';
+import { DEFAULT_AGENT } from '../shared/agents';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 
 // A project's own Diomedes conversation, provisioned on the Nectovia default (2026-09-25),
@@ -323,6 +324,23 @@ test('the conversation a project has survives closing and reopening the app', as
   expect(threadsOf(mine.id)).toHaveLength(1);
 });
 
+test('a Console thread, new or put on Auto, is never taken for the project conversation', async () => {
+  const mine = await project('Console first');
+  // Made before the project's conversation exists, as a person working in the Console does.
+  const ordinary = await api<Conversation>(`/projects/${mine.id}/threads`, 'POST', {});
+  expect([ordinary.requested?.agent, ordinary.mode]).toEqual(['auto', 'ask']);
+  await api(`/projects/${mine.id}/threads/${ordinary.id}`, 'PUT', {
+    requested: { model: null, effort: null, agent: 'diomedes.reviewer' },
+  });
+  const back = await api<Conversation>(`/projects/${mine.id}/threads/${ordinary.id}`, 'PUT', {
+    requested: { model: null, effort: null, agent: 'auto' },
+  });
+  expect([back.requested?.agent, back.mode]).toEqual(['auto', 'ask']);
+  const binding = await provision(mine.id);
+  expect(binding.threadId).not.toBe(ordinary.id);
+  expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);
+});
+
 test('an ordinary thread is still made and still routed after a conversation exists', async () => {
   const mine = await project('Still ordinary');
   const binding = await provision(mine.id);
@@ -376,7 +394,7 @@ test.each(['plan', 'build'] as const)(
     const binding = await provision(mine.id);
     await api(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', {
       mode,
-      ...(mode === 'plan' ? { requested: { model: null, effort: null, agent: 'planner' } } : {}),
+      ...(mode === 'plan' ? { requested: { model: null, effort: null, agent: DEFAULT_AGENT.plan } } : {}),
     });
     expect(byId(mine.id, binding.threadId).turns).toEqual([]);
     expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);

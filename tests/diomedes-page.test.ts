@@ -36,7 +36,7 @@ describe('the Home composer offers tiers, never routes or models', () => {
     renderToStaticMarkup(
       createElement(Diomedes, {
         projects: [], scopeId: null, onScope: noAction, turns: [], pending: false,
-        restriction: 'automatic', onRestriction: noAction, onSend: async () => true, onStop: noAction,
+        agent: 'auto', onAgent: noAction, onSend: async () => true, onStop: noAction,
         route: 'aws-bedrock', workStyle, onWorkStyle: noAction,
         unavailable: null, card: null, cardBusy: false, onCardAction: noAction, unconfirmed: null,
         onResend: noAction, onDiscard: noAction, notice: null, onReadAgain: null, results: [],

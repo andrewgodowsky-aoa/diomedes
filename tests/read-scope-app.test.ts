@@ -207,6 +207,36 @@ test('a whole-project read on a route that cannot check reads first is refused, 
   expect(codexCalls).toHaveLength(0);
 });
 
+// DIO-292: each agent reads with its own tools, frames its own message and is named on the reply.
+// `/ask` without a thread makes one with the message's kind, which reads as that kind's default
+// agent, so nothing here was picked by Auto.
+test('an agent reads with its own tools: Explorer has no web, Researcher keeps it', async () => {
+  const { id } = await project();
+  expect((await ask(id, { sources: ['menu.md'], agent: 'diomedes.explorer' })).status).toBe(200);
+  expect(seen[0].input.readScope!.web).toBe(false);
+  expect((await ask(id, { sources: ['menu.md'], agent: 'diomedes.researcher' })).status).toBe(200);
+  expect(seen[1].input.readScope!.web).toBe(true);
+});
+
+test('a non-default agent frames the message and is recorded on the reply', async () => {
+  const { id } = await project();
+  expect((await ask(id, { sources: ['menu.md'], agent: 'diomedes.reviewer' })).status).toBe(200);
+  expect(seen[0].input.prompt).toContain('[[diomedes agent=Reviewer]] Check the change set');
+  expect(seen[0].input.prompt).toContain('What sells best?');
+  const reply = store().state(id).conversations.flatMap((c) => c.turns).find((t) => t.role !== 'you');
+  expect(reply?.agent).toEqual({ id: 'diomedes.reviewer', name: 'Reviewer', picked: false });
+  expect((await ask(id, { sources: ['menu.md'], agent: 'diomedes.researcher' })).status).toBe(200);
+  expect(seen[1].input.prompt).not.toContain('[[diomedes agent=');
+});
+
+test('an agent that does another kind of work, or is not here, is refused before anything is sent', async () => {
+  const { id } = await project();
+  expect((await ask(id, { agent: 'diomedes.builder' })).status).toBe(400);
+  expect((await ask(id, { agent: 'acme.nobody' })).status).toBe(400);
+  expect((await ask(id, { agent: 'diomedes.general' })).status).toBe(400);
+  expect(seen).toHaveLength(0);
+});
+
 test('changing Cloud sharing ends every read grant the project had outstanding', async () => {
   const { id } = await project();
   const queued = openReadGrant(id);

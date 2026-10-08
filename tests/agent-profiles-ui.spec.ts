@@ -159,7 +159,7 @@ test.afterAll(async () => {
   else process.env.CODEX_HOME = savedCodexHome;
 });
 
-const agentButton = (page: Page) => page.getByRole('button', { name: 'Worker for this thread' });
+const agentButton = (page: Page) => page.getByRole('button', { name: 'Agent for this thread' });
 const thread = async (): Promise<Conversation> => {
   const { threads } = await api<{ threads: Conversation[] }>(`/projects/${projectId}/threads`);
   return threads[0];
@@ -195,12 +195,12 @@ test('Settings lists profiles with their reason, and an edit saves a new revisio
   await editor.getByLabel('Name').fill('Fixture writer');
   await editor.getByLabel('Model id, exactly as the route lists it').fill('fixture-model-a');
   await editor.getByLabel('Reasoning level (optional)').fill('medium');
-  await editor.getByLabel('Works as').selectOption({ label: 'Change Builder' });
+  await editor.getByLabel('Works as').selectOption({ label: 'Builder' });
   await editor.getByLabel(/Rules, one per line/).fill('Keep British spelling.');
   await editor.getByRole('button', { name: 'Save profile' }).click();
   const writer = profileSection(page, 'Fixture writer');
   await expect(writer).toContainText('Revision 1');
-  await expect(writer).toContainText('Codex · fixture-model-a · medium · Change Builder');
+  await expect(writer).toContainText('Codex · fixture-model-a · medium · Builder');
   await expect(writer).toContainText('Keep British spelling.');
 
   await writer.getByRole('button', { name: 'Edit', exact: true }).click();

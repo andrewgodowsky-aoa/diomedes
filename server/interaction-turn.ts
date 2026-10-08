@@ -5,6 +5,7 @@
 // is decided in interaction-admission.ts, and what actually starts is decided by the
 // existing task and work admission.
 import { digest } from './harness/policy.js';
+import { framesRun } from './agent-framing.js';
 import type { Json } from '../shared/harness.js';
 import type { AutomaticWorkRequest } from '../shared/automatic-work.js';
 import {
@@ -53,6 +54,7 @@ export function commandBinding(
     mode: ConversationMode;
     sources: readonly { path: string; sha: string }[];
     readAccess?: string;
+    agent?: string;
   },
 ) {
   return digest({
@@ -63,6 +65,9 @@ export function commandBinding(
     // Only a whole-project read is bound, so every earlier binding keeps its digest, and a
     // retry that changes what the message may read is a different command.
     ...(command.readAccess === 'project' ? { readAccess: 'project' } : {}),
+    // Only an agent that frames the message is bound, so every earlier binding keeps its digest
+    // and a retry under another agent is a different command (DIO-292).
+    ...(command.agent && framesRun(command.agent, command.mode) ? { agent: command.agent } : {}),
   });
 }
 
@@ -75,6 +80,12 @@ const TRAILER_OPEN = '[[diomedes source_message_id=';
  */
 export function promptFor(mode: ConversationMode, text: string, sourceMessageId: string) {
   return mode === 'auto' ? `${text}\n\n${TRAILER_OPEN}${sourceMessageId}]]` : text;
+}
+
+/** A recorded prompt without the identity line `promptFor` closed it with. */
+export function withoutTrailer(prompt: string): string {
+  const at = prompt.lastIndexOf(`\n\n${TRAILER_OPEN}`);
+  return at >= 0 && prompt.endsWith(']]') && !prompt.slice(at + 2).includes('\n') ? prompt.slice(0, at) : prompt;
 }
 
 const FENCE_OPEN = '```diomedes-decision';

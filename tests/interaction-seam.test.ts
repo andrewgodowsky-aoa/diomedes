@@ -392,12 +392,29 @@ test('Answer only and Plan only never show or start work, whatever the model pro
   expect(dispatches).toHaveLength(2);
 });
 
-test('narrowing the Mode control after a proposal was shown means it can no longer be started', async () => {
+test('choosing a reading agent after a proposal was shown means it can no longer be started', async () => {
+  // DIO-292: the control is the Agent box. Choosing Researcher narrows it as the Ask Mode did.
   const proposed = await send('m-act', 'ACT order the usual');
   if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
-  await send('m-narrow', 'And now only answer', { mode: 'ask' });
+  await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+    requested: { model: null, effort: null, agent: 'diomedes.researcher' },
+  });
   expect((await select('m-act', proposed.outcome.proposalDigest)).status).toBe(409);
   expect(workFor(proposed.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
+});
+
+test('on Auto, a message Auto handed to Researcher leaves a proposal already shown startable', async () => {
+  // DIO-292: Auto's pick for one message moves the thread's kind, never its Agent box.
+  const proposed = await send('m-act', 'ACT order the usual');
+  if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
+  await send('m-ask', 'And how is lunch?', { mode: 'ask', agent: 'diomedes.researcher' });
+  const saved = store().state(project.id).conversations.find((item) => item.id === thread.id)!;
+  expect(saved.mode).toBe('ask');
+  expect(saved.requested?.agent).toBe('auto');
+  const chosen = await select('m-act', proposed.outcome.proposalDigest);
+  expect(chosen.status).toBe(200);
+  expect(((await chosen.json()) as MessageResult).outcome).toMatchObject({ status: 'started' });
+  expect(workFor(proposed.sourceMessageId).tasks).toHaveLength(1);
 });
 
 test('R-03: a reused command with a changed text, mode or source list is refused before and after projection, and changes nothing', async () => {

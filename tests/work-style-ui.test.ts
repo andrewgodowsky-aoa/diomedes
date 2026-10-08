@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { defaults } from '../server/store';
 import { resolvedDetail, type WorkStyleView } from '../client/console/WorkStylePicker';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import { Diomedes } from '../client/console/Diomedes';
 import type { Conversation, Settings } from '../shared/types';
 import { WORK_STYLE_LABELS } from '../shared/work-style';
@@ -52,8 +53,9 @@ function instruments(t: Conversation, s: Settings) {
   return renderToStaticMarkup(
     createElement(ThreadView, {
       thread: t, title: 'Styles', task: null, sessions: [], mail: [], members: [], member: null,
-      needs: [], settings: s, mode: 'ask', route: 'codex', busy: false, online: true,
-      onMode: noAction, onPermission: noAction, onRename: noAction, prepareSources: async () => [],
+      needs: [], settings: s, choice: choiceView(t), route: 'codex', busy: false, online: true,
+      onPermission: noAction, onRename: noAction, prepareSources: async () => [],
+      pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
       onSend: noAction, onResolve: noAction, onPreview: noAction, onStopSession: noAction,
       onOpenBoard: noAction,
     }),
@@ -81,7 +83,7 @@ describe('the Home composer', () => {
     return renderToStaticMarkup(
       createElement(Diomedes, {
         projects: [], scopeId: null, onScope: noAction, turns: [], pending: false,
-        restriction: 'automatic', onRestriction: noAction, onSend: async () => true, onStop: noAction,
+        agent: 'auto', onAgent: noAction, onSend: async () => true, onStop: noAction,
         route: 'aws-bedrock',
         workStyle, onWorkStyle: noAction,
         unavailable: null, card: null, cardBusy: false, onCardAction: noAction, unconfirmed: null,
@@ -92,11 +94,12 @@ describe('the Home composer', () => {
     );
   }
 
-  it('offers the style beside Mode once there is a thread, and no Route', () => {
+  it('offers the style beside the Agent once there is a thread, and no Route', () => {
     const html = home('focused');
     expect(html).toContain('aria-label="Style"');
     expect(html).toMatch(/<option value="focused" [^>]*selected=""/);
-    expect(html).toContain('aria-label="Mode"');
+    expect(html).toContain('aria-label="Agent"');
+    expect(html).not.toContain('aria-label="Mode"');
     expect(html).not.toContain('aria-label="Route"');
     expect(home(undefined)).not.toContain('aria-label="Style"');
   });

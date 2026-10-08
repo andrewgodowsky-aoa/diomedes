@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Project, Settings } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { AGENT_MENU, chooseAgent } from './fixtures/agent-menu';
 
 // CD-05's two open acceptance legs, executed (docs/implementation/
 // 2026-09-24-cd05-zoom-motion-polish.md):
@@ -19,7 +20,7 @@ import { reopenLastProject } from './fixtures/landing';
 // separately with the app's own Reduced setting, nothing in the Console
 // animates or transitions: every element and pseudo-element's computed
 // animation and transition is none or zero, and no Web Animation (the Nectovia
-// seam, the composer's spring, the travelling point) is running.
+// seam, the travelling point) is running.
 //
 // The accessibility sweep of the same screens rides along: focus returns to
 // what opened a dialog or a menu, icon-only controls are named, and body text
@@ -356,7 +357,7 @@ async function moving(page: Page) {
   });
 }
 
-/** Everything the Console animates, driven once: views, modes, menus, the palette, Settings. */
+/** Everything the Console animates, driven once: views, menus, the palette, Settings. */
 async function driveTheConsole(page: Page, check: (where: string) => Promise<void>) {
   await openHome(page);
   await check('Diomedes page');
@@ -364,11 +365,12 @@ async function driveTheConsole(page: Page, check: (where: string) => Promise<voi
   await reopenLastProject(page);
   await expect(page.locator('#scrThread')).toBeVisible();
   await rail(page).getByRole('button', { name: /^Review the supplier documents/ }).click();
-  await expect(page.getByRole('radio', { name: 'plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: AGENT_MENU })).toBeVisible();
   await check('thread');
-  await page.getByRole('radio', { name: 'plan', exact: true }).click();
-  await check('composer mode change');
-  await page.getByRole('radio', { name: 'ask', exact: true }).click();
+  await page.getByRole('button', { name: AGENT_MENU }).click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await check('agent menu');
+  await page.keyboard.press('Escape');
   for (const view of ['Board', 'Team', 'Thread']) {
     // A thread's row can start with "Thread for"; the view is the other one.
     await rail(page).getByRole('button', { name: new RegExp(`^${view}\\b(?! for)`) }).click();
@@ -438,7 +440,9 @@ async function unnamedControls(page: Page) {
  * the art, are not a text ground and are not counted).
  */
 async function lowContrast(page: Page) {
-  // An entrance fades the screen in; measure the page at rest.
+  // An entrance fades the screen in, and the last click can leave the pointer on a control, whose
+  // hover tint is no resting ground; measure the page at rest, with nothing hovered.
+  await page.mouse.move(0, 0);
   await rest(page);
   return page.evaluate(() => {
     const canvas = document.createElement('canvas');
@@ -449,8 +453,10 @@ async function lowContrast(page: Page) {
       ctx.fillStyle = '#000';
       ctx.fillStyle = color;
       ctx.fillRect(0, 0, 1, 1);
+      // getImageData returns straight, not premultiplied, values: the channels are the colour
+      // already. Dividing them by alpha again read a 6% tint as several times white.
       const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
-      return a === 0 ? [0, 0, 0, 0] : [r / (a / 255), g / (a / 255), b / (a / 255), a / 255];
+      return a === 0 ? [0, 0, 0, 0] : [r, g, b, a / 255];
     };
     const over = (top: number[], under: number[]) => top.slice(0, 3).map((c, i) => c * top[3] + under[i] * (1 - top[3]));
     const lum = (c: number[]) => {
@@ -508,7 +514,7 @@ test.describe('accessibility sweep', () => {
     const openers = [
       { opener: page.getByRole('button', { name: 'Ctrl K', exact: true }), open: page.getByRole('dialog', { name: 'Find and act' }) },
       { opener: page.locator('.ask-engine .ask-pick'), open: page.getByRole('menu', { name: 'Engines' }) },
-      { opener: page.getByRole('button', { name: 'Worker for this thread' }), open: page.getByRole('menu') },
+      { opener: page.getByRole('button', { name: AGENT_MENU }), open: page.getByRole('menu') },
       { opener: page.getByRole('button', { name: 'Interface detail menu' }), open: page.getByRole('menu') },
     ];
     for (const { opener, open } of openers) {
@@ -632,17 +638,17 @@ test.describe('N4: the ask row', () => {
     await expect(row.getByRole('button', { name: 'Effort: Medium' })).toBeVisible();
   });
 
-  test('Fix runs at its ceiling, and the choice stands for the other modes', async ({ page }) => {
+  test('Fixer runs at its ceiling, and the choice stands for the other Agents', async ({ page }) => {
     const row = await openRow(page);
-    await page.getByRole('radio', { name: 'fix', exact: true }).click();
+    await chooseAgent(page, 'Fixer');
     await expect(row.getByRole('button', { name: 'Effort: Medium' })).toBeVisible();
     await row.getByRole('button', { name: /^Effort: / }).click();
     const effort = page.getByRole('dialog', { name: 'Effort' });
-    await expect(effort).toContainText('Fix runs at Medium. Your choice still governs Ask, Plan and Build.');
+    await expect(effort).toContainText('Fixer runs at Medium.');
     await expect(effort.getByRole('radio', { name: 'Extra high' })).toHaveAttribute('aria-checked', 'true');
     await page.keyboard.press('Escape');
     await expect(effort).toHaveCount(0);
-    await page.getByRole('radio', { name: 'ask', exact: true }).click();
+    await chooseAgent(page, 'Researcher');
     await expect(row.getByRole('button', { name: 'Effort: Extra high' })).toBeVisible();
   });
 
@@ -679,7 +685,7 @@ test.describe('N4: the ask row', () => {
       row.getByRole('button', { name: /^Engine: / }),
       row.getByRole('button', { name: /^Model: / }),
       row.getByRole('button', { name: /^Effort: / }),
-      row.getByRole('button', { name: 'Worker for this thread' }),
+      row.getByRole('button', { name: AGENT_MENU }),
       page.getByRole('button', { name: 'No context used yet' }),
     ]) {
       await opener.click();

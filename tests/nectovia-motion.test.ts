@@ -200,7 +200,8 @@ describe('reduced motion reaches everything the Console moves', () => {
     const scripted = files.filter(
       (file) => /\.(ts|tsx)$/.test(file) && /\.animate\(/.test(readFileSync(file, 'utf8')),
     );
-    expect(scripted.length).toBeGreaterThanOrEqual(4);
+    // The mode strip's spring went with the strip (DIO-292).
+    expect(scripted.length).toBeGreaterThanOrEqual(3);
     for (const file of scripted) {
       const source = readFileSync(file, 'utf8');
       expect(source, file).toMatch(/\b(reducedMotion|motionReduced|motionAllowed)\(/);

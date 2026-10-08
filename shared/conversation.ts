@@ -65,6 +65,8 @@ export interface MessageRequest {
    * documents only; `project` lets the route look through the folder for this one message.
    */
   readAccess?: import('./read-access.js').ReadAccess;
+  /** The Agent this message runs as (DIO-292). Absent means its kind's default, as before. */
+  agent?: string;
 }
 
 /** `POST .../messages/:commandId/select`. Bound to the proposal that was shown and to its project. */

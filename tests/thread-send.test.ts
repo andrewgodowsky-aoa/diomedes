@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { defaults } from '../server/store';
 import {
   directAskBody,
+  pickForMessage,
   planThreadSend,
   readThreadRoute,
   stopThreadMessage,
   type ThreadRouteView,
 } from '../client/console/thread-send';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import type { Conversation } from '../shared/types';
 
 // Which path a project-thread message takes. The host's answer decides it; see
@@ -71,9 +73,9 @@ describe('directAskBody', () => {
       directAskBody({
         thread,
         mode: 'fix',
+        agent: 'diomedes.debugger',
         text: 'Fix it',
         route: 'aws-bedrock',
-        failing: { document: 'a.md' },
         sources: ['a.md'],
         skill: 's',
       }),
@@ -85,13 +87,15 @@ describe('directAskBody', () => {
       threadId: 'T1',
       attachedTo: thread.attachedTo,
       sources: ['a.md'],
-      failing: { document: 'a.md' },
+      agent: 'diomedes.debugger',
       skill: 's',
     });
-    // `failing` is Fix's alone.
-    expect(directAskBody({ thread, mode: 'build', text: 'B', route: 'codex', failing: { text: 'x' } })).not.toHaveProperty(
-      'failing',
-    );
+  });
+  test("carries the Agent the pick named, and no Fix fields, which the message itself replaces (DIO-292)", () => {
+    const body = directAskBody({ thread, mode: 'fix', agent: 'diomedes.debugger', text: 'The invoice total is wrong', route: 'codex' });
+    expect(body).toMatchObject({ mode: 'fix', agent: 'diomedes.debugger' });
+    expect(body).not.toHaveProperty('failing');
+    expect(directAskBody({ thread, mode: 'build', text: 'B', route: 'codex' })).not.toHaveProperty('agent');
   });
 });
 
@@ -110,6 +114,26 @@ describe('the host is asked, and Stop names the command', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/projects/P%201/threads/T1/work-style');
     fetchMock.mockResolvedValueOnce(reply(200, { style: null }));
     await expect(readThreadRoute('P1', 'T1')).rejects.toThrow(/Nothing was sent/);
+  });
+  test('readThreadRoute asks for the route of the kind of run a pick takes', async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { route: 'claude-code', refusal: null }));
+    expect(await readThreadRoute('P1', 'T1', undefined, 'build')).toEqual({ route: 'claude-code', refusal: null });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/projects/P1/threads/T1/work-style?mode=build');
+  });
+  test("pickForMessage asks the host for one message's Agent and hands its answer back as it is", async () => {
+    const picked = {
+      agent: { id: 'diomedes.analyst', name: 'Analyst' },
+      mode: 'ask',
+      by: 'rule',
+      route: 'aws-bedrock',
+      refusal: null,
+    };
+    fetchMock.mockResolvedValueOnce(reply(200, picked));
+    const input = { text: 'How did March go?', attachments: ['sales.csv'], conversationOnly: true };
+    expect(await pickForMessage('P 1', 'T1', input)).toEqual(picked);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/projects/P%201/threads/T1/agent-pick');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(input);
   });
 
   const issued = { projectId: 'P1', threadId: 'T1', commandId: 'cmd-1' };
@@ -160,13 +184,13 @@ describe('ThreadView', () => {
         member: null,
         needs: [],
         settings: defaults(),
-        mode: 'ask',
+        choice: choiceView(thread),
         route: 'aws-bedrock',
         busy: false,
         online: true,
-        onMode: noAction,
         onPermission: noAction,
         onRename: noAction,
+        pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
         prepareSources: async () => [],
         onSend: noAction,
         onResolve: noAction,

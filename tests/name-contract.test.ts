@@ -262,7 +262,8 @@ describe('the agent’s name comes from one place (shared/agent-name.ts)', () =>
         phrase,
       ).toEqual([]);
     expect(read('client/console/Diomedes.tsx')).toContain('aria-label={`Message ${AGENT_NAME}`}');
-    expect(read('client/console/Composer.tsx')).toContain('auto: `Ask ${AGENT_NAME}`,');
+    // Auto's placeholder moved with the Agent box (DIO-292): it's built from the name in agent-ui.ts.
+    expect(read('client/console/agent-ui.ts')).toContain('`Ask ${AGENT_NAME}, or hand it something to do`');
   });
 });
 

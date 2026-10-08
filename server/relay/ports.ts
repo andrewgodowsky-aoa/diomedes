@@ -9,6 +9,8 @@ import type { MessageResult } from '../../shared/conversation.js';
 import type { HandoffEvent } from '../../shared/team-delegation.js';
 import type { MessageCommand, RequestContext } from '../interaction-service.js';
 import type { ConversationMode } from '../interaction-turn.js';
+import { agentChoiceOf } from '../../shared/agent-choice.js';
+import { AGENT_CATALOG, AUTO_AGENT, runKindOf } from '../../shared/agents.js';
 import { ApiError } from '../paths.js';
 import type { Store } from '../store.js';
 import { RelayRefusal, type PhoneRelayPorts } from './messages.js';
@@ -153,16 +155,34 @@ export function desktopRelayPorts(paths: DesktopPaths): PhoneRelayPorts {
           : await store.provisionProjectConversation(conversation.projectId);
       const thread = store.state(bound.projectId).conversations.find((item) => item.id === bound.threadId);
       if (!thread) throw new ApiError(404, 'This thread was not found.', { code: 'conversation_not_found' });
-      // The thread's own Mode control, as the Console sends it; Build and Fix have no conversation message.
-      const mode: ConversationMode = thread.mode === 'ask' || thread.mode === 'plan' ? thread.mode : 'auto';
-      return { projectId: bound.projectId, threadId: bound.threadId, mode };
+      // The thread's Agent box, as the Console sends it (DIO-292). A built-in's kind is the
+      // catalog's; an added Agent's is the kind the thread stored when it was chosen. Auto, and an
+      // Agent that changes files, have no conversation message of their own, so they relay as
+      // Automatic. The host holds the second to the box's own control, so a message from the phone
+      // never starts work.
+      const box = agentChoiceOf(thread);
+      const listed = AGENT_CATALOG.find((item) => item.id === box);
+      const kind = box === AUTO_AGENT ? 'auto' : listed ? runKindOf(listed) : thread.mode;
+      const mode: ConversationMode = kind === 'ask' || kind === 'plan' ? kind : 'auto';
+      return {
+        projectId: bound.projectId,
+        threadId: bound.threadId,
+        mode,
+        ...(mode === 'auto' ? {} : { agent: box }),
+      };
     },
     messageWarns: (projectId, threadId, text, mode) => paths.messageWarns(projectId, threadId, text, mode),
     message: async (input, done) => {
       const result = await paths.message(
         input.projectId,
         input.threadId,
-        { commandId: input.commandId, text: input.text, mode: input.mode, sources: [] },
+        {
+          commandId: input.commandId,
+          text: input.text,
+          mode: input.mode,
+          sources: [],
+          ...(input.agent ? { agent: input.agent } : {}),
+        },
         { whenDone: (end) => void done.then(end) },
       );
       return { answerText: result.answerText, interrupted: result.interrupted };

@@ -173,7 +173,7 @@ function inspectFixtureModels(): void {
   recordEngineCatalog(codexCatalog());
 }
 
-const agentButton = (page: Page) => page.getByRole('button', { name: 'Worker for this thread' });
+const agentButton = (page: Page) => page.getByRole('button', { name: 'Agent for this thread' });
 // The model control is the ask row's second box (round 2 board N4, DIO-200): Nectovia's
 // tier on Nectovia, and on another engine that engine's own model, named as the engine
 // lists it (composer rules, 2026-10-03).
@@ -193,21 +193,20 @@ async function open(page: Page) {
 test('the worker and the model are two separate controls', async ({ page }) => {
   await open(page);
   await expect(agentButton(page)).toContainText('Agent');
-  // Auto names the worker it would resolve to, before anything is started.
+  // A new thread starts on Auto (DIO-292).
   await expect(agentButton(page)).toContainText('Auto');
   await expect(modelButton(page)).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, 'agent-and-model-controls.png') });
 });
 
-test('the menu says plainly that choosing a worker grants nothing', async ({ page }) => {
+test('the menu says plainly that choosing an agent grants nothing', async ({ page }) => {
   await open(page);
   await agentButton(page).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByText('Choosing a worker does not change what it may do.')).toBeVisible();
-  await expect(menu.getByText(/Permissions decide that/)).toBeVisible();
+  await expect(menu.getByText('Permissions decide what each agent can do.')).toBeVisible();
   // Job identities, not skills, rule ids or system prompts.
-  await expect(menu.getByRole('menuitemradio', { name: /^Code Reviewer/ })).toBeVisible();
-  await expect(menu.getByRole('menuitemradio', { name: /^Documentation Researcher/ })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: /^Reviewer/ })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: /^Researcher/ })).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, 'agent-menu.png') });
 });
 
@@ -222,13 +221,13 @@ test('a worker this engine cannot support states its reason instead of vanishing
   await expect(blocked).toContainText(/cannot run shell commands/i);
 });
 
-test('choosing a worker leaves the model alone, and the model leaves the worker alone', async ({
+test('choosing an agent leaves the model alone, and the model leaves the agent alone', async ({
   page,
 }) => {
   await open(page);
   await agentButton(page).click();
-  await page.getByRole('menuitemradio', { name: /^Code Reviewer/ }).click();
-  await expect(agentButton(page)).toContainText('Code Reviewer');
+  await page.getByRole('menuitemradio', { name: /^Reviewer/ }).click();
+  await expect(agentButton(page)).toContainText('Reviewer');
   await expect.poll(async () => (await thread()).requested?.agent).toBe('diomedes.reviewer');
   // Picking a worker set no model.
   expect((await thread()).requested?.model ?? null).toBeNull();
@@ -247,7 +246,7 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
     engine: 'codex',
   });
   await page.reload();
-  await expect(agentButton(page)).toContainText('Code Reviewer');
+  await expect(agentButton(page)).toContainText('Reviewer');
   await expect(modelButton(page)).toContainText(/fixture.model.b/i);
 
   // Switching the worker back to Auto must not disturb the model.
@@ -255,7 +254,8 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
   await agentButton(page).click();
   await page.getByRole('menuitemradio', { name: /^Auto/ }).click();
   await expect(agentButton(page)).toContainText('Auto');
-  await expect.poll(async () => (await thread()).requested?.agent ?? null).toBeNull();
+  // Auto is a choice the box keeps (DIO-292), saved by its own name.
+  await expect.poll(async () => (await thread()).requested?.agent ?? null).toBe('auto');
   expect((await thread()).requested?.model).toBe('fixture-model-b');
   await expect(modelButton(page)).toContainText(/fixture.model.b/i);
   await page.screenshot({ path: path.join(EVIDENCE, 'agent-and-model-kept.png') });

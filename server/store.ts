@@ -8,6 +8,8 @@ import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { migrateProjectConversation } from './project-conversation.js';
+import { AGENT_CATALOG, AUTO_AGENT, DEFAULT_AGENT, runKindOf } from '../shared/agents.js';
+import { GENERAL_AGENT } from '../shared/agent-choice.js';
 import { needsYou, WAITING_NAMED } from '../shared/needs-you.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
@@ -131,6 +133,24 @@ export function migrateConversation(
       raw === 'ask' || raw === 'plan' || raw === 'auto' || raw === 'build' || raw === 'fix'
         ? raw
         : 'ask';
+  }
+  // An Agent chosen before agents carried the limits (DIO-292). The general worker left the menu,
+  // so a thread that chose it is on Auto. A built-in whose kind changed since keeps the thread on
+  // the kind it ran as, with that kind's own Agent: Debugger answered in Ask and is Fixer now, and
+  // a saved choice never starts changing documents by itself. An added Agent's kind is the one the
+  // thread stored for it, so it stays.
+  const saved = conversation.requested?.profile ? undefined : conversation.requested?.agent?.trim();
+  if (saved && conversation.requested) {
+    const listed = AGENT_CATALOG.find((item) => item.id === saved);
+    const agent =
+      saved === GENERAL_AGENT
+        ? AUTO_AGENT
+        : listed && runKindOf(listed) !== conversation.mode
+          ? conversation.mode === 'auto'
+            ? AUTO_AGENT
+            : DEFAULT_AGENT[conversation.mode]
+          : saved;
+    if (agent !== saved) conversation.requested = { ...conversation.requested, agent };
   }
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;

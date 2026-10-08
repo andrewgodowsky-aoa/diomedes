@@ -71,6 +71,13 @@ describe('the history a conversation turn is given', () => {
     expect(history).toBe('Person: answered\n\nDiomedes: here it is\n\nPerson: stopped');
   });
 
+  test("gives what the person said, without the role line an Agent's message opened with", () => {
+    const history = conversationHistory([
+      run([turn('a', '[[diomedes agent=Explorer]] Locate the relevant material.\n\nWhere is the linen order?', 'In the office.')]),
+    ]);
+    expect(history).toBe('Person: Where is the linen order?\n\nDiomedes: In the office.');
+  });
+
   test('never leaves half a character at the cut, whichever way the bound falls', () => {
     // An emoji is two UTF-16 units, so the cut, counted from the end, lands between the two
     // halves of one or the other depending on the answer's length.

@@ -662,6 +662,11 @@ export interface Turn {
     verified: boolean;
   };
   /**
+   * Which Agent answered, and whether Auto picked it (DIO-292). Absent when Auto answered
+   * itself, and on turns written before 2026-10-07.
+   */
+  agent?: { id: string; name: string; picked: boolean };
+  /**
    * H18: what went into the model context for this answer, on a route where Diomedes assembled
    * it (a model-API route). Absent for an external engine, which manages its own context.
    */

@@ -18,10 +18,11 @@ const render = (overrides: Partial<Parameters<typeof LocalModelControls>[0]> = {
     live: false, initialView: view, onChanged: () => {}, ...overrides }));
 
 describe('local profile controls', () => {
-  it.each(['local:quick', 'local:deep'])('shows %s with the engine, effort, Auto and declared context', model => {
+  it.each(['local:quick', 'local:deep'])('shows %s with the engine, effort and declared context, and no Agent control of its own', model => {
     const html = render({ thread: { ...thread, requested: { model, effort: 'xhigh', agent: 'auto' } } });
     expect(html).toContain('Nectovia'); expect(html).toContain(`value="${model}" selected=""`);
-    expect(html).toContain('value="xhigh" selected="">Extra'); expect(html).toContain('Auto');
+    // The page's own Agent select is the one Agent control (DIO-292).
+    expect(html).toContain('value="xhigh" selected="">Extra'); expect(html).not.toMatch(/aria-label="Agent/);
     expect(html).toContain(model === 'local:quick' ? '16,384 token context' : '131,072 token context');
     expect(html).toContain(model === 'local:quick' ? '>meadow-9b Quick</option>' : '>meadow-9b Deep</option>');
     expect(html).not.toContain('Codex'); expect(html).toContain('>Start</button>');
