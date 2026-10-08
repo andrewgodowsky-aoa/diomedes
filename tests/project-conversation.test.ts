@@ -6,7 +6,8 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
-import type { Store } from '../server/store';
+import { Store } from '../server/store';
+import { desktopRelayPorts } from '../server/relay/ports';
 import { diomedesThread } from '../shared/diomedes-thread';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 
@@ -87,6 +88,7 @@ const seeded = (projectId: string, over: Partial<Conversation> & { id: string })
   updatedAt: '2026-09-21T10:00:00.000Z',
   taskId: null,
   helper: null,
+  requested: null,
   permission: 'show-first',
   mode: 'auto',
   ...over,
@@ -96,6 +98,35 @@ async function seed(projectId: string, threads: Conversation[]) {
   for (const thread of threads) state.conversations.push(thread);
   await store().persist(state);
 }
+
+/** Reopen exact project files from before the identity migration, without touching real data. */
+async function reopenLegacy(...projectIds: string[]) {
+  const files = projectIds.map((id) => store().statePath(id));
+  await close();
+  for (const file of files) {
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+    delete saved.projectConversationIdentity;
+    await fs.writeFile(file, JSON.stringify(saved));
+  }
+  await open();
+}
+
+// The actual phone provisioner; none of the unrelated message/work ports is exercised here.
+const phoneThread = (projectId: string) => desktopRelayPorts({
+  store: store(),
+  personId: () => null,
+  includes: () => false,
+  organizationFor: () => null,
+  resolveNeed: async () => { throw new Error('No approvals in this fixture'); },
+  stop: async () => { throw new Error('No work in this fixture'); },
+  harnessRuns: async () => [],
+  message: async () => { throw new Error('No messages in this fixture'); },
+  teamMessage: async () => { throw new Error('No team messages in this fixture'); },
+  teamWake: async () => { throw new Error('No team work in this fixture'); },
+  messageWarns: async () => false,
+  wakeWarns: async () => false,
+  updates: { closing: () => false, hold: () => () => {} },
+}).thread({ kind: 'project', projectId });
 
 test('two first sends at once reach one conversation, not two', async () => {
   // Five fresh projects: a lucky ordering once is not five times.
@@ -127,39 +158,42 @@ test('the thread it makes is the threads route own thread, pinned to the Nectovi
   });
   const made = threadsOf(mine.id)[0];
   const wouldBe = threadsOf(control.id)[0];
-  expect(shape(made)).toEqual({ ...shape(wouldBe), engine: 'nectovia' });
+  expect(shape(made)).toEqual({ ...shape(wouldBe), engine: 'nectovia', conversation: 'project' });
   // `toEqual` passes over a key whose value is undefined, so the key sets are compared too.
-  expect(Object.keys(made).sort()).toEqual([...Object.keys(wouldBe), 'engine'].sort());
+  expect(Object.keys(made).sort()).toEqual([...Object.keys(wouldBe), 'engine', 'conversation'].sort());
   expect(binding).toEqual({ projectId: mine.id, threadId: made.id });
   expect(made.createdAt).toBe(made.updatedAt);
 });
 
-test('a conversation that is already there is adopted, not duplicated', async () => {
+test('a legacy conversation is marked on load and keeps its name and id', async () => {
   const mine = await project('Adopt');
   const existing = await api<Conversation>(`/projects/${mine.id}/threads`, 'POST', {
     name: 'Talk',
     mode: 'auto',
   });
+  await reopenLegacy(mine.id);
+  expect(diomedesThread(threadsOf(mine.id))?.id).toBe(existing.id);
+  expect(byId(mine.id, existing.id)).toMatchObject({ conversation: 'project' });
   expect(await provision(mine.id)).toEqual({ projectId: mine.id, threadId: existing.id });
   expect(threadsOf(mine.id)).toHaveLength(1);
   // Adoption takes the thread as it is: its name was never this route's to write.
   expect(threadsOf(mine.id)[0].name).toBe('Talk');
 });
 
-test('the oldest qualifying thread wins, ties break by id, and the page reads the same one', async () => {
+test('legacy migration preserves the oldest qualifying thread and its id tie breaker', async () => {
   const older = await project('Older wins');
   await seed(older.id, [
     seeded(older.id, { id: 'Cb', createdAt: '2026-09-21T11:00:00.000Z' }),
     seeded(older.id, { id: 'Ca', createdAt: '2026-09-21T09:00:00.000Z' }),
   ]);
-  const oldest = await provision(older.id);
-  expect(oldest.threadId).toBe('Ca');
-
   const tied = await project('Tie breaks by id');
   await seed(tied.id, [
     seeded(tied.id, { id: 'Cz', createdAt: '2026-09-21T09:00:00.000Z' }),
     seeded(tied.id, { id: 'Cm', createdAt: '2026-09-21T09:00:00.000Z' }),
   ]);
+  await reopenLegacy(older.id, tied.id);
+  const oldest = await provision(older.id);
+  expect(oldest.threadId).toBe('Ca');
   const broken = await provision(tied.id);
   expect(broken.threadId).toBe('Cm');
 
@@ -191,6 +225,7 @@ test('a task, document or review thread is never adopted, and neither is a work 
     // A work mode with nothing said through the conversation routes is not one either.
     seeded(mine.id, { id: 'Cbuild', createdAt: early, mode: 'build' }),
   ]);
+  await reopenLegacy(mine.id);
   const binding = await provision(mine.id);
   expect(ignored).not.toContain(binding.threadId);
   expect(threadsOf(mine.id)).toHaveLength(5);
@@ -200,6 +235,7 @@ test('a task, document or review thread is never adopted, and neither is a work 
     engine: 'nectovia',
     attachedTo: { kind: 'project', ref: mine.id },
     taskId: null,
+    conversation: 'project',
   });
   for (const id of ignored) expect(byId(mine.id, id).engine).toBeUndefined();
 });
@@ -217,6 +253,7 @@ test('an adopted conversation on another engine is pinned, and no sibling moves'
       engine: 'codex',
     }),
   ]);
+  await reopenLegacy(mine.id);
   expect((await provision(mine.id)).threadId).toBe('Coldest');
   expect(byId(mine.id, 'Coldest').engine).toBe('nectovia');
   expect(byId(mine.id, 'Cnewer').engine).toBe('codex');
@@ -300,4 +337,215 @@ test('an ordinary thread is still made and still routed after a conversation exi
   expect([rerouted.name, rerouted.mode, rerouted.engine]).toEqual(['Orders', 'ask', 'sample']);
   expect(byId(mine.id, binding.threadId).engine).toBe('nectovia');
   expect(await provision(mine.id)).toEqual(binding);
+});
+
+test.each(['aws-bedrock', 'azure-openai', 'openrouter', 'codex'] as const)(
+  'an ordinary %s conversation never becomes the project conversation or changes route',
+  async (engine) => {
+    const mine = await project(`Ordinary ${engine}`);
+    const ordinary = seeded(mine.id, {
+      id: 'Cordinary',
+      mode: 'ask',
+      engine,
+      turns: [{
+        id: 'Uordinary', role: 'you', mode: 'ask', text: 'Ordinary thread history',
+        at: '2026-09-21T10:00:00.000Z', sources: [], route: engine,
+      }],
+      lineages: [{ mode: 'ask', generation: 1, runId: 'ordinary-run' }],
+    });
+    const before = structuredClone(ordinary);
+    await seed(mine.id, [ordinary]);
+    expect(diomedesThread(threadsOf(mine.id))).toBeNull();
+    const binding = await provision(mine.id);
+    expect(binding.threadId).not.toBe(ordinary.id);
+    expect(byId(mine.id, ordinary.id)).toEqual(before);
+    expect((await phoneThread(mine.id)).threadId).toBe(binding.threadId);
+    await close();
+    await open();
+    expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);
+    expect(await provision(mine.id)).toEqual(binding);
+    expect(byId(mine.id, ordinary.id)).toEqual(before);
+    expect(threadsOf(mine.id)).toHaveLength(2);
+  },
+);
+
+test.each(['plan', 'build'] as const)(
+  'a Console Agent or playbook change to %s before the first message keeps one conversation',
+  async (mode) => {
+    const mine = await project(`Before first message ${mode}`);
+    const binding = await provision(mine.id);
+    await api(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', {
+      mode,
+      ...(mode === 'plan' ? { requested: { model: null, effort: null, agent: 'planner' } } : {}),
+    });
+    expect(byId(mine.id, binding.threadId).turns).toEqual([]);
+    expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);
+    const [page, phone] = await Promise.all([provision(mine.id), phoneThread(mine.id)]);
+    expect(page).toEqual(binding);
+    expect(phone.threadId).toBe(binding.threadId);
+    await close();
+    await open();
+    expect(await provision(mine.id)).toEqual(binding);
+    expect(threadsOf(mine.id)).toHaveLength(1);
+    expect(byId(mine.id, binding.threadId).mode).toBe(mode);
+  },
+);
+
+test('a project conversation keeps its identity after work attaches a task and the person changes route', async () => {
+  const mine = await project('Work and route');
+  const binding = await provision(mine.id);
+  await api(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', { engine: 'aws-bedrock' });
+  const state = store().state(mine.id);
+  const task = store().createTask(state, { name: 'Work from the conversation', owner: 'diomedes-with-ok' });
+  byId(mine.id, binding.threadId).taskId = task.id;
+  await store().persist(state);
+  await close();
+  await open();
+  expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);
+  expect(await provision(mine.id)).toEqual(binding);
+  expect((await phoneThread(mine.id)).threadId).toBe(binding.threadId);
+  expect(byId(mine.id, binding.threadId)).toMatchObject({ taskId: task.id, engine: 'aws-bedrock', engineChoice: 'person' });
+  expect(threadsOf(mine.id)).toHaveLength(1);
+});
+
+test('an upgraded project with no conversation never reruns the heuristic after an ordinary thread speaks', async () => {
+  const mine = await project('Upgrade empty');
+  await reopenLegacy(mine.id);
+  const ordinary = seeded(mine.id, {
+    id: 'Cordinary', mode: 'ask', engine: 'aws-bedrock',
+    lineages: [{ mode: 'ask', generation: 1, runId: 'ordinary-run' }],
+  });
+  await seed(mine.id, [ordinary]);
+  await close();
+  await open();
+  expect(diomedesThread(threadsOf(mine.id))).toBeNull();
+  expect((await provision(mine.id)).threadId).not.toBe(ordinary.id);
+  expect(byId(mine.id, ordinary.id)).toEqual(ordinary);
+});
+
+test('legacy migration preserves turns, lineages, History and siblings across repeated restarts', async () => {
+  const mine = await project('Preserve legacy evidence');
+  const existing = seeded(mine.id, {
+    id: 'Clegacy', mode: 'plan', engine: 'azure-openai', engineChoice: 'person',
+    requested: { model: null, effort: null, agent: 'planner' },
+    turns: [{ id: 'Ulegacy', role: 'you', mode: 'plan', text: 'Keep this history', at: '2026-09-21T10:00:00.000Z', sources: [] }],
+    lineages: [{ mode: 'plan', generation: 1, runId: 'legacy-run' }],
+  });
+  const sibling = seeded(mine.id, { id: 'Csibling', mode: 'ask', engine: 'aws-bedrock' });
+  await seed(mine.id, [existing, sibling]);
+  const state = store().state(mine.id);
+  store().addEntry(state, { kind: 'note', sentence: 'Existing evidence' });
+  await store().persist(state);
+  const history = structuredClone(state.history);
+  await reopenLegacy(mine.id);
+  expect(byId(mine.id, existing.id)).toEqual({ ...existing, conversation: 'project' });
+  expect(byId(mine.id, sibling.id)).toEqual(sibling);
+  expect(store().state(mine.id).history).toEqual(history);
+  const file = store().statePath(mine.id);
+  const first = await fs.readFile(file, 'utf8');
+  await close();
+  await open();
+  expect(await fs.readFile(file, 'utf8')).toBe(first);
+  expect((await provision(mine.id)).threadId).toBe(existing.id);
+  expect(byId(mine.id, existing.id).engine).toBe('azure-openai');
+});
+
+test.each(['before', 'after'] as const)('provisioning interrupted %s the durable write retries without duplicates', async (phase) => {
+  const mine = await project(`Interrupted ${phase}`);
+  const realPersist = store().persist.bind(store());
+  let interruptedId: string | undefined;
+  const persist = vi.spyOn(store(), 'persist').mockImplementationOnce(async (state) => {
+    interruptedId = state.conversations[0]?.id;
+    if (phase === 'after') await realPersist(state);
+    throw new Error('Interrupted provisioning');
+  });
+  await expect(store().provisionProjectConversation(mine.id)).rejects.toThrow('Interrupted provisioning');
+  persist.mockRestore();
+  const [first, second] = await Promise.all([provision(mine.id), provision(mine.id)]);
+  expect(second).toEqual(first);
+  if (phase === 'after') expect(first.threadId).toBe(interruptedId);
+  await close();
+  await open();
+  expect(await provision(mine.id)).toEqual(first);
+  expect(threadsOf(mine.id)).toHaveLength(1);
+  expect(byId(mine.id, first.threadId)).toMatchObject({ conversation: 'project' });
+});
+
+test('normal thread creation and editing cannot forge or clear the project marker', async () => {
+  const mine = await project('Host-owned identity');
+  const ordinary = await api<Conversation>(`/projects/${mine.id}/threads`, 'POST', {
+    name: 'Diomedes', mode: 'auto', conversation: 'project',
+  });
+  expect(ordinary).not.toHaveProperty('conversation');
+  expect(diomedesThread(threadsOf(mine.id))).toBeNull();
+  const binding = await provision(mine.id);
+  const changed = await api<Conversation>(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', {
+    name: 'Renamed', conversation: null,
+  });
+  expect(changed).toMatchObject({ name: 'Renamed', conversation: 'project' });
+  expect(await provision(mine.id)).toEqual(binding);
+});
+
+test('a marker already persisted wins over legacy candidates when the migration receipt is missing', async () => {
+  const mine = await project('Partially upgraded');
+  const binding = await provision(mine.id);
+  await api(`/projects/${mine.id}/threads/${binding.threadId}`, 'PUT', { mode: 'plan' });
+  const ordinary = seeded(mine.id, {
+    id: 'Colder', engine: 'aws-bedrock',
+    lineages: [{ mode: 'ask', generation: 1, runId: 'ordinary-run' }],
+  });
+  await seed(mine.id, [ordinary]);
+  await reopenLegacy(mine.id);
+  expect(diomedesThread(threadsOf(mine.id))?.id).toBe(binding.threadId);
+  expect(await provision(mine.id)).toEqual(binding);
+  expect(byId(mine.id, ordinary.id)).toEqual(ordinary);
+});
+
+test('recovery migrates the prepared legacy snapshot before publishing it', async () => {
+  const mine = await project('Prepared legacy write');
+  const prepared = structuredClone(store().state(mine.id));
+  delete prepared.projectConversationIdentity;
+  const conversation = seeded(mine.id, {
+    id: 'Cprepared', mode: 'plan', engine: 'openrouter', engineChoice: 'person',
+    turns: [{ id: 'Uprepared', role: 'you', mode: 'plan', text: 'Before the interruption', at: '2026-09-21T10:00:00.000Z', sources: [] }],
+    lineages: [{ mode: 'plan', generation: 1, runId: 'prepared-run' }],
+  });
+  prepared.conversations.push(conversation);
+  store().addEntry(prepared, { kind: 'note', sentence: 'Prepared evidence' });
+  await close();
+  const journal = path.join(root, 'data', 'pending', 'Jidentity.json');
+  await fs.writeFile(journal, JSON.stringify({ id: 'Jidentity', projectId: mine.id, writes: [], state: prepared }));
+  await open();
+  expect(byId(mine.id, conversation.id)).toEqual({ ...conversation, conversation: 'project' });
+  expect(store().state(mine.id).history).toEqual(prepared.history);
+  expect((await provision(mine.id)).threadId).toBe(conversation.id);
+  await expect(fs.stat(journal)).rejects.toMatchObject({ code: 'ENOENT' });
+  await close();
+  await open();
+  expect((await phoneThread(mine.id)).threadId).toBe(conversation.id);
+  expect(threadsOf(mine.id)).toHaveLength(1);
+});
+
+test.each(['before', 'after'] as const)('migration interrupted %s persistence is safe to repeat', async (phase) => {
+  const mine = await project(`Migration interruption ${phase}`);
+  const existing = seeded(mine.id, { id: 'Clegacy', engine: 'codex', engineChoice: 'person' });
+  await seed(mine.id, [existing]);
+  const file = store().statePath(mine.id);
+  await close();
+  const legacy = JSON.parse(await fs.readFile(file, 'utf8'));
+  delete legacy.projectConversationIdentity;
+  const bytes = JSON.stringify(legacy);
+  await fs.writeFile(file, bytes);
+  const migrating = new Store(path.join(root, 'data'), path.join(root, 'projects'));
+  const realPersist = migrating.persist.bind(migrating);
+  vi.spyOn(migrating, 'persist').mockImplementationOnce(async (state) => {
+    if (phase === 'after') await realPersist(state);
+    throw new Error('Interrupted identity migration');
+  });
+  await expect(migrating.init()).rejects.toThrow('Interrupted identity migration');
+  if (phase === 'before') expect(await fs.readFile(file, 'utf8')).toBe(bytes);
+  await open();
+  expect((await provision(mine.id)).threadId).toBe(existing.id);
+  expect(threadsOf(mine.id)).toEqual([{ ...existing, conversation: 'project' }]);
+  expect(store().state(mine.id).history).toEqual(legacy.history);
 });
