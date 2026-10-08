@@ -3,7 +3,6 @@ import {
   awsConnectBody,
   awsIsDefault,
   awsLimitBody,
-  awsPickerState,
   awsStateRows,
   holdSentence,
   qualificationSentence,
@@ -83,12 +82,11 @@ describe('AWS Bedrock setup view', () => {
     },
   );
 
-  test('a configured K3 route without a passing route check is blocked in the picker', () => {
+  test('a configured K3 route without a passing route check shows as blocked', () => {
     const blocked = view({
       connection: { ...view().connection!, model: 'us.moonshotai.kimi-k3' },
       next: AWS_KIMI_K3_REFUSAL,
     });
-    expect(awsPickerState(blocked)).toEqual({ offered: false, note: `AWS Bedrock is on but not ready: ${AWS_KIMI_K3_REFUSAL}` });
     expect(byKey(awsStateRows(blocked, NOW)).route).toMatchObject({ value: 'blocked', text: expect.stringContaining('Kimi K3') });
   });
 
@@ -187,17 +185,6 @@ describe('AWS Bedrock setup view', () => {
     ).toBe('Cost unknown · $0.04 held until you record it · Stopped after sending.');
     expect(holdSentence({ ...hold, state: 'released', settledMicroUsd: null, usage: null })).toBe('Not sent · nothing held');
     expect(holdSentence({ ...hold, state: 'written-off', settledMicroUsd: null, usage: null })).toBe('Accepted at $0.04');
-  });
-
-  test('a thread offers AWS only when the host reports nothing blocking a send', () => {
-    expect(awsPickerState(null)).toEqual({ offered: false, note: null });
-    expect(awsPickerState(view({ connection: null }))).toEqual({ offered: false, note: null });
-    expect(awsPickerState(view({ enabled: false, next: 'Turn AWS Bedrock on.' }))).toEqual({ offered: false, note: null });
-    expect(awsPickerState(view({ next: 'Approve a spend limit for AWS before sending.' }))).toEqual({
-      offered: false,
-      note: 'AWS Bedrock is on but not ready: Approve a spend limit for AWS before sending.',
-    });
-    expect(awsPickerState(view())).toEqual({ offered: true, note: null });
   });
 
   test('connecting alone never makes AWS the default route', () => {

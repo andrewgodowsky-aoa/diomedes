@@ -61,8 +61,8 @@ export function withoutAgent(requested: Requested): Requested {
  * Records the kind a send ran as on its thread, where that kind is the thread's own choice: a
  * thread with no Agent of its own reads its stored kind as that kind's default Agent, so it follows
  * its sends, as a mode always did. Auto stays Auto whatever it picks for a message, and a chosen
- * Agent or profile keeps its own kind. The stored kind of an Auto thread never moves, since an
- * Automatic kind is what marks a project's own Diomedes conversation.
+ * Agent or profile keeps its own kind. The stored kind of an Auto thread never moves. A project's
+ * own conversation is found by its marker (DIO-299), so no kind decides that.
  */
 export function recordRunKind(thread: Conversation, mode: Mode): void {
   if (thread.mode === 'auto' || thread.requested?.agent?.trim() || thread.requested?.profile) return;

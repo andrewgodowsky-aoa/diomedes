@@ -71,10 +71,11 @@ export function conversationKindOf(agentId: string): ConversationMode {
 }
 
 /**
- * Whether an Agent can go in the conversation's box now (DIO-292). A project's conversation that
- * hasn't spoken yet is found by its Automatic kind (`shared/diomedes-thread`), so another Agent's
- * kind would lose it: that pick waits for the first message. Auto keeps the kind, and the home
- * conversation is found by its binding, so either can go in at once.
+ * Whether an Agent can go in the conversation's box now (DIO-292). Another Agent's pick waits for
+ * the conversation's first message. That wait dates from when a project's conversation that hadn't
+ * spoken was found by its Automatic kind; its marker finds it now (DIO-299), so the wait is no
+ * longer needed and can be relaxed later. Auto keeps the kind, and the home conversation is found
+ * by its binding, so either can go in at once.
  */
 export function canSaveAgent(
   scopeId: string | null,

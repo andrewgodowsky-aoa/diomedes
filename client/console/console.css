@@ -1206,7 +1206,7 @@ html[data-surface='console'] body {
   }
 }
 
-/* ---- model picker: full name in every mode ---- */
+/* ---- the header's agent picker: full name in every mode ---- */
 .console .picker {
   position: relative;
   min-width: 0;
@@ -1247,9 +1247,6 @@ html[data-surface='console'] body {
   color: var(--t3);
   text-transform: none;
   letter-spacing: normal;
-}
-.console .picker > button .eff.capped {
-  color: var(--attn);
 }
 /* A popup escapes its ancestor's layout box but not its inherited typography:
    the chrome bar sets `white-space: nowrap`, which would forbid every line in
@@ -1352,33 +1349,6 @@ html[data-surface='console'] body {
   grid-column: 1 / -1;
   margin-top: -1px;
   overflow-wrap: anywhere;
-}
-.console .pmenu .ladder {
-  display: flex;
-  gap: 2px;
-  padding: 4px 8px 8px;
-  border-top: 1px solid var(--hair);
-  margin-top: 4px;
-}
-.console .pmenu .ladder button {
-  padding: 4px 8px;
-  border-radius: var(--rb);
-  font: 500 var(--dm-type-body) var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--t3);
-}
-.console .pmenu .ladder button:hover {
-  color: var(--t2);
-  background: var(--surface);
-}
-.console .pmenu .ladder button.on {
-  color: var(--t1);
-  background: var(--surface);
-}
-.console .pmenu .ladder button.capped {
-  text-decoration: line-through;
-  text-decoration-color: var(--attn);
 }
 .console .pmenu .note {
   padding: 4px 8px 6px;

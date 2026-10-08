@@ -952,8 +952,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     // The thread is read again only where its having spoken decides it.
     const listed = canSaveAgent(scope, null, unsaved.agent) ? null : await listedThread(found).catch(() => null);
     if (!canSaveAgent(scope, listed, unsaved.agent)) {
-      // With the Automatic kind the conversation was made with, which is how one that hasn't
-      // spoken is found (`shared/diomedes-thread`).
+      // With the Automatic kind the conversation was made with, until its first message
+      // (see `canSaveAgent`).
       const conversation = await saveAgent(found, AUTO_AGENT, undefined, 'auto').catch(() => null);
       if (conversation && turn.current === visit) setModelThread(conversation);
       return;

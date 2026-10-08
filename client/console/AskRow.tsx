@@ -652,7 +652,7 @@ export function AskRow({
     return () => window.removeEventListener('focus', again);
   }, [localRoute]);
 
-  /** Checks every engine that is on again, then the roster, as the thread picker did. */
+  /** Checks every engine that is on again, then the roster. */
   const recheck = () => {
     const ids = engines.filter(
       (id) => offeredEngine(id, { integrations, settings, connections }) || settings.services?.[id] === true,

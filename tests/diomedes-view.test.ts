@@ -278,20 +278,25 @@ describe('which thread a project talks to Diomedes on', () => {
     // An ordinary Console thread is not the Diomedes conversation, however old it is.
     expect(diomedesThread([thread({ id: 'C0', mode: 'ask' })])).toBeNull();
     expect(diomedesThread([thread({ id: 'C0', mode: 'build' })])).toBeNull();
+    expect(diomedesThread([thread({ id: 'C0', mode: 'auto' })])).toBeNull();
+    expect(diomedesThread([thread({ id: 'C0', lineages: lineage })])).toBeNull();
   });
 
-  it('adopts a thread made for it that never sent, so a crash before the first send leaves one', () => {
-    expect(diomedesThread([thread({ id: 'C2', mode: 'auto' })])?.id).toBe('C2');
+  it('reads the marker before a first message, regardless of Agent or mode', () => {
+    expect(diomedesThread([thread({ id: 'C2', mode: 'plan', conversation: 'project' })])?.id).toBe('C2');
   });
 
-  it('keeps the same thread after its Mode is narrowed, because it has spoken', () => {
-    expect(diomedesThread([thread({ id: 'C3', mode: 'ask', lineages: lineage })])?.id).toBe('C3');
+  it('keeps the marked thread after it speaks or starts work', () => {
+    const marked = thread({
+      id: 'C3', mode: 'ask', lineages: lineage, conversation: 'project', taskId: 't1',
+    });
+    expect(diomedesThread([marked])?.id).toBe('C3');
   });
 
-  it('is the oldest that qualifies, ties broken by id, whatever order they load in', () => {
-    const a = thread({ id: 'Cb', mode: 'auto', createdAt: '2026-09-02T00:00:00.000Z' });
-    const b = thread({ id: 'Ca', mode: 'auto', createdAt: '2026-09-02T00:00:00.000Z' });
-    const c = thread({ id: 'Cz', mode: 'auto', createdAt: '2026-09-01T00:00:00.000Z' });
+  it('resolves duplicate markers deterministically without relying on array order', () => {
+    const a = thread({ id: 'Cb', conversation: 'project', createdAt: '2026-09-02T00:00:00.000Z' });
+    const b = thread({ id: 'Ca', conversation: 'project', createdAt: '2026-09-02T00:00:00.000Z' });
+    const c = thread({ id: 'Cz', conversation: 'project', createdAt: '2026-09-01T00:00:00.000Z' });
     expect(diomedesThread([a, b])?.id).toBe('Ca');
     expect(diomedesThread([b, a, c])?.id).toBe('Cz');
     expect(diomedesThread([c, a, b])?.id).toBe('Cz');
@@ -301,8 +306,8 @@ describe('which thread a project talks to Diomedes on', () => {
     expect(
       diomedesThread([
         thread({ id: 'Ct', mode: 'auto', taskId: 't1' }),
-        thread({ id: 'Cd', mode: 'auto', attachedTo: { kind: 'document', ref: 'a.md' } }),
-        thread({ id: 'Cr', lineages: lineage, attachedTo: { kind: 'review', ref: 'x' } }),
+        thread({ id: 'Cd', conversation: 'project', attachedTo: { kind: 'document', ref: 'a.md' } }),
+        thread({ id: 'Cr', conversation: 'project', attachedTo: { kind: 'review', ref: 'x' } }),
       ]),
     ).toBeNull();
   });

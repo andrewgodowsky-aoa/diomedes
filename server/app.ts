@@ -3845,9 +3845,9 @@ export async function createApp(options: AppOptions) {
       const permission: ThreadPermission =
         b.permission === undefined ? 'show-first' : parseThreadPermission(b.permission);
       // A new thread starts on Auto (DIO-292), in its Agent box. Its stored kind stays Ask, as a new
-      // thread's always was: an Automatic kind is what marks a project's own Diomedes conversation
-      // (shared/diomedes-thread.ts), and no Console thread is that. An API caller that names a kind
-      // gets that kind's default Agent, as a thread with a mode always did.
+      // thread's always was. A project's own conversation is found by its marker (DIO-299), never by
+      // a kind. An API caller that names a kind gets that kind's default Agent, as a thread with a
+      // mode always did.
       let threadMode: Conversation['mode'] = 'ask';
       let requested: Conversation['requested'] = { model: null, effort: null, agent: AUTO_AGENT };
       if (b.mode !== undefined) {
@@ -3904,8 +3904,7 @@ export async function createApp(options: AppOptions) {
           : null;
       if (asked && asked.profile == null && typeof asked.agent === 'string' && asked.agent.trim() && asked.agent.length <= 80) {
         const wanted = asked.agent.trim();
-        // Auto keeps the stored kind: an Automatic kind marks a project's own Diomedes conversation,
-        // so choosing Auto never makes a Console thread that. Auto's kind is decided per message.
+        // Auto keeps the stored kind. Auto's kind is decided per message.
         if (wanted !== AUTO_AGENT && wanted !== GENERAL_AGENT) {
           const definition = await agents.find(wanted, state.project.folder);
           if (!definition || definition.internal)

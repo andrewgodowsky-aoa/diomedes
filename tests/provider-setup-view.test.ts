@@ -7,8 +7,6 @@ import {
   openRouterConnectBody,
   openRouterInputFrom,
   providerIsDefault,
-  providerModels,
-  providerPickerState,
   providerStateRows,
   ratesBody,
   readinessLines,
@@ -239,18 +237,6 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
       note: 'No request was sent.',
     });
     expect(lines.map((line) => line.id)).toEqual(['spend-limit', 'connection']);
-  });
-
-  test('a thread offers the route only when nothing blocks a send, one entry per model', () => {
-    expect(providerPickerState(null)).toEqual({ offered: false, note: null });
-    expect(providerPickerState(azure({ enabled: false }))).toEqual({ offered: false, note: null });
-    expect(providerPickerState(azure({ next: 'Approve a spend limit for Azure OpenAI before sending.' }))).toEqual({
-      offered: false,
-      note: 'Azure OpenAI is on but not ready: Approve a spend limit for Azure OpenAI before sending.',
-    });
-    expect(providerPickerState(openrouter())).toEqual({ offered: true, note: null });
-    expect(providerModels(azure())).toEqual([{ slug: 'gpt-5.6-luna', where: 'luna-prod' }]);
-    expect(providerModels(openrouter())).toEqual([{ slug: 'vendor/model-a', where: 'upstream-one' }]);
   });
 
   test('connecting alone never makes a route the default', () => {
