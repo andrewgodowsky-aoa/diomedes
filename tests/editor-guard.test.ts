@@ -163,4 +163,15 @@ describe('every way out of the editor goes through the gate', () => {
     // The update restart still quits the same graceful way.
     expect(main).toContain('createInstallAccepted(() => app.quit()');
   });
+
+  test('native sign-in closes after the local service, so a renewal it started keeps its new token', () => {
+    // WorkOS refresh tokens are single use. A renewal still running while the service closes gets a
+    // new one and spends the old one; closed storage would refuse the new one, and the next launch
+    // could not renew.
+    const main = read('desktop/main.mjs');
+    const first = main.slice(main.indexOf("app.on('will-quit'"), main.indexOf("app.on('second-instance'"));
+    expect(first).toContain('nativeCallbacks.dispose();');
+    expect(first).toMatch(/if \(shuttingDown \|\| !service\) nativeAuth\?\.dispose\(\);/);
+    expect(first).not.toMatch(/\{ nativeCallbacks\.dispose\(\); nativeAuth\?\.dispose\(\); \}/);
+  });
 });

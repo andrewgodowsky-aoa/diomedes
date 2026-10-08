@@ -46,7 +46,7 @@ function atStep(
   return s;
 }
 
-const steps: Settings['onboarding']['resumeAt'][] = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready'];
+const steps: Settings['onboarding']['resumeAt'][] = ['welcome', 'q1', 'q3', 'ai', 'ready'];
 
 describe('onboarding decoupling: familiarity is never authority', () => {
   it('comfortable familiarity never relaxes changingFiles on ANY next', () => {
@@ -178,21 +178,22 @@ describe('advanceSetup', () => {
     expect(afterQ3.detail).toBe('guided');
   });
 
-  it('detail changes only on q2', () => {
-    const q2 = atStep('q2', { detail: 'guided' }, { work: 'mix', detail: 'technical' });
-    const afterQ2 = advanceSetup(q2, false);
-    expect(afterQ2.detail).toBe('technical');
-    expect(afterQ2.onboarding.detail).toBe('technical');
-
-    const q3 = atStep('q3', { detail: 'guided' }, { work: 'mix', detail: 'technical' });
-    const afterQ3 = advanceSetup(q3, false);
-    expect(afterQ3.detail).toBe('guided');
+  // The detail question is retired (Andrew, 2026-10-08; QUESTIONS.md R17): q1 is followed by q3,
+  // and a stored level, which nothing reads, is carried along untouched.
+  it('goes from q1 straight to q3 and never changes the retired detail level', () => {
+    for (const skip of [false, true]) {
+      const q1 = atStep('q1', { detail: 'guided' }, { work: 'mix', detail: 'technical' });
+      const afterQ1 = advanceSetup(q1, skip);
+      expect(afterQ1.onboarding.resumeAt).toBe('q3');
+      expect(afterQ1.detail).toBe('guided');
+      expect(afterQ1.onboarding.detail).toBe('technical');
+    }
   });
 
   it('skip stays conservative: no relaxed approvals, no discovery, no usable service', () => {
-    const q2 = atStep('q2', undefined, { familiarity: null, work: null, detail: null });
-    q2.permissions.changingFiles = true;
-    const afterSkip = advanceSetup(q2, true);
+    const q3 = atStep('q3', undefined, { familiarity: null, work: null, detail: null });
+    q3.permissions.changingFiles = true;
+    const afterSkip = advanceSetup(q3, true);
     expect(afterSkip.permissions.changingFiles).toBe(true);
     expect(afterSkip.onboarding.discoveryConsentAt ?? null).toBeNull();
     expect(hasUsableService(afterSkip)).toBe(false);

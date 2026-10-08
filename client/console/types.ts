@@ -34,7 +34,7 @@ export type BoardProps = { project: Project; state: ProjectState; tasks: Task[];
   onStart(task: Task): Promise<void>; onPause(task: Task): Promise<void>; onReview(task: Task): void; onRoute(task: Task, to: Slot | null): Promise<void>; onReopen(task: Task): Promise<void>; onOpenTeam(task: Task): void; onOpenThread(task: Task): void;
   /** Marks a settled task done through the task route, as a drag or menu move to Done asks (shared/board-moves.ts). */
   onMarkDone(task: Task): Promise<void>;
-  /** Technical detail: only there does the task inspector offer the task's own profile choice (H09). */
+  /** The technical view (`technical-view.ts`): only there does the task inspector offer the task's own profile choice (H09). */
   technical?: boolean;
   onOpenOrigin?(task: Task): void;
   /** Rejects when the task was not made, so the board keeps the typed words. */

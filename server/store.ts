@@ -198,6 +198,9 @@ export function migrateSettings(settings: Settings): void {
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
+  // The detail question is retired (Andrew, 2026-10-08; QUESTIONS.md R17). Setup saved on it
+  // resumes at the next question, which kept its name, `q3`.
+  if ((settings.onboarding.resumeAt as string) === 'q2') settings.onboarding.resumeAt = 'q3';
   // The Workbook is gone (Andrew, 2026-09-23), and with it the keys only it
   // read: `surface` (which of the two surfaces opened), `lastPage` and
   // `tasksView`. The API refuses them as unknown, but a file written by 0.1.8 or

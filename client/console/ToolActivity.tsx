@@ -7,8 +7,8 @@ const POINT: Record<ToolLine['phase'], string> = {
 };
 
 /**
- * The tool calls of a reply or run as they happen: one plain sentence per call. With the
- * Technical detail level each call also names its tool, and a call that carries a detail
+ * The tool calls of a reply or run as they happen: one plain sentence per call. In the
+ * technical view (`technical-view.ts`) each call also names its tool, and a call that carries a detail
  * opens to it from its own summary, so it is one keypress away and never on screen unasked.
  *
  * The list is not a live region. One polite status repeats only the newest call still running,

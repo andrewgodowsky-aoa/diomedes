@@ -8,6 +8,7 @@ import {
   configContent,
   OpenCodeAdapter,
   OPENCODE_ACCOUNT_ROUTE,
+  OPENCODE_TEXT_STEPS,
 } from '../server/engines/opencode.js';
 import type { TextRequest } from '../server/engines/contract.js';
 import type { ReadScope } from '../server/engines/read-scope.js';
@@ -99,8 +100,17 @@ describe('OpenCode read scope configuration', () => {
     const config = JSON.parse(configContent());
     expect(config.tools).toEqual({ '*': false });
     expect(config.permission).toEqual({ '*': 'deny' });
-    expect(config.agent.diomedes.steps).toBe(1);
+    expect(config.agent.diomedes.steps).toBe(OPENCODE_TEXT_STEPS);
     expect(config.mcp).toEqual({});
+  });
+  it("never reaches OpenCode's step limit on the one step a text-only answer takes", () => {
+    // OpenCode 1.18.4 adds its "maximum steps reached, summarise your work" instruction on the
+    // step where `step >= agent.steps`, counting from 1. At a limit of 1 a plain "hi" was
+    // answered with that summary instead of a reply.
+    for (const scope of [undefined, { root: 'C:\\p', web: true, mcp: [pos] }, { root: 'C:\\p', web: false }]) {
+      const firstStep = 1;
+      expect(firstStep >= JSON.parse(configContent(scope)).agent.diomedes.steps).toBe(false);
+    }
   });
   it('turns on only web and approved MCP read tools, and denies file reads, edits and shell', () => {
     const config = JSON.parse(configContent({ root: 'C:\\p', web: true, mcp: [pos] }));

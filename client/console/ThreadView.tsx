@@ -51,7 +51,7 @@ import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
 import { ChangeDiffs } from './ChangeDiffs';
 import type { ReviewComment } from '../../shared/review-comments';
-import { useWorkingWord, workingLine } from './working-words';
+import { toolWorkingWord, useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
 import { Thinking } from './Thinking';
@@ -96,6 +96,12 @@ interface ThreadViewProps {
   needs: Need[];
   receiptNeeds?: Need[];
   projectId?: string;
+  /**
+   * The technical view (`technical-view.ts`): on while the Software Engineering pack is active
+   * for this project. Tool calls name their tool and open to their detail, and WorkStyle
+   * details show without asking.
+   */
+  technical?: boolean;
   history?: HistoryEntry[];
   allNeeds?: Need[];
   changes?: Change[];
@@ -279,8 +285,8 @@ export function ThreadView({
   onChoose,
   agentControl = null,
   pinChart = false,
+  technical = false,
 }: ThreadViewProps) {
-  const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   // The pinned chart, and whether a step is running now: a reply's tool call or a run's.
@@ -313,7 +319,7 @@ export function ThreadView({
   const runsAt = effortFor(kind, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
   // A thread on a WorkStyle names the style for everyone; the model and level it resolves to
-  // are details, shown at technical detail or on request. A pinned model is named as before.
+  // are details, shown in the technical view or on request. A pinned model is named as before.
   const style = thread.requested?.model ? null : threadStyle(thread, settings);
   const styleView = useWorkStyleView(projectId, thread, [route, kind, settings.services?.workStyle]);
   // The route the host says the next request runs on (the owner's tier map, else the thread's
@@ -323,7 +329,7 @@ export function ThreadView({
   // On a local model, the profile the host declares: the ring's window and whether images go.
   const localProfile = useLocalProfile(route, integrations, thread.requested?.model);
   const [styleDetails, setStyleDetails] = useState(false);
-  const showStyleDetails = settings.detail === 'technical' || styleDetails;
+  const showStyleDetails = technical || styleDetails;
   const context =
     live?.engine.context ??
     [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
@@ -362,15 +368,24 @@ export function ThreadView({
   // A turn's place in the thread, which names it when an old record has no id.
   const turnIndex = new Map(thread.turns.map((turn, index) => [turn, index]));
 
-  // While an answer is on its way and nothing has streamed yet, the agent
-  // says what it is up to. Display only; nothing here is recorded. A tool
-  // call in progress already says it, so the line waits behind it.
-  const streamWaiting = Boolean(
-    streaming && !streaming.text && !toolRunning(streaming.activity) && !streaming.thinking?.text,
-  );
-  // The engine's thinking on the answer on its way; a lost stream shows none.
+  // The engine's thinking on the answer on its way; a lost stream shows none. As it streams it
+  // shows only when the person asked for it (Settings, Appearance). Otherwise the working line
+  // stands in for it, and once the answer starts it folds to one line that opens on click.
+  const showThinking = settings.appearance.showThinking === true;
   const liveThinking =
-    streaming?.thinking && streaming.thinking.position !== 'lost' && streaming.thinking.text ? streaming.thinking : null;
+    streaming?.thinking &&
+    streaming.thinking.position !== 'lost' &&
+    streaming.thinking.text &&
+    (showThinking || streaming.thinking.endedAt !== null)
+      ? streaming.thinking
+      : null;
+  // While an answer is on its way and nothing has streamed yet, the agent says what it is up to.
+  // Display only; nothing here is recorded. A tool call in progress is said in the same voice,
+  // and its plain line stays in the list; thinking shown as it streams takes the line's place.
+  const toolWord = streaming && !streaming.text ? toolWorkingWord(streaming.activity) : null;
+  const streamWaiting = Boolean(
+    streaming && !streaming.text && !toolWord && !(liveThinking && liveThinking.endedAt === null),
+  );
   const streamWord = useWorkingWord(
     kind === 'plan' ? 'drafting the plan' : 'replying',
     streamWaiting,
@@ -805,6 +820,8 @@ export function ThreadView({
                 <div className="body">
                   {streaming.text ? (
                     <TurnBody text={streaming.text} preview session={live} />
+                  ) : toolWord ? (
+                    <p className="caption">{workingLine(toolWord)}</p>
                   ) : (
                     streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
                   )}
@@ -821,10 +838,7 @@ export function ThreadView({
           )}
           {unconfirmed && !streaming && !busy && (
             <div role="group" aria-label="A message that was not confirmed">
-              <p className="caption">
-                Nectovia could not confirm your last message. Sending it again checks what
-                happened and never asks twice.
-              </p>
+              <p className="caption">Nectovia couldn't confirm your last message.</p>
               <p className="caption" title={unconfirmed.text}>
                 {unconfirmed.text}
               </p>

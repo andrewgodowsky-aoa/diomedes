@@ -202,7 +202,10 @@ describe('ThreadView', () => {
     );
   test('offers an unconfirmed conversation message back, to send again or discard', () => {
     const html = render({ unconfirmed: { text: 'How many napkins?', onResend: noAction, onDiscard: noAction } });
-    expect(html).toContain('could not confirm your last message');
+    expect(html).toContain('Nectovia couldn&#x27;t confirm your last message.');
+    // Say it once (VOICE section 4): the buttons are the rest, with no reassurance tail after it.
+    expect(html).not.toContain('never asks twice');
+    expect(html).not.toContain('checks what happened');
     expect(html).toContain('How many napkins?');
     expect(html).toContain('Send again');
     expect(html).toContain('Discard');

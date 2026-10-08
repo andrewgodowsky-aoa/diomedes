@@ -18,6 +18,11 @@ import type {
 } from './capability-packs.js';
 import type { FollowUpCommand, StopReceipt } from './work-control.js';
 
+/**
+ * The retired detail levels (Andrew, 2026-10-08; QUESTIONS.md R17). A stored level is kept and still
+ * accepted, as `onboarding.familiarity` is, and nothing reads it: the technical view follows the
+ * Software Engineering pack (`client/console/technical-view.ts`).
+ */
 export type Detail = 'guided' | 'standard' | 'technical';
 /**
  * The Console's two views. Conversation shows the prompt box and the threads;
@@ -33,6 +38,7 @@ export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor' 
 export type Route = 'sample' | 'codex' | ExternalEngine | import('./model-api.js').ModelApiRoute;
 export interface Settings {
   version: 1;
+  /** Retired with the detail levels (`Detail`). Kept and accepted; nothing reads it. */
   detail: Detail;
   /** Missing on settings written before 2026-09-23; the server fills it with 'architect'. */
   view?: ConsoleView;
@@ -41,9 +47,14 @@ export interface Settings {
     discoveryConsentAt?: string | null;
     aiSkipped?: boolean;
     work: 'business' | 'school' | 'software' | 'personal' | 'mix' | null;
+    /** The answer to the retired detail question (`Detail`). Kept and accepted; nothing reads it. */
     detail: Detail | null;
     familiarity: 'new' | 'some' | 'comfortable' | null;
-    resumeAt: 'welcome' | 'q1' | 'q2' | 'q3' | 'ai' | 'ready' | 'done';
+    /**
+     * The setup step to resume at (`shared/onboarding.ts`). `q2`, the detail question, is retired:
+     * a profile saved on it resumes at `q3`, which keeps its name.
+     */
+    resumeAt: 'welcome' | 'q1' | 'q3' | 'ai' | 'ready' | 'done';
     completedAt: string | null;
   };
   permissions: {
@@ -81,6 +92,12 @@ export interface Settings {
     activeTheme?: { id: string; revision: number; scope?: string } | null;
     /** Turn decorative texture off for everyone on this install. */
     textureOff?: boolean;
+    /**
+     * Show an engine's thinking as it streams, before the reply starts. Off or absent: the working
+     * line stands in for it, and the finished thought stays one click away above the reply. Its own
+     * switch, never tied to the technical view (Andrew, 2026-10-08).
+     */
+    showThinking?: boolean;
   };
   seen: {
     onlineServiceNotice: boolean;

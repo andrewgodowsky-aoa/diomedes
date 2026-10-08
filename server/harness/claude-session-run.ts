@@ -18,6 +18,7 @@ import {
   type ClaudeSessionOptions,
 } from '../engines/claude-session.js';
 import { EngineError } from '../engines/process.js';
+import { ApiError } from '../paths.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
@@ -29,6 +30,29 @@ import { baselineRedact } from '../secrets.js';
 /** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
 export const carriedPrompt = (history: string, prompt: string) =>
   `Earlier in this conversation:\n\n${history}\n\n---\n\nThe person's message:\n\n${prompt}`;
+
+/**
+ * Admission runs before anything reaches a model, so whatever it throws is known not sent. The
+ * engine's, the harness's and the host's own refusals already say what happened. Anything else,
+ * such as a file the system held a moment too long, is said as not sent too: answered as a
+ * server failure, it made the person's window treat the message as possibly accepted, retry it,
+ * and then offer it back as one Nectovia could not confirm.
+ */
+export function admissionRefusal(error: unknown, engine: string): unknown {
+  if (
+    error instanceof EngineError ||
+    error instanceof HarnessError ||
+    error instanceof ApiError ||
+    error instanceof Suspended
+  )
+    return error;
+  return new EngineError(
+    'ADMISSION_FAILED',
+    `Nectovia couldn't check ${engine} before sending, so your message wasn't sent. Send it again.`,
+    false,
+    'runtime-verification',
+  );
+}
 
 export const CLAUDE_SESSION_CAPABILITY: CapabilityManifest = {
   id: 'claude-native-session',
@@ -218,6 +242,8 @@ export interface ClaudeSessionTurn<C extends SessionCheckpointFacts = ClaudeSess
     onToolActivity?: TextRequest['onToolActivity'];
     /** The adapter-facing thinking sink, fenced to the same attempt; absent where the route declares none. */
     onReasoningDelta?: TextRequest['onReasoningDelta'];
+    /** Shows what the thinking sink holds when the engine finishes a block of thinking. */
+    onReasoningEnd?: TextRequest['onReasoningEnd'];
     finish(): Promise<void>;
   };
 }
@@ -1049,23 +1075,31 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
         'This conversation has no confirmed native session to resume.',
       );
     await this.resolveWaits(runId, input.projectId);
-    const admission = await this.runs.step(
-      runId,
-      this.owner,
-      {
-        id: stepKey('admit', input.requestId),
-        version: '1',
-        kind: 'tool',
-        effect: 'read',
-        name: 'Native session admission',
-        input: { engine: this.profile.engine, model: input.model, accountRoute: input.accountRoute },
-        destination: 'local',
-        cost: 0,
-        maxAttempts: 3,
-      },
-      () => request.admit(input.signal),
-      principal,
-    );
+    // The run record keeps what admission actually threw; the caller is told it was not sent.
+    const admission = await this.runs
+      .step(
+        runId,
+        this.owner,
+        {
+          id: stepKey('admit', input.requestId),
+          version: '1',
+          kind: 'tool',
+          effect: 'read',
+          name: 'Native session admission',
+          input: { engine: this.profile.engine, model: input.model, accountRoute: input.accountRoute },
+          destination: 'local',
+          cost: 0,
+          maxAttempts: 3,
+        },
+        () => request.admit(input.signal),
+        principal,
+      )
+      .catch((error: unknown) => {
+        throw admissionRefusal(
+          error,
+          this.profile.engine === 'claude-code' ? 'Claude Code' : this.profile.label,
+        );
+      });
     if (request.mode === 'resume' && this.connections.has(runId)) {
       await this.dispose(runId, this.connections.get(runId)!);
     }
@@ -1082,6 +1116,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
           onToolActivity: undefined,
           onReasoning: undefined,
           onReasoningDelta: undefined,
+          onReasoningEnd: undefined,
         },
         {
           observedVersion: admission.version,
@@ -1198,6 +1233,7 @@ export class ClaudeSessionRuns<C extends SessionCheckpointFacts = ClaudeSessionC
                 onToolActivity: preview?.onToolActivity,
                 onReasoning: undefined,
                 onReasoningDelta: preview?.onReasoningDelta,
+                onReasoningEnd: preview?.onReasoningEnd,
               });
               if (
                 result.projectId !== input.projectId ||

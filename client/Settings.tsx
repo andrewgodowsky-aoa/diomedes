@@ -45,7 +45,6 @@ import {
   UsageBar,
   leftPercent,
   tightestWindow,
-  detailDescriptions,
   meterLine,
   titleCase,
 } from './components';
@@ -84,8 +83,14 @@ export function SettingsPage({
   onStartFirstTask,
   appliedTheme = null,
   themeApplies = false,
+  technical = false,
 }: {
   settings: SettingsModel;
+  /**
+   * The technical view (`console/technical-view.ts`), on while the Software Engineering pack is
+   * active for any project. The section for the AI tools on this computer is named Engines in it.
+   */
+  technical?: boolean;
   save: (value: SettingsModel) => Promise<void>;
   /**
    * Write one appearance field and name only that field.
@@ -154,7 +159,7 @@ export function SettingsPage({
    * started in, and no setting here could change it.
    */
   const [designAuthoring, setDesignAuthoring] = useState(false);
-  const [section, setSection] = useState('Interface detail');
+  const [section, setSection] = useState('Account');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
   // Discovery starts only when this page asks for it, once per visit to the helpers section.
@@ -238,7 +243,7 @@ export function SettingsPage({
       ...settings,
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
-  const helpersSection = settings.detail === 'technical' ? 'Engines' : 'Helpers on this computer';
+  const helpersSection = technical ? 'Engines' : 'Helpers on this computer';
   useEffect(() => {
     setSection((current) =>
       current === 'Engines' || current === 'Helpers on this computer' ? helpersSection : current,
@@ -285,7 +290,6 @@ export function SettingsPage({
   const sections = [
     'Account',
     ...(usageScreen || memberUsage || personalScreen ? ['Usage'] : []),
-    'Interface detail',
     helpersSection,
     ...(codingToolsHere ? [CODING_TOOLS_SECTION] : []),
     'Permissions',
@@ -338,34 +342,6 @@ export function SettingsPage({
             {section === 'Agent profiles' && <AgentProfiles />}
             {section === CODING_TOOLS_SECTION && codingTools && codingToolsHere && (
               <CodingTools view={codingTools} onSaved={setCodingTools} />
-            )}
-            {section === 'Interface detail' && (
-              <>
-                <p className="prose">
-                  Choose how much detail Nectovia shows you about each change.
-                </p>
-                {/* Detail stands on its own. It was gated on the Workbook, and
-                    choosing a level also wrote `surface: 'workbook'`, so picking
-                    one from the Console moved you out of it. Both are gone: this
-                    control writes the detail level and nothing else. */}
-                <h2>Detail</h2>
-                <div className="radio-list">
-                  {(['guided', 'standard', 'technical'] as const).map((d) => (
-                    <label key={d} className={`radio-row ${settings.detail === d ? 'selected' : ''}`}>
-                      <input
-                        type="radio"
-                        name="settings-detail"
-                        checked={settings.detail === d}
-                        onChange={() => void save({ ...settings, detail: d })}
-                      />
-                      <span>
-                        <strong>{titleCase(d)}</strong>
-                        <span className="caption">{detailDescriptions[d]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </>
             )}
             {(section === 'Helpers on this computer' || section === 'Engines') && (
               <>
@@ -757,6 +733,14 @@ export function SettingsPage({
                     onChange={(e) =>
                       void patchAppearance({ motion: e.target.checked ? 'reduced' : 'normal' })
                     }
+                  />
+                </label>
+                <label className="setting-row">
+                  <span>Show thinking while it works</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.appearance.showThinking === true}
+                    onChange={(e) => void patchAppearance({ showThinking: e.target.checked })}
                   />
                 </label>
                 {(() => {

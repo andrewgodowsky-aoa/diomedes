@@ -22,6 +22,7 @@ import './console.css';
 import './nectovia.css';
 import './everything.css';
 import './home.css';
+import { technicalView } from './technical-view';
 
 const PLACEHOLDERS = {
   business: 'Ask about a supplier, plan a schedule, or say what to do',
@@ -49,7 +50,6 @@ export type HomeDestination =
   | 'appearance'
   | 'design-center'
   | 'permissions'
-  | 'detail'
   | 'updates'
   | 'about';
 
@@ -208,7 +208,6 @@ export function Home({
       label: 'Permissions',
       hint: `What ${AGENT_NAME} may do on its own, and what always asks first.`,
     },
-    { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
     { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },
     { id: 'about', label: 'About', hint: 'Version, licences and where your data lives.' },
   ];
@@ -216,7 +215,7 @@ export function Home({
     { heading: 'Projects', ids: ['new-project', 'open-folder', 'find'] },
     {
       heading: 'Nectovia',
-      ids: ['diomedes', 'engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
+      ids: ['diomedes', 'engines', 'appearance', 'design-center', 'permissions', 'updates', 'about'],
     },
   ];
 
@@ -372,7 +371,7 @@ export function Home({
                                     {line.text}
                                   </span>
                                 )}
-                                {settings.detail === 'technical' && (
+                                {technicalView(p) && (
                                   <span className="mono lc home-path" title={p.folder}>
                                     {p.folder}
                                   </span>

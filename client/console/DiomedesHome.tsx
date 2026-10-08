@@ -86,6 +86,7 @@ import { Suggestions } from './Suggestions';
 import { AskRow, type AskChange } from './AskRow';
 import { CONVERSATION_ENGINES } from './ask-row';
 import type { EverythingItem } from './Everything';
+import { technicalView } from './technical-view';
 import {
   canSaveAgent,
   conversationAgentOf,
@@ -118,8 +119,6 @@ export interface DiomedesHomeProps {
   onOpenWork(projectId: string): void;
   /** Open one thing waiting on the person where it is decided (the brief's named items). */
   onOpenWaiting?(projectId: string, item: WaitingItem): void;
-  /** The person's detail level. Technical also shows each tool call's tool and detail. */
-  detail?: 'guided' | 'standard' | 'technical';
   /**
    * The appearance scheme the page is painted in. The Nectovia scheme opens the
    * conversation with its progress report and draws the bust beside it; every
@@ -1175,7 +1174,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         turns={turns}
         pending={pending}
         live={live ? { text: live.text, activity: live.activity?.lines ?? [], thinking: live.thinking } : null}
-        technical={props.detail === 'technical'}
+        technical={technicalView(projects.find((project) => project.id === scopeId))}
+        showThinking={props.settings?.appearance.showThinking === true}
         agent={agent}
         onAgent={pickAgent}
         onSend={send}

@@ -521,11 +521,13 @@ describe('request and filesystem boundaries', () => {
       expect((await request('/settings', 'PUT', { appearance: { package: name } })).status).toBe(
         200,
       );
+    // The detail levels are retired (QUESTIONS.md R17): a stored level is still accepted and kept,
+    // and `q2`, the detail question, resumes at the next question.
     await request('/settings', 'PUT', { detail: 'technical', onboarding: { resumeAt: 'q2' } });
     const restarted = new Store(path.join(temp, 'data'));
     await restarted.init();
     expect(restarted.settings.detail).toBe('technical');
-    expect(restarted.settings.onboarding.resumeAt).toBe('q2');
+    expect(restarted.settings.onboarding.resumeAt).toBe('q3');
     expect((await request('/settings', 'PUT', { detail: 'invented' })).status).toBe(400);
   });
 });
