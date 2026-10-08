@@ -702,6 +702,24 @@ branch `feature/individual-tier`).
 These describe the local routing composition; its verification and publication are recorded
 separately in `docs/implementation/2026-09-28-operations-routing.md`.
 
+### O46. Retire the detail levels
+
+Raised by Andrew on 2026-10-08, while choosing how thinking shows while Nectovia works. He wants
+the Guided, Standard and Technical levels gone because they are unnecessary: business owners get
+something close to today's Guided view, and the Software Engineering Capability Pack brings the full
+technical view (tool names and details, raw output) when it is active. Decision 14 already lets a
+pack compose UI affordances, so the technical view would arrive with that pack, not with a level.
+
+Not built yet. `settings.detail` still drives what the Console shows, so these stay open:
+
+1. What each place that reads `detail === 'technical'` shows instead: the pack's view, or nothing.
+2. What happens to a saved `detail` on settings written before the change, and to the onboarding
+   question that asks for one.
+3. The canonical documents' definitions that name Guided density.
+
+Thinking while it works is already its own switch, `appearance.showThinking` (Settings, Appearance),
+so retiring the levels does not move it.
+
 ## Resolved
 
 ### R16. Kept-session engines hold Console conversations (raised as O19 and O39 item 1)

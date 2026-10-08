@@ -57,8 +57,10 @@ These are Andrew's rules for the app's own copy, on top of section 3.
 - **Defined terms stay defined.** Agent, Mode, Team, Project, Files, Trust and the other terms in
   `docs/DIOMEDES_PROJECT_MEMORY.md` keep their meaning and spelling. Do not swap in synonyms.
 - **The working words stay playful.** While a person waits, the line under the reply rotates
-  sayings such as "Nectovia is rummaging through the archives…" (`client/console/working-words.ts`).
-  Andrew keeps them (2026-10-08). A voice pass leaves them as they are.
+  sayings such as "Nectovia is rummaging through the archives…", and a running tool gets one in
+  the same voice ("putting ink to the quill" while it writes) above its plain line
+  (`client/console/working-words.ts`). Andrew keeps them and wants variety (2026-10-08). A voice
+  pass leaves them as they are.
 
 The app checks model output against the same habits: `shared/plain-writing-rules.json` holds the
 filler openers, closing offers, contrast patterns, hedges and stock phrases it flags. Copy you write
