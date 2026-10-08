@@ -141,6 +141,19 @@ async function seedCatalogue(
 const object = (value: unknown): Json =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {};
 
+/**
+ * Removes the folder a server ran in once its process is closed. Windows can hold a file of a
+ * process that has just ended for a moment (EBUSY, EPERM, ENOTEMPTY), so the removal retries,
+ * and a folder that still will not go stays in the engine's own folder. It never replaces the
+ * answer or the failure the request already has: every message is checked with its own server
+ * first, and a raw error here reached the person as a message that could not be confirmed.
+ */
+async function removeServerFolder(root: string): Promise<void> {
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }).catch(() => {
+    /* A leftover folder is not the request's outcome. */
+  });
+}
+
 async function cappedText(response: Response, limit: number, stage: SetupStage): Promise<string> {
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -712,7 +725,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       port = await this.reserve();
       command = launchCommand(this.file, opencodeArguments(port));
     } catch (error) {
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
+      await removeServerFolder(root);
       throw atStage(error, 'launch');
     }
     const password = randomBytes(32).toString('hex');
@@ -730,7 +743,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch {
-      await fs.rm(root, { recursive: true, force: true });
+      await removeServerFolder(root);
       throw new EngineError(
         'LAUNCH_FAILED',
         'OpenCode could not start. Recheck its installation and dependencies.',
@@ -792,7 +805,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       ready.dispose();
       const failure = atStage(error, 'launch');
       await this.closeChild(child, failure);
-      await fs.rm(root, { recursive: true, force: true });
+      await removeServerFolder(root);
       throw failure;
     }
   }
@@ -1173,7 +1186,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
         try {
           await this.closeChild(server.child, primary);
         } finally {
-          await fs.rm(server.root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
+          await removeServerFolder(server.root);
         }
       },
       request: (server, route, init, signal, stage) =>
@@ -1248,7 +1261,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
     } finally {
       control.dispose();
       await this.closeChild(server.child);
-      await fs.rm(server.root, { recursive: true, force: true });
+      await removeServerFolder(server.root);
     }
   }
 
@@ -1359,7 +1372,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       });
       control.dispose();
       await this.closeChild(server.child, primary);
-      await fs.rm(server.root, { recursive: true, force: true });
+      await removeServerFolder(server.root);
     }
   }
 }
