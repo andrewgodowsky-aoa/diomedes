@@ -320,11 +320,10 @@ test('Completion journey: fresh install to a reviewed, verified change that surv
     await page.getByRole('radio', { name: 'Business', exact: true }).click();
     await expect(page.getByRole('radio', { name: 'Business', exact: true })).toBeChecked();
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    // Setup asks two questions: the detail question is retired (QUESTIONS.md R17).
     await expect(
-      page.getByRole('heading', { name: 'How much detail do you want?', exact: true }),
+      page.getByRole('heading', { name: 'How should file changes work?', exact: true }),
     ).toBeVisible();
-    await page.getByRole('radio', { name: /^Guided/ }).click();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(
       page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
     ).toBeChecked();

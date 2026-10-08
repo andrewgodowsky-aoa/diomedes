@@ -139,6 +139,7 @@ import type { LoadedContribution } from '../../shared/pack-contributions';
 import { shortcutHint } from '../keyboard';
 import { ViewSwitch } from './ViewSwitch';
 import { ROUTINES, ROUTINES_PAID, shownView } from './work-view';
+import { technicalView } from './technical-view';
 
 interface ShellProps {
   projectId: string;
@@ -289,7 +290,7 @@ export function Shell({
   const [teamRoutes, setTeamRoutes] = useState<TeamRoutesView | null>(null);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  // Escape or a click outside closes the Interface detail menu, as TopStrip's
+  // Escape or a click outside closes the More options menu, as TopStrip's
   // copy of it does, and Escape puts focus back on the button that opened it.
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -2073,7 +2074,7 @@ export function Shell({
           <div className="surface-menu" ref={menuRef}>
             <button
               type="button"
-              aria-label="Interface detail menu"
+              aria-label="More options"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(!menuOpen)}
             >
@@ -2081,11 +2082,9 @@ export function Shell({
             </button>
             {menuOpen && (
               <div className="pmenu open" role="menu">
-                {/* The button opening this menu is labelled "Interface detail
-                    menu" and held no detail control at all, because Detail was
-                    gated on the Workbook. It is kept now, so the label is true. */}
-                {/* The view is the top switch now (Nectovia | Work, round 2 board BD1), so the
-                    menu keeps the detail levels and the text size. */}
+                {/* The view is the top switch (Nectovia | Work, round 2 board BD1), and the detail
+                    levels are retired (QUESTIONS.md R17), so the menu keeps the text size and,
+                    in a conversation, Cloud sharing. */}
                 {conversation && (
                   <button
                     type="button"
@@ -2098,22 +2097,6 @@ export function Shell({
                     Cloud sharing
                   </button>
                 )}
-                <p className="caption">Detail</p>
-                {(['guided', 'standard', 'technical'] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={settings.detail === d}
-                    className={settings.detail === d ? 'on' : ''}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void saveSettings({ ...settings, detail: d });
-                    }}
-                  >
-                    {titleCase(d)}
-                  </button>
-                ))}
                 <TextSizeMenuItems
                   settings={settings}
                   choose={(scale) => {
@@ -2231,6 +2214,7 @@ export function Shell({
               allNeeds={state.needs}
               changes={state.changes}
               instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
+              technical={technicalView(state.project)}
               onOpenInFiles={openDocument}
               tasks={state.tasks.filter((item) => !item.deletedAt)}
               followUps={state.followUps ?? []}
@@ -2445,7 +2429,7 @@ export function Shell({
               policy={policy}
               focusTaskId={selectedTask?.id}
               busy={busy}
-              technical={settings.detail === 'technical'}
+              technical={technicalView(state.project)}
               onStart={async (task) => {
                 await startTask(task, routeForTask(task));
               }}
@@ -2718,7 +2702,7 @@ export function Shell({
           )}
           <HarnessProposal need={previewNeed} />
           {previewNeed.preview?.map((change) => (
-            <ChangeCard key={change.id} change={change} detail={settings.detail}>
+            <ChangeCard key={change.id} change={change} technical={technicalView(state.project)}>
               <span className="caption">Proposed</span>
             </ChangeCard>
           ))}

@@ -156,12 +156,10 @@ await step('02-first-run-questions', async () => {
   };
   await pick('Kind of work');
   await button('Continue').click();
-  await pick('Detail preference');
-  await button('Continue').click();
   await button('Continue').click();
   const heading = page.getByRole('heading', { name: 'Connect an AI service' });
   await heading.waitFor();
-  return { status: 'traversed', note: 'Welcome, then Business, Guided detail and the default file-change answer; the AI setup screen followed.' };
+  return { status: 'traversed', note: 'Welcome, then Business and the default file-change answer; the AI setup screen followed.' };
 });
 
 let connections = [];

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Project, Settings } from '../../shared/types';
-import { titleCase } from '../components';
 import { NectoviaMark } from './NectoviaMark';
 import { Mark as StateMark } from '../components';
 import { TextSizeMenuItems } from './TextSizeMenu';
@@ -141,7 +140,7 @@ export function TopStrip({
           <div className="surface-menu" ref={menuRef}>
             <button
               type="button"
-              aria-label="Interface detail menu"
+              aria-label="More options"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(!menuOpen)}
             >
@@ -149,22 +148,6 @@ export function TopStrip({
             </button>
             {menuOpen && (
               <div className="pmenu open" role="menu">
-                <p className="caption">Detail</p>
-                {(['guided', 'standard', 'technical'] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={settings.detail === d}
-                    className={settings.detail === d ? 'on' : ''}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void saveSettings({ ...settings, detail: d });
-                    }}
-                  >
-                    {titleCase(d)}
-                  </button>
-                ))}
                 <TextSizeMenuItems
                   settings={settings}
                   choose={(scale) => {

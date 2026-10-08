@@ -54,7 +54,7 @@ export interface DiomedesPageProps {
    * recorded answer replaces it. Null while nothing has started.
    */
   live?: { text: string; activity: readonly ToolLine[]; thinking?: LiveThinking | null } | null;
-  /** The Technical detail level: tool calls also name their tool and open to their detail. */
+  /** The technical view (`technical-view.ts`): tool calls also name their tool and open to their detail. */
   technical?: boolean;
   /** Settings, Appearance: show the engine's thinking as it streams, before the reply starts. */
   showThinking?: boolean;

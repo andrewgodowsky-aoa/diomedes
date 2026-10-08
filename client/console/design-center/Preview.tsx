@@ -430,7 +430,7 @@ export function Preview({
       </Piece>
 
       <Piece piece={PIECE['review-card']} selectedId={selectedId}>
-        <ChangeCard change={fixtureChange} detail="technical">
+        <ChangeCard change={fixtureChange} technical>
           <Button tone="primary" onClick={act('Keep the change')}>
             Keep
           </Button>

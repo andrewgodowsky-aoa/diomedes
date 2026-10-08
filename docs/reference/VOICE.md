@@ -16,8 +16,9 @@ A business owner who has used ChatGPT, at most. A steakhouse owner at 60. A remo
 wants to know how to fix his inventory count. They are busy, they are not impressed by AI talk, and
 they will stop reading the moment a sentence makes them work.
 
-A technical reader (an owner's IT person) gets depth from Technical detail and the docs, never
-from wordier copy on the main screen.
+A technical reader (an owner's IT person) gets depth from the docs and the details a screen opens
+on request. The Software Engineering pack adds the technical view. Depth never comes from wordier
+copy on the main screen.
 
 ## 2. What we are saying
 
@@ -73,7 +74,7 @@ by hand should pass that list too.
 | The verb chain | "It works out what's needed, makes the plan, does the work, checks it and reports back." | Pick the one verb that matters here. |
 | The noun inventory | "Models, workers, tools, files, connections and automations." | Name one thing the owner recognizes. |
 | Abstract stand-ins | "what needs your judgment", "the calls that matter" | Name it: the refund, the schedule, the vendor payment. |
-| Mechanism before payoff | Explaining scopes and modes before the owner cares | Payoff first. Mechanism goes to the docs or Technical detail. |
+| Mechanism before payoff | Explaining scopes and modes before the owner cares | Payoff first. Mechanism goes to the docs or the technical view. |
 | Policy voice | "Access is separate, each with its own scope, time limit and log." | Say it the way you would across a counter. |
 | "It" chains | Every sentence starts with "It" | Start with the owner, the moment or the thing. |
 | Contrast framing | "It's not X. It's Y.", "rather than", "instead of" | Two positive sentences. |
@@ -85,7 +86,7 @@ by hand should pass that list too.
 ## 6. Plain words
 
 Some words mean nothing to an owner, or mean something else. On owner-facing text, use the right
-column. Technical detail and the docs may keep the left column where precision needs it, and the
+column. The technical view and the docs may keep the left column where precision needs it, and the
 defined terms in section 4 stay.
 
 | Avoid | Say |

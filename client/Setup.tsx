@@ -1,8 +1,9 @@
 import type { AccountWorkspaceView } from '../shared/accounts';
 import type { Settings } from '../shared/types';
-import { Brand, Button, detailDescriptions, titleCase } from './components';
+import { Brand, Button, titleCase } from './components';
 import {
   AGENT_READY_SENTENCE,
+  SETUP_ORDER,
   activeBusinessIncludesAgent,
   advanceSetup,
   hasUsableService,
@@ -58,7 +59,7 @@ export function Setup({
 }) {
   const account = useAccount();
   const step = settings.onboarding.resumeAt;
-  const order = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'] as const;
+  const order = SETUP_ORDER;
   const index = (order as readonly string[]).indexOf(step);
   const update = (patch: Partial<Settings['onboarding']>) =>
     save({ ...settings, onboarding: { ...settings.onboarding, ...patch } });
@@ -99,9 +100,7 @@ export function Setup({
             <p className="prose intro">
               You&apos;ll start in the{' '}
               {VIEW_LABELS[shownView(settings.view, account?.state.plan.agent === 'free' && account.state.plan.payAsYouGo !== true)]}{' '}
-              view, with{' '}
-              {titleCase(settings.detail)} detail: {detailDescriptions[settings.detail].toLowerCase()}{' '}
-              File proposals require review before Nectovia applies them. Your other approval
+              view. File proposals require review before Nectovia applies them. Your other approval
               preferences are in Settings. The switch at the top moves between Nectovia and Work.
             </p>
             <ReadyNote settings={settings} workspaces={account?.state.workspaces ?? null} />
@@ -116,14 +115,8 @@ export function Setup({
           </>
         ) : (
           <>
-            <p className="caption">Question {index} of 3</p>
-            <h1>
-              {step === 'q1'
-                ? 'What are you here to work on?'
-                : step === 'q2'
-                  ? 'How much detail do you want?'
-                  : 'How should file changes work?'}
-            </h1>
+            <p className="caption">Question {index} of 2</p>
+            <h1>{step === 'q1' ? 'What are you here to work on?' : 'How should file changes work?'}</h1>
             {step === 'q1' && (
               <div className="radio-list" role="radiogroup" aria-label="Kind of work">
                 {(
@@ -149,32 +142,6 @@ export function Setup({
                   </label>
                 ))}
               </div>
-            )}
-            {step === 'q2' && (
-              <>
-                <div className="radio-list" role="radiogroup" aria-label="Detail preference">
-                  {(['guided', 'standard', 'technical'] as const).map((value) => (
-                    <label
-                      className={`radio-row ${settings.onboarding.detail === value ? 'selected' : ''}`}
-                      key={value}
-                    >
-                      <input
-                        type="radio"
-                        name="detail"
-                        checked={settings.onboarding.detail === value}
-                        onChange={() => void update({ detail: value })}
-                      />
-                      <span>
-                        <strong>{titleCase(value)}</strong>
-                        <span className="caption">{detailDescriptions[value]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <p className="caption">
-                  You can change this any time in Settings &gt; Interface detail.
-                </p>
-              </>
             )}
             {step === 'q3' && (
               <>

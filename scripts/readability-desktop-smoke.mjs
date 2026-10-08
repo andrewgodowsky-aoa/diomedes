@@ -166,7 +166,7 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
   await record(page, 'maximized-engines');
   for (const name of ['Appearance', 'Permissions']) {

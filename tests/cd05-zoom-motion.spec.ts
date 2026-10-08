@@ -298,7 +298,7 @@ for (const [label, width, height] of [
       await openEngines(page);
       await holdsAt200(page, 'Settings > Engines');
       const names = await tabWalk(page, 'Settings > Engines', 40);
-      // Plain detail names the section "Helpers on this computer"; technical names it "Engines".
+      // The plain view names the section "Helpers on this computer"; the technical view names it "Engines".
       requireReached(names, 'Settings > Engines', [/^(?:Engines|Helpers on this computer)$/, 'Appearance']);
     });
 
@@ -509,7 +509,7 @@ test.describe('accessibility sweep', () => {
       { opener: page.getByRole('button', { name: 'Ctrl K', exact: true }), open: page.getByRole('dialog', { name: 'Find and act' }) },
       { opener: page.locator('.ask-engine .ask-pick'), open: page.getByRole('menu', { name: 'Engines' }) },
       { opener: page.getByRole('button', { name: 'Worker for this thread' }), open: page.getByRole('menu') },
-      { opener: page.getByRole('button', { name: 'Interface detail menu' }), open: page.getByRole('menu') },
+      { opener: page.getByRole('button', { name: 'More options' }), open: page.getByRole('menu') },
     ];
     for (const { opener, open } of openers) {
       await opener.focus();

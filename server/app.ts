@@ -636,12 +636,15 @@ function validateSettings(current: Settings, body: unknown): Settings {
         value.familiarity === null
           ? null
           : choice(value.familiarity, ['new', 'some', 'comfortable'], 'familiarity');
-    if (value.resumeAt !== undefined)
-      result.onboarding.resumeAt = choice(
+    if (value.resumeAt !== undefined) {
+      const step = choice(
         value.resumeAt,
         ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'],
         'setup step',
       );
+      // `q2`, the detail question, is retired (QUESTIONS.md R17): it resumes at the next question.
+      result.onboarding.resumeAt = step === 'q2' ? 'q3' : step;
+    }
     if (value.completedAt !== undefined) {
       if (
         value.completedAt !== null &&

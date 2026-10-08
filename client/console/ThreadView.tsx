@@ -95,6 +95,12 @@ interface ThreadViewProps {
   needs: Need[];
   receiptNeeds?: Need[];
   projectId?: string;
+  /**
+   * The technical view (`technical-view.ts`): on while the Software Engineering pack is active
+   * for this project. Tool calls name their tool and open to their detail, and WorkStyle
+   * details show without asking.
+   */
+  technical?: boolean;
   history?: HistoryEntry[];
   allNeeds?: Need[];
   changes?: Change[];
@@ -278,8 +284,8 @@ export function ThreadView({
   onChoose,
   agentControl = null,
   pinChart = false,
+  technical = false,
 }: ThreadViewProps) {
-  const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   // The pinned chart, and whether a step is running now: a reply's tool call or a run's.
@@ -310,7 +316,7 @@ export function ThreadView({
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
   // A thread on a WorkStyle names the style for everyone; the model and level it resolves to
-  // are details, shown at technical detail or on request. A pinned model is named as before.
+  // are details, shown in the technical view or on request. A pinned model is named as before.
   const style = thread.requested?.model ? null : threadStyle(thread, settings);
   const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
   // The route the host says the next request runs on (the owner's tier map, else the thread's
@@ -320,7 +326,7 @@ export function ThreadView({
   // On a local model, the profile the host declares: the ring's window and whether images go.
   const localProfile = useLocalProfile(route, integrations, thread.requested?.model);
   const [styleDetails, setStyleDetails] = useState(false);
-  const showStyleDetails = settings.detail === 'technical' || styleDetails;
+  const showStyleDetails = technical || styleDetails;
   const context =
     live?.engine.context ??
     [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;

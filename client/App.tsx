@@ -50,6 +50,7 @@ import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 import { shortcutHint } from './keyboard';
 import { ROUTINES, ROUTINES_FREE_VERSION, shownView } from './console/work-view';
+import { technicalAnywhere } from './console/technical-view';
 
 const PLACE_KEY = 'diomedes.window.place';
 /** The project this window was showing before a reload, or null. */
@@ -386,11 +387,6 @@ export function App() {
     // The Console is the one surface. The attribute stays because stylesheets
     // and the packaged smoke drivers key on it.
     root.dataset.surface = 'console';
-    // Detail is the person's own setting and nothing else decides it. It used to
-    // be pinned to 'technical' whenever the Console was showing, which made the
-    // setting unreachable for anybody working there; with one surface left that
-    // would have retired Detail altogether.
-    root.dataset.detail = settings.detail;
     // The view the Console shows: the free version keeps Work (round 2 board BD1) until credits it bought open Nectovia.
     root.dataset.view = shownView(settings.view, nectoviaLocked);
     // One owner for the appearance. With no custom theme this is the code that
@@ -617,9 +613,7 @@ export function App() {
       ? `${needs === 1 ? 'One item needs' : `${needs} items need`} your attention.`
       : running
         ? `Nectovia is working on ${running} ${running === 1 ? 'task' : 'tasks'}.`
-        : settings?.detail === 'guided'
-          ? ''
-          : 'Ready when you are.';
+        : '';
 
   // Shell draws its own strip inside a project, and TopStrip draws the same one
   // over the Projects page and Settings.
@@ -642,7 +636,6 @@ export function App() {
       appearance: 'Appearance',
       'design-center': 'Design Center',
       permissions: 'Permissions',
-      detail: 'Interface detail',
       updates: 'App updates',
       about: 'About',
     };
@@ -681,7 +674,6 @@ export function App() {
       label: 'Permissions',
       hint: 'What Nectovia may do on its own, and what always asks first.',
     },
-    { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
     { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },
     { id: 'about', label: 'About', hint: 'Version, licences and where your data lives.' },
   ];
@@ -695,7 +687,6 @@ export function App() {
         'appearance',
         'design-center',
         'permissions',
-        'detail',
         'updates',
         'about',
       ],
@@ -855,6 +846,7 @@ export function App() {
                 >
                 <SettingsPage
                   settings={settings}
+                  technical={technicalAnywhere(projects)}
                   save={saveSettings}
                   patchAppearance={patchAppearance}
                   integrations={integrations}
@@ -920,7 +912,6 @@ export function App() {
               ) : landing === 'diomedes' ? (
                 <DiomedesHome
                   projects={byRecency}
-                  detail={settings?.detail}
                   results={[]}
                   onOpenResult={() => undefined}
                   destinations={diomedesDestinations}

@@ -58,8 +58,6 @@ try {
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('radio', { name: 'Business', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('radio', { name: /^Technical/ }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(
     page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
   ).toBeChecked();
@@ -100,7 +98,6 @@ try {
   await screenshot('desktop-skip-ready.png');
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   const settings = await api('/settings');
-  expect(settings.detail).toBe('technical');
   expect(settings.permissions.changingFiles).toBe(true);
   const project = await api('/projects/sample', 'POST', {});
   const before = await api(`/projects/${project.id}/state`);
@@ -143,7 +140,8 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    // Named Engines in the technical view, which the Software Engineering pack brings.
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
   await screenshot('desktop-settings.png');
   await page.setViewportSize({ width: 800, height: 600 });

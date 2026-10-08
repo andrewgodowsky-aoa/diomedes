@@ -1,7 +1,6 @@
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
-  Detail,
   IntegrationStatus,
   Need,
   Session,
@@ -14,11 +13,6 @@ import { formatOrigin, originForNeed, originForSession } from './attribution-dis
 import { rememberedAttribution } from '../shared/remembered-approvals';
 import './attribution.css';
 
-export const detailDescriptions = {
-  guided: 'Plain words, fewer numbers, an explanation on everything that needs a decision.',
-  standard: 'Plain words, plus counts, times and which kind of service did the work.',
-  technical: 'Engines, models, logs, version ids, and developer tools where they apply.',
-};
 export function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -633,11 +627,12 @@ export function HelperLine({
 
 export function ChangeCard({
   change,
-  detail,
+  technical,
   children,
 }: {
   change: Change;
-  detail: Detail;
+  /** The technical view (`console/technical-view.ts`): the whole diff, without the plain summary. */
+  technical: boolean;
   children: ReactNode;
 }) {
   const [full, setFull] = useState(false);
@@ -660,7 +655,7 @@ export function ChangeCard({
         <span className="caption">{change.summary ?? 'Changes to this file'}</span>
         <div className="actions push-right">{actions.slice(0, 2)}</div>
       </div>
-      {detail === 'guided' && (
+      {!technical && (
         <p className="prose small change-explanation">
           <strong>What changed, in plain words:</strong>{' '}
           {change.op === 'created'
@@ -700,7 +695,7 @@ export function ChangeCard({
             {expanded ? 'Show fewer lines' : 'Show all lines'}
           </Button>
         )}
-        {detail === 'technical' && (
+        {technical && (
           <Button tone="quiet" onClick={() => setFull(!full)}>
             {full ? 'Close diff' : 'Open diff'}
           </Button>

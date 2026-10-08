@@ -231,7 +231,7 @@ describe('rendered tool lines', () => {
     // One polite status names only the call still running.
     expect(html).toMatch(/role="status"[^>]*>Searching the web for opening hours…</);
   });
-  test('the Technical level names each tool and opens to its detail from a keyboard summary', () => {
+  test('the technical view names each tool and opens to its detail from a keyboard summary', () => {
     const html = renderToStaticMarkup(createElement(ToolActivityList, { lines, technical: true }));
     expect(html).toContain('<details><summary>');
     expect(html).toContain('read_file');
@@ -259,7 +259,7 @@ const thread: Conversation = {
   mode: 'ask',
   turns: [],
 };
-function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'technical' = 'standard') {
+function renderThread(extra: Record<string, unknown>, technical = false) {
   return renderToStaticMarkup(
     createElement(ThreadView, {
       thread,
@@ -270,7 +270,8 @@ function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'tech
       members: [],
       member: null,
       needs: [],
-      settings: { ...defaults(), detail },
+      settings: defaults(),
+      technical,
       mode: 'ask',
       route: 'claude-code',
       busy: false,
@@ -327,13 +328,24 @@ describe('ThreadView live reply', () => {
     });
     expect(done).toContain('Nectovia is');
   });
-  test('the Technical level shows the tool and its detail', () => {
+  test('the technical view shows the tool and its detail', () => {
     const html = renderThread(
       { streaming: { requestId: 'R1', text: 'Partial', engine: 'claude-code', activity: running } },
-      'technical',
+      true,
     );
     expect(html).toContain('read_file');
     expect(html).toContain('<details>');
+    expect(html).toContain('Partial');
+  });
+  // The detail levels are retired (QUESTIONS.md R17): the technical view comes with the Software
+  // Engineering pack (`client/console/technical-view.ts`), and a level still stored is not read.
+  test('a stored Technical level shows the plain view', () => {
+    const html = renderThread({
+      streaming: { requestId: 'R1', text: 'Partial', engine: 'claude-code', activity: running },
+      settings: { ...defaults(), detail: 'technical' },
+    });
+    expect(html).not.toContain('read_file');
+    expect(html).not.toContain('<details>');
     expect(html).toContain('Partial');
   });
   test('a live run card shows the tool calls streamed for its session', () => {
@@ -421,7 +433,7 @@ describe('Diomedes home live reply', () => {
     expect(shown).toContain('Weighing the menu against the hours.');
     expect(shown).toMatch(/class="mono dio-pending" role="status" aria-label="Working" hidden="">/);
   });
-  test('technical detail on the home page', () => {
+  test('the technical view on the home page', () => {
     const html = render({ live: { text: '', activity: running }, technical: true });
     expect(html).toContain('web_search');
     expect(html).toContain('q=hours');
