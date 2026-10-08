@@ -475,6 +475,53 @@ describe('what the account service says about a browser sign-in', () => {
     expect(next.browser).toEqual({ status: 'waiting', message: SENTENCES.waiting });
   });
 
+  test('a kept token that ended at the service before it arrived is renewed once, and is not a sign-out', async () => {
+    // The service's clock runs ahead of this computer's. A token this computer still holds as valid
+    // reaches the service just after it ended there, and the service answers 401.
+    let ahead = 0;
+    cloud = await createFauxCloud({ file: null, identity: 'workos-standin', now: () => Date.now() + ahead });
+    await seedDemo(cloud);
+    const kept = await ownerToken();
+    const { iat, exp } = claimsOf(kept.accessToken);
+    ahead = (exp - iat) * 1000 + 5_000;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const identity = identityWith(kept, ownerToken);
+    const session = await accountSession(identity);
+    expect(session.state()).toMatchObject({ signedIn: true, person: { email: OWNER }, browser: { status: 'ready', message: '' } });
+    expect(identity.signedOut).toBe(0);
+    expect(identity.began).toBe(0);
+    // The bearer is the token WorkOS issued in its place.
+    const bearer = await session.token();
+    expect(bearer).not.toBe(kept.accessToken);
+    expect((await identity.session())?.accessToken).toBe(bearer);
+  });
+
+  test('a renewed token the service also refuses ends the WorkOS sign-in, after one renewal', async () => {
+    // Both tokens are issued on this computer's time and reach a service whose clock is past them.
+    let ahead = 0;
+    cloud = await createFauxCloud({ file: null, identity: 'workos-standin', now: () => Date.now() + ahead });
+    await seedDemo(cloud);
+    const kept = await ownerToken();
+    const { iat, exp } = claimsOf(kept.accessToken);
+    const past = (exp - iat) * 1000 + 5_000;
+    ahead = past;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let renewals = 0;
+    const identity = identityWith(kept, async () => {
+      renewals++;
+      ahead = 0;
+      try {
+        return await ownerToken();
+      } finally {
+        ahead = past;
+      }
+    });
+    const session = await accountSession(identity);
+    expect(session.state()).toMatchObject({ signedIn: false, browser: { status: 'failed', message: SENTENCES.refused } });
+    expect(renewals).toBe(1);
+    expect(identity.signedOut).toBe(1);
+  });
+
   test('a key the service has not seen, moments after it fetched its keys, is not a sign-out', async () => {
     // Signed by another WorkOS environment's key, and the keys were fetched when the cloud was seeded.
     const elsewhere = await createWorkOSStandIn({ clientId: STANDIN_CLIENT_ID });

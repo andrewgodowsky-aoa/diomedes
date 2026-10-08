@@ -894,7 +894,7 @@ export class AccountSessionService {
     await this.beginBrowser(browser, session, lifecycle);
   }
 
-  private async beginBrowser(browser: BrowserSignIn, session: BrowserSession, lifecycle: number) {
+  private async beginBrowser(browser: BrowserSignIn, session: BrowserSession, lifecycle: number, renewed = false): Promise<void> {
     const claims = checkBrowserToken(session.accessToken, browser.expect, this.now());
     if (!claims) {
       // Nothing is sent with a token meant for anything else. Ending it lets the next attempt start clean.
@@ -909,6 +909,16 @@ export class AccountSessionService {
       page = await this.backend.client.session(session.accessToken);
     } catch (error) {
       this.assertLifecycle(lifecycle);
+      // A token this computer still holds as valid can have ended by the time the service reads it:
+      // it was kept near its end, or the service's clock runs ahead of this one. That 401 is not the
+      // service refusing the person, and answering it as one ends their WorkOS sign-in. WorkOS
+      // issues a new token once, and only a 401 for that one is the refusal.
+      if (!renewed && error instanceof ControlPlaneError && error.status === 401) {
+        const fresh = await browser.identity.session({ fresh: true }).catch(() => null);
+        this.assertLifecycle(lifecycle);
+        if (fresh && fresh.accessToken !== session.accessToken)
+          return this.beginBrowser(browser, fresh, lifecycle, true);
+      }
       if (error instanceof ControlPlaneError && (error.status === 401 || error.status === 403)) {
         // The service's refusal of this sign-in, in its own words when it has them (an unverified email).
         this.browserFailure = error.status === 403 ? error.message : BROWSER_SENTENCES.refused;
