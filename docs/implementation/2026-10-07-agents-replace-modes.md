@@ -30,9 +30,9 @@ limits a mode used to carry. Permissions stay authoritative: picking an agent ne
   `requested.agent` holds `auto` or an agent id. Saving an agent sets the thread's stored kind to
   that agent's. Saving Auto keeps the stored kind, since Auto decides the kind per message, and a
   new thread is stored as Ask with Auto in its box. A send leaves the stored kind of a thread with a
-  box, Auto included: on Auto each turn records the kind it ran as (`recordRunKind`). An Automatic
-  kind is how a project's own Diomedes conversation is found (`shared/diomedes-thread.ts`), so no
-  Console thread becomes one by its kind. A thread saved before agents with no agent reads as its
+  box, Auto included: on Auto each turn records the kind it ran as (`recordRunKind`). When this was
+  built, an Automatic kind was how a project's own Diomedes conversation was found, so no Console
+  thread became one by its kind. Since DIO-299 its marker finds it (see "After merging main"). A thread saved before agents with no agent reads as its
   stored mode's default agent and behaves as it did, following the kind of each send, as does a
   thread an API caller sets by mode. One whose saved agent no longer fits is set right when the project loads
   (`migrateConversation` in `server/store.ts`): General Assistant, picked before it left the menu,
@@ -170,6 +170,26 @@ of 10,411 and 5 browser tests of 354, with 6 not run. The second, after them, fa
 of 10,427, all in `tests/backend.test.ts`, which pinned that a send moves the stored kind of a
 thread on Auto; it was stopped before the build, and those tests now say that the turns carry each
 kind while the thread keeps its own.
+
+## After merging main, 2026-10-08
+
+- `ebd296a` merges origin/main `5b74859`. DIO-299 (#257) gives a project's own conversation a stored
+  marker, `conversation: 'project'`, and a one-time step at load marks the thread the old rule
+  found. The kind no longer identifies the conversation. The behavior above that keeps a thread's
+  stored kind is unchanged and still harmless; its comments now say the marker decides.
+  `migrateConversation` runs before the marker step on every load path and never changes a stored
+  mode, so the marker step sees the kinds it was written against. `canSaveAgent`'s wait for the
+  first message is no longer needed and can be relaxed.
+- #256 deleted `client/console/Picker.tsx`, which settles that follow-up below.
+- `9a9f3aa` points two tests at the rules that now hold together: DIO-299's test saves Planner by
+  its id, `diomedes.architect`, and this change's Agent-control test checks the marker.
+- Gates, one command at a time under the heavy slot. On `ebd296a`: `tsc` passed; `vite build`
+  passed; `playwright test`, the main config, 350 passed, 2 failed, 2 did not run; bonsai 2 passed;
+  responsive 20 passed. The full vitest run there had 10,420 passed, 8 failed and 5 skipped: the two
+  tests above, and six that passed alone. The two browser failures (`agent-ui.spec.ts:202`, which
+  stopped in the landing fixture before the menu, and `pack-lifecycle-ui.spec.ts:142`) and the two
+  tests that didn't run passed alone, 6 of 6. On `9a9f3aa`: the 8 files, 200 passed alone; then
+  `tsc` passed and `vitest run --maxWorkers=4`, 618 files, 10,428 passed, 0 failed, 5 skipped.
 
 ## Follow-ups
 
