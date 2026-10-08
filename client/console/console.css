@@ -1401,33 +1401,6 @@ html[data-surface='console'] body {
   margin-top: -1px;
   overflow-wrap: anywhere;
 }
-.console .pmenu .ladder {
-  display: flex;
-  gap: 2px;
-  padding: 4px 8px 8px;
-  border-top: 1px solid var(--hair);
-  margin-top: 4px;
-}
-.console .pmenu .ladder button {
-  padding: 4px 8px;
-  border-radius: var(--rb);
-  font: 500 var(--dm-type-body) var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--t3);
-}
-.console .pmenu .ladder button:hover {
-  color: var(--t2);
-  background: var(--surface);
-}
-.console .pmenu .ladder button.on {
-  color: var(--t1);
-  background: var(--surface);
-}
-.console .pmenu .ladder button.capped {
-  text-decoration: line-through;
-  text-decoration-color: var(--attn);
-}
 .console .pmenu .note {
   padding: 4px 8px 6px;
   color: var(--t3);

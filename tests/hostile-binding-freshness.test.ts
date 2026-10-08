@@ -1,12 +1,11 @@
 /**
  * Hostile verification of the one expiry rule (audit F05, acceptance row 6).
- * The server, AI setup and the thread picker must agree about what "current"
+ * The server, AI setup and the Console's account line must agree about what "current"
  * means, at the exact boundary and on a timestamp that cannot be trusted.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CONNECTION_TTL_MS, freshness } from '../shared/connection-policy.js';
-import { checkedSentence } from '../client/ai-setup-state.js';
-import { connectionState } from '../client/console/Picker.js';
+import { checkedSentence, connectionState } from '../client/ai-setup-state.js';
 import type { EngineConnection } from '../shared/engines.js';
 
 const signedIn = (checkedAt: string | null): EngineConnection => ({
@@ -25,7 +24,7 @@ const time = (value: string) => value;
 afterEach(() => vi.useRealTimers());
 
 describe('the boundary every surface shares', () => {
-  it('is the same millisecond for the policy and the thread picker', () => {
+  it('is the same millisecond for the policy and the account line', () => {
     // A frozen clock, because the two surfaces read it a few milliseconds apart.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-20T12:00:00.000Z'));
@@ -53,8 +52,8 @@ describe('a timestamp from the future', () => {
     expect(checkedSentence(signedIn(at(60_000)), now, time)).toMatch(/Check again/);
   });
 
-  it('is not presented as Ready by the thread picker, which shares that rule', () => {
-    // The picker asks `freshness()` rather than `Date.now() - at < FRESH_MS`,
+  it('is not presented as Ready by the account line, which shares that rule', () => {
+    // The account line asks `freshness()` rather than `Date.now() - at < FRESH_MS`,
     // which was true of every future timestamp. A clock that moved backwards
     // no longer reads as "Ready" on the thread while AI setup asks for a check.
     const ahead = signedIn(at(60_000));

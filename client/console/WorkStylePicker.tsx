@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Conversation, Settings } from '../../shared/types';
+import type { Conversation, IntegrationStatus, Mode, Route, Settings } from '../../shared/types';
 import {
   WORK_STYLES,
   WORK_STYLE_DESCRIPTIONS,
@@ -10,7 +10,6 @@ import {
 } from '../../shared/work-style';
 import { routeDisplayName } from '../../shared/engines';
 import { api } from '../api';
-import type { PickerProps } from './Picker';
 
 /** What `GET /projects/:id/threads/:threadId/work-style` answers. */
 export interface WorkStyleView {
@@ -189,15 +188,27 @@ export function WorkStylePicker({
   );
 }
 
+/** The props the header's model control was given when it also listed engines and models. */
+export interface PickerProps {
+  thread: Conversation;
+  mode: Mode;
+  route: Route;
+  live: boolean;
+  integrations: IntegrationStatus[];
+  settings: Settings;
+  busy: boolean;
+  onPick(requested: Conversation['requested'], engine: string): void;
+}
+
 export interface ThreadModelControlsProps extends PickerProps {
   projectId: string;
   onStyle(style: WorkStyle | null): void;
 }
 
 /**
- * The header's model control: the style picker only. It takes the thread
- * picker's props so its callers need not change; no route or model list is
- * rendered from them.
+ * The header's model control: the style picker only. It keeps the props of
+ * the engine and model menu it replaced so its callers need not change; no
+ * route or model list is rendered from them.
  */
 export function ThreadModelControls(props: ThreadModelControlsProps) {
   const { projectId, onStyle, ...picker } = props;

@@ -499,7 +499,7 @@ export function Shell({
   useEffect(() => {
     onPaletteKey?.(openPalette);
   }, [onPaletteKey, openPalette]);
-  // Live engine catalogues for the Models group, read exactly as the Picker does.
+  // Live engine catalogues for the Models group, read exactly as the ask row does.
   useEffect(() => {
     if (!paletteOpen) return;
     let alive = true;
@@ -1037,7 +1037,7 @@ export function Shell({
 
   /**
    * One handover from Settings: the route and model a connection test verified
-   * become a thread's choice through the same call the Picker makes, the cursor
+   * become a thread's choice through the same guarded call every route change makes, the cursor
    * goes into the composer, and nothing is sent.
    *
    * The offer was gated on four facts of the host's when it was drawn, and used
