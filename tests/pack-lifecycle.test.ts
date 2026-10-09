@@ -78,7 +78,7 @@ async function localPack(
           kind: 'procedure',
           name: 'Month-end close',
           description: 'Walks the close.',
-          mode: 'plan',
+          agent: 'diomedes.architect',
           acts: false,
         },
       ],

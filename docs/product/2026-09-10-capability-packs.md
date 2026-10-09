@@ -134,17 +134,17 @@ Clicking it opens a readable rendered version. Two properties matter and are eas
 `shared/small-business-skills.ts`) contributes **skills**: twelve playbooks for recurring
 restaurant, shop and service-business work, each one data (`PackSkill`): a plain name, a one-line
 value, trigger phrases, the inputs it reads (each declared as one of the pack's `read-*` needs,
-with exactly how to export, upload or connect it when missing), a read-and-draft Mode (Ask or
-Plan), numbered steps, an output shape, where a visual helps, what it drafts, and a
+with exactly how to export, upload or connect it when missing), the Agent it runs as (a built-in
+Agent that reads and drafts, such as Researcher, Planner or Explorer), numbered steps, an output shape, where a visual helps, what it drafts, and a
 not-professional-advice caution on every accounting, tax, legal and employment playbook.
 
-- `validateManifest` refuses a skill that could act (`acts` is the literal `false`), runs in Build
-  or Fix, reads an undeclared need, or renders past 8 KB; and a pack that declares any outward
+- `validateManifest` refuses a skill that could act (`acts` is the literal `false`), names an Agent
+  that does not exist, is internal or writes files, reads an undeclared need, or renders past 8 KB; and a pack that declares any outward
   capability at all.
 - A skill never sends, posts, pays or messages anyone. What would reach someone else is a draft
   headed "Draft for you to send".
 - Launch: with the pack on, the project's Ctrl K palette lists the playbooks; `Use` opens an empty
-  or new thread in the skill's Mode, fills the composer with a starter the person can edit, and
+  or new thread on the skill's Agent, fills the composer with a starter the person can edit, and
   names the playbook beside the box. Nothing is sent until the person sends it.
 - Delivery: `/api/projects/:id/ask` takes `skill`, and `assembleSkillSection`
   (`server/harness/instruction-delivery.ts`) appends the playbook to the Mode's instructions,

@@ -294,8 +294,8 @@ because a mistake stays small and the checks catch most of them:
 
 - **Pack skills.** A skill is one playbook for one kind of recurring work, written as data
   (`PackSkill` in `shared/capability-packs.ts`; the Small Business pack's are in
-  `shared/small-business-skills.ts`). `validateManifest` enforces the safety rules: it runs in a
-  read-and-draft Mode, every input it reads is a declared need, `acts` is always `false`, and the
+  `shared/small-business-skills.ts`). `validateManifest` enforces the safety rules: it names a
+  built-in Agent that reads and drafts, every input it reads is a declared need, `acts` is always `false`, and the
   playbook fits in 8 KB. `tests/capability-packs.test.ts` runs those checks. Its text is customer
   copy, so it follows `docs/reference/VOICE.md`. Adding a new pack, or changing how packs are
   activated, installed or hooked, is architecture: ask Andrew first.

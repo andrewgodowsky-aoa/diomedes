@@ -14,6 +14,7 @@ import type {
 } from '../../shared/types';
 import type { PackSkill } from '../../shared/capability-packs';
 import { AGENT_NAME } from '../../shared/agent-name';
+import { AGENT_CATALOG } from '../../shared/agents';
 import type { PaletteEntry, PalettePoint, ShellView } from './types';
 import { ROUTINES, VIEW_LABELS } from './work-view';
 
@@ -306,7 +307,9 @@ function fileEntries(ctx: PaletteContext): PaletteEntry[] {
   });
 }
 
-const SKILL_MODE: Record<PackSkill['mode'], string> = { ask: 'answers', plan: 'writes a plan' };
+/** The name a person reads for the Agent a skill runs as, or the id when the catalog lacks it. */
+const skillAgentName = (skill: PackSkill): string =>
+  AGENT_CATALOG.find((agent) => agent.id === skill.agent)?.name ?? skill.agent;
 
 function skillEntries(ctx: PaletteContext): PaletteEntry[] {
   const skills = ctx.skills;
@@ -327,7 +330,7 @@ function skillEntries(ctx: PaletteContext): PaletteEntry[] {
     group: 'Skills',
     id: `skill:${skill.id}`,
     name: skill.name,
-    sub: `${SKILL_MODE[skill.mode]}, ${skill.value}`,
+    sub: `${skillAgentName(skill)}, ${skill.value}`,
     search: skill.triggers.join(' '),
     point: '',
     actions: [

@@ -23,11 +23,13 @@ import {
   renderSkillPlaybook,
   SKILL_SECTION_MAX_BYTES,
   SMALL_BUSINESS_PACK,
+  skillAgentIds,
   validateManifest,
   validateSkill,
   type CapabilityPackManifest,
   type PackSkill,
 } from '../shared/capability-packs.js';
+import { AGENT_CATALOG, runKindOf } from '../shared/agents.js';
 import { SMALL_BUSINESS_SKILLS_LATER } from '../shared/small-business-skills.js';
 import { buildEntries, filterPalette, type PaletteContext, type PaletteHandlers } from '../client/console/paletteEntries.js';
 import { Composer } from '../client/console/Composer.js';
@@ -50,11 +52,11 @@ describe('the Small Business pack is data that cannot grant or act', () => {
     expect(SMALL_BUSINESS_PACK.instructionFiles).toEqual([]);
   });
 
-  test('twelve playbooks, each with a read-and-draft mode, declared needs and no power to act', () => {
+  test('twelve playbooks, each naming a read-and-draft Agent, declared needs and no power to act', () => {
     expect(SKILLS).toHaveLength(12);
     const declared = new Set(SMALL_BUSINESS_PACK.needs.map((need) => need.capability));
     for (const item of SKILLS) {
-      expect(['ask', 'plan']).toContain(item.mode);
+      expect(skillAgentIds()).toContain(item.agent);
       expect(item.acts).toBe(false);
       expect(item.inputs.length).toBeGreaterThan(0);
       expect(item.inputs.some((input) => input.required)).toBe(true);
@@ -113,9 +115,11 @@ describe('a skill that could act, write or read undeclared data never loads', ()
       skills: [{ ...base, ...over } as PackSkill],
     } as CapabilityPackManifest);
 
-  test('acts, a Build mode, an undeclared need and an oversized playbook are each refused', () => {
+  test('acts, a writing Agent, an undeclared need and an oversized playbook are each refused', () => {
     expect(withSkill({ acts: true })).toContain('Skill invoice-chase would act. A skill drafts; it never acts.');
-    expect(withSkill({ mode: 'build' })).toContain('Skill invoice-chase runs in build. Skills run in Ask or Plan.');
+    expect(withSkill({ agent: 'diomedes.builder' })).toContain(
+      'Skill invoice-chase names an Agent that writes files. A skill reads and drafts; it never writes.',
+    );
     expect(
       withSkill({ inputs: [{ ...base.inputs[0], need: 'send-email' }] }),
     ).toContain('Skill invoice-chase reads send-email, which its pack does not declare.');
@@ -225,11 +229,11 @@ describe('the selected skill rides in the host-assembled instruction section', (
     // Every playbook fits beside a full 128 KB selection, so a skill never refuses an
     // ordinary request that used to be admitted.
     for (const item of SKILLS)
-      expect(() => ask(store.state(id), { skillId: item.id, mode: item.mode, budgetBytes: instructionSectionBudget(128_000) })).not.toThrow();
+      expect(() => ask(store.state(id), { skillId: item.id, mode: runKindOf(AGENT_CATALOG.find((agent) => agent.id === item.agent)!), budgetBytes: instructionSectionBudget(128_000) })).not.toThrow();
 
     expect(() => ask(store.state(id), { budgetBytes: 1024 })).toThrow(/never cut part way/);
     // Andrew 2026-09-27: skills run in Ask, Plan, Build, Fix and Work with the
-    // same terms and budget. PackSkill.mode stays the recommended launch Mode.
+    // same terms and budget. A skill names its Agent; the Mode is the turn's.
     for (const mode of ['build', 'fix', 'work'] as const)
       expect(() => ask(store.state(id), { mode })).not.toThrow();
     expect(() => ask(store.state(id), { mode: 'auto' })).toThrow(/Ask, Plan, Build, Fix or Work/);
