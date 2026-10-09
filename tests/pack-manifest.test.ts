@@ -153,7 +153,7 @@ describe('the manifest schema', () => {
         contributions: {
           ...body().contributions,
           workflows: [
-            { id: 'pay', kind: 'procedure', name: 'Pay', description: 'Pays.', mode: 'ask', acts: true },
+            { id: 'pay', kind: 'procedure', name: 'Pay', description: 'Pays.', agent: 'diomedes.researcher', acts: true },
           ],
         },
       },

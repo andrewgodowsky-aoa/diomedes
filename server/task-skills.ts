@@ -14,7 +14,7 @@
  *    SKILL_COMPATIBLE_MODES) refuses an inactive pack (409 `pack_inactive`),
  *    an unknown skill (404) or a room too small (413) before the contribution
  *    loader is touched, so a budget failure happens before any paid start.
- *    `PackSkill.mode` stays the recommended launch Mode; `work` is the runtime
+ *    A skill names its Agent (`PackSkill.agent`); `work` is the runtime
  *    Mode a task loop runs in.
  * 3. **The exact version and digest are pinned in use.** The body loads through
  *    the run's own pin (`contributions.admit` then `contributions.load` in the

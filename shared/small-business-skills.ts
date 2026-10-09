@@ -29,7 +29,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Weekly business pulse',
     value: 'A one-screen read of how last week went and the three things worth acting on.',
     triggers: ['how did we do this week', 'weekly numbers', 'business health', 'week in review'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Give me a pulse on last week: how we did, what changed, and what needs me.',
     inputs: [
       {
@@ -86,7 +86,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Cash flow snapshot',
     value: 'Cash today, what is due in and out over the next few weeks, and the first week money gets tight.',
     triggers: ['cash flow', 'can we make payroll', 'how much cash do we have', 'money coming in and out'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Show me a cash flow snapshot for the next four weeks.',
     inputs: [
       {
@@ -136,7 +136,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Month-end close checklist',
     value: 'A checklist for closing last month: what is reconciled, what is missing, and what to hand your bookkeeper.',
     triggers: ['close the month', 'month end', 'get ready for the bookkeeper', 'reconcile'],
-    mode: 'plan',
+    agent: 'diomedes.architect',
     starter: 'Help me close last month and get everything ready for my bookkeeper.',
     inputs: [
       {
@@ -186,7 +186,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Chase unpaid invoices',
     value: 'Who owes you, how late each invoice is, and a polite reminder drafted for each one.',
     triggers: ['who owes us', 'overdue invoices', 'chase payments', 'accounts receivable'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Who owes us money? Draft reminders for anything overdue.',
     inputs: [
       {
@@ -223,7 +223,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Bills to pay',
     value: 'Every bill due soon, checked for duplicates and surprises, in the order to pay it.',
     triggers: ['what bills are due', 'pay the bills', 'accounts payable', 'vendor bills'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'What bills are due in the next two weeks, and in what order should I pay them?',
     inputs: [
       {
@@ -267,7 +267,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Payroll prep check',
     value: 'Hours checked against the schedule before payroll runs: missed punches, overtime and tips flagged.',
     triggers: ['run payroll', 'check timesheets', 'overtime this week', 'tips payout'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Check this pay period\'s hours before I run payroll.',
     inputs: [
       {
@@ -311,7 +311,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Tax-season organizer',
     value: 'Everything your tax preparer will ask for, what you already have, and what is still missing.',
     triggers: ['tax season', 'get ready for taxes', 'what does my accountant need', 'year end'],
-    mode: 'plan',
+    agent: 'diomedes.architect',
     starter: 'Help me get organised for tax season: what I have, what is missing, and what to send my preparer.',
     inputs: [
       {
@@ -360,7 +360,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Restock planner',
     value: 'What is running low, how much to order from whom, and what is sitting unsold.',
     triggers: ['what do I need to order', 'running low', 'restock', 'inventory', 'par levels'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'What do I need to reorder this week, and how much?',
     inputs: [
       {
@@ -403,7 +403,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Review replies',
     value: 'What customers are saying, the patterns behind it, and a reply drafted for every review that needs one.',
     triggers: ['reply to reviews', 'bad review', 'what are customers saying', 'reputation'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Go through our recent reviews and draft replies for the ones that need one.',
     inputs: [
       {
@@ -440,7 +440,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Lead follow-up',
     value: 'New enquiries sorted by how likely and how valuable they are, with a call list and replies drafted.',
     triggers: ['new leads', 'enquiries', 'who should I call', 'follow up with customers', 'quote requests'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Sort our recent enquiries and tell me who to call first. Draft the follow-ups.',
     inputs: [
       {
@@ -477,7 +477,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Marketing week plan',
     value: 'A week of posts and one offer, grounded in what is actually happening at the business.',
     triggers: ['what should we post', 'marketing this week', 'social media ideas', 'promotion', 'newsletter'],
-    mode: 'plan',
+    agent: 'diomedes.architect',
     starter: 'Plan this week\'s marketing: a few posts and one simple offer.',
     inputs: [
       {
@@ -519,7 +519,7 @@ export const SMALL_BUSINESS_SKILLS: readonly PackSkill[] = [
     name: 'Contract read-through',
     value: 'A plain-language summary of a lease, vendor or service agreement, with the clauses worth questioning.',
     triggers: ['review this contract', 'read this lease', 'vendor agreement', 'what am I signing'],
-    mode: 'ask',
+    agent: 'diomedes.researcher',
     starter: 'Read this agreement and tell me in plain words what I would be agreeing to and what to question.',
     inputs: [
       {

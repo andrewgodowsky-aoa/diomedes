@@ -567,8 +567,8 @@ export interface AssembledSkill {
  * Andrew's 2026-09-27 decision: skills are not restricted to Ask/Plan. A
  * skill runs in Ask, Plan, Build, Fix or Work with the same response-format,
  * input, no-authority and outward-send terms and the same whole-or-nothing
- * size budget. `PackSkill.mode` (shared/capability-packs.ts) stays the
- * recommended launch Mode and is unchanged here.
+ * size budget. A skill names the Agent it runs as (`PackSkill.agent`,
+ * shared/capability-packs.ts); the Mode here is the turn's.
  */
 export const SKILL_COMPATIBLE_MODES = ['ask', 'plan', 'build', 'fix', 'work'] as const;
 export type SkillCompatibleMode = (typeof SKILL_COMPATIBLE_MODES)[number];
@@ -589,7 +589,7 @@ export function isSkillCompatibleMode(mode: string): mode is SkillCompatibleMode
  * 2. **Read-and-draft terms in every compatible runtime Mode.** Ask, Plan,
  *    Build, Fix and Work (SKILL_COMPATIBLE_MODES, Andrew 2026-09-27) all carry
  *    the same response-format, input, no-authority and outward-send terms.
- *    `PackSkill.mode` stays the recommended launch Mode. Build and Fix still
+ *    The skill names its Agent; the Mode is the turn's. Build and Fix still
  *    write through the proposal path, whose contract this section never changes.
  * 3. **Whole or not at all.** A playbook that does not fit the room the
  *    selected documents leave is refused by name; it is never cut part way.

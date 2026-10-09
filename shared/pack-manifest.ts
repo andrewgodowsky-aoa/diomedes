@@ -119,7 +119,8 @@ export const packWorkflowSchema = z.strictObject({
   kind: z.enum(['skill', 'procedure', 'template']),
   name: text(80),
   description: text(400),
-  mode: z.enum(['ask', 'plan']).nullable(),
+  /** The Agent a skill runs as (an id in the Agent catalog); null for a template or procedure. */
+  agent: z.string().nullable(),
   acts: z.literal(false),
 });
 
@@ -495,7 +496,7 @@ export function manifestFromCapabilityPack(pack: CapabilityPackManifest): PackMa
     kind: 'skill' as const,
     name: skill.name,
     description: skill.value,
-    mode: skill.mode,
+    agent: skill.agent,
     acts: false as const,
   }));
   contributions.ui = pack.ui.map((item) => ({ ...item }));
@@ -562,7 +563,7 @@ export function weeklyBriefPackManifest(): PackManifestBody {
       kind: 'template',
       name: 'Weekly brief',
       description: 'One approved-files workflow: a short weekly brief drafted and reviewed before the owner reads it.',
-      mode: null,
+      agent: null,
       acts: false,
     },
   ];
@@ -629,7 +630,7 @@ export function industryVariantPackManifest(variant: IndustryVariantSource): Pac
       kind: 'template',
       name: variant.outputLabel,
       description: `The weekly brief worded for ${variant.label.toLowerCase()}.`,
-      mode: null,
+      agent: null,
       acts: false,
     },
   ];

@@ -15,6 +15,7 @@ import {
   CAPABILITY_PACKS,
   SKILL_SECTION_MAX_BYTES,
   SMALL_BUSINESS_PACK,
+  skillAgentIds,
 } from '../shared/capability-packs.js';
 import type { Task } from '../shared/types.js';
 
@@ -125,8 +126,8 @@ describe('skills run in Ask, Plan, Build, Fix and Work (Andrew 2026-09-27)', () 
   test('no format or grants widening: recommended launch mode, read-only needs and preamble hold', async () => {
     const { store, id } = await project();
     await activatePack(store, id, PACK);
-    // PackSkill.mode stays the recommended launch Mode: ask/plan only in shared contracts.
-    for (const skill of SMALL_BUSINESS_PACK.skills) expect(['ask', 'plan']).toContain(skill.mode);
+    // A skill names a read-and-draft built-in Agent (DIO-311); the turn's Mode is separate.
+    for (const skill of SMALL_BUSINESS_PACK.skills) expect(skillAgentIds()).toContain(skill.agent);
     expect(SMALL_BUSINESS_PACK.grantsAuthority).toBe(false);
     for (const need of SMALL_BUSINESS_PACK.needs) expect(need.capability).toMatch(/^read-/);
     const assembled = assembleSkillSection({

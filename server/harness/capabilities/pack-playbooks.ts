@@ -14,8 +14,9 @@
  * read of pack data, and the playbook's own terms say it acts on nothing.
  * Offered in Ask, Plan, Build, Fix and Work (SKILL_COMPATIBLE_MODES, Andrew
  * 2026-09-27), the runtime Modes a skill runs in, and only for packs whose
- * playbooks this build runs. `PackSkill.mode` stays the recommended launch
- * Mode; the guard here is runtime compatibility, not a contract change.
+ * playbooks this build runs. A skill names the Agent it runs as
+ * (`PackSkill.agent`); the Mode here is the turn's, and the guard is runtime
+ * compatibility, not a contract change.
  */
 import { z } from 'zod';
 import { isCapabilityPackId } from '../../../shared/capability-packs.js';

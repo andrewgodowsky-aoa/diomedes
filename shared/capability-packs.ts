@@ -18,6 +18,7 @@
  * supplies time and does the discovery.
  */
 
+import { AGENT_CATALOG, runKindOf, type AgentDefinition } from './agents.js';
 import { SMALL_BUSINESS_SKILLS } from './small-business-skills.js';
 
 export const CAPABILITY_PACK_CONTRACT_VERSION = 1 as const;
@@ -52,23 +53,28 @@ export interface PackUiAffordance {
 }
 
 /**
- * A skill a pack contributes: one playbook for one kind of recurring work, as
- * data. It is a workflow in the capability-packs.md section 2 sense and nothing
- * more: no tool, no runtime and no authority of its own.
- *
- * Four properties are enforced by `validateManifest`, because each is easy to
- * lose while writing content:
- *
- * - it runs in a read-and-draft Mode (`ask` or `plan`), never one that writes
- *   project files through a proposal;
- * - every input it reads is declared as one of its pack's `needs`, so what it
- *   would use is inspectable before activation and still decided by Trust;
- * - `acts` is the literal `false`: a skill drafts, and anything outward (a
- *   message, a review reply, a payment, a post) is a draft the owner sends, or
- *   goes through the existing approval flow;
- * - its rendered playbook fits `SKILL_SECTION_MAX_BYTES` whole.
+ * Whether an Agent may run a skill: listed (not internal), a read-and-draft kind of run
+ * (`ask` or `plan`) and no text proposals, which is how an Agent writes project files.
+ * One rule for `validateManifest`, the tests and anything that offers a skill an Agent.
  */
-export type PackSkillMode = 'ask' | 'plan';
+export function isSkillAgent(definition: AgentDefinition): boolean {
+  return skillAgentProblem(definition) === null;
+}
+
+/** The ids of the built-in Agents a skill may name, in catalog order. */
+export function skillAgentIds(): string[] {
+  return AGENT_CATALOG.filter(isSkillAgent).map((definition) => definition.id);
+}
+
+/** Why an Agent cannot run a skill, or null when it can. */
+function skillAgentProblem(definition: AgentDefinition): 'internal' | 'kind' | 'writes' | null {
+  if (definition.internal) return 'internal';
+  if (definition.requires.includes('text-proposals')) return 'writes';
+  const kind = runKindOf(definition);
+  if (kind !== 'ask' && kind !== 'plan') return 'kind';
+  return null;
+}
+
 export type PackSkillOutput = 'brief' | 'table' | 'checklist' | 'draft';
 /** The inline visual kinds a playbook may ask for, when the conversation can show them. */
 export type PackSkillVisualKind = 'bar' | 'line' | 'area' | 'pie' | 'stat' | 'table' | 'progress';
@@ -85,6 +91,24 @@ export interface PackSkillInput {
   readonly howToProvide: string;
 }
 
+/**
+ * A skill a pack contributes: one playbook for one kind of recurring work, as
+ * data. It is a workflow in the capability-packs.md section 2 sense and nothing
+ * more: no tool, no runtime and no authority of its own.
+ *
+ * Four properties are enforced by `validateManifest`, because each is easy to
+ * lose while writing content:
+ *
+ * - it names the Agent it runs as, a built-in one from `AGENT_CATALOG` that
+ *   reads and drafts (`isSkillAgent`), never one that writes project files
+ *   through a proposal;
+ * - every input it reads is declared as one of its pack's `needs`, so what it
+ *   would use is inspectable before activation and still decided by Trust;
+ * - `acts` is the literal `false`: a skill drafts, and anything outward (a
+ *   message, a review reply, a payment, a post) is a draft the owner sends, or
+ *   goes through the existing approval flow;
+ * - its rendered playbook fits `SKILL_SECTION_MAX_BYTES` whole.
+ */
 export interface PackSkill {
   /** Kebab case, unique inside its pack. */
   readonly id: string;
@@ -94,8 +118,8 @@ export interface PackSkill {
   readonly value: string;
   /** Phrases a person might say when this is the right playbook. Searchable, never parsed as commands. */
   readonly triggers: readonly string[];
-  /** The Mode it launches in. */
-  readonly mode: PackSkillMode;
+  /** The Agent it launches as: the id of a built-in Agent in `AGENT_CATALOG` that passes `isSkillAgent`. */
+  readonly agent: string;
   /** The words the composer is pre-filled with. The person may change them before sending. */
   readonly starter: string;
   readonly inputs: readonly PackSkillInput[];
@@ -393,8 +417,15 @@ export function validateSkill(
   seen.add(name);
   if ((skill as { acts: unknown }).acts !== false)
     problems.push(`Skill ${name} would act. A skill drafts; it never acts.`);
-  if (skill.mode !== 'ask' && skill.mode !== 'plan')
-    problems.push(`Skill ${name} runs in ${String(skill.mode)}. Skills run in Ask or Plan.`);
+  const agent = AGENT_CATALOG.find((definition) => definition.id === skill.agent);
+  const refused = agent ? skillAgentProblem(agent) : null;
+  if (!agent) problems.push(`Skill ${name} names an Agent that does not exist: ${String(skill.agent)}.`);
+  else if (refused === 'internal')
+    problems.push(`Skill ${name} names an Agent that is not offered to people: ${agent.id}.`);
+  else if (refused === 'writes')
+    problems.push(`Skill ${name} names an Agent that writes files. A skill reads and drafts; it never writes.`);
+  else if (refused === 'kind')
+    problems.push(`Skill ${name} names an Agent that runs in ${runKindOf(agent)}. Skills read and draft.`);
   if (!skill.name?.trim() || !skill.value?.trim() || !skill.starter?.trim())
     problems.push(`Skill ${name} needs a name, a one-line value and a starter.`);
   if (!skill.steps?.length) problems.push(`Skill ${name} has no steps.`);

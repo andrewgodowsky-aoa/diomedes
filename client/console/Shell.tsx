@@ -76,7 +76,7 @@ import {
 } from './thread-send';
 import { choiceView } from './agent-ui';
 import { agentChoiceOf, type AgentPickView } from '../../shared/agent-choice';
-import { AUTO_AGENT, DEFAULT_AGENT } from '../../shared/agents';
+import { AUTO_AGENT } from '../../shared/agents';
 import {
   acceptActivity,
   activityTarget,
@@ -1183,16 +1183,16 @@ export function Shell({
     });
   }
   /**
-   * Launch a playbook: an empty thread is reused, otherwise a new one opens, on the Agent for the
-   * playbook's kind, with the composer filled and the skill shown beside it. Nothing is sent: the
+   * Launch a playbook: an empty thread is reused, otherwise a new one opens, on the Agent the
+   * playbook names, with the composer filled and the skill shown beside it. Nothing is sent: the
    * person reads, edits and presses Send, and the playbook itself travels in the instruction channel.
    */
   async function launchSkill(skill: PackSkill) {
     await perform(async () => {
       let target = selected && selected.turns.length === 0 ? selected : null;
       if (!target) target = await api<Conversation>(`${base}/threads`, 'POST', {});
-      // The kind's default Agent goes in the thread's Agent box (DIO-292), keeping its model pick.
-      const agent = DEFAULT_AGENT[skill.mode];
+      // The Agent the skill names goes in the thread's Agent box (DIO-311), keeping its model pick.
+      const agent = skill.agent;
       if (agentChoiceOf(target) !== agent)
         await api(`${base}/threads/${target.id}`, 'PUT', {
           requested: { model: target.requested?.model ?? null, effort: target.requested?.effort ?? null, agent },
