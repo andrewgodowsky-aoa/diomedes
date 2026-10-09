@@ -61,7 +61,7 @@ export const NECTOVIA_UNAVAILABLE = "Nectovia's model service isn't available ri
 /** The model each tier runs, as the account service published it. */
 export interface NectoviaPolicy {
   revision: number;
-  tiers: Record<JobTier, { model: string; label: string } | null>;
+  tiers: Record<Exclude<JobTier, 'expert'>, { model: string; label: string } | null> & { expert?: { model: string; label: string } | null };
   /** Per tier, whether the gateway accepts reasoning summaries for it. Absent: none is asked for. */
   reasoningSummaries?: Partial<Record<JobTier, boolean>>;
   resolved?: ResolvedRoutingSnapshot;
@@ -126,6 +126,7 @@ export const NECTOVIA_EFFORT: Record<JobTier, 'low' | 'medium' | 'high'> = {
   efficient: 'low',
   focused: 'medium',
   thorough: 'high',
+  expert: 'high', // The qualified Operations binding maps high to the model's supported control.
 };
 
 /** A person's own conversation is included chat; everything else the Agent does is metered work. */
@@ -286,6 +287,7 @@ export function gatewayRefusal(
       return { code: 'nectovia_sign_in_required', message: NECTOVIA_SIGN_IN };
     case 'not_a_member':
     case 'agent_not_included':
+    case 'expert_not_included':
       return {
         code: 'nectovia_agent_not_included',
         message: said ?? 'This business does not include the Nectovia Agent. Nothing was charged.',

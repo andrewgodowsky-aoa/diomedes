@@ -814,7 +814,7 @@ export function publishedMonthlyGrant(planId: string): MicroUsd | null {
  * spelled out here so the control plane can read the caps without importing the
  * model-selection code.
  */
-export const JOB_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export const JOB_TIERS = ['efficient', 'focused', 'thorough', 'expert'] as const;
 export type JobTier = (typeof JOB_TIERS)[number];
 
 export function isJobTier(value: unknown): value is JobTier {
@@ -840,8 +840,9 @@ export function isJobTier(value: unknown): value is JobTier {
 export const JOB_CHECK_IN_CREDITS = Object.freeze({
   status: 'approved' as const,
   decidedBy: 'owner' as const,
-  decidedOn: '2026-10-05',
-  credits: Object.freeze({ efficient: 100, focused: 250, thorough: 500 }) as Readonly<
+  decidedOn: '2026-10-06',
+  // Expert's plan-scaled default is resolved by the account service; 750 is its floor.
+  credits: Object.freeze({ efficient: 100, focused: 250, thorough: 500, expert: 750 }) as Readonly<
     Record<JobTier, number>
   >,
 });

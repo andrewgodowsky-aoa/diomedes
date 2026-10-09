@@ -51,6 +51,11 @@ async function makeCloud(options: { credential?: string | null; settings?: Recor
     },
   });
   orgs = (await seedDemo(cloud)).organizations!;
+  await cloud.commercial.publishSystemOne(await signIn('staffRouting'), { baseRevision: 1, note: 'Offline evaluation fixture', selection: {
+    provider: 'openrouter', protocol: 'decisions', model: EVALUATION_PROVIDER.model, rate: EVALUATION_PROVIDER.rate,
+    observedAt: '2026-01-01T00:00:00.000Z', validUntil: '2099-01-01T00:00:00.000Z', evidence: 'Scripted provider fixture, not live qualification',
+    privacy: { noTraining: true, zeroRetention: false, ingressCountries: ['ZZ'], processingCountries: ['ZZ'], retentionPolicy: 'fixture', transientCache: false },
+  } });
 }
 
 beforeEach(async () => {
@@ -204,7 +209,7 @@ describe('an answered evaluation', () => {
     expect(Object.fromEntries(named.map((name) => [name, response.headers.get(name)]))).toEqual({
       'x-nectovia-attempt': 'run-1:jev:1',
       'x-nectovia-model': 'typesafe/jev-1.13',
-      'x-nectovia-rate-card': RATE.version,
+      'x-nectovia-rate-card': 'credit-prices:1:efficient',
       'x-nectovia-charge': 'settled',
       'x-nectovia-charge-micro-usd': String(debit),
       'x-nectovia-input-tokens': String(inputTokens),
@@ -214,7 +219,7 @@ describe('an answered evaluation', () => {
     // One advisor hold at the dearest input-side rate for the whole bound, settled at what was used.
     expect(attempts()).toHaveLength(1);
     expect(attempts()[0]).toMatchObject({
-      id: 'run-1:jev:1', kind: 'advisor', route: 'openrouter-jev-1.13', state: 'settled', rateSnapshot: RATE,
+      id: 'run-1:jev:1', kind: 'advisor', route: 'openrouter-decisions:r2', state: 'settled', rateSnapshot: RATE,
       maxMicroUsd: holdFor(sent.rawBody, 3), usageClass: 'included-chat', rootJobId: 'run-1',
     });
     expect(attempts()[0].maxMicroUsd).toBeGreaterThanOrEqual(debit);

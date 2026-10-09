@@ -22,14 +22,15 @@
  * (docs/implementation/2026-09-26-jev-managed-evaluations.md).
  */
 import { EVALUATION_OUTPUT_TOKENS_PER_QUESTION, checkEvaluationRequest } from '../../../shared/evaluation-wire.js';
-import { FEATURE_LABELS, OUT_OF_CREDITS_PERSONAL } from '../../../shared/access.js';
+import { currentEvaluationSelection, evaluationAllows } from '../../../shared/evaluation-policy.js';
+import { FEATURE_LABELS, OUT_OF_CREDITS_PERSONAL, EXPERT_NOT_INCLUDED, hasExpertAccess } from '../../../shared/access.js';
 import { decidePayAsYouGo } from '../../../shared/pay-as-you-go.js';
 import { individualIncludesMonthlyCredits } from '../../../shared/individual-plan.js';
 import { individualCycleId, type IndividualBillingCycle } from '../../../shared/individual-period.js';
 import { inputTokenBound } from '../../../shared/token-bound.js';
 import { normalizeUsage } from '../../../shared/usage-contract.js';
-import { chargeHold, chargeSnapshot, checkCeiling, type ChargeSnapshot, type CreditPriceTable, type PriceFields } from '../../../shared/credit-prices.js';
-import { checkInAmount, resolveCheckIns } from '../../../shared/job-check-ins.js';
+import { chargeAsRoutingPrice, chargeHold, chargeSnapshot, checkCeiling, type ChargeSnapshot, type CreditPriceTable, type PriceFields } from '../../../shared/credit-prices.js';
+import { checkInAmount, resolveCheckIns, expertPlanCheckIn } from '../../../shared/job-check-ins.js';
 import {
   isJobTier,
   isUsageClass,
@@ -73,7 +74,7 @@ import { FundingError, RELEASABLE_REFUSALS, type AttemptRef, type FundingReposit
 import { MEMBER_LIMIT_REACHED } from '../../../shared/credit-allotments.js';
 import type { MemberRole } from '../../../shared/workspaces.js';
 import {
-  EVALUATION_PROVIDER,
+  evaluationProvider,
   MANAGED_PROVIDERS,
   answeredAs,
   credentialFor,
@@ -669,7 +670,7 @@ export const ADMISSION_WINDOW_MS = 15 * 60_000;
 /** How long the provider may stay silent: before it answers, and between chunks. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 const RELEASABLE_STATUSES: ReadonlySet<number> = new Set(RELEASABLE_REFUSALS);
-const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough' };
+const TIER_LABEL: Readonly<Record<JobTier, string>> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough', expert: 'Expert' };
 
 export interface ManagedContext {
   waitUntil(promise: Promise<unknown>): void;
@@ -685,8 +686,6 @@ export interface ManagedInferenceOptions {
   registry?: readonly ProviderRegistryRow[];
   /** The typed-evaluation provider. Default: OpenRouter's Decisions API over the global fetch. */
   evaluationCaller?: EvaluationProviderCaller;
-  /** The typed-evaluation route. Default: `EVALUATION_PROVIDER`. */
-  evaluationProvider?: EvaluationProviderRow;
   now?: () => number;
   idleTimeoutMs?: number;
   /** The transport fixture replaces HTTP only; it cannot bypass binding/policy/funding code. */
@@ -813,7 +812,7 @@ export class ManagedInferenceService {
       h.sourceRestrictions = await tx.restrictJob(routingScopeKey(h.scope), h.jobId, h.sourceRestrictions);
       return effectivePolicy(tx, h.scope);
     });
-    if (h.scope.kind === 'individual' || scoped.effective?.routing || scoped.own || scoped.preference) return this.runScoped(request, h, body, bytes, env, headers, ctx);
+    if (h.tier === 'expert' || h.scope.kind === 'individual' || scoped.effective?.routing || scoped.own || scoped.preference) return this.runScoped(request, h, body, bytes, env, headers, ctx);
     if (h.sourceRestrictions.length) throw new ManagedError(409, 'source_policy_unverified', 'The legacy route has no evidence for these source restrictions. Publish a compliant route before continuing.');
     // 6. The route, and the owner's spend controls.
     const controls = spendControls(env);
@@ -881,6 +880,7 @@ export class ManagedInferenceService {
     if (!ceiling) throw unpriced(h.tier);
     const tableVersion = initial.priceTable?.version ?? 0;
     const policy = initial.effective.routing[h.tier];
+    if (!policy) throw new ManagedError(409, 'tier_unrouted', 'Expert has no configured route. Ask your administrator to review routing.');
     const referencePrice = initial.routes.find(r => r.id === policy.primary)?.binding?.price ?? null;
     const resolve = (state: typeof initial, requestEnvelope = envelope, sourceRestrictions = state.restrictions) => resolveRoutingCandidates({ routes: state.routes,
       connections: approvedConnections(env).filter(c => connectionCredential(c, env)), policy, preference: state.preference!,
@@ -1091,31 +1091,55 @@ export class ManagedInferenceService {
     }
   }
 
-  private async runEvaluation(request: Request, env: ProviderEnv, headers: Headers): Promise<Response> {
+  private async evaluationContext(request: Request, env: ProviderEnv) {
     // 1. Headers.
     const h = jobHeaders(request.headers);
     // 2 to 4. Membership, the stored admission, the Agent and included AI usage, as for a response.
     const { tenantId, state, member } = await this.admitted(h);
     const routing = await this.options.commercial.transaction(async tx => ({ ...(await effectivePolicy(tx, h.scope)),
       restrictions: await tx.restrictJob(routingScopeKey(h.scope), h.jobId, sourceRestrictionHeaders(request.headers)) }));
-    if (h.scope.kind === 'individual' || routing.preference || routing.effective?.routing || routing.restrictions.length)
+    const selection = currentEvaluationSelection(routing.global?.systemOne, this.now());
+    if (!selection) throw new ManagedError(409, 'evaluation_unavailable', 'Operations has not published a current System One selection. Continue without the advisor.');
+    if ((h.scope.kind === 'individual' || routing.effective?.routing) && !routing.preference)
+      throw new ManagedError(422, 'helper_privacy_unverified', 'Accept the account privacy settings before using this optional advisor.');
+    if (!evaluationAllows(selection, [routing.global?.mandatory ?? DEFAULT_MANDATORY_RESTRICTIONS,
+      ...(routing.preference ? [routing.preference.restrictions] : []), ...routing.restrictions]))
       throw new ManagedError(422, 'helper_privacy_unverified', 'This optional advisor has no endpoint evidence for the account and source restrictions. Continue without the advisor.');
+    const row = evaluationProvider(selection, routing.globalRevision);
+    const credential = credentialFor(row, env);
+    if (!credential) {
+      console.error(JSON.stringify({ event: 'managed-configuration-unavailable', setting: row.credential, rule: credentialProblem(row, env) ?? 'format' }));
+      throw unavailable();
+    }
+    const charge = this.tierCharge(state.priceTable, h.tier, row.id, row.rate);
+    return { h, tenantId, state, member, row, credential, charge, routing, selection };
+  }
+
+  /** Authenticated metadata only. No job, hold or provider call is created. */
+  async evaluationRoute(request: Request, env: ProviderEnv): Promise<Response> {
+    const headers = managedHeaders();
+    try {
+      const { row, charge, state, routing, selection } = await this.evaluationContext(request, env);
+      return Response.json({ model: row.model, policyRevision: routing.globalRevision, tableVersion: charge.tableVersion,
+        validUntil: new Date(Math.min(this.now() + 60_000, Date.parse(selection.validUntil))).toISOString(),
+        price: chargeAsRoutingPrice(charge, state.priceTable!.publishedAt) }, { headers });
+    } catch (error) { return managedErrorResponse(error, headers); }
+  }
+
+  private async runEvaluation(request: Request, env: ProviderEnv, headers: Headers): Promise<Response> {
+    const { h, tenantId, state, member, row, credential, charge, routing } = await this.evaluationContext(request, env);
+    const revision = request.headers.get('x-nectovia-evaluation-policy');
+    if (revision !== null && revision !== `${routing.globalRevision}:${charge.tableVersion}`)
+      throw new ManagedError(409, 'policy_changed', 'System One or its charge changed. Refresh before continuing.');
     // 5. The body: a state and its questions, inside the route's bounds.
     const bytes = await this.readBody(request, MAX_EVALUATION_REQUEST_BYTES);
     const parsed = parseBody(bytes);
     const checked = checkEvaluationRequest(parsed);
     if (!checked.ok) throw new ManagedError(checked.code === 'request_too_large' ? 413 : 400, checked.code, checked.message);
     // 6. The route, its key and the owner's spend controls.
-    const row = this.options.evaluationProvider ?? EVALUATION_PROVIDER;
-    const credential = credentialFor(row, env);
-    if (!credential) {
-      console.error(JSON.stringify({ event: 'managed-configuration-unavailable', setting: row.credential, rule: credentialProblem(row, env) ?? 'format' }));
-      throw unavailable();
-    }
     const controls = spendControls(env);
-    const charge = this.tierCharge(state.priceTable, h.tier, row.id, row.rate);
     headers.set('X-Nectovia-Model', row.model);
-    headers.set('X-Nectovia-Rate-Card', row.rate.version);
+    headers.set('X-Nectovia-Rate-Card', charge.version);
     // 7. The input bound, over the body exactly as it will be sent.
     const forwarded = decisionsBody(row, checked.request);
     const questions = Object.keys(checked.request.questions).length;
@@ -1127,7 +1151,12 @@ export class ManagedInferenceService {
       kind: 'advisor', route: row.id, requestDigest: await digest(canonicalJson(parsed)), rate: row.rate, charge,
       maxMicroUsd: chargeHold(charge, bound, questions * EVALUATION_OUTPUT_TOKENS_PER_QUESTION), ceilingMicroUsd: controls.ceilingMicroUsd, member,
       checkInMicroUsd: checkInAmount(state.checkIns, h.tier),
-    }, () => this.sameTable(charge));
+    }, async () => {
+      await this.sameTable(charge);
+      const latest = await this.evaluationContext(request, env);
+      if (latest.routing.globalRevision !== routing.globalRevision)
+        throw new ManagedError(409, 'policy_changed', 'The System One selection changed before dispatch.');
+    });
     // 11. The call, once, and its settlement before anything is answered.
     return this.decide(ref, row, credential, forwarded, headers);
   }
@@ -1148,9 +1177,11 @@ export class ManagedInferenceService {
     });
     const tenantId = member.tenantId;
     const at = this.at();
-    const state = await this.options.commercial.transaction(async (tx) => ({
+    const state = await this.options.commercial.transaction(async (tx) => {
+      const grants = h.scope.kind === 'individual' ? await tx.personGrants(member.person.id) : await tx.grants(h.organizationId);
+      return ({
       admission: h.scope.kind === 'individual' ? await tx.personalAdmission(tenantId, h.admissionId) : await tx.admission(tenantId, h.admissionId),
-      grants: h.scope.kind === 'individual' ? await tx.personGrants(member.person.id) : await tx.grants(h.organizationId),
+      grants,
       accessRevision: await tx.accessRevision(h.organizationId),
       individual: h.scope.kind === 'individual' ? await individualEntitlement(tx, h.scope.id, member.person.id, at) : null,
       policy: await tx.policy(),
@@ -1158,10 +1189,13 @@ export class ManagedInferenceService {
       priceTable: (await tx.priceTable()) ?? null,
       // The amount a job of this account checks in at (migration 019): the business's own setting, else
       // the staff default, else the code default. A Personal account has no business setting.
-      checkIns: resolveCheckIns(await tx.checkInDefaults(), h.scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, h.organizationId))?.amounts : undefined),
-    }));
+      checkIns: resolveCheckIns(await tx.checkInDefaults(), h.scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, h.organizationId))?.amounts : undefined,
+        h.scope.kind === 'organization' ? expertPlanCheckIn(grants, Date.parse(at)) : undefined),
+    }); });
     this.checkAdmission(state.admission, { person: member.person, tenantId }, h);
     const view = state.individual ?? entitlementFromGrants(state.grants, state.accessRevision, at);
+    if (h.tier === 'expert' && (h.scope.kind !== 'organization' || !hasExpertAccess(view)))
+      throw new ManagedError(403, 'expert_not_included', EXPERT_NOT_INCLUDED);
     // The verified person and their role, for the member's own monthly limit. Only a business has members.
     const asMember = h.scope.kind === 'organization' ? { personId: member.person.id, role: member.role } : null;
     // Pay as you go (DIO-219): Personal work that no plan of the person's holds the Agent for runs on their own bought credits,

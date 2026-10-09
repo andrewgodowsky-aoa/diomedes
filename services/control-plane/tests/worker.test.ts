@@ -8,6 +8,19 @@ function request(path = '/account/session', init: RequestInit = {}) {
 }
 
 describe('actual Fetch API failure boundaries', () => {
+  it('allows the Expert negotiation header at trusted browser origins without admitting identity headers', async () => {
+    const create = vi.fn();
+    const handler = createHandler(create);
+    const preflight = (headers: string, origin = 'http://127.0.0.1:8791') => handler(request('/account/session', {
+      method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'POST', 'access-control-request-headers': headers },
+    }), validEnv);
+    const allowed = await preflight('authorization,content-type,x-nectovia-expert-tier');
+    expect(allowed.status).toBe(204);
+    expect(allowed.headers.get('access-control-allow-headers')?.toLowerCase()).toContain('x-nectovia-expert-tier');
+    expect((await preflight('x-nectovia-expert-tier,x-person-id')).status).toBe(403);
+    expect((await preflight('x-nectovia-expert-tier', 'https://untrusted.example')).status).toBe(403);
+    expect(create).not.toHaveBeenCalled();
+  });
   it('fails a cold start with missing configuration before creating adapters', async () => {
     const create = vi.fn();
     const handler = createHandler(create);

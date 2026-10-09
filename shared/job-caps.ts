@@ -37,7 +37,7 @@ import {
 import { inputTokenBound } from './token-bound.js';
 import { WORK_STYLE_LABELS, type WorkStyle } from './work-style.js';
 
-// The job tiers and the WorkStyles are the same three words. If either list
+// The job tiers and the WorkStyles are the same words. If either list
 // changes without the other, this stops compiling.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const tiersMatchStyles: Same<JobTier, WorkStyle> = true;
@@ -59,6 +59,8 @@ export function jobTierOf(style: WorkStyle | null | undefined): JobTier {
 
 /** The next tier up, or null for the top one. */
 export function nextTierUp(tier: JobTier): JobTier | null {
+  // Premium selection needs the account's Managed entitlement. A generic cost warning has none.
+  if (tier === 'thorough' || tier === 'expert') return null;
   const index = JOB_TIERS.indexOf(tier);
   return index >= 0 && index < JOB_TIERS.length - 1 ? JOB_TIERS[index + 1] : null;
 }

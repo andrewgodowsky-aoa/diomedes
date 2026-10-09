@@ -26,6 +26,7 @@ import {
   ROLE_CAPABILITIES,
   STAFF_ROLES,
   planLabel,
+  managedGrantFeatures,
   planTemplate,
   roleLabel,
   staffCan,
@@ -81,6 +82,7 @@ import { escalationControlSchema } from '../../../shared/escalation-controls.js'
 import { creditPriceTableSchema, publishCreditPricesInput, type CreditPriceTable } from '../../../shared/credit-prices.js';
 import { boundRoutes, ceilingRefusal, overCeiling, withinCeiling } from './credit-prices.js';
 import { checkInDefaultsSchema, publishCheckInDefaultsInput, type CheckInDefaults, type CheckInOverride } from '../../../shared/job-check-ins.js';
+import { evaluationSelectionSchema, publishEvaluationSelectionSchema, currentEvaluationSelection } from '../../../shared/evaluation-policy.js';
 
 export const COMMERCIAL_VERSION = 1 as const;
 
@@ -97,7 +99,7 @@ export async function ensureIndividualAccount(tx: CommercialTransaction, person:
 }
 
 /** The three tiers, restated so the Worker bundle does not load the UI's work-style module. */
-export const POLICY_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export const POLICY_TIERS = ['efficient', 'focused', 'thorough', 'expert'] as const;
 export type PolicyTier = (typeof POLICY_TIERS)[number];
 
 const time = z.iso.datetime();
@@ -208,12 +210,14 @@ export type ResolvedRoute = z.infer<typeof resolvedRoute>;
 
 export const tierPolicySchema = z.strictObject({
   v: z.literal(1),
+  systemOne: evaluationSelectionSchema.nullable().optional(),
   revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER - 1),
   /** A tier with no route is refused by name, never filled from another tier. */
   tiers: z.strictObject({
     efficient: resolvedRoute.nullable(),
     focused: resolvedRoute.nullable(),
     thorough: resolvedRoute.nullable(),
+    expert: resolvedRoute.nullable().optional(),
   }),
   kind: z.enum(['seed', 'publish', 'rollback']),
   basedOn: epoch,
@@ -412,7 +416,7 @@ export function entitlementFromGrants(grants: readonly GrantTerms[], revision: n
   const when = Date.parse(at);
   const current = grants.filter((grant) => grantState(grant, when) === 'active');
   if (current.length > 0) {
-    const features = [...new Set(current.flatMap((grant) => grant.features))].sort() as AccessFeature[];
+    const features = [...new Set(current.flatMap(managedGrantFeatures))].sort() as AccessFeature[];
     const primary = [...current].sort((a, b) =>
       Number(b.features.includes(AGENT_FEATURE)) - Number(a.features.includes(AGENT_FEATURE)) ||
       Date.parse(b.validUntil) - Date.parse(a.validUntil))[0];
@@ -595,6 +599,7 @@ export const publishPolicyInput = z.strictObject({
     efficient: routeEntryId.nullable(),
     focused: routeEntryId.nullable(),
     thorough: routeEntryId.nullable(),
+    expert: routeEntryId.nullable().optional(),
   }),
   note: z.string().trim().min(1).max(1000),
   /** The revision the publisher read. A publish built on an older one is refused. */
@@ -873,7 +878,7 @@ export class CommercialService {
     await this.accounts.signIn(token);
     return this.repository.transaction(async (tx) => {
       const policy = await tx.policy();
-      const tiers: TierPolicy['tiers'] = policy?.tiers ?? { efficient: null, focused: null, thorough: null };
+      const tiers: TierPolicy['tiers'] = policy?.tiers ?? { efficient: null, focused: null, thorough: null, expert: null };
       const routes = policy ? await tx.routes() : [];
       // This gateway accepts reasoning summaries (managed-inference.ts), and a desktop asks for them
       // only for its own tier, only when the upstream serving it is proven to accept them.
@@ -1302,7 +1307,7 @@ export class CommercialService {
    * unqualified or retired, or have its provider or model changed, until a
    * new policy stops using it: the policy names what customers run on.
    */
-  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>, env: Readonly<Record<string, unknown>> = {}) {
+  async saveRoute(token: string, input: z.infer<typeof saveRouteInput>, env: Readonly<Record<string, unknown>> = {}, expertAware = true) {
     // Each refusal names the request body fields it is about (DIO-198 item 3), none for a stale editor.
     const parsed = saveRouteInput.safeParse(input);
     if (!parsed.success) throw routeInputRefusal(parsed.error.issues, input);
@@ -1314,6 +1319,8 @@ export class CommercialService {
       await tx.lockStaff();
       actor.operator = await this.staffOperator(tx, actor.person.id, 'routes.write');
       const existing = (await tx.routes()).find((row) => row.id === parsed.data.id);
+      if (!expertAware && existing?.binding?.qualification?.tiers.includes('expert') && !parsed.data.binding?.qualification?.tiers.includes('expert'))
+        throw new AccountError(409, 'Update Operations before changing a route qualified for Expert.', 'operations_update_required');
       if (parsed.data.binding) {
         const connection = approvedConnections(env).find(c => c.id === parsed.data.binding!.connectionId);
         if (!connection) throw new AccountError(422, 'Select an approved company connection.', undefined, ['binding.connectionId']);
@@ -1351,11 +1358,11 @@ export class CommercialService {
     });
   }
 
-  private resolve(routes: readonly RouteEntry[], tiers: Record<PolicyTier, string | null>): TierPolicy['tiers'] {
+  private resolve(routes: readonly RouteEntry[], tiers: Partial<Record<PolicyTier, string | null>>): TierPolicy['tiers'] {
     const out = {} as TierPolicy['tiers'];
     for (const tier of POLICY_TIERS) {
       const id = tiers[tier];
-      if (id === null) { out[tier] = null; continue; }
+      if (id == null) { out[tier] = null; continue; }
       const entry = routes.find((row) => row.id === id);
       if (!entry) throw new AccountError(422, `There is no route "${id}" in the registry.`);
       if (entry.status !== 'qualified')
@@ -1382,7 +1389,7 @@ export class CommercialService {
     await this.staff(token, 'customers.read');
     return this.repository.transaction(async (tx) => {
       const current = await tx.policy();
-      const tiers = this.resolve(await tx.routes(), parsed.data.tiers);
+      const tiers = this.resolve(await tx.routes(), { expert: current?.tiers.expert?.entryId ?? null, ...parsed.data.tiers });
       const changes = POLICY_TIERS.filter((tier) => (current?.tiers[tier]?.entryId ?? null) !== (tiers[tier]?.entryId ?? null))
         .map((tier) => ({ tier, from: current?.tiers[tier] ?? null, to: tiers[tier] }));
       return { baseRevision: current?.revision ?? 0, changes, affectedCustomers: await this.affected(tx) };
@@ -1400,7 +1407,9 @@ export class CommercialService {
       if ((current?.revision ?? 0) !== parsed.data.baseRevision)
         throw new AccountError(409, `The policy is now revision ${current?.revision ?? 0}. Review it and publish again.`);
       const row: TierPolicy = {
-        v: 1, revision: (current?.revision ?? 0) + 1, tiers: this.resolve(await tx.routes(), parsed.data.tiers),
+        systemOne: current?.systemOne ?? null,
+        v: 1, revision: (current?.revision ?? 0) + 1,
+        tiers: this.resolve(await tx.routes(), { expert: current?.tiers.expert?.entryId ?? null, ...parsed.data.tiers }),
         kind: 'publish', basedOn: current?.revision ?? 0, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
       };
       await withinCeiling(tx, () => tx.savePolicy(row));
@@ -1408,6 +1417,34 @@ export class CommercialService {
         action: 'policy.published', organizationId: null, targetKind: 'policy', targetId: String(row.revision), reason: row.note,
         detail: { before: current?.tiers ?? null, after: row.tiers },
       });
+      return row;
+    });
+  }
+
+  /** System One uses the same staff authority, policy lock, history and audit as the main tiers. */
+  async publishSystemOne(token: string, raw: unknown) {
+    const parsed = publishEvaluationSelectionSchema.safeParse(raw);
+    if (!parsed.success) throw new AccountError(422, 'Enter a Decisions model, its prices and dated qualification evidence.');
+    const input = parsed.data;
+    if (input.selection && !currentEvaluationSelection(input.selection, this.now()))
+      throw new AccountError(422, 'System One qualification must be current.');
+    const actor = await this.staff(token, 'policy.publish');
+    return this.repository.transaction(async tx => {
+      await tx.lockPolicy();
+      await tx.lockStaff();
+      const operator = await this.staffOperator(tx, actor.person.id, 'policy.publish');
+      const current = await tx.policy();
+      if ((current?.revision ?? 0) !== input.baseRevision)
+        throw new AccountError(409, 'The policy changed. Refresh before publishing System One.');
+      const row: TierPolicy = {
+        ...(current ?? { v: 1 as const, tiers: { efficient: null, focused: null, thorough: null, expert: null } }),
+        revision: input.baseRevision + 1, systemOne: input.selection,
+        kind: 'publish', basedOn: input.baseRevision, note: input.note, publishedAt: this.at(), publishedBy: actor.person.id,
+      };
+      await withinCeiling(tx, () => tx.savePolicy(row));
+      await this.audited(tx, { person: actor.person, operator }, { action: 'policy.published', organizationId: null,
+        targetKind: 'policy', targetId: String(row.revision), reason: input.note,
+        detail: { before: current?.systemOne ?? null, after: row.systemOne, purpose: 'system-one' } });
       return row;
     });
   }
@@ -1428,6 +1465,7 @@ export class CommercialService {
       const ids = Object.fromEntries(POLICY_TIERS.map((tier) => [tier, target.tiers[tier]?.entryId ?? null])) as Record<PolicyTier, string | null>;
       const row: TierPolicy = {
         v: 1, revision: (current?.revision ?? 0) + 1, tiers: this.resolve(await tx.routes(), ids),
+        systemOne: target.systemOne ?? null,
         kind: 'rollback', basedOn: target.revision, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
       };
       await withinCeiling(tx, () => tx.savePolicy(row));
@@ -1466,11 +1504,12 @@ export class CommercialService {
       const current = await tx.priceTable();
       if ((current?.version ?? 0) !== parsed.data.baseVersion)
         throw new AccountError(409, `The credit price table is now version ${current?.version ?? 0}. Review it and publish again.`);
-      const failures = overCeiling(parsed.data, await boundRoutes(tx));
+      const tiers = { expert: current?.tiers.expert ?? null, ...parsed.data.tiers };
+      const failures = overCeiling({ ...parsed.data, tiers }, await boundRoutes(tx));
       if (failures.length) throw new AccountError(422, ceilingRefusal(failures), 'over_cost_ceiling');
       const row = creditPriceTableSchema.parse({
         v: 1, version: (current?.version ?? 0) + 1, ceilingMicroUsdPerCredit: parsed.data.ceilingMicroUsdPerCredit,
-        tiers: parsed.data.tiers, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
+        tiers, note: parsed.data.note, publishedAt: this.at(), publishedBy: actor.person.id,
       });
       await tx.savePriceTable(row);
       await this.audited(tx, actor, {
@@ -1511,7 +1550,8 @@ export class CommercialService {
       if ((current?.version ?? 0) !== parsed.data.baseVersion)
         throw new AccountError(409, `The job check-in defaults are now version ${current?.version ?? 0}. Review them and publish again.`);
       const row = checkInDefaultsSchema.parse({
-        v: 1, version: (current?.version ?? 0) + 1, amounts: parsed.data.amounts, note: parsed.data.note,
+        v: 1, version: (current?.version ?? 0) + 1,
+        amounts: { expert: current?.amounts.expert ?? null, ...parsed.data.amounts }, note: parsed.data.note,
         publishedAt: this.at(), publishedBy: actor.person.id,
       });
       await tx.saveCheckInDefaults(row);

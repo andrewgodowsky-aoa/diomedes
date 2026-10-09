@@ -7,6 +7,12 @@ Company direction: Diomedes Systems
 Cloud canonical: 1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE
 Repository mirror: docs/DIOMEDES_LIVE_ROADMAP.md
 
+## Expert amendment pending cloud synchronization
+
+Owner-approved implementation: add Expert as the fourth Agent/Bot tier on every Managed plan through the existing work-style, account access, routing and funding contracts. Operations owns route qualification, model selection, credit pricing and staff check-in overrides. Expert's plan defaults are 750 / 850 / 1,000 credits for Small / Standard / Plus, scaled by included API allotment. Buying credits does not upgrade access. No automatic premium escalation, new permission authority or silent route substitution is introduced.
+
+The source candidate includes both app and Operations controls and a migration for historical three-tier database constraints. Complete existing Managed grants receive the approved benefit; limited grants remain limited. Acceptance must distinguish source tests, database migration, rollout, qualified live model calls and installed customer availability. Site PR #56 alone proves none of those. See docs/implementation/2026-10-06-expert-tier.md for the exact verification boundary. Cloud revision ANLCKQmHac-5umbxO0zGy-gYmvKqDiFhpSC2zaHaWc5uCwXP2u5XH08J9CKlg9FECKyo5vO0-i_vbgIiG6qQLkQ4I2Bnc2S3QWVFRKkQpMI was read; this additive amendment has not been written there.
+
 Engine and provider checkpoint
 
 Connected native engines follow their current installations and authenticated model catalogues. Vendor version equality is not an admission gate. Recheck capabilities, account, isolation and artifact identity after updates; refresh model and reasoning choices in the app. A failed check withdraws stale choices and does not silently select a different model or payer.

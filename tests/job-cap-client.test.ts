@@ -23,7 +23,7 @@ import { creditAmount } from '../shared/managed-usage';
 const credits = (n: number) => creditAmount(n);
 
 function view(tier: JobTier, likely: number | null): JobEstimateView {
-  const cap = credits({ efficient: 100, focused: 250, thorough: 500 }[tier]);
+  const cap = credits({ efficient: 100, focused: 250, thorough: 500, expert: 750 }[tier]);
   const estimate: JobEstimate =
     likely === null
       ? { kind: 'unknown', tier, capMicroUsd: cap, reason: 'No declared price.', warn: true }

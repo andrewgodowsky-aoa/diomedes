@@ -14,13 +14,13 @@ import {
 import { WORK_STYLES, type WorkStyle } from '../shared/work-style';
 
 /** What the owner edits for one tier: the route and the model id, as typed. */
-export type TierDraft = Record<WorkStyle, { route: string; model: string }>;
+export type TierDraft = Record<Exclude<WorkStyle, 'expert'>, { route: string; model: string }>;
 
 /** The saved map as the form starts. An unset model is an empty field. */
 export function tierDraftFrom(services: Record<string, unknown> | undefined): TierDraft {
   const map = tierMapFrom(services);
   return Object.fromEntries(
-    WORK_STYLES.map((style) => [style, { route: map[style].route, model: map[style].model ?? '' }]),
+    WORK_STYLES.filter(style => style !== 'expert').map((style) => [style, { route: map[style].route, model: map[style].model ?? '' }]),
   ) as TierDraft;
 }
 
@@ -47,6 +47,7 @@ export function withTierDraft(
 ): Record<string, boolean | string> {
   const next: Record<string, boolean | string> = { ...services };
   for (const style of WORK_STYLES) {
+    if (style === 'expert') continue;
     const route = draft[style].route;
     const model = draft[style].model.trim();
     const fallback = DEFAULT_TIER_MAP[style];

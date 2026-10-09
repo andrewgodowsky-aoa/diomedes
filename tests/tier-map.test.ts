@@ -53,6 +53,7 @@ describe('the owner’s defaults', () => {
       efficient: { route: 'azure-openai', model: 'gpt-6.1-sol' },
       focused: { route: 'aws-bedrock', model: 'us.moonshotai.kimi-k3' },
       thorough: { route: 'azure-openai', model: 'gpt-6.1-sol' },
+      expert: { route: 'nectovia', model: null },
     });
     expect(TIER_VERTEX_ROUTE).toBe('google-vertex');
     expect(TIER_GEMINI_FLASH_MODEL).toBe('gemini-3.8-flash');
@@ -117,6 +118,7 @@ describe('what the host accepts as a tier setting', () => {
       efficient: { route: 'aws-bedrock', model: 'us.openai.gpt-6-luna' },
       focused: { route: 'google-vertex', model: 'gemini-3.8-pro' },
       thorough: { route: 'aws-bedrock', model: AWS_LUNA_MODEL },
+      expert: { route: 'nectovia', model: null },
     });
     expect(tierMapFrom({ efficientRoute: 'azure-openai', efficientModel: 'custom-sol' }).efficient)
       .toEqual({ route: 'azure-openai', model: 'custom-sol' });
@@ -129,6 +131,7 @@ describe('what the host accepts as a tier setting', () => {
       efficient: { route: 'azure-openai', model: null },
       focused: { route: 'aws-bedrock', model: null },
       thorough: { route: 'azure-openai', model: null },
+      expert: { route: 'nectovia', model: null },
     });
   });
 

@@ -207,12 +207,12 @@ export interface AgentAdmissionAnswer {
 export interface RoutingPolicyAnswer {
   revision: number;
   publishedAt: string | null;
-  tiers: Record<'efficient' | 'focused' | 'thorough', { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null>;
+  tiers: Record<'efficient' | 'focused' | 'thorough', { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null> & { expert?: { entryId: string; provider: string; model: string; label: string; entryRevision: number } | null };
   /**
    * Per tier, whether the gateway accepts reasoning summaries for the upstream serving it. An older
    * gateway leaves it out and is never asked for one.
    */
-  reasoningSummaries?: Record<'efficient' | 'focused' | 'thorough', boolean>;
+  reasoningSummaries?: Record<'efficient' | 'focused' | 'thorough', boolean> & { expert?: boolean };
 }
 
 /** A computer registered for phone access. The service never answers its key. */
@@ -246,6 +246,8 @@ export class ControlPlaneClient {
     timeoutMs = this.timeoutMs,
   ): Promise<T> {
     const headers = new Headers(extra);
+    // Explicit negotiation keeps the service's three-tier replies readable by older installs.
+    headers.set('X-Nectovia-Expert-Tier', '1');
     if (token) headers.set('authorization', `Bearer ${token}`);
     if (body !== undefined) headers.set('content-type', 'application/json');
     let response: Response;

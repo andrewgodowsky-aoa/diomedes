@@ -136,7 +136,7 @@ export function AskIcon({
 function Bars({ lit }: { lit: number }) {
   return (
     <span className="ask-bars" aria-hidden="true">
-      {[1, 2, 3].map((n) => (
+      {[1, 2, 3, 4].map((n) => (
         <span key={n} className={n <= lit ? 'on' : ''} />
       ))}
     </span>
@@ -795,10 +795,11 @@ export function AskRow({
             {!free && (
               <>
                 <p className="ask-head">How much care</p>
-                {tierEntries(null, null, names).map((entry) => (
+                {tierEntries(null, null, names, false, styleView?.expert?.available === true, styleView?.expert?.reason ?? null).map((entry) => (
                   <Item
                     key={entry.id}
                     checked={false}
+                    disabled={entry.disabled}
                     glyph={<Bars lit={entry.bars} />}
                     name={entry.name}
                     sub={entry.sub}
@@ -920,7 +921,7 @@ export function AskRow({
             }
           >
             <p className="ask-head">How much care</p>
-            {tierEntries(local, localName, names).map((entry) => (
+            {tierEntries(local, localName, names, false, styleView?.expert?.available === true, styleView?.expert?.reason ?? null).map((entry) => (
               <Item
                 key={entry.id}
                 checked={entry.id === tier}

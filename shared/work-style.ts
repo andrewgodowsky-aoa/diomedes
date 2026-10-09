@@ -1,6 +1,7 @@
 import type { EngineModel, Mode } from './types.js';
 import { EFFORT_ORDER, effortFor, effortRank } from './effort.js';
 import { routeDisplayName } from './engines.js';
+import { EXPERT_MANAGED_ROUTE_ONLY } from './access.js';
 
 /**
  * A WorkStyle is how much care a thread asks for, in words a person without a
@@ -11,7 +12,7 @@ import { routeDisplayName } from './engines.js';
  * from the models that route already offers, which one leads and how hard it
  * reasons.
  */
-export const WORK_STYLES = ['efficient', 'focused', 'thorough'] as const;
+export const WORK_STYLES = ['efficient', 'focused', 'thorough', 'expert'] as const;
 export type WorkStyle = (typeof WORK_STYLES)[number];
 
 /** The one place the styles are named. Rename here and every surface follows. */
@@ -19,13 +20,15 @@ export const WORK_STYLE_LABELS: Record<WorkStyle, string> = {
   efficient: 'Efficient',
   focused: 'Focused',
   thorough: 'Thorough',
+  expert: 'Expert',
 };
 
 /** One plain line each, for the picker. */
 export const WORK_STYLE_DESCRIPTIONS: Record<WorkStyle, string> = {
   efficient: 'Quick and low cost. Everyday conversation, brainstorming and intake.',
   focused: 'Steady, careful work on a task that needs attention.',
-  thorough: 'The most care, for demanding reasoning and checks.',
+  thorough: 'Careful reasoning and checks for demanding work.',
+  expert: 'Frontier models for the most demanding work. Included with Managed.',
 };
 
 /**
@@ -99,6 +102,7 @@ export const STYLE_LEADS: Record<WorkStyle, readonly LogicalModel[]> = {
   efficient: ['luna', 'muse-standard'],
   focused: ['sol'],
   thorough: ['opus-5.5', 'astra', 'terra'],
+  expert: [], // Operations publishes the qualified model; never infer it from a catalogue name.
 };
 
 /** Where a style's reasoning starts, before the mode and the task move it. */
@@ -106,6 +110,7 @@ export const STYLE_BASE_EFFORT: Record<WorkStyle, string> = {
   efficient: 'low',
   focused: 'medium',
   thorough: 'high',
+  expert: 'high',
 };
 
 export type TaskKind = 'greeting' | 'ordinary' | 'demanding';
@@ -255,6 +260,13 @@ export function resolveWorkStyle(input: WorkStyleInput): WorkStyleResolution {
   const kind = input.hints?.kind ?? classifyTask(input.hints?.text);
   const effortKind: TaskKind = input.stableEffort ? 'ordinary' : kind;
   const base = { style, kind, escalation: null } as const;
+
+  // Expert is a Managed product tier, not the historical manual-model "expert choice".
+  // Its model comes only from the account service, including for a greeting or a manual pin.
+  if (style === 'expert') return {
+    ...base, outcome: 'ask', model: null, effort: null, reason: EXPERT_MANAGED_ROUTE_ONLY,
+    pinScope: null, substituted: false, selection: 'automatic', logical: null,
+  };
 
   // 1. An explicit pin always wins, and is never swapped for something else.
   if (input.pin?.model) {

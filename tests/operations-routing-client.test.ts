@@ -160,7 +160,7 @@ describe('published account policy at the desktop model boundary', () => {
     const workspaces = { projectOwner: () => ({ organizationId: org }), active: () => ({ kind: 'personal' }) } as unknown as WorkspaceService;
     const routing = new AccountRoutingSession(session, workspaces);
     expect((await routing.refresh('owned-project'))?.reasoningSummaries)
-      .toEqual({ efficient: true, focused: false, thorough: false });
+      .toEqual({ efficient: true, focused: false, thorough: false, expert: false });
   });
 
   it.each([true, false])('passes derived source restrictions through the real Nectovia adapter (destination allowed=%s)', async allowed => {

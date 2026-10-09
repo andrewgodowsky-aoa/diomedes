@@ -31,6 +31,7 @@ import type { Store } from '../server/store.js';
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud.js';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed.js';
 import type { AccountStateView } from '../shared/accounts.js';
+import { EXPERT_NOT_INCLUDED } from '../shared/access.js';
 import { ESCALATION_HEADER, escalationAllows, type EscalationView } from '../shared/escalation-controls.js';
 import {
   ADVISOR_NEEDS_WORKER,
@@ -501,7 +502,7 @@ describe('refused before any role is admitted or sent', () => {
     const untiered = await localStart(projectId, taskId, { team: { worker: { route: 'nectovia' }, advisor: null } });
     expect(untiered.status).toBe(400);
     expect(untiered.data).toMatchObject({
-      error: 'A Nectovia role names its tier: efficient, focused or thorough.', code: 'team_role_invalid', role: 'worker',
+      error: 'A Nectovia role names its tier: efficient, focused, thorough or expert.', code: 'team_role_invalid', role: 'worker',
     });
     const named = await localStart(projectId, taskId, { team: { worker: { ...TIERED.worker, model: 'any-model' }, advisor: null } });
     expect(named.status).toBe(409);
@@ -521,7 +522,8 @@ describe('the account’s escalation control', () => {
     control = { enabled: false, tiers: [], source: 'scope', scopeRevision: 2, globalRevision: 0 };
     const projectId = await project(orgs.juniper);
     const offers = await ok<{ offers: EscalationOffer[]; credits: string }>(`/projects/${projectId}/loop/escalation`);
-    expect(offers.offers).toEqual(ROUTING_TIERS.map((tier) => ({ tier, name: nectoviaTierName(tier), admitted: false, reason: TURNED_OFF })));
+    expect(offers.offers).toEqual(ROUTING_TIERS.map((tier) => ({ tier, name: nectoviaTierName(tier), admitted: false,
+      reason: tier === 'expert' ? EXPERT_NOT_INCLUDED : TURNED_OFF })));
     expect(offers.credits).toBe(NECTOVIA_ROLE_CREDITS);
     const refused = await localStart(projectId, await newTask(projectId), { team: TIERED });
     expect(refused.status).toBe(409);
@@ -537,7 +539,7 @@ describe('the account’s escalation control', () => {
     const projectId = await project(orgs.juniper);
     const offers = await ok<{ offers: EscalationOffer[] }>(`/projects/${projectId}/loop/escalation`);
     expect(offers.offers.map((offer) => [offer.tier, offer.admitted, offer.reason]))
-      .toEqual([['efficient', true, null], ['focused', true, null], ['thorough', false, THOROUGH_OFF]]);
+      .toEqual([['efficient', true, null], ['focused', true, null], ['thorough', false, THOROUGH_OFF], ['expert', false, EXPERT_NOT_INCLUDED]]);
     const refused = await localStart(projectId, await newTask(projectId), { team: TIERED });
     expect(refused.status).toBe(409);
     expect(refused.data).toMatchObject({ error: THOROUGH_OFF, code: 'escalation_refused', role: 'advisor' });
@@ -558,7 +560,8 @@ describe('the account’s escalation control', () => {
     control = 'unreadable';
     const projectId = await project(orgs.juniper);
     const offers = await ok<{ offers: EscalationOffer[] }>(`/projects/${projectId}/loop/escalation`);
-    expect(offers.offers.map((offer) => [offer.admitted, offer.reason])).toEqual(ROUTING_TIERS.map(() => [false, ESCALATION_UNREADABLE]));
+    expect(offers.offers.map((offer) => [offer.admitted, offer.reason])).toEqual(ROUTING_TIERS.map(tier => [false,
+      tier === 'expert' ? EXPERT_NOT_INCLUDED : ESCALATION_UNREADABLE]));
     const refused = await localStart(projectId, await newTask(projectId), { team: TIERED });
     expect(refused.status).toBe(409);
     expect(refused.data).toMatchObject({ error: ESCALATION_UNREADABLE, code: 'escalation_refused', role: 'worker' });

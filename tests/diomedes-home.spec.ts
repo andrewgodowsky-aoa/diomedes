@@ -167,6 +167,7 @@ test.afterEach(() => {
   expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
 });
 
+
 test('the app opens to Diomedes, and looking at it creates nothing', async ({ page }) => {
   await open(page);
   await expect(composer(page)).toBeVisible();
@@ -1380,4 +1381,23 @@ test('CD05-R-12 closure: a Discard that fails says so where it was pressed, and 
   // Nothing was given up: the message is still offered where it belongs.
   await scope.selectOption(a.id);
   await expect(strip(page)).toContainText('Uncertain R12e A');
+});
+
+for (const available of [false, true]) test(`Expert Home selection follows host eligibility: ${available}`, async ({ page }) => {
+  const bound = await linkHome(api);
+  await api(`/projects/${bound.projectId}/threads/${bound.threadId}`, 'PUT', { engine: 'nectovia', workStyle: 'efficient', requested: null });
+  // UI boundary only: gateway entitlement and all three plan amounts have separate service tests.
+  await page.route('**/api/projects/*/threads/*/work-style', async route => {
+    const response = await route.fetch();
+    const view = await response.json();
+    await route.fulfill({ response, json: { ...view, expert: { available, reason: available ? null : 'Managed is required.' } } });
+  });
+  await open(page);
+  await page.getByRole('button', { name: 'How much care: Efficient', exact: true }).click();
+  const expert = page.getByRole('menuitemradio', { name: /^Expert/ });
+  if (available) {
+    await expect(expert).toBeEnabled();
+    await expert.click();
+    await expect(page.getByRole('button', { name: 'How much care: Expert', exact: true })).toBeVisible();
+  } else await expect(expert).toBeDisabled();
 });

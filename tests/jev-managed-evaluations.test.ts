@@ -52,12 +52,19 @@ import { SpendExposure, type ExposureReservation } from '../server/spend-exposur
 import type { AccessFeature } from '../shared/access';
 import type { AccountStateView } from '../shared/accounts';
 import type { WorkspaceView } from '../shared/workspaces';
+import type { EvaluationRoute } from '../shared/evaluation-policy';
+import { jobKeyFor } from '../server/job-caps';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const ACCOUNT_SERVICE = 'http://faux.local';
 /** An ordinary request: the rule neither skips it nor reads it as demanding. */
 const REQUEST = 'Draft a short note to the Saturday staff about the new opening hours.';
-const PRICE_VERSION = 'evaluation-price-2026-09-22.openrouter.1';
+const PRICE_VERSION = 'credit-prices:1:efficient';
+const selectionFixture: EvaluationRoute = { model: 'fixture/decision-model', policyRevision: 2, tableVersion: 1,
+  validUntil: '2099-01-01T00:00:00.000Z', price: { version: 'test-credit-prices', inputMicroUsdPerMillion: 42000,
+    outputMicroUsdPerMillion: 0, cacheReadMicroUsdPerMillion: 42000, cacheWriteMicroUsdPerMillion: 42000,
+    reasoningMicroUsdPerMillion: 0, requestFeeMicroUsd: 0, longContext: [], observedAt: '2026-01-01T00:00:00.000Z',
+    validUntil: '2099-01-01T00:00:00.000Z', evidence: 'Synthetic fixture' } };
 
 interface Sent {
   url: string;
@@ -166,6 +173,11 @@ beforeEach(async () => {
   answer = scriptedAnswer;
   cloud = await createFauxCloud({ file: null, passwordIterations: 1_000, managed: { evaluationTransport: decisions } });
   orgs = (await seedDemo(cloud)).organizations!;
+  await cloud.commercial.publishSystemOne(await staffToken(DEMO_ACCOUNTS.staffRouting.email), { baseRevision: 1, note: 'Offline test selection', selection: {
+    provider: 'openrouter', protocol: 'decisions', model: EVALUATION_PROVIDER.model, rate: EVALUATION_PROVIDER.rate,
+    evidence: 'Scripted fixture only', observedAt: '2026-01-01T00:00:00.000Z', validUntil: '2099-01-01T00:00:00.000Z',
+    privacy: { noTraining: true, zeroRetention: false, ingressCountries: ['ZZ'], processingCountries: ['ZZ'], retentionPolicy: 'fixture', transientCache: false },
+  } });
   backend = {
     client: new ControlPlaneClient(ACCOUNT_SERVICE, async (req) => {
       const pathname = new URL(req.url).pathname;
@@ -225,7 +237,7 @@ describe('a business conversation on nectovia', () => {
       charge: { state: 'known', microUsd: settled!.allowanceDebitMicroUsd, priceVersion: PRICE_VERSION, tokens: { output: 4 } },
       provenance: {
         port: MANAGED_EVALUATION_PORT_ID,
-        requestedModel: 'typesafe/jev-1.13',
+        requestedModel: 'operations-system-one',
         actualModel: 'typesafe/jev-1.13-20260917',
         scripted: false,
       },
@@ -242,9 +254,8 @@ describe('a business conversation on nectovia', () => {
     });
 
     // On this computer's guard, the same attempt and job. Under tier pricing (Model B) the service
-    // debits the tier's charge, and this computer prices a legacy account's evaluation at the published
-    // provider price, so the two ledgers disagree and the local hold is kept as uncertain, with the
-    // reason, rather than settled at a figure they disagree on. The account service's ledger is the authority.
+    // debits the tier's charge. The desktop now reads that same charge before reserving,
+    // independently of the provider's cost, so both ledgers settle the same amount.
     const holds = await localHolds(organizationId);
     expect(holds).toHaveLength(1);
     expect(settled!.allowanceDebitMicroUsd).toBeGreaterThan(settled!.providerCostMicroUsd);
@@ -253,12 +264,28 @@ describe('a business conversation on nectovia', () => {
       route: 'nectovia',
       modelId: 'typesafe/jev-1.13',
       rateCardVersion: PRICE_VERSION,
-      state: 'uncertain',
-      settledMicroUsd: null,
-      uncertainReason: expect.stringContaining(`The service charged ${settled!.allowanceDebitMicroUsd} micro-USD`),
+      state: 'settled',
+      settledMicroUsd: settled!.allowanceDebitMicroUsd,
+      uncertainReason: null,
       jobId: expect.stringMatching(/^job-[0-9a-f]{40}$/),
       attempt: { runId: sent.headers['x-nectovia-job'], stepId: 'preflight', attempt: 1 },
     });
+  });
+
+  test('a changed Operations model is used on the next preflight without a desktop rebuild or stale cached advice', async () => {
+    await signIn(DEMO_ACCOUNTS.owner.email);
+    const binding = await home();
+    await preflight(binding);
+    const published = cloud.store.snapshot().commercial.policies.at(-1)!;
+    await cloud.commercial.publishSystemOne(await staffToken(DEMO_ACCOUNTS.staffRouting.email), {
+      baseRevision: published.revision, note: 'Select another offline model',
+      selection: { ...published.systemOne!, model: 'fixture/another-decision-model', rate: { ...published.systemOne!.rate, version: 'provider-quote-2' } },
+    });
+    const result = await preflight(binding);
+    expect(provider).toHaveLength(2);
+    expect(provider[1].body.model).toBe('fixture/another-decision-model');
+    expect(result.advice?.provenance?.actualModel).toBe('fixture/another-decision-model-20260917');
+    expect(evaluations[1].headers['x-nectovia-evaluation-policy']).toBe('3:1');
   });
 
   test('a greeting is answered by rule: no admission, no gateway call, no hold', async () => {
@@ -404,6 +431,7 @@ describe('the managed port', () => {
         signedIn: () => true,
         token: async () => 'session-token',
         fetch: async (input, init) => {
+          if (String(input).endsWith('/evaluations/route')) return Response.json(selectionFixture);
           calls.push(new Request(input, init));
           return (options.fetch ?? (async () => new Response(null, { status: 599 })))(input, init);
         },
@@ -507,12 +535,13 @@ describe('the managed port', () => {
   });
 
   test('the charge sink settles only at the amount this computer prices the same usage at', async () => {
-    const card = managedEvaluationRateCard();
+    const card = managedEvaluationRateCard(selectionFixture);
     const reserve = (runId: string) =>
       exposure.setCap(nectoviaConnectionId(ORG, new Date()), 1_000_000 as never, { approvedBy: 'the test', note: '' }).then(() =>
         exposure.reserve({
           connectionId: nectoviaConnectionId(ORG, new Date()), route: card.route, modelId: card.modelId, card,
           attempt: { runId, stepId: 'preflight', attempt: 1, requestDigest: 'a'.repeat(64) }, maxMicroUsd: 100 as never,
+          job: { id: jobKeyFor('fixture-project', runId), capMicroUsd: 1000 as never },
         }));
     const record = (receipt: EvaluationReceipt): PreflightChargeRecord => ({
       key: 'k', scope: input.scope, at: '2026-09-26T12:00:00.000Z', provenance: null, receipt,
@@ -522,13 +551,13 @@ describe('the managed port', () => {
     });
     // 1,000 input tokens at $0.042 a million is 42 micro-USD.
     const agreed = await reserve('agreed');
-    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: agreed.id, microUsd: 42, rateCard: card.version, usage: { inputTokens: 1_000, outputTokens: 4 } }));
+    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: agreed.id, microUsd: 42, rateCard: card.version, usage: { inputTokens: 1_000, outputTokens: 4 } }), card);
     expect(exposure.get(agreed.id)).toMatchObject({ state: 'settled', settledMicroUsd: 42 });
     const differs = await reserve('differs');
-    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: differs.id, microUsd: 43, rateCard: card.version, usage: { inputTokens: 1_000, outputTokens: 4 } }));
+    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: differs.id, microUsd: 43, rateCard: card.version, usage: { inputTokens: 1_000, outputTokens: 4 } }), card);
     expect(exposure.get(differs.id)).toMatchObject({ state: 'uncertain', settledMicroUsd: null });
     const otherTerms = await reserve('other-terms');
-    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: otherTerms.id, microUsd: 42, rateCard: 'evaluation-price-2027-01-01.1', usage: { inputTokens: 1_000, outputTokens: 4 } }));
+    await recordManagedCharge(exposure, record({ state: 'settled', attemptId: otherTerms.id, microUsd: 42, rateCard: 'evaluation-price-2027-01-01.1', usage: { inputTokens: 1_000, outputTokens: 4 } }), card);
     expect(exposure.get(otherTerms.id)).toMatchObject({ state: 'uncertain' });
   });
 
@@ -549,14 +578,16 @@ describe('the managed port', () => {
     const demanding = `${'Compare the three suppliers, reconcile the invoices, draft the plan, then list the risks and the next steps. '.repeat(12)}`;
     const seen: Request[] = [];
     const recording = managedEvaluationPort({
-      account: { base: ACCOUNT_SERVICE, signedIn: () => true, token: async () => 't', fetch: async (i, init) => { seen.push(new Request(i, init)); return new Response(null, { status: 599 }); } },
+      account: { base: ACCOUNT_SERVICE, signedIn: () => true, token: async () => 't', fetch: async (i, init) => {
+        if (String(i).endsWith('/evaluations/route')) return Response.json(selectionFixture);
+        seen.push(new Request(i, init)); return new Response(null, { status: 599 }); } },
       includes: () => true, gate: admitted, tierOf: () => 'efficient', exposure, jobId: () => 'preflight-demanding',
     });
     await createJevAdvisor({ port: recording, recordCharge: () => {} }).preflight({ ...input, intent: demanding });
     expect(seen).toHaveLength(1);
     const body = (await seen[0].json()) as { questions: Record<string, unknown> };
     expect(Object.keys(body.questions)).not.toContain('workload');
-    expect(port.requestedModel).toBe('typesafe/jev-1.13');
+    expect(port.requestedModel).toBe('operations-system-one');
   });
 });
 
@@ -573,8 +604,8 @@ describe('the terms', () => {
       cacheWriteMicroUsdPerMillion: price.inputMicroUsdPerMillion,
       outputMicroUsdPerMillion: price.outputMicroUsdPerMillion,
     });
-    const card = managedEvaluationRateCard();
-    expect(card).toMatchObject({ version: price.version, route: 'nectovia', modelId: price.modelId });
+    const card = managedEvaluationRateCard(selectionFixture);
+    expect(card).toMatchObject({ version: selectionFixture.price.version, route: 'nectovia', modelId: selectionFixture.model });
     expect(card.short).toEqual({ input: 42_000, cacheWrite: 42_000, cacheRead: 42_000, output: 0 });
   });
 });

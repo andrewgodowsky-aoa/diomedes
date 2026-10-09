@@ -94,9 +94,9 @@ describe.skipIf(!ownerUrl)('complete Individual credits through real restricted 
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: Number(name.slice(0, 3)), name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
     }));
-    expect(allMigrations.map(row => row.version)).toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
+    expect(allMigrations.map(row => row.version)).toEqual(Array.from({ length: 21 }, (_, index) => index + 1));
     repairSql = allMigrations[19].sql;
-    // Current main already includes 013..019. Seed real historical funding before only 020.
+    // Current main already includes 013..019. Seed real historical funding before 020, then 021 (Expert tier).
     expect(await migrate(ownerFactory, allMigrations.slice(0, 19)))
       .toEqual(Array.from({ length: 19 }, (_, index) => index + 1));
     async function login(base: 'cp_runtime' | 'cp_funding'): Promise<ClientFactory> {
@@ -138,7 +138,7 @@ describe.skipIf(!ownerUrl)('complete Individual credits through real restricted 
       ...refs, topUpId: 'history-purchase', amountMicroUsd: micro(2_000_000), provider: 'stripe', sourceEventId: 'evt_history_fixture' });
     preserved = await snapshot(); functionBefore = await functionIdentity();
     // Exercise real contiguous upgrade and hashed replay, from current main's actual 001..019 history.
-    expect(await migrate(ownerFactory, allMigrations)).toEqual([20]);
+    expect(await migrate(ownerFactory, allMigrations)).toEqual([20, 21]);
   }, 60_000);
 
   it('preserves historical grants, allocations, purchases, holds and settlements without widening the function owner or ACL', async () => {
@@ -149,7 +149,7 @@ describe.skipIf(!ownerUrl)('complete Individual credits through real restricted 
     expect(await functionIdentity()).toEqual(functionBefore);
   });
 
-  it('records and replays the actual contiguous 001 through 020 history with pinned source hashes', async () => {
+  it('records and replays the actual contiguous 001 through 021 history with pinned source hashes', async () => {
     expect((await query(ownerFactory, 'SELECT version,name,sha256 FROM control_plane.schema_migrations ORDER BY version')).rows)
       .toEqual(allMigrations.map(({ version, name, sha256 }) => ({ version, name, sha256 })));
     expect(await migrate(ownerFactory, allMigrations)).toEqual([]);

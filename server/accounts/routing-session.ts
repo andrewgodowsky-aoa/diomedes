@@ -111,6 +111,7 @@ export class AccountRoutingSession {
           efficient: snapshot.tiers.efficient?.reasoningSummaries === true,
           focused: snapshot.tiers.focused?.reasoningSummaries === true,
           thorough: snapshot.tiers.thorough?.reasoningSummaries === true,
+          expert: snapshot.tiers.expert?.reasoningSummaries === true,
         } };
     this.assertScope(projectId, person, scope);
     if (!this.individualAccess || this.individualAccess.until <= this.now() || scope.kind === 'individual') await this.refreshAccess();

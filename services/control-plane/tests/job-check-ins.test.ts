@@ -17,9 +17,9 @@ import { providerSpy, readAll, type ProviderRequest, type ProviderSpy } from './
 
 describe('the check-in amounts', () => {
   it('has one code default per tier: 100, 250 and 500 credits', () => {
-    expect(JOB_CHECK_IN_CREDITS.credits).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(JOB_CHECK_IN_CREDITS.credits).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
     expect(defaultCheckIn('focused')).toBe(creditAmount(250));
-    expect(codeCheckIns().credits).toEqual({ efficient: 100, focused: 250, thorough: 500 });
+    expect(codeCheckIns().credits).toEqual({ efficient: 100, focused: 250, thorough: 500, expert: 750 });
   });
 
   it('takes the business setting, then the staff default, then the code default, tier by tier', () => {
@@ -27,8 +27,8 @@ describe('the check-in amounts', () => {
     expect(resolveCheckIns(undefined, undefined)).toMatchObject({ credits: { efficient: 100, focused: 250, thorough: 500 }, source: { efficient: 'code', focused: 'code', thorough: 'code' }, defaultsVersion: null });
     expect(resolveCheckIns(defaults, undefined)).toMatchObject({ credits: { efficient: 120, focused: 300, thorough: 600 }, source: { efficient: 'staff', focused: 'staff', thorough: 'staff' }, defaultsVersion: 3 });
     const own = resolveCheckIns(defaults, { efficient: 40, focused: null, thorough: 900 });
-    expect(own.credits).toEqual({ efficient: 40, focused: 300, thorough: 900 });
-    expect(own.source).toEqual({ efficient: 'business', focused: 'staff', thorough: 'business' });
+    expect(own.credits).toEqual({ efficient: 40, focused: 300, thorough: 900, expert: 750 });
+    expect(own.source).toEqual({ efficient: 'business', focused: 'staff', thorough: 'business', expert: 'code' });
     expect(checkInAmount(own, 'efficient')).toBe(creditAmount(40));
     expect(viewOf(own).amounts).toEqual(own.credits);
   });
@@ -39,7 +39,7 @@ describe('the check-in amounts', () => {
 const T = 'tenant_1';
 const O = 'org_1';
 const RATE = { version: 'fixture-rate-1', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 1_000_000, cacheWriteMicroUsdPerMillion: 1_000_000 };
-const AMOUNTS = { efficient: creditAmount(100), focused: creditAmount(250), thorough: creditAmount(500) };
+const AMOUNTS = { efficient: creditAmount(100), focused: creditAmount(250), thorough: creditAmount(500), expert: creditAmount(750) };
 
 async function funded() {
   const service = new FundingService(new FundingMemoryRepository(), { now: () => Date.parse('2026-09-10T12:00:00.000Z') });

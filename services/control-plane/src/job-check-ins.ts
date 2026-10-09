@@ -16,12 +16,13 @@
  * from the job, and the person from the verified session. The balance and a member's monthly limit
  * are still checked at every hold, so Keep going lends no credits and lifts no limit.
  */
-import { MAX_MONEY_MICRO_USD, micro, type JobTier } from '../../../shared/managed-usage.js';
+import { JOB_TIERS, CREDIT_MICRO_USD, MAX_MONEY_MICRO_USD, micro, type JobTier } from '../../../shared/managed-usage.js';
 import { isActiveMember, type Membership } from '../../../shared/workspaces.js';
 import type { AccountScope } from '../../../shared/routing-policy.js';
 import {
   checkInAmount,
   resolveCheckIns,
+  expertPlanCheckIn,
   setCheckInOverrideInput,
   viewOf,
   type CheckInSettingsView,
@@ -48,7 +49,7 @@ export { setCheckInOverrideInput };
 /** Owners and admins manage a business's settings; a member does not. */
 const manages = (membership: Membership | undefined | null) => isActiveMember(membership) && (membership!.role === 'owner' || membership!.role === 'admin');
 
-const JOB_TIER_LIST: readonly JobTier[] = ['efficient', 'focused', 'thorough'];
+const JOB_TIER_LIST = JOB_TIERS;
 
 /** Every tier's amount as exact money, for the funding service. */
 export const amountsOf = (resolved: ResolvedCheckIns): Record<JobTier, ReturnType<typeof micro>> =>
@@ -74,7 +75,8 @@ export class JobCheckInService {
 
   private resolved(tenantId: string, scope: AccountScope): Promise<ResolvedCheckIns> {
     return this.repository.transaction(async (tx) =>
-      resolveCheckIns(await tx.checkInDefaults(), scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, scope.id))?.amounts : undefined));
+      resolveCheckIns(await tx.checkInDefaults(), scope.kind === 'organization' ? (await tx.checkInOverride(tenantId, scope.id))?.amounts : undefined,
+        scope.kind === 'organization' ? expertPlanCheckIn(await tx.grants(scope.id), this.now()) : undefined));
   }
 
   /** An owner or admin: the business's own amounts beside what it would get without them. */
@@ -89,10 +91,11 @@ export class JobCheckInService {
     return this.repository.transaction(async (tx) => {
       const defaults = await tx.checkInDefaults();
       const override = await tx.checkInOverride(tenantId, organizationId);
+      const expertAmount = expertPlanCheckIn(await tx.grants(organizationId), this.now());
       return {
-        effective: viewOf(resolveCheckIns(defaults, override?.amounts)),
-        defaults: { ...resolveCheckIns(defaults, undefined).credits },
-        override: override?.amounts ?? { efficient: null, focused: null, thorough: null },
+        effective: viewOf(resolveCheckIns(defaults, override?.amounts, expertAmount)),
+        defaults: { ...resolveCheckIns(defaults, undefined, expertAmount).credits },
+        override: override?.amounts ?? { efficient: null, focused: null, thorough: null, expert: null },
         updatedAt: override?.updatedAt ?? null,
       };
     });
@@ -108,9 +111,13 @@ export class JobCheckInService {
     if (!manages(snapshot.membership))
       throw new AccountError(403, 'Only an owner or an admin can see or change how far a job runs before it checks in.', 'not_authorized');
     const tenantId = snapshot.organization.tenantId;
-    await this.repository.transaction((tx) => tx.saveCheckInOverride({
-      tenantId, organizationId, amounts: input.amounts, updatedBy: snapshot.person.id, updatedAt: this.at(),
-    }));
+    await this.repository.transaction(async (tx) => {
+      await tx.lockOrganization(organizationId);
+      const current = await tx.checkInOverride(tenantId, organizationId);
+      await tx.saveCheckInOverride({ tenantId, organizationId,
+        amounts: { ...input.amounts, expert: input.amounts.expert === undefined ? current?.amounts.expert ?? null : input.amounts.expert },
+        updatedBy: snapshot.person.id, updatedAt: this.at() });
+    });
     return this.settingsView(tenantId, organizationId);
   }
 
@@ -124,7 +131,7 @@ export class JobCheckInService {
         tenantId: member.tenantId, organizationId: scope.id, rootJobId: input.jobId, atCapMicroUsd: micro(input.atCapMicroUsd), amounts: amountsOf(resolved),
       });
       const tier = result.job.tier as JobTier;
-      return { jobId: result.job.rootJobId, capMicroUsd: result.job.capMicroUsd, addedCredits: resolved.credits[tier], raised: result.raised };
+      return { jobId: result.job.rootJobId, capMicroUsd: result.job.capMicroUsd, addedCredits: checkInAmount(resolved, tier) / CREDIT_MICRO_USD, raised: result.raised };
     } catch (error) {
       if (error instanceof FundingError) throw new AccountError(error.status, error.message, error.code);
       throw error;

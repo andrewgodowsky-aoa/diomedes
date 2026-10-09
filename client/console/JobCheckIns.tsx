@@ -32,10 +32,11 @@ export async function loadJobCheckIns(organizationId: string, read: Read = api):
 }
 
 /** What the person typed per tier: whole credits, or empty for "use Nectovia's amount". Anything else is invalid. */
-export function parseAmounts(text: Record<JobTier, string>): SetCheckInOverrideInput['amounts'] | null {
+export function parseAmounts(text: Record<Exclude<JobTier, 'expert'>, string> & { expert?: string }): SetCheckInOverrideInput['amounts'] | null {
   const out: Partial<Record<JobTier, number | null>> = {};
   for (const tier of JOB_TIERS) {
-    const raw = text[tier].trim();
+    if (tier === 'expert' && text[tier] === undefined) continue;
+    const raw = (text[tier] ?? '').trim();
     if (raw === '') {
       out[tier] = null;
       continue;
@@ -53,6 +54,7 @@ export const amountsText = (view: CheckInSettingsView): Record<JobTier, string> 
   efficient: view.override.efficient === null ? '' : String(view.override.efficient),
   focused: view.override.focused === null ? '' : String(view.override.focused),
   thorough: view.override.thorough === null ? '' : String(view.override.thorough),
+  expert: view.override.expert == null ? '' : String(view.override.expert),
 });
 
 /** Save the business's own amounts. The service validates, applies and answers with what is now in force. */
@@ -66,7 +68,7 @@ const credits = (amount: number) => `${amount.toLocaleString('en-US')} ${amount 
 
 export function JobCheckIns({ organizationId }: { organizationId: string }) {
   const [view, setView] = useState<CheckInSettingsView | null | undefined>(undefined);
-  const [text, setText] = useState<Record<JobTier, string>>({ efficient: '', focused: '', thorough: '' });
+  const [text, setText] = useState<Record<JobTier, string>>({ efficient: '', focused: '', thorough: '', expert: '' });
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<string | null>(null);
 
@@ -126,8 +128,10 @@ export function JobCheckIns({ organizationId }: { organizationId: string }) {
           />
           <span className="caption">
             {view.effective.source[tier] === 'business'
-              ? `Your amount. Nectovia’s is ${credits(view.defaults[tier])}.`
-              : `Nectovia’s amount is ${credits(view.defaults[tier])}.`}
+              ? `Your amount. Nectovia’s is ${credits(view.defaults[tier] ?? 750)}.`
+              : view.effective.source[tier] === 'plan'
+                ? `Your Managed plan's amount is ${credits(view.defaults[tier] ?? 750)}.`
+                : `Nectovia’s amount is ${credits(view.defaults[tier] ?? 750)}.`}
           </span>
         </label>
       ))}

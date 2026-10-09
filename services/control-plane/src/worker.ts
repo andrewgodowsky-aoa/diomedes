@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { tierResponse } from '../../../shared/expert-tier-wire.js';
+import { EXPERT_TIER_HEADER } from '../../../shared/routing-policy.js';
+import { publishEvaluationSelectionSchema } from '../../../shared/evaluation-policy.js';
 import { ConfigurationError, configuration, identityFor, type AccountPool, type Configuration } from './config.js';
 import { AccountService, IDENTITY_RECHECK, organizationInput, invitationInput, changeInput, acceptanceInput, codeInvitationInput, redeemCodeInput } from './account-service.js';
 import { AccountError } from './errors.js';
@@ -291,6 +294,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if (request.method !== 'POST') throw new ManagedError(405, 'method_not_allowed', 'Send this request as a POST.', { Allow: 'POST' });
         return await createManaged(config, create(config, 'customer')).evaluate(request, env);
       }
+      if (url.pathname === '/managed/v1/evaluations/route') {
+        if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read this selection with a GET.', { Allow: 'GET' });
+        return await createManaged(config, create(config, 'customer')).evaluationRoute(request, env);
+      }
       if ((match = MANAGED_ATTEMPT.exec(url.pathname))) {
         if (request.method !== 'GET') throw new ManagedError(405, 'method_not_allowed', 'Read an attempt with a GET.', { Allow: 'GET' });
         return await createManaged(config, create(config, 'customer')).attempt(request, match[1]);
@@ -335,7 +342,8 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
     if (entry.startsWith('/managed/')) return managed(request, env, ctx);
     if (entry === '/billing/stripe/webhook' || entry === '/billing/return') return billing(request, env, entry);
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
-    const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
+    headers.set('Vary', `Origin, ${EXPERT_TIER_HEADER}`);
+    const json = (value: unknown, status = 200) => Response.json(tierResponse(value, request.headers.get(EXPERT_TIER_HEADER) === '1'), { status, headers });
     try {
       const config = readConfiguration(env);
       const origin = request.headers.get('origin');
@@ -349,9 +357,9 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
       if (request.method === 'OPTIONS') {
         const requested = (request.headers.get('access-control-request-headers') ?? '').toLowerCase().split(',').map((value) => value.trim()).filter(Boolean);
         if (!origin || !['GET','POST','PATCH'].includes(request.headers.get('access-control-request-method') ?? '') ||
-          requested.some((header) => !['authorization','content-type'].includes(header))) throw new AccountError(403, 'This preflight is not allowed.');
+          requested.some((header) => !['authorization','content-type', EXPERT_TIER_HEADER.toLowerCase()].includes(header))) throw new AccountError(403, 'This preflight is not allowed.');
         headers.set('Access-Control-Allow-Methods', 'GET,POST,PATCH');
-        headers.set('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+        headers.set('Access-Control-Allow-Headers', `Authorization,Content-Type,${EXPERT_TIER_HEADER}`);
         return new Response(null, { status: 204, headers });
       }
       const authorization = request.headers.get('authorization');
@@ -552,9 +560,10 @@ export function createHandler(create: (config: Configuration, pool: AccountPool)
         if ((match = route('/ops/customers/:id/funding').exec(pathname)) && method === 'POST')
           return json(await ops.addFunding(token, match[1], await body(request, addFundingInput)), 201);
         if (pathname === '/ops/routing' && method === 'GET') return json(await ops.routes(token));
-        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput, routeInputRefusal), env));
+        if (pathname === '/ops/routes' && method === 'POST') return json(await ops.saveRoute(token, await body(request, saveRouteInput, routeInputRefusal), env, request.headers.get(EXPERT_TIER_HEADER) === '1'));
         if ((match = ROUTE_CHECKS.exec(pathname)) && method === 'POST')
           return json(await createRouteChecks(config, accounts).run(token, match[1], await body(request, routeChecksInputSchema), env));
+        if (pathname === '/ops/routing/system-one' && method === 'POST') return json(await ops.publishSystemOne(token, await body(request, publishEvaluationSelectionSchema)), 201);
         if (pathname === '/ops/routing/preview' && method === 'POST') return json(await ops.previewPolicy(token, await body(request, publishPolicyInput)));
         if (pathname === '/ops/routing/publish' && method === 'POST') return json(await ops.publishPolicy(token, await body(request, publishPolicyInput)), 201);
         if (pathname === '/ops/routing/rollback' && method === 'POST') return json(await ops.rollbackPolicy(token, await body(request, rollbackPolicyInput)), 201);

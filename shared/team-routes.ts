@@ -117,6 +117,8 @@ export interface TeamMemberSelection {
 
 /** One step up the styles, capped at the top. A lead typically works a tier above its members. */
 export function styleAbove(style: WorkStyle): WorkStyle {
+  // Existing teams never silently escalate into the new Managed-only premium tier.
+  if (style === 'thorough' || style === 'expert') return style;
   const index = WORK_STYLES.indexOf(style);
   return WORK_STYLES[Math.min(WORK_STYLES.length - 1, index + 1)];
 }

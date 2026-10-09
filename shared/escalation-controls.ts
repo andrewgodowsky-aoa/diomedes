@@ -36,7 +36,8 @@ export type EscalationControl = z.infer<typeof escalationControlSchema>;
 /** What applies when neither the account scope nor the global record sets a control. */
 export const DEFAULT_ESCALATION: EscalationControl = Object.freeze({
   enabled: true,
-  tiers: [...ROUTING_TIERS],
+  // A new premium tier is never silently added to an account's escalation permission.
+  tiers: ['efficient', 'focused', 'thorough'],
 }) as EscalationControl;
 
 /** The answer of `GET /account/routing/{kind}/{id}/escalation`, readable by any member of the scope. */
@@ -72,7 +73,7 @@ export const ESCALATION_HEADER = 'X-Nectovia-Escalation';
 export const ESCALATION_ROLES = ['worker', 'advisor'] as const;
 export type EscalationRole = (typeof ESCALATION_ROLES)[number];
 
-const TIER_NAMES: Record<RoutingTier, string> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough' };
+const TIER_NAMES: Record<RoutingTier, string> = { efficient: 'Efficient', focused: 'Focused', thorough: 'Thorough', expert: 'Expert' };
 
 /**
  * Whether escalated work may use this tier now. The reason is the sentence both the desktop and the

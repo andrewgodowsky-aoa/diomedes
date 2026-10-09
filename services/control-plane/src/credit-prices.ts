@@ -14,7 +14,7 @@ import { ceilingFailures, type CeilingFailure, type CreditPriceTable, type Price
 import { routingScopeKey, type AccountScope, type RoutingConfiguration } from '../../../shared/routing-policy.js';
 import type { CommercialTransaction, RouteEntry } from './commercial.js';
 import { AccountError } from './errors.js';
-import { EVALUATION_PROVIDER, MANAGED_PROVIDERS, registryRow, type EvaluationProviderRow, type ProviderRegistryRow } from './managed-providers.js';
+import { evaluationProvider, MANAGED_PROVIDERS, registryRow, type EvaluationProviderRow, type ProviderRegistryRow } from './managed-providers.js';
 
 export interface BoundRoute {
   readonly tier: JobTier;
@@ -25,6 +25,7 @@ export interface BoundRoute {
 function versioned(routing: RoutingConfiguration, routes: readonly RouteEntry[], out: Map<string, BoundRoute>) {
   for (const tier of JOB_TIERS) {
     const policy = routing[tier];
+    if (!policy) continue;
     const ids = policy.primary === null ? [] : [policy.primary, ...(policy.fallbackEnabled ? policy.backups : [])];
     for (const id of ids) {
       const route = routes.find(r => r.id === id);
@@ -59,7 +60,7 @@ export async function boundRoutes(tx: CommercialTransaction, options: {
     const own = await recordFor(routingScopeKey(scope));
     if (own && !own.inherit && own.routing) versioned(own.routing, routes, out);
   }
-  const evaluation = options.evaluationProvider === undefined ? EVALUATION_PROVIDER : options.evaluationProvider;
+  const evaluation = options.evaluationProvider === undefined ? (global?.systemOne ? evaluationProvider(global.systemOne, global.revision) : null) : options.evaluationProvider;
   if (evaluation) for (const tier of JOB_TIERS) out.set(`${tier}\u0000${evaluation.id}`, { tier, routeId: evaluation.id, price: evaluation.rate });
   return [...out.values()];
 }

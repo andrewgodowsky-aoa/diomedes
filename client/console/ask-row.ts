@@ -292,22 +292,25 @@ export interface TierEntry {
 }
 
 /**
- * Efficient, Focused and Thorough, then the local model when one is set up or the thread is on
- * it. A model's own name shows only where model names are allowed (Work, or a paid person on
- * their own engine).
+ * Efficient, Focused, Thorough and Expert, then the local model when one is set up or the thread
+ * is on it. Expert is listed always and disabled until the host says the account has it, with the
+ * host's reason as its line when it gave one. A model's own name shows only where model names
+ * are allowed (Work, or a paid person on their own engine).
  */
 export function tierEntries(
   local: LocalModel | null,
   localName: string | null,
   names: boolean,
   onLocal = false,
+  expertAvailable = false,
+  expertReason: string | null = null,
 ): TierEntry[] {
   const entries: TierEntry[] = WORK_STYLES.map((style, index) => ({
     id: style,
     name: WORK_STYLE_LABELS[style],
-    sub: WORK_STYLE_DESCRIPTIONS[style],
+    sub: style === 'expert' && !expertAvailable && expertReason ? expertReason : WORK_STYLE_DESCRIPTIONS[style],
     bars: index + 1,
-    disabled: false,
+    disabled: style === 'expert' && !expertAvailable,
   }));
   if (local && (local.found || onLocal))
     entries.push({

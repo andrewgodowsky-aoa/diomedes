@@ -2,6 +2,7 @@ import type { EngineModel, Mode } from './types.js';
 import { isModelApiProvider, MODEL_API_PROVIDERS, type ModelApiProvider } from './model-api.js';
 import { isRoute, routeDisplayName } from './engines.js';
 import { routeUnavailable } from './route-unavailable.js';
+import { EXPERT_MANAGED_ROUTE_ONLY } from './access.js';
 import {
   classifyTask,
   inferEffort,
@@ -74,11 +75,13 @@ export const DEFAULT_TIER_MAP: TierMap = {
   efficient: { route: 'azure-openai', model: TIER_AZURE_SOL_MODEL },
   focused: { route: 'aws-bedrock', model: TIER_AWS_KIMI_MODEL },
   thorough: { route: 'azure-openai', model: TIER_AZURE_SOL_MODEL },
+  expert: { route: 'nectovia', model: null },
 };
 
 /** Before 2026-10-06 the form omitted these providers when saving a custom model. */
 const LEGACY_TIER_ROUTES: Record<WorkStyle, string> = {
   efficient: 'aws-bedrock', focused: 'google-vertex', thorough: 'aws-bedrock',
+  expert: 'nectovia',
 };
 
 /** Names for tier routes this build may not know yet, so a refusal still names them. */
@@ -97,12 +100,14 @@ export const TIER_INTENT: Record<WorkStyle, string> = {
   efficient: 'GPT-6.1 Sol',
   focused: 'Kimi K3',
   thorough: 'GPT-6.1 Sol',
+  expert: 'Configured in Operations',
 };
 /** One line per tier default for AI setup, saying what runs today and what is intended. */
 export const TIER_DEFAULT_NOTES: Record<WorkStyle, string> = {
   efficient: 'GPT-6.1 Sol on Azure AI Foundry.',
   focused: 'Kimi K3 on AWS Bedrock.',
   thorough: 'GPT-6.1 Sol on Azure AI Foundry, at high reasoning.',
+  expert: 'Managed only. Operations configures the qualified model and credit price.',
 };
 
 /** A model id as a route lists it: a slug, a Bedrock profile id or a vendor/model path. */
@@ -115,7 +120,7 @@ export const tierModelKey = (style: WorkStyle) => `${style}Model`;
 export const OWNER_PIN_ROUTE_KEY = 'ownerPinRoute';
 export const OWNER_PIN_MODEL_KEY = 'ownerPinModel';
 export const TIER_SETTING_KEYS: readonly string[] = [
-  ...WORK_STYLES.flatMap((style) => [tierRouteKey(style), tierModelKey(style)]),
+  ...WORK_STYLES.filter(style => style !== 'expert').flatMap((style) => [tierRouteKey(style), tierModelKey(style)]),
   OWNER_PIN_ROUTE_KEY,
   OWNER_PIN_MODEL_KEY,
 ];
@@ -125,6 +130,7 @@ export const TIER_SETTING_KEYS: readonly string[] = [
  * otherwise the sentence that says why it was refused.
  */
 export function tierSettingRefusal(key: string, value: unknown): string | null {
+  if (key === tierRouteKey('expert') || key === tierModelKey('expert')) return 'Operations configures Expert on Nectovia managed routing.';
   const style = WORK_STYLES.find((candidate) => key === tierRouteKey(candidate) || key === tierModelKey(candidate));
   if (style && key === tierRouteKey(style))
     return isModelApiProvider(value)
@@ -143,6 +149,7 @@ export function tierSettingRefusal(key: string, value: unknown): string | null {
 export function tierMapFrom(services: Record<string, unknown> | undefined): TierMap {
   const map = structuredClone(DEFAULT_TIER_MAP);
   for (const style of WORK_STYLES) {
+    if (style === 'expert') continue;
     const route = services?.[tierRouteKey(style)];
     const model = services?.[tierModelKey(style)];
     if (isModelApiProvider(route)) {
@@ -211,6 +218,8 @@ export function resolveTier(input: {
   const { style } = input;
   const label = WORK_STYLE_LABELS[style];
   const kind = input.hints?.kind ?? classifyTask(input.hints?.text);
+  if (style === 'expert') return { outcome: 'refuse', style, route: 'nectovia', model: null,
+    reason: EXPERT_MANAGED_ROUTE_ONLY, ownerPin: false, kind };
   // A model-API conversation binds its level into the saved context, so the level
   // follows the tier and the mode, never the words of one message.
   const effortKind: TaskKind = 'ordinary';

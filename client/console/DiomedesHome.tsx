@@ -46,6 +46,7 @@ import { NECTOVIA_ROUTE, type NectoviaRouteView } from '../../shared/model-api';
 import { SIGN_IN_REQUIRED_EVENT, useAccount } from '../AccountGate';
 import { AccountPlanNotice } from './FreePlanNotice';
 import { conversationSources, pickForMessage, readThreadRoute } from './thread-send';
+import type { WorkStyleView } from './WorkStylePicker';
 import { LocalImageAttachments, LocalModelControls, PrepareLocalModels } from './LocalModelControls';
 import type {
   Conversation,
@@ -258,7 +259,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [nectovia, setNectovia] = useState<NectoviaRouteView | null>(null);
   // The route the host says a thread's next request runs on, kept with the thread it was read for:
   // an answer about a thread no longer on screen is never used.
-  const [hostRoute, setHostRoute] = useState<{ key: string; route: string } | null>(null);
+  const [hostRoute, setHostRoute] = useState<{ key: string; route: string; style: WorkStyleView } | null>(null);
   const plan = useAccount()?.state.plan;
   const planAgent = plan?.agent ?? null;
   // Nectovia is closed on the free version until credits the person bought open it for their own work (DIO-245).
@@ -364,21 +365,27 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     };
   }, []);
   // The bound thread's route as the host resolves it, asked again whenever something that could
-  // move it changes, a plan arriving or lapsing included. A failed read keeps the recorded route.
+  // move it changes, a plan arriving or lapsing included. The route and its work-style view clear
+  // while the next read is in flight, so a plan that lapsed never shows Expert as open from an old
+  // answer; a failed read leaves the caption on its fallback until the next change.
   const boundProject = binding?.projectId ?? null;
   const boundThread = binding?.threadId ?? null;
+  const styleView = hostRoute?.key === `${boundProject}|${boundThread}` ? hostRoute.style : null;
   useEffect(() => {
+    setHostRoute(null);
     if (!boundProject || !boundThread) return;
     const request = new AbortController();
     const key = `${boundProject}|${boundThread}`;
-    void readThreadRoute(boundProject, boundThread, request.signal).then(
+    void api<WorkStyleView>(`/projects/${encodeURIComponent(boundProject)}/threads/${encodeURIComponent(boundThread)}/work-style`,
+      'GET', undefined, request.signal).then(
       (view) => {
-        if (!request.signal.aborted) setHostRoute({ key, route: view.route });
+        if (!request.signal.aborted && typeof view?.route === 'string' && view.route)
+          setHostRoute({ key, route: view.route, style: view });
       },
       () => undefined,
     );
     return () => request.abort();
-  }, [boundProject, boundThread, route, workStyle, pinnedModel, planAgent, nectoviaLocked]);
+  }, [boundProject, boundThread, route, workStyle, pinnedModel, plan, nectoviaLocked]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     // The binding is read when the frame arrives: a frame that lands after the page has moved
@@ -1243,7 +1250,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
               route={route ?? CONVERSATION_DEFAULT_ROUTE}
               integrations={(props.integrations ?? []).filter((item) => item.kind !== 'local')}
               settings={props.settings}
-              styleView={null}
+              styleView={styleView}
               free={nectoviaLocked}
               names={!nectoviaLocked}
               locked={pending}

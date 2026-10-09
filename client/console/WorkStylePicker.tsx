@@ -12,6 +12,7 @@ export interface WorkStyleView {
   /** The host's sentence when the next request would be refused before anything is sent. */
   refusal?: string | null;
   resolution: WorkStyleResolution | null;
+  expert?: { available: boolean; reason: string | null };
 }
 
 /** The style a thread follows: its own, else the Settings default, else none. */
