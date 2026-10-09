@@ -13,7 +13,7 @@ The account service projects the benefit onto complete existing Managed grants a
 
 Expert defaults to a step-boundary check-in at 750 credits for Small, 850 for Standard and 1,000 for Plus. This scales linearly with the plan's included monthly API allotment of 3,000, 5,000 and 8,000 credits, clamped to 750-1,000. Bought credits do not change it. Business overrides take precedence over staff overrides; clearing the staff override restores plan scaling. Existing jobs keep their current cap; Keep going uses the current authoritative increment and lends no credits.
 
-This is an implementation candidate, not a production availability statement. Migration 020, current Expert route qualification, published pricing, coordinated client/service rollout and live Agent/Bot acceptance remain deployment work. Source evidence and the frozen System One handoff are recorded in docs/implementation/2026-10-06-expert-tier.md. The cloud document was read at revision ANLCKQnRAnAMOigpGQQqUAdl6y6flQThtVpfyOZPh0bzQEJW_zVGhMLH8g_jFBckVmhxBZdq6jOysJ1YToHAptCczVXjCeudUUMvYAJ7E00; this additive amendment has not been written there.
+This is an implementation candidate, not a production availability statement. Migration 021, current Expert route qualification, published pricing, coordinated client/service rollout and live Agent/Bot acceptance remain deployment work. Source evidence and the frozen System One handoff are recorded in docs/implementation/2026-10-06-expert-tier.md. The cloud document was read at revision ANLCKQnRAnAMOigpGQQqUAdl6y6flQThtVpfyOZPh0bzQEJW_zVGhMLH8g_jFBckVmhxBZdq6jOysJ1YToHAptCczVXjCeudUUMvYAJ7E00; this additive amendment has not been written there.
 
 Engine and provider checkpoint
 

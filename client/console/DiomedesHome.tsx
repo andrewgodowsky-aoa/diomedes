@@ -365,7 +365,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     };
   }, []);
   // The bound thread's route as the host resolves it, asked again whenever something that could
-  // move it changes, a plan arriving or lapsing included. A failed read keeps the recorded route.
+  // move it changes, a plan arriving or lapsing included. The route and its work-style view clear
+  // while the next read is in flight, so a plan that lapsed never shows Expert as open from an old
+  // answer; a failed read leaves the caption on its fallback until the next change.
   const boundProject = binding?.projectId ?? null;
   const boundThread = binding?.threadId ?? null;
   const styleView = hostRoute?.key === `${boundProject}|${boundThread}` ? hostRoute.style : null;
