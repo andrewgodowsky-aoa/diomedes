@@ -54,7 +54,9 @@ These are Andrew's rules for the app's own copy, on top of section 3.
   could not work out, such as "The provider may still have received it."
 - **No over-explaining.** The simplest wording wins.
 - **No model or vendor names typed into copy.** Names an owner picked or connected come from the
-  app's catalog at run time. Nectovia's own choices are named as tiers.
+  app's catalog at run time. Nectovia's own choices are named as tiers. In the model picker and
+  Settings > Providers, a person's own providers, connections and models appear by name from that
+  catalog (Andrew, 2026-10-09).
 - **Defined terms stay defined.** Agent, Mode, Team, Project, Files, Trust and the other terms in
   `docs/DIOMEDES_PROJECT_MEMORY.md` keep their meaning and spelling. Do not swap in synonyms.
 - **The working words stay playful.** While a person waits, the line under the reply rotates
