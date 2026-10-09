@@ -163,8 +163,11 @@ export interface WorkControlDriver {
 export interface DurableControlsDeps {
   store: Store;
   workControl: WorkControl;
-  /** The Work start route's own admission path. Resume and Retry start work only here. */
-  admit(projectId: string, command: Record<string, unknown>): Promise<unknown>;
+  /**
+   * The ordinary Work admission path. Restart inputs come only from the stored session,
+   * separately from the public command; they preserve identity, never saved permissions.
+   */
+  admit(projectId: string, command: Record<string, unknown>, restart?: WorkInputs): Promise<unknown>;
   /** Which contract answers for a run. Defaults to the registered contract for its route. */
   contractFor?(
     projectId: string,
@@ -824,12 +827,18 @@ export class DurableControls {
         [],
         control === 'resume' ? (driver?.recorded?.(already) ?? {}) : {},
       );
-    const inputs = session.inputs;
-    if (!inputs)
+    if (!session.inputs)
       return refused(
         'inputs-unrecorded',
         `This run was recorded before its inputs were kept, so it cannot be ${control === 'resume' ? 'resumed' : 'retried'} with the same ones. Start the task again instead.`,
       );
+    // Before the picked worker was saved in inputs, the host's resolution still
+    // recorded it. Recover only its identity, never its old policy or grants.
+    const pickedAgentId = session.inputs.pickedAgentId ?? session.agent?.agentId;
+    const inputs: WorkInputs = {
+      ...session.inputs,
+      ...(pickedAgentId ? { pickedAgentId } : {}),
+    };
     // Every run of this lineage counts: retrying an earlier attempt re-sends the same inputs,
     // so an effect a later attempt may already have had blocks it just the same.
     const effects: string[] = [];
@@ -860,8 +869,10 @@ export class DurableControls {
           sources: [...inputs.sources],
           consent: true,
           threadId: this.thread(projectId, session)?.id ?? null,
-          ...(inputs.agentId ? { agentId: inputs.agentId } : {}),
-        });
+          // Bind the Work command digest to the actual worker as well as restoring
+          // the original requested choice through the host-only restart context.
+          ...(inputs.pickedAgentId || inputs.agentId ? { agentId: inputs.pickedAgentId ?? inputs.agentId } : {}),
+        }, inputs);
         return result as Session;
       },
     };

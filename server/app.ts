@@ -225,6 +225,7 @@ import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-ses
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
+import type { WorkInputs } from '../shared/work-control.js';
 import { DurableControls, defaultWorkContract } from './durable-controls.js';
 import {
   CONTROL_FIXTURE_CONTRACT,
@@ -3012,6 +3013,8 @@ export async function createApp(options: AppOptions) {
     commit?: <T>(step: () => Promise<T>) => Promise<T>,
     /** H15 decision 5: a supervision correction's permission, never wider than its origin run's. */
     ceiling?: { permission: ThreadPermission },
+    /** Host-only Retry/Resume inputs read by DurableControls, never taken from request JSON. */
+    restart?: WorkInputs,
   ) => {
     refuseHomeWork(projectId);
     if (isUpdateClosing())
@@ -3211,14 +3214,20 @@ export async function createApp(options: AppOptions) {
       // A manual card runs as its member was recorded: the member's Agent and requested model,
       // like a member's wake. A member with no model of its own takes the route's default.
       const member = manual?.ok ? manual.member : null;
+      const workAgent = member
+        ? (member.agentId ?? null)
+        : restart
+          ? restart.agentId
+          : (command?.request.agentId ?? state.conversations.find((c) => c.id === threadId)?.requested?.agent ?? null);
       return started(await nativeWork.start(projectId, taskId, {
         engine: selectedRoute,
         threadId,
-        agentId: member
-          ? (member.agentId ?? null)
-          : (command?.request.agentId ??
-            state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
-            null),
+        agentId: workAgent,
+        ...(restart ? {
+          pickedAgentId: restart.pickedAgentId,
+          restartAgentId: restart.pickedAgentId,
+          mode: restart.mode,
+        } : {}),
         // A profile that decides this run supplies its own exact model (H09).
         requested: member?.model
           ? { model: member.model, ...(member.selection?.by === 'nectovia' ? { selection: 'automatic' as const } : {}) }
@@ -3226,14 +3235,14 @@ export async function createApp(options: AppOptions) {
           projectId,
           taskId,
           state.conversations.find((c) => c.id === threadId),
-          command?.request.agentId ?? null,
+          workAgent,
         )
           ? undefined
           : nativeChoice(
               selectedRoute,
               projectId,
               state.conversations.find((c) => c.id === threadId),
-              { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
+              { mode: restart?.mode ?? 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
             ),
         instruction:
           b.instruction === undefined
@@ -3300,7 +3309,7 @@ export async function createApp(options: AppOptions) {
   const durableControls = new DurableControls({
     store,
     workControl,
-    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    admit: (projectId, command, restart) => admitWork(projectId, command, listeningPort, undefined, undefined, restart),
     modelFor: (projectId, threadId, engine) => {
       if (engine === 'sample') return null;
       return (

@@ -445,6 +445,9 @@ export interface WorkInputs {
   /** The instruction as it was sent, after the task's own description filled a blank one. */
   readonly instruction: string;
   readonly sources: readonly string[];
+  /** The requested choice, including Auto, retained for selection attribution. */
   readonly agentId: string | null;
+  /** The worker actually resolved at admission. Absent on older sessions. Never an authority snapshot. */
+  readonly pickedAgentId?: string;
   readonly mode: 'build' | 'fix';
 }
