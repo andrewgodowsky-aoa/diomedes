@@ -3,7 +3,11 @@ import type { Settings } from './types';
 
 export const SETUP_VERSION = 2 as const;
 
-export const SETUP_ORDER = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'] as const;
+/**
+ * The setup steps in order. They keep their names: `q2`, the detail question, is retired (Andrew,
+ * 2026-10-08; QUESTIONS.md R17), and a saved `q3` must still mean the file-changes question.
+ */
+export const SETUP_ORDER = ['welcome', 'q1', 'q3', 'ai', 'ready', 'done'] as const;
 
 export type SetupStep = (typeof SETUP_ORDER)[number];
 
@@ -98,15 +102,13 @@ export function migrateOnboarding(settings: Settings): Settings {
 }
 
 /**
- * Move one step forward in the decoupled setup flow. Familiarity is retained
- * legacy data and never changes approvals or detail. Permissions, services,
- * surface and everything else are preserved; only the step advances, with
- * narrow explicit defaults:
+ * Move one step forward in the decoupled setup flow. Familiarity and the
+ * retired detail level are legacy data and never change approvals. Permissions,
+ * services, surface and everything else are preserved; only the step advances,
+ * with narrow explicit defaults:
  * - q1 fills a missing work purpose with 'mix'.
- * - q2 carries an explicit onboarding.detail onto settings.detail.
  * - ai records whether it was skipped.
- * Detail changes only on q2. Approvals change only by explicit user action
- * outside this transition.
+ * Approvals change only by explicit user action outside this transition.
  */
 export function advanceSetup(settings: Settings, skip = false, at?: string): Settings {
   const current = settings.onboarding.resumeAt as SetupStep;
@@ -123,12 +125,6 @@ export function advanceSetup(settings: Settings, skip = false, at?: string): Set
 
   if (current === 'q1' && (!onboarding.work || skip)) onboarding.work = 'mix';
 
-  let detail = settings.detail;
-  if (current === 'q2') {
-    if (onboarding.detail == null) onboarding.detail = settings.detail ?? 'standard';
-    if (onboarding.detail != null) detail = onboarding.detail;
-  }
-
   if (current === 'ai') onboarding.aiSkipped = skip;
 
   onboarding.resumeAt = next;
@@ -142,7 +138,6 @@ export function advanceSetup(settings: Settings, skip = false, at?: string): Set
 
   return {
     ...settings,
-    detail,
     ...(view === settings.view ? {} : { view }),
     onboarding,
     permissions: { ...settings.permissions },

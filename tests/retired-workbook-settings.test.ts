@@ -51,3 +51,27 @@ describe('settings keys retired with the Workbook', () => {
     expect(JSON.stringify(settings)).toBe(once);
   });
 });
+
+/**
+ * The detail levels are retired too (Andrew, 2026-10-08; QUESTIONS.md R17). The stored level stays,
+ * like `onboarding.familiarity`, and nothing reads it; setup saved on the detail question (`q2`)
+ * resumes at the next one, `q3`.
+ */
+describe('settings left by the retired detail question', () => {
+  it('resumes setup saved on the detail question at the next question', () => {
+    const settings = saved({});
+    (settings.onboarding as { resumeAt: string }).resumeAt = 'q2';
+    migrateSettings(settings);
+    expect(settings.onboarding.resumeAt).toBe('q3');
+    expect(settings.detail).toBe('standard');
+  });
+
+  it('leaves every other step where it was', () => {
+    for (const step of ['welcome', 'q1', 'q3', 'ai', 'ready', 'done'] as const) {
+      const settings = saved({});
+      settings.onboarding.resumeAt = step;
+      migrateSettings(settings);
+      expect(settings.onboarding.resumeAt).toBe(step);
+    }
+  });
+});

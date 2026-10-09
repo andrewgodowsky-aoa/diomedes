@@ -13,8 +13,10 @@ import {
   type ActivityState,
 } from '../client/console/engine-activity';
 import { stepLiveReply, type LiveBinding, type LiveReply } from '../client/console/live-reply';
+import { TOOL_SAYINGS } from '../client/console/working-words';
 import { ToolActivityList } from '../client/console/ToolActivity';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import { Diomedes, type DiomedesPageProps } from '../client/console/Diomedes';
 import type { Conversation, Session } from '../shared/types';
 
@@ -230,7 +232,7 @@ describe('rendered tool lines', () => {
     // One polite status names only the call still running.
     expect(html).toMatch(/role="status"[^>]*>Searching the web for opening hours…</);
   });
-  test('the Technical level names each tool and opens to its detail from a keyboard summary', () => {
+  test('the technical view names each tool and opens to its detail from a keyboard summary', () => {
     const html = renderToStaticMarkup(createElement(ToolActivityList, { lines, technical: true }));
     expect(html).toContain('<details><summary>');
     expect(html).toContain('read_file');
@@ -258,7 +260,7 @@ const thread: Conversation = {
   mode: 'ask',
   turns: [],
 };
-function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'technical' = 'standard') {
+function renderThread(extra: Record<string, unknown>, technical = false) {
   return renderToStaticMarkup(
     createElement(ThreadView, {
       thread,
@@ -269,14 +271,15 @@ function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'tech
       members: [],
       member: null,
       needs: [],
-      settings: { ...defaults(), detail },
-      mode: 'ask',
+      settings: defaults(),
+      technical,
+      choice: choiceView(thread),
       route: 'claude-code',
       busy: false,
       online: true,
-      onMode: noAction,
       onPermission: noAction,
       onRename: noAction,
+      pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
       prepareSources: async () => [],
       onSend: noAction,
       onResolve: noAction,
@@ -290,11 +293,33 @@ function renderThread(extra: Record<string, unknown>, detail: 'standard' | 'tech
 
 describe('ThreadView live reply', () => {
   const running = [{ callId: 'a', tool: 'read_file', phase: 'started' as const, summary: 'Reading menu.md', detail: 'menu.md' }];
-  test('shows tool lines under the streaming reply, and the waiting line steps aside for them', () => {
+  test('shows tool lines under the streaming reply, and the working line says the running call in its own voice', () => {
+    // Andrew, 2026-10-08: the working line turns in-theme for the tool, and the plain line stays.
     const html = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'claude-code', activity: running } });
     expect(html).toContain('Reading menu.md…');
-    expect(html).not.toContain('Nectovia is');
+    expect(TOOL_SAYINGS.read.filter((saying) => html.includes(`Nectovia is ${saying}…`))).toHaveLength(1);
     expect(html).not.toContain('read_file');
+  });
+  test('live thinking stays out of the thread unless asked for, and the working line stands in for it', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: null };
+    const hidden = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'opencode', thinking } });
+    expect(hidden).not.toContain('Weighing the menu');
+    expect(hidden).not.toContain('thinking-live');
+    expect(hidden).toContain('Nectovia is');
+    const shown = renderThread({
+      streaming: { requestId: 'R1', text: '', engine: 'opencode', thinking },
+      settings: { ...defaults(), appearance: { ...defaults().appearance, showThinking: true } },
+    });
+    expect(shown).toContain('Weighing the menu against the hours.');
+    expect(shown).toContain('thinking-live');
+    expect(shown).not.toContain('Nectovia is');
+  });
+  test('once the answer starts, the hidden thought folds to one line above it', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: 14_000 };
+    const html = renderThread({ streaming: { requestId: 'R1', text: 'Open until nine.', engine: 'opencode', thinking } });
+    expect(html).toContain('Thought for 14s');
+    expect(html).not.toContain('Weighing the menu');
+    expect(html).toContain('Open until nine.');
   });
   test('keeps the waiting line while nothing has streamed and no call is running', () => {
     const html = renderThread({ streaming: { requestId: 'R1', text: '', engine: 'claude-code' } });
@@ -304,13 +329,24 @@ describe('ThreadView live reply', () => {
     });
     expect(done).toContain('Nectovia is');
   });
-  test('the Technical level shows the tool and its detail', () => {
+  test('the technical view shows the tool and its detail', () => {
     const html = renderThread(
       { streaming: { requestId: 'R1', text: 'Partial', engine: 'claude-code', activity: running } },
-      'technical',
+      true,
     );
     expect(html).toContain('read_file');
     expect(html).toContain('<details>');
+    expect(html).toContain('Partial');
+  });
+  // The detail levels are retired (QUESTIONS.md R17): the technical view comes with the Software
+  // Engineering pack (`client/console/technical-view.ts`), and a level still stored is not read.
+  test('a stored Technical level shows the plain view', () => {
+    const html = renderThread({
+      streaming: { requestId: 'R1', text: 'Partial', engine: 'claude-code', activity: running },
+      settings: { ...defaults(), detail: 'technical' },
+    });
+    expect(html).not.toContain('read_file');
+    expect(html).not.toContain('<details>');
     expect(html).toContain('Partial');
   });
   test('a live run card shows the tool calls streamed for its session', () => {
@@ -340,8 +376,8 @@ describe('Diomedes home live reply', () => {
     onScope: noAction,
     turns: [],
     pending: true,
-    restriction: 'automatic',
-    onRestriction: noAction,
+    agent: 'auto',
+    onAgent: noAction,
     onSend: async () => true,
     onStop: noAction,
     route: 'claude-code',
@@ -382,7 +418,23 @@ describe('Diomedes home live reply', () => {
     // The status stays in place but steps aside once text has streamed.
     expect(html).toMatch(/class="mono dio-pending" role="status" aria-label="Working" hidden="">/);
   });
-  test('technical detail on the home page', () => {
+  test('a running tool is said in its own voice above its plain line', () => {
+    const html = render({ live: { text: '', activity: running } });
+    expect(html).toContain('Searching the web for hours…');
+    expect(html).toMatch(/class="mono dio-pending" role="status" aria-label="Working">/);
+    expect(TOOL_SAYINGS.search.filter((saying) => html.includes(`Nectovia is ${saying}…`))).toHaveLength(1);
+  });
+  test('live thinking stays off the home page unless asked for', () => {
+    const thinking = { text: 'Weighing the menu against the hours.', position: null, since: 0, endedAt: null };
+    const hidden = render({ live: { text: '', activity: [], thinking } });
+    expect(hidden).not.toContain('Weighing the menu');
+    expect(hidden).not.toContain('dio-live');
+    expect(hidden).toMatch(/class="mono dio-pending" role="status" aria-label="Working">/);
+    const shown = render({ live: { text: '', activity: [], thinking }, showThinking: true });
+    expect(shown).toContain('Weighing the menu against the hours.');
+    expect(shown).toMatch(/class="mono dio-pending" role="status" aria-label="Working" hidden="">/);
+  });
+  test('the technical view on the home page', () => {
     const html = render({ live: { text: '', activity: running }, technical: true });
     expect(html).toContain('web_search');
     expect(html).toContain('q=hours');

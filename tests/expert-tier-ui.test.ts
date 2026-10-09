@@ -1,24 +1,22 @@
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { defaults } from '../server/store';
-import { WorkStylePicker, type WorkStyleView } from '../client/console/WorkStylePicker';
 import { tierEntries } from '../client/console/ask-row';
 import { EXPERT_NOT_INCLUDED } from '../shared/access';
+import { WORK_STYLE_DESCRIPTIONS } from '../shared/work-style';
 
 describe('Expert selection and access', () => {
   it.each([false, true])('the composer uses the host access decision: %s', available => {
     expect(tierEntries(null, null, false, false, available).find(e => e.id === 'expert')).toMatchObject({ name: 'Expert', bars: 4, disabled: !available });
   });
-  it.each([false, true])('the style picker uses the host access decision: %s', available => {
-    const view: WorkStyleView = { route: 'nectovia', style: 'efficient', source: 'thread', resolution: null,
-      expert: { available, reason: available ? null : EXPERT_NOT_INCLUDED } };
-    const html = renderToStaticMarkup(createElement(WorkStylePicker, {
-      thread: { id: 'expert-fixture', attachedTo: { kind: 'project', ref: 'fixture' }, name: 'Expert', mode: 'ask', turns: [], requested: null },
-      settings: defaults(), live: false, busy: false, view, onStyle: () => {}, initialOpen: true,
-    }));
-    expect(html).toContain('Expert');
-    if (!available) expect(html).toContain(EXPERT_NOT_INCLUDED);
-    expect(html).toMatch(available ? /<button[^>]*>[^]*?Expert/ : /<button[^>]*disabled=""[^>]*>[^]*?Expert/);
+  it('lists Expert last of the four tiers, disabled until the host says the account has it', () => {
+    const closed = tierEntries(null, null, false, false, false);
+    expect(closed.map(e => e.id)).toEqual(['efficient', 'focused', 'thorough', 'expert']);
+    expect(closed.filter(e => e.disabled).map(e => e.id)).toEqual(['expert']);
+    expect(tierEntries(null, null, false, false, true).some(e => e.disabled)).toBe(false);
+  });
+  it('shows the host reason on a closed Expert row, and the description once it is open', () => {
+    const closed = tierEntries(null, null, false, false, false, EXPERT_NOT_INCLUDED).find(e => e.id === 'expert');
+    expect(closed?.sub).toBe(EXPERT_NOT_INCLUDED);
+    expect(tierEntries(null, null, false, false, false).find(e => e.id === 'expert')?.sub).toBe(WORK_STYLE_DESCRIPTIONS.expert);
+    expect(tierEntries(null, null, false, false, true, EXPERT_NOT_INCLUDED).find(e => e.id === 'expert')?.sub).toBe(WORK_STYLE_DESCRIPTIONS.expert);
   });
 });

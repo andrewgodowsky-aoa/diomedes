@@ -135,7 +135,6 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   await page.goto(baseURL);
   await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');

@@ -109,8 +109,10 @@ test('the first launch of a new build says so in one line, once', async ({ page 
   await expect(notice).toContainText('1 setting moved to new defaults.');
   // The never-chosen scheme moved to this build's default, and it is what is painted.
   await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
-  // The chosen detail level was kept.
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  // The chosen detail level was kept. Nothing reads it since the levels were retired
+  // (QUESTIONS.md R17), and the reconcile still never moves a chosen value.
+  const kept = (await (await page.request.get(`${baseURL}/api/settings`)).json()) as Settings;
+  expect(kept.detail).toBe('technical');
 
   await notice.getByRole('button', { name: 'Dismiss' }).click();
   await expect(notice).toHaveCount(0);

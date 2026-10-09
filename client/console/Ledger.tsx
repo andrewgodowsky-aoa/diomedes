@@ -19,7 +19,8 @@ interface LedgerProps {
   state: ProjectState;
   task: Task | null;
   taskWorker: string;
-  mode: Mode;
+  /** The kind of run the thread's Agent box holds (DIO-292). */
+  kind: Mode;
   running: boolean;
   latest: Session | null;
   openNeeds: Need[];
@@ -44,7 +45,7 @@ export function Ledger({
   state,
   task,
   taskWorker,
-  mode,
+  kind,
   running,
   latest,
   openNeeds,
@@ -136,7 +137,7 @@ export function Ledger({
         </h3>
         {board.needs.length ? <ul className="bcs">{cards(board.needs, 'Review')}</ul> : <p className="quiet">Nothing right now</p>}
       </section>
-      <section id="secWork" className={mode === 'ask' ? 'dim' : ''} aria-labelledby="secWorkH">
+      <section id="secWork" className={kind === 'ask' ? 'dim' : ''} aria-labelledby="secWorkH">
         <h3 id="secWorkH">
           Working <span className="mono">{board.working.length}</span>
         </h3>

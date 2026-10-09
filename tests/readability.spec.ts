@@ -130,7 +130,7 @@ async function audit(page: Page) {
       body: sample('.console .body p'),
       input: sample('.console .composer textarea'),
       col: sample('.console .transcript .col'),
-      mode: sample('.console .modes button'),
+      agent: sample('.console .ask-row .agent-picker > button'),
       ui: sample('.console'),
       transcript: sample('.console .transcript'),
       instruments: sample('.console .instr'),
@@ -220,13 +220,13 @@ test('maximizing preserves type and explicit scaling persists through reload and
   const [small, ...wider] = sizes;
   expect(small.body?.font).toBe(15);
   expect(small.input?.font).toBe(15);
-  expect(small.mode?.font).toBe(16);
+  expect(small.agent?.font).toBe(14);
   expect(small.ui?.font).toBe(14);
   expect(small.col!.width).toBeLessThanOrEqual(920);
   for (const wide of wider) {
     expect(wide.body?.font).toBe(small.body?.font);
     expect(wide.input?.font).toBe(small.input?.font);
-    expect(wide.mode?.font).toBe(small.mode?.font);
+    expect(wide.agent?.font).toBe(small.agent?.font);
     expect(wide.ui?.font).toBe(small.ui?.font);
     expect(wide.col?.width).toBe(920);
   }

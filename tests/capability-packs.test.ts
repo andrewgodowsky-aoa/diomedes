@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ThreadView } from '../client/console/ThreadView.js';
+import { choiceView } from '../client/console/agent-ui.js';
 import { defaults } from '../server/store.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -520,13 +521,13 @@ describe('the thread says it once, and only where something loaded', () => {
         projectId: 'project-packs',
         instructionFiles,
         settings: defaults(),
-        mode: 'ask' as const,
+        choice: choiceView(thread),
         route: 'codex' as const,
         busy: false,
         online: true,
-        onMode: () => {},
         onPermission: () => {},
         onRename: () => {},
+        pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
         prepareSources: async () => [],
         onSend: () => {},
         onResolve: () => {},

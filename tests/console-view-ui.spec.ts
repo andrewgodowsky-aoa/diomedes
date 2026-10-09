@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, Settings } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { AGENT_MENU } from './fixtures/agent-menu';
 
 /**
  * The Console's two views (Andrew, 2026-09-23; renamed 2026-10-03). Nectovia is the
@@ -109,7 +110,11 @@ test('Nectovia shows the prompt box and the threads, and nothing else', async ({
   // Pinned destinations are hidden, not forgotten; Everything stays the way to them.
   await expect(rail(page).locator('.foot').getByRole('button', { name: /^Board\b/ })).toHaveCount(0);
   await expect(rail(page).getByRole('button', { name: 'Everything', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Worker for this thread' })).toHaveCount(0);
+  // The Agent box took the mode strip's place in the prompt box (DIO-292). Profiles stay in Work.
+  await page.getByRole('button', { name: AGENT_MENU }).click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await expect(page.getByRole('menu')).not.toContainText('Profiles');
+  await page.keyboard.press('Escape');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

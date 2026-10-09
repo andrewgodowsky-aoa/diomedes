@@ -18,6 +18,7 @@ import type { WorkStyle } from '../../shared/work-style';
 import { api, engineConnections } from '../api';
 import { NectoviaMark } from './NectoviaMark';
 import type { WorkStyleView } from './WorkStylePicker';
+import { choiceView } from './agent-ui';
 import {
   LOCAL_MODEL,
   NECTOVIA_LOCKED,
@@ -419,6 +420,7 @@ function StartItem({ starting, disabled, onStart }: { starting: boolean; disable
  */
 function EffortBox({
   mode,
+  agent,
   effort,
   current,
   waiting,
@@ -430,6 +432,8 @@ function EffortBox({
   onPick,
 }: {
   mode: Mode;
+  /** The thread's Agent, named beside Fix's ceiling. */
+  agent: string;
   effort: EffortState;
   current: { slug: string; model: EngineModel | null } | null;
   waiting?: string;
@@ -515,7 +519,9 @@ function EffortBox({
           )}
           {effort.ceiling && mode === 'fix' ? (
             <p className="ask-note">
-              <b>Fix runs at {effortWord(effort.ceiling)}.</b> Your choice still governs Ask, Plan and Build.
+              <b>
+                {agent} runs at {effortWord(effort.ceiling)}.
+              </b>
             </p>
           ) : (
             defaultLine && <p className="ask-note">{defaultLine}</p>
@@ -646,7 +652,7 @@ export function AskRow({
     return () => window.removeEventListener('focus', again);
   }, [localRoute]);
 
-  /** Checks every engine that is on again, then the roster, as the thread picker did. */
+  /** Checks every engine that is on again, then the roster. */
   const recheck = () => {
     const ids = engines.filter(
       (id) => offeredEngine(id, { integrations, settings, connections }) || settings.services?.[id] === true,
@@ -789,7 +795,7 @@ export function AskRow({
             {!free && (
               <>
                 <p className="ask-head">How much care</p>
-                {tierEntries(null, null, names, false, styleView?.expert?.available === true).map((entry) => (
+                {tierEntries(null, null, names, false, styleView?.expert?.available === true, styleView?.expert?.reason ?? null).map((entry) => (
                   <Item
                     key={entry.id}
                     checked={false}
@@ -846,6 +852,7 @@ export function AskRow({
       effortBox = (
         <EffortBox
           mode={mode}
+          agent={choiceView(thread).name}
           effort={effort}
           current={current}
           waiting={waiting}
@@ -914,7 +921,7 @@ export function AskRow({
             }
           >
             <p className="ask-head">How much care</p>
-            {tierEntries(local, localName, names, false, styleView?.expert?.available === true).map((entry) => (
+            {tierEntries(local, localName, names, false, styleView?.expert?.available === true, styleView?.expert?.reason ?? null).map((entry) => (
               <Item
                 key={entry.id}
                 checked={entry.id === tier}
@@ -988,6 +995,7 @@ export function AskRow({
     effortBox = (
       <EffortBox
         mode={mode}
+        agent={choiceView(thread).name}
         effort={effort}
         current={current}
         waiting={waiting}

@@ -100,19 +100,20 @@ for (const [width, height, scale] of [
       expect(font.size).toBe('16px');
     }
     for (const name of [
-      'Interface detail',
+      'Account',
       'Permissions',
       'Appearance',
       'About',
       'Design Center',
-      'Engines',
+      // Named Engines in the technical view, which the Software Engineering pack brings.
+      /^(Engines|Helpers on this computer)$/,
       'App updates',
       'Rules',
       'Developer',
     ]) {
       await page
         .locator('.settings-layout .rail')
-        .getByRole('button', { name, exact: true })
+        .getByRole('button', typeof name === 'string' ? { name, exact: true } : { name })
         .click();
       await fits(page);
     }

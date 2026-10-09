@@ -1,0 +1,147 @@
+{
+  "checkedOn": "2026-10-06",
+  "boundary": "Read-only migration ledger; no application/runtime/provider acceptance",
+  "projectId": "small-wave-81999606",
+  "branchId": "br-old-star-aepf7zk6",
+  "branchName": "production",
+  "database": "accounts_staging",
+  "sourceCommit": "f885d50e235cd900312976d0f36618d180f2b54a",
+  "query": "SELECT current_database() AS database, version, name, sha256, applied_at FROM control_plane.schema_migrations ORDER BY version;",
+  "matches": 19,
+  "mismatches": 0,
+  "rows": [
+    {
+      "database": "accounts_staging",
+      "version": 1,
+      "name": "001_accounts.sql",
+      "sha256": "ef1d84c9f3c41857393aae012777b482b266785ec246874cff9ab9b0acd21f55",
+      "applied_at": "2026-09-26T05:51:09.954Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 2,
+      "name": "002_commercial.sql",
+      "sha256": "53ed8311eaec0f2d772b9775e4129cf5d99e4e76bcf8ca393d0a3af308c0d5af",
+      "applied_at": "2026-09-26T05:51:09.954Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 3,
+      "name": "003_funded_jobs.sql",
+      "sha256": "ca351a394db17fe131ff8bce99ad2bbb1790dd363e767debdf14d24de523bda8",
+      "applied_at": "2026-09-26T05:51:09.954Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 4,
+      "name": "004_usage_contract.sql",
+      "sha256": "492b441db2f7d6998379342ddcf38da24f0b3ec113a247ae5e46dc1996325079",
+      "applied_at": "2026-09-26T05:51:09.954Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 5,
+      "name": "005_customer_access.sql",
+      "sha256": "ae8fba20e3c405651a46f967527ea8bc7ba34f294fb73fe8dc24d8a6c3513a73",
+      "applied_at": "2026-09-26T05:51:09.954Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 6,
+      "name": "006_staff_keys.sql",
+      "sha256": "f58b642664b6150a4e9c0985cf35fe6a9643f6d28f5a2ff9b94574f3982b0bcb",
+      "applied_at": "2026-09-26T08:37:18.579Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 7,
+      "name": "007_relay_devices.sql",
+      "sha256": "9464a1e966dec85f58f73b9f83848c9780ba575e05c1d996d27efc5262f5e9ef",
+      "applied_at": "2026-09-26T12:29:26.089Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 8,
+      "name": "008_organization_setup.sql",
+      "sha256": "f130938a3c4fc358a489634d687f388896a864b40ecad8fcd82373f9e15eed5c",
+      "applied_at": "2026-09-27T04:27:33.810Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 9,
+      "name": "009_individual_plans.sql",
+      "sha256": "540f7bb22cc183175984fcdcf8e82718a7b093ec77d09329656ddd68196e5886",
+      "applied_at": "2026-09-28T10:02:51.583Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 10,
+      "name": "010-scoped-routing.sql",
+      "sha256": "426c3373e9c3a6f9e5f4af6180710d4da4262ce9a834f4c61273a60ef27eb9f3",
+      "applied_at": "2026-09-28T22:19:27.231Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 11,
+      "name": "011_individual_funding.sql",
+      "sha256": "042849f4249f229d5e5478ee47e0109cdddc0912000b25e00e64a3e0a705d453",
+      "applied_at": "2026-10-01T11:56:39.456Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 12,
+      "name": "012_individual_subscription_periods.sql",
+      "sha256": "8ab3f0fe8e331f5297e696a5afd6ba35f41704ba3617382786df22c37c6fbcb8",
+      "applied_at": "2026-10-01T11:56:39.456Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 13,
+      "name": "013_purchased_usage_holds.sql",
+      "sha256": "ab8487922b6ff8a8ebd7bd238ffbb4766d6ff0655e5f5de500e72aec441cc59c",
+      "applied_at": "2026-10-01T13:09:38.087Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 14,
+      "name": "014_member_credit_limits.sql",
+      "sha256": "b818212f2a4d5bc389c094c2b7843e9a234cd5b2a85d11b869e7de8a7f5cc8c1",
+      "applied_at": "2026-10-01T13:24:55.489Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 15,
+      "name": "015_credit_purchases.sql",
+      "sha256": "20cb234aa0f37dfc79c762402cbd2c7ed141db4db6cd1ebb0d7bd46e7d232605",
+      "applied_at": "2026-10-01T14:35:46.360Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 16,
+      "name": "016_stripe_billing_foundation.sql",
+      "sha256": "863b8027166f5a2386499bf5bdf6249523cc617cc92735e691a8b2a2aed5f090",
+      "applied_at": "2026-10-06T07:27:42.135Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 17,
+      "name": "017_personal_pay_as_you_go.sql",
+      "sha256": "8c83063ce54b5aa46e1bd083dc137f0453ee5aa67ec063e93ddc80b781c71593",
+      "applied_at": "2026-10-06T07:31:20.494Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 18,
+      "name": "018_credit_price_tables.sql",
+      "sha256": "d3a6de5e782158ea17155cf7755f086d80e352c925dcb2145944ec39abe5fb5a",
+      "applied_at": "2026-10-06T07:33:31.096Z"
+    },
+    {
+      "database": "accounts_staging",
+      "version": 19,
+      "name": "019_job_check_in_amounts.sql",
+      "sha256": "928cb3ffaa6744a5fd72426c78f021cbcf60ef1a82672017c011e8176e598743",
+      "applied_at": "2026-10-06T07:37:12.647Z"
+    }
+  ]
+}

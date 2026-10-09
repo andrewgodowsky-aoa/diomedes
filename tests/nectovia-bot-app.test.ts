@@ -12,7 +12,7 @@
  * process. Its managed gateway is a scripted double on the same transport, so the
  * desktop's own client is what reaches it.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -30,6 +30,8 @@ import { AGENT_PERSONAL_REASON, PLANS_URL } from '../shared/access';
 const FREE_VERSION = /^You're on the free version of Nectovia, so the Nectovia Agent isn't available here\.(?: (?!.*Nothing was sent).+)?$/;
 import { createFauxCloud, FAUX_BACKEND_LABEL, type FauxCloud } from '../services/control-plane/src/faux/cloud';
 import { DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, seedDemo } from '../services/control-plane/src/faux/seed';
+import { fauxRouteCheckRoutes } from '../services/control-plane/src/faux/route-checks';
+import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS } from '../shared/routing-policy';
 import type { AccountStateView } from '../shared/accounts';
 import type { MessageResult } from '../shared/conversation';
 import type { NectoviaRouteView } from '../shared/model-api';
@@ -68,7 +70,7 @@ const wantsFiles = (body: Item) => {
 };
 
 async function managed(request: Request): Promise<Response> {
-  const body = (await request.json()) as Item;
+  const body = (await request.clone().json()) as Item;
   gateway.push({ url: request.url, headers: Object.fromEntries(request.headers.entries()), body });
   const n = gateway.length;
   if (refuseWith)
@@ -76,6 +78,8 @@ async function managed(request: Request): Promise<Response> {
       status: refuseWith.status,
       headers: { 'content-type': 'application/json' },
     });
+  // Versioned Individual routing gets its attempt record from the real gateway over the faux ledger and scripted provider.
+  if (request.headers.get('x-nectovia-protocol') === 'nectovia-managed/2') return cloud.handle(request);
   return sseResponse(
     responsesEvents({
       id: `resp_gw_${n}`,
@@ -172,12 +176,46 @@ async function staffToken(email: string) {
   return pair.accessToken;
 }
 
+/** This case uses current Individual routing; the other bot cases retain their legacy Business fixture. */
+async function configurePersonalRouting(token: string) {
+  const at = new Date().toISOString(), until = new Date(Date.now() + 3_600_000).toISOString();
+  const routing = await staffToken(DEMO_ACCOUNTS.staffRouting.email);
+  const route = fauxRouteCheckRoutes(at).find(row => row.id === 'azure-sol-6-1')!;
+  const existing = (await cloud.commercial.routes(routing)).routes.find(row => row.id === route.id)!;
+  await cloud.commercial.saveRoute(routing, { ...route, baseRevision: existing.revision,
+    status: 'qualified', evidence: 'Synthetic fixture only; no provider call.', binding: { ...route.binding,
+      qualification: { id: 'bot-personal-fixture', evidence: 'Synthetic only', validUntil: until,
+        tiers: ['efficient', 'focused', 'thorough'], qualityFloor: 1 },
+      access: { state: 'ready', evidence: 'Synthetic only', validUntil: until, availableRequests: 10 },
+      privacy: { connectionRevision: route.binding.connectionRevision, modelVersion: route.binding.modelVersion,
+        protocol: route.binding.protocol, evidence: 'Synthetic only', validUntil: until,
+        ingressCountries: ['US'], decryptionCountries: ['US'], processingCountries: ['US'],
+        retentionPolicy: 'fixture-zdr', zeroRetention: true, training: false, contentLogging: false,
+        caching: 'off', transientCacheEvidence: null, features: ['text', 'tools', 'images', 'reasoning'],
+        allowedRetentionModes: [], effectiveRetentionMode: null, regionalEntitlement: false },
+      health: { state: 'healthy', observedAt: at, validUntil: until, cooldownUntil: null, reason: 'Synthetic only' },
+    } }, cloud.connectionSettings);
+  const individual = await backend.client.individualAccount(token), scope = { kind: 'individual' as const, id: individual.id };
+  await backend.client.acceptRoutingPreference(token, { scope, baseRevision: 0, profile: 'strict',
+    restrictions: STRICT_RESTRICTIONS, consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
+  const tier = { primary: route.id, backups: [], fallbackEnabled: false, maxAttempts: 1,
+    cost: { sameOrLower: true, qualityFloor: 1, maxAttemptMicroUsd: null } };
+  const response = await cloud.handle(new Request(`${ACCOUNT_SERVICE}/ops/routing/scopes/publish`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${routing}` },
+    body: JSON.stringify({ scope, baseRevision: 0, baseGlobalRevision: (await backend.client.routingPolicy(token)).revision,
+      routing: { efficient: tier, focused: tier, thorough: tier }, note: 'Synthetic Personal bot fixture only' }),
+  }));
+  expect(response.ok, await response.text()).toBe(true);
+  expect((await backend.client.scopedRoutingPolicy(token, scope)).tiers.efficient?.entryId).toBe(route.id);
+  return individual.id;
+}
+
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-nectovia-bot-'));
   gateway = [];
   awsCalls = 0;
   refuseWith = null;
-  cloud = await createFauxCloud({ file: null, passwordIterations: 1_000 });
+  cloud = await createFauxCloud({ file: null, passwordIterations: 1_000, now: () => Date.now() });
   await seedDemo(cloud);
   // The Routing role qualifies GPT-5.6 Luna and publishes it for Efficient and Focused. Thorough
   // stays unrouted. (The faux seed alone still names GPT-5.6 Luna for Efficient.)
@@ -210,6 +248,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await close();
+  await cloud.idle();
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -414,6 +453,37 @@ describe('the Nectovia bot', () => {
       store.saveSettings({ ...store.settings, services: { ...store.settings.services, defaultEngine: engine } }),
     );
   };
+
+  test('an expired unpaid Personal cache refreshes a re-grant before the interaction route is selected', async () => {
+    const started = Date.now();
+    await close();
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(started);
+    try {
+      await open();
+      await signIn(DEMO_ACCOUNTS.free.email);
+      const binding = await home();
+      await chooseOwnAi('claude-code');
+      // The first route resolves to the person's own engine and caches their unpaid Personal access.
+      expect((await say(binding, 'before-regrant', 'Count the orders.')).status).toBe(409);
+      const pair = await cloud.store.run(draft => cloud.identity.signIn(draft.identity,
+        { email: DEMO_ACCOUNTS.free.email, password: FAUX_DEMO_PASSWORD, remember: false }));
+      const personId = (await cloud.accounts.signIn(pair.accessToken)).person.id;
+      await cloud.commercial.issuePersonGrant(await staffToken(DEMO_ACCOUNTS.staffBilling.email), personId,
+        { planId: 'individual', source: 'subscription', reference: 'interaction-regrant', note: '' });
+      const individualId = await configurePersonalRouting(pair.accessToken);
+      vi.setSystemTime(started + 61_000);
+      const sent = await say(binding, 'after-regrant', 'Count the orders.');
+      expect(sent.status, await sent.clone().text()).toBe(200);
+      expect(gateway).toHaveLength(1);
+      expect(gateway[0].headers['x-nectovia-account']).toBe(individualId);
+      expect(awsCalls).toBe(0);
+      expect((await api<AccountStateView>('/account')).plan.agent).toBe('paid');
+      expect((await homeThread(binding)).engine).toBe('nectovia');
+    } finally {
+      await close();
+      vi.useRealTimers();
+    }
+  });
 
   test('a Free person’s Home runs on their own AI tool, not a tier; the thread stays Nectovia’s', async () => {
     await signIn(DEMO_ACCOUNTS.free.email);

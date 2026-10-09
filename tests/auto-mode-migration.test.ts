@@ -7,9 +7,8 @@ import { createApp } from '../server/app.js';
 import { MODES, VISUAL_INSTRUCTIONS, modeOf } from '../server/modes.js';
 import { migrateConversation } from '../server/store.js';
 import { AgentRegistry, resolutionSchema } from '../server/agents.js';
-import { AGENT_CATALOG, AUTO_AGENT, AUTO_BY_MODE } from '../shared/agents.js';
+import { AGENT_CATALOG, AUTO_AGENT, DEFAULT_AGENT } from '../shared/agents.js';
 import type { Conversation, Mode, ProjectState } from '../shared/types.js';
-import { MODE_ORDER as COMPOSER_MODE_ORDER } from '../client/console/Composer.js';
 
 /**
  * O1/F3-O1: `auto` becomes a real conversation Mode that round trips through
@@ -48,14 +47,12 @@ describe('modeOf and the Ask/Plan instruction text', () => {
 });
 
 describe('the picker arrays and worker enums stay exactly four-mode', () => {
-  test('the Console mode strip is exactly ask, plan, build, fix', () => {
-    expect(COMPOSER_MODE_ORDER).toEqual(['ask', 'plan', 'build', 'fix']);
-  });
+
   test('no built-in Agent lists auto among the modes it fits', () => {
     for (const definition of AGENT_CATALOG) expect(definition.modes).not.toContain('auto');
   });
-  test('AUTO_BY_MODE (worker eligibility) has exactly the four work-mode keys', () => {
-    expect(Object.keys(AUTO_BY_MODE).sort()).toEqual(['ask', 'build', 'fix', 'plan']);
+  test('DEFAULT_AGENT (each kind of run has a default agent) has exactly the four work-mode keys', () => {
+    expect(Object.keys(DEFAULT_AGENT).sort()).toEqual(['ask', 'build', 'fix', 'plan']);
   });
   test('the persisted Agent resolution schema accepts exactly ask, plan, build, fix', () => {
     const modeField = resolutionSchema.shape.mode;
@@ -190,6 +187,49 @@ describe('conversation mode recovery on load (server/store.ts migrateConversatio
     expect(conversation.mode).toBe('build');
     expect(conversation.turns[0]?.mode).toBe('build');
   });
+  // DIO-292: an Agent chosen before agents carried the limits.
+  const chose = (mode: string, agent: string) => bareConversation({ mode, requested: { model: 'm', effort: null, agent } });
+  test('a thread that chose the general worker is on Auto, with its model pick kept', () => {
+    const conversation = chose('ask', 'diomedes.general');
+    migrateConversation(conversation, [], '2026-01-01T00:00:00.000Z');
+    expect(conversation.requested).toEqual({ model: 'm', effort: null, agent: AUTO_AGENT });
+    expect(conversation.mode).toBe('ask');
+  });
+  test('a built-in whose kind changed keeps the thread on the kind it ran as, so none starts changing files', () => {
+    const cases: [string, string, string][] = [
+      // Debugger answered in Ask; Fixer changes files.
+      ['ask', 'diomedes.debugger', DEFAULT_AGENT.ask],
+      ['ask', 'diomedes.architect', DEFAULT_AGENT.ask],
+      ['plan', 'diomedes.explorer', DEFAULT_AGENT.plan],
+      ['plan', 'diomedes.analyst', DEFAULT_AGENT.plan],
+      ['fix', 'diomedes.builder', DEFAULT_AGENT.fix],
+      ['auto', 'diomedes.researcher', AUTO_AGENT],
+    ];
+    for (const [mode, before, after] of cases) {
+      const conversation = chose(mode, before);
+      migrateConversation(conversation, [], '2026-01-01T00:00:00.000Z');
+      expect(conversation.requested?.agent, `${mode} ${before}`).toBe(after);
+      expect(conversation.mode).toBe(mode);
+    }
+  });
+  test('a choice that still fits, an added Agent and a profile stay as saved, and a second load changes nothing', () => {
+    const fits = chose('plan', 'diomedes.architect');
+    const added = chose('build', 'acme.bookkeeper');
+    const profiled = bareConversation({
+      mode: 'fix',
+      requested: { model: null, effort: null, profile: 'pr-fast', agent: 'diomedes.builder' },
+    });
+    for (const conversation of [fits, added, profiled]) {
+      const before = structuredClone(conversation.requested);
+      migrateConversation(conversation, [], '2026-01-01T00:00:00.000Z');
+      expect(conversation.requested).toEqual(before);
+    }
+    const once = chose('ask', 'diomedes.debugger');
+    migrateConversation(once, [], '2026-01-01T00:00:00.000Z');
+    const after = structuredClone(once);
+    migrateConversation(once, [], '2026-01-01T00:00:00.000Z');
+    expect(once).toEqual(after);
+  });
 });
 
 describe('auto over the HTTP thread API, including a restart', () => {
@@ -241,7 +281,8 @@ describe('auto over the HTTP thread API, including a restart', () => {
 
   test('an update to auto and back to ask round trips', async () => {
     const id = await sampleProject();
-    const created = await request(`/projects/${id}/threads`, 'POST', {});
+    // DIO-292: a new thread starts on Auto, and a mode an API caller names still round trips.
+    const created = await request(`/projects/${id}/threads`, 'POST', { mode: 'ask' });
     expect(created.data.mode).toBe('ask');
     const toAuto = await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', {
       mode: 'auto',
@@ -279,7 +320,8 @@ describe('auto over the HTTP thread API, including a restart', () => {
 
   test('POST /ask with mode auto is refused and changes nothing', async () => {
     const id = await sampleProject();
-    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    // DIO-292: a new thread starts on Auto, so this one is made an Ask thread on purpose.
+    const thread = (await request(`/projects/${id}/threads`, 'POST', { mode: 'ask' })).data;
     expect(thread.mode).toBe('ask');
     const before = await request(`/projects/${id}/state`);
     const turnsBefore = before.data.conversations.find(

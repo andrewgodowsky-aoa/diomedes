@@ -5,6 +5,7 @@ import { AGENT_FEATURE, AGENT_FREE_VERSION_REASON, AGENT_PERSONAL_REASON, BUSINE
   OUT_OF_CREDITS_PERSONAL } from '../../shared/access.js';
 import { decidePayAsYouGo } from '../../shared/pay-as-you-go.js';
 import { MANAGED_USAGE_NOT_INCLUDED_PERSONAL } from '../../shared/individual-plan.js';
+import { cycleContains, verifiedIndividualCycle, type IndividualBillingCycle } from '../../shared/individual-period.js';
 import { routingScopeKey, type AccountScope, type IndividualAccount, type RoutingPreferenceWrite } from '../../shared/routing-policy.js';
 import type { AccessFeature } from '../../shared/access.js';
 import type { EscalationView } from '../../shared/escalation-controls.js';
@@ -17,6 +18,7 @@ import { refusedMembership, type AccountSessionService } from './session.js';
 import { MANAGED_USAGE_NOT_INCLUDED, type AdmittedAgentWork, type AgentWork } from './agent-gate.js';
 
 const admissionSchema = z.object({ admissionId: z.string().min(1), validUntil: z.iso.datetime(),
+  billingCycle: z.custom<IndividualBillingCycle>(value => verifiedIndividualCycle(value) !== null).optional(),
   decision: z.discriminatedUnion('admitted', [
     z.object({ admitted: z.literal(true), planId: z.string().nullable(), revision: z.number().int(), validUntil: z.string().nullable() }),
     z.object({ admitted: z.literal(false), code: z.string(), reason: z.string() }),
@@ -66,7 +68,8 @@ export class AccountRoutingSession {
     const access = await this.session.call(token => this.session.backend.client.scopedAccess(token, { kind: 'individual', id: account.id }));
     if (this.current() !== account.personId)
       throw new EngineError('ACCOUNT_CHANGED', 'The signed-in account changed. Nothing was sent.', false);
-    this.individualAccess = { value: access, until: this.now() + 60_000 };
+    const expires = access.validUntil === null ? Infinity : Date.parse(access.validUntil);
+    this.individualAccess = { value: access, until: Math.min(this.now() + 60_000, Number.isFinite(expires) ? expires : this.now() + 60_000) };
   }
 
   private current() {
@@ -181,6 +184,34 @@ export class AccountRoutingSession {
     if (access.value.state === 'expired' || access.value.state === 'revoked') return access.value.reason;
     return null;
   }
+  /** Confirm a cached Personal refusal so a newly granted plan takes effect before route selection. */
+  async confirmedPersonalRefusal(projectId: string | null): Promise<string | null> {
+    const person = this.current(), cached = this.personalRefusal(projectId);
+    let scope = this.scopeFor(projectId);
+    if (!person || scope?.kind === 'organization') return cached;
+    const access = this.individualAccess;
+    if (scope && access && access.until > this.now() &&
+        (this.includes(scope, AGENT_FEATURE) || this.paysAsYouGo(scope))) return cached;
+    try {
+      await this.refreshAccess();
+    } catch (error) {
+      if ((error instanceof EngineError && error.code === 'ACCOUNT_CHANGED') || (error instanceof ApiError && error.status === 401)) throw error;
+      if (scope) this.assertScope(projectId, person, scope);
+      else if (this.current() !== person || this.scopeFor(projectId)?.kind === 'organization')
+        throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed. Nothing was sent.', false);
+      return cached;
+    }
+    scope ??= this.scopeFor(projectId);
+    if (!scope || scope.kind !== 'individual')
+      throw new EngineError('ACCOUNT_CHANGED', 'The account owning this work changed. Nothing was sent.', false);
+    this.assertScope(projectId, person, scope);
+    const fresh = this.individualAccess?.value;
+    if (this.includes(scope, AGENT_FEATURE) || this.paysAsYouGo(scope)) await this.session.confirmPersonalAdmitted();
+    else if (fresh) await this.session.confirmPersonalDowngrade(fresh.state === 'none' ? 'entitlement_none'
+      : fresh.state === 'active' ? 'agent_not_included' : fresh.state === 'unknown' ? 'entitlement_unknown' : `entitlement_${fresh.state}`);
+    this.assertScope(projectId, person, scope);
+    return this.personalRefusal(projectId);
+  }
   async admit(work: AgentWork): Promise<AdmittedAgentWork> {
     try {
       await this.refresh(work.projectId);
@@ -202,9 +233,12 @@ export class AccountRoutingSession {
       if (this.paysAsYouGo(scope)) {
         const payg = decidePayAsYouGo({ surface: work.surface, routeKind: work.routeKind ?? 'byo' }, true);
         if (!payg.admitted) throw admissionRefusal(payg.code, payg.reason);
-      } else if (this.individualAccess?.value.state === 'none')
+      } else if (this.individualAccess?.value.state === 'none') {
+        await this.session.confirmPersonalDowngrade('agent_not_included');
+        this.assertScope(work.projectId, person, scope);
         throw admissionRefusal(this.individualAccess.value.boughtCredits === 'spent' ? 'insufficient_allowance' : 'agent_not_included',
           this.personalRefusal(work.projectId) ?? AGENT_PERSONAL_REASON);
+      }
       if (work.routeKind === 'managed' && this.includes(scope, AGENT_FEATURE) && !this.includes(scope, 'managed-inference'))
         throw admissionRefusal('managed_inference_not_included', MANAGED_USAGE_NOT_INCLUDED_PERSONAL);
     } else if (work.routeKind === 'managed' && this.session.includes(scope.id, AGENT_FEATURE) &&
@@ -231,21 +265,37 @@ export class AccountRoutingSession {
         Date.parse(parsed.data.validUntil) <= this.now())
       throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current admission for this work. Nothing was sent.', false);
     const answer = parsed.data;
+    const cycle = answer.billingCycle;
+    const access = this.individualAccess?.value;
+    if (cycle && (scope.kind !== 'individual' || !answer.decision.admitted || answer.decision.planId !== 'individual' ||
+        answer.pins.planId !== answer.decision.planId || work.routeKind !== 'managed' || !cycleContains(cycle, this.now()) ||
+        !this.includes(scope, AGENT_FEATURE) || !access?.managedInference || !access.validFrom || !access.validUntil ||
+        !Number.isFinite(Date.parse(access.validFrom)) || !Number.isFinite(Date.parse(access.validUntil)) ||
+        Date.parse(access.validFrom) > this.now() || Date.parse(access.validUntil) <= this.now() ||
+        Date.parse(answer.validUntil) > Date.parse(access.validUntil) ||
+        !answer.decision.validUntil || !Number.isFinite(Date.parse(answer.decision.validUntil)) ||
+        Date.parse(answer.decision.validUntil) < Date.parse(answer.validUntil) ||
+        Date.parse(answer.validUntil) > Date.parse(cycle.endsAt)))
+      throw new EngineError('ACCOUNT_CHANGED', 'The account service did not return a current Individual billing period for this work. Nothing was sent.', false);
     if (!answer.decision.admitted) {
       if (scope.kind === 'organization') await this.session.confirmDowngrade(scope.id, answer.decision.code);
+      else await this.session.confirmPersonalDowngrade(answer.decision.code);
+      this.assertScope(work.projectId, person, scope);
       // A business with no plan says so in the words for this person's role there (Model B section 7).
       const reason = scope.kind === 'organization' && answer.decision.code === 'agent_not_included' && this.session.entitlement(scope.id)?.state === 'none'
         ? this.businessPlanReason(scope.id) : answer.decision.reason;
       throw admissionRefusal(answer.decision.code, reason);
     }
     if (scope.kind === 'organization') await this.session.confirmAdmitted(scope.id);
+    else await this.session.confirmPersonalAdmitted();
+    this.assertScope(work.projectId, person, scope);
     // Pay as you go (DIO-223): the amount this admission's own access read carried, for the local guard. Never for a plan holder
     // or a business, and not guessed when the service did not send it.
     const bought = scope.kind === 'individual' && answer.decision.planId === null && this.paysAsYouGo(scope)
       ? this.individualAccess?.value.boughtAvailable : undefined;
     return { admissionId: answer.admissionId, organizationId: answer.pins.organizationId, scope, personId: person,
       planId: answer.pins.planId, policyRevision: answer.pins.policyRevision, routeKind: work.routeKind ?? 'byo', surface: work.surface,
-      validUntil: answer.validUntil, ...(bought === undefined ? {} : { boughtAvailable: bought }) };
+      validUntil: answer.validUntil, ...(cycle ? { billingCycle: cycle } : {}), ...(bought === undefined ? {} : { boughtAvailable: bought }) };
   }
   async preference(projectId: string | null) {
     await this.refresh(projectId);

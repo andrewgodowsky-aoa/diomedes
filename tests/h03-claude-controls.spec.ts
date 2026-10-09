@@ -44,7 +44,9 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (m.type !== 'user') return;
   count++;
-  const words = JSON.parse(m.message.content).request.split('\\n\\n[[diomedes')[0];
+  let words = JSON.parse(m.message.content).request.split('\\n\\n[[diomedes')[0];
+  // What the person said: the role line an Agent's message opens with is not that.
+  if (words.startsWith('[[diomedes agent=')) words = words.slice(words.indexOf('\\n\\n') + 2);
   fs.appendFileSync(log, words + '\\n');
   emit({ type: 'system', subtype: 'init', session_id: session, model: 'claude-sonnet-4-6', tools: [], mcp_servers: [] });
   if (words.includes('[hang]')) { open = 'hang'; return; }

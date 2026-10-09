@@ -116,7 +116,7 @@ describe('published account policy at the desktop model boundary', () => {
       { reference: 'Synthetic managed usage', validUntil: new Date(Date.now() + 3_600_000).toISOString(), credits: 100 });
     await client.acceptRoutingPreference(token, { scope, baseRevision: 0, profile: 'strict', restrictions: STRICT_RESTRICTIONS,
       consentVersion: ROUTING_CONSENT_VERSION, exceptions: [], acknowledge: true });
-    const session = { personId: () => person.id, backend: { client },
+    const session = { personId: () => person.id, backend: { client }, confirmPersonalAdmitted: vi.fn(),
       call: <T>(fn: (value: string) => Promise<T>) => fn(token) } as unknown as AccountSessionService;
     const workspaces = { projectOwner: () => null, active: () => selected === 'business'
       ? { kind: 'business', organizationId: org } : { kind: 'personal' } } as unknown as WorkspaceService;

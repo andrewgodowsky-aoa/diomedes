@@ -1,0 +1,161 @@
+{
+  "base": "f885d50e235cd900312976d0f36618d180f2b54a",
+  "sourceFiles": 24,
+  "sourceFingerprint": "2a5d5e3d96ce0ac1e999d58679540c94a7ab0f17658e317785ce1a495ee73ba2",
+  "sourceFingerprintFormat": "UTF-8 path + NUL + lowercase file SHA-256 + LF for every entry in manifest order, including final LF",
+  "authorManifestSha256": "536e6d3df425760773ffc43ccb381e2aadcc5d3e9efaa4dd31d35db4a26bb0a5",
+  "fullPatchSha256": "8f2834ba95ab48989d67a2bd40e166fd91837fa65835d904eb0424e36cc58137",
+  "parentVerification": {
+    "matchingFiles": 24,
+    "mismatchedFiles": 0,
+    "exactChangedFileSet": true,
+    "extraFiles": [],
+    "missingFiles": []
+  },
+  "entries": [
+    {
+      "path": "server/accounts/agent-gate.ts",
+      "tracked": true,
+      "bytes": 10567,
+      "sha256": "be1a737ed8715c48e7d997adce22222a63ddfe6d3fdac1df6a44476685d73db0"
+    },
+    {
+      "path": "server/accounts/routing-session.ts",
+      "tracked": true,
+      "bytes": 22234,
+      "sha256": "d17f95032d817250062a5c2771e7f91e8a09fd77718ec0af5038956dc42608c0"
+    },
+    {
+      "path": "server/accounts/session.ts",
+      "tracked": true,
+      "bytes": 79282,
+      "sha256": "1e510ef6ef3765860a77ae10d21d0e006d5b0e42b1d0407763d9057a793a5d3c"
+    },
+    {
+      "path": "server/app.ts",
+      "tracked": true,
+      "bytes": 345254,
+      "sha256": "4a59375d9b415bbcbc5fd25e736db13c989a505a9b7ea165997762e489107d54"
+    },
+    {
+      "path": "server/engines/nectovia.ts",
+      "tracked": true,
+      "bytes": 36538,
+      "sha256": "008c6d0af3c85d8929cea2d1ad2dd11180c8cfce0e689171a61650dc58fd208c"
+    },
+    {
+      "path": "server/engines/service.ts",
+      "tracked": true,
+      "bytes": 166879,
+      "sha256": "250b614eff738e64051f185aa89ed36b0d2f2290f1f782c9e99cffc54d9ed965"
+    },
+    {
+      "path": "services/control-plane/contract/contract.ts",
+      "tracked": true,
+      "bytes": 27352,
+      "sha256": "542c1de8c497c870f200404127c4ecb1c50c9c5ec1aeebb3bbe8097343ed2f97"
+    },
+    {
+      "path": "services/control-plane/migrations/020_individual_complete_plan_credits.sql",
+      "tracked": false,
+      "bytes": 4838,
+      "sha256": "1aa0218a8a7217000dabf0375f82afdcee12a5629211aeb2d7fb1c7e43c89da8"
+    },
+    {
+      "path": "services/control-plane/scripts/migrate.ts",
+      "tracked": true,
+      "bytes": 3419,
+      "sha256": "ee5b7ec37c73de4502068598731f91c47d5692430b3861a59a4cb4dfd90f5a18"
+    },
+    {
+      "path": "services/control-plane/src/routing.ts",
+      "tracked": true,
+      "bytes": 38492,
+      "sha256": "d9446d447815514979620248bf42478a69cae5caeea6d4d83c8059306fabb12b"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants-postgres.integration.test.ts",
+      "tracked": false,
+      "bytes": 19525,
+      "sha256": "d8dc72c55460c86ac456f92690ff3a753719a8103dae0ef1f5d141c33e28119d"
+    },
+    {
+      "path": "services/control-plane/tests/individual-limited-grants.test.ts",
+      "tracked": false,
+      "bytes": 4254,
+      "sha256": "810fc6d4f7119fc78843cced9ade30b5019923b2e9a224db3954468e7237a0ed"
+    },
+    {
+      "path": "services/control-plane/tests/individual-plans.test.ts",
+      "tracked": true,
+      "bytes": 31525,
+      "sha256": "76ea7299c6999cbab751053b56acecc16c0abd8023d9c627242e558e9c813796"
+    },
+    {
+      "path": "services/control-plane/tests/migrations.test.ts",
+      "tracked": true,
+      "bytes": 17899,
+      "sha256": "86b469e422646d593ddba4bd89541061e4c1b5c1a301bf672e1e9a8d35152174"
+    },
+    {
+      "path": "services/control-plane/tests/postgres.integration.test.ts",
+      "tracked": true,
+      "bytes": 20687,
+      "sha256": "c635e2ad2cc64c0e9b37e73d61a1cf6aec0b1eacb49bb52e5596b684a8ac6f2c"
+    },
+    {
+      "path": "shared/individual-plan.ts",
+      "tracked": true,
+      "bytes": 11498,
+      "sha256": "c37b6bf3c1a594c9696030cb235b61b536b2f80ab6c381e099e8869122ba8244"
+    },
+    {
+      "path": "tests/individual-monthly-credits.test.ts",
+      "tracked": false,
+      "bytes": 1232,
+      "sha256": "cb3080f2dc5781e34f27e6c272b34a28e29b4dcc2354c3ed1897e98da49e45e8"
+    },
+    {
+      "path": "tests/individual-term-local-guard.test.ts",
+      "tracked": false,
+      "bytes": 4297,
+      "sha256": "aac2c93e6f82487deb28eaf8e0ad3d49d77955dbb17d443fecd32d6d1f312d1f"
+    },
+    {
+      "path": "tests/nectovia-bot-app.test.ts",
+      "tracked": true,
+      "bytes": 32168,
+      "sha256": "5fc221a089ac6f96770d67efa3ed4543a7fde55937359ec9a6aa2796ea45b516"
+    },
+    {
+      "path": "tests/operations-routing-client.test.ts",
+      "tracked": true,
+      "bytes": 24943,
+      "sha256": "df15dbfb25408abbdb60e6ecd75f9e75d5f4755deb8bac62cb964d2fdb8c3b00"
+    },
+    {
+      "path": "tests/paid-access-lapse/fixture.ts",
+      "tracked": true,
+      "bytes": 12790,
+      "sha256": "5b11f2220c3505d19afcc8d5f3bb9f779f9a46a280c5abe78773c3a85006df4d"
+    },
+    {
+      "path": "tests/paid-access-lapse/personal-lapse.test.ts",
+      "tracked": false,
+      "bytes": 6912,
+      "sha256": "d6375b1b2b4d39e4ff0b82d0be8a146eeba28825534494cb56d79ae4067871fc"
+    },
+    {
+      "path": "tests/pay-as-you-go-desktop.test.ts",
+      "tracked": true,
+      "bytes": 33449,
+      "sha256": "047e659a96a50daeb6ef82deef93ff29056efbf3b3792922f889f1c898401633"
+    },
+    {
+      "path": "tests/personal-access-confirm.test.ts",
+      "tracked": false,
+      "bytes": 18465,
+      "sha256": "290f3416c0ab4776d3ee9254c98101b65e22f928dc33c4bef8093a36b9c5ba21"
+    }
+  ]
+}

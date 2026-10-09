@@ -205,6 +205,27 @@ describe('the frames a phone is sent', () => {
     ]);
     expect(resultFrame('command_0001', 'refused', 'cap_question', 'z'.repeat(300)).message).toHaveLength(200);
   });
+
+  it('writes half a surrogate pair as U+FFFD, which a phone can read, and keeps whole characters whole', () => {
+    // An engine's title cut at a fixed length can end on half an emoji. JSON writes that half as an
+    // escape a strict reader refuses, and the phone's reader is strict.
+    const [part] = needSummaryParts({
+      needId: 'need_menu', projectId: 'project_menu', taskTitle: 'Bake \ud83c', what: 'Ask about the \udf5e menu',
+      why: 'The 🍞 menu is ready.', consequence: 'One file changes \ud83c', files: ['bread \udf5e.md'], expiresAt: AT,
+    });
+    expect(part).toMatchObject({
+      taskTitle: 'Bake \ufffd', what: 'Ask about the \ufffd menu', why: 'The 🍞 menu is ready.',
+      consequence: 'One file changes \ufffd', files: ['bread \ufffd.md'],
+    });
+    const [update] = turnUpdates({ kind: 'home' }, 'command_0001', 'done', 'Fresh 🍞, then \ud83c', 0);
+    expect(update.text).toBe('Fresh 🍞, then \ufffd');
+    expect(words('Card \udf5e', 80)).toBe('Card \ufffd');
+    expect(resultFrame('command_0001', 'refused', 'refused', 'No \ud83c').message).toBe('No \ufffd');
+    for (const frame of [part, update]) {
+      expect(isValid(frame)).toBe(true);
+      expect(JSON.stringify(frame)).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    }
+  });
 });
 
 // --- the outbound gate ----------------------------------------------------------------------
@@ -940,6 +961,56 @@ describe("a computer answering its person's phone", () => {
 // --- the desktop's own paths ------------------------------------------------------------------------
 
 describe("the desktop's paths, as the relay reaches them", () => {
+  it("relays as the thread's agent: a reading agent names itself, Auto and an agent that changes files send Automatic", async () => {
+    // DIO-292: the phone has no Agent box of its own, so a message goes as the thread's Agent.
+    const threads = {
+      reviewer: { id: 'thread_reviewer', mode: 'ask', requested: { model: null, effort: null, agent: 'diomedes.reviewer' } },
+      // Auto's last pick was Researcher; the box still says Auto.
+      auto: { id: 'thread_auto', mode: 'ask', requested: { model: null, effort: null, agent: 'auto' } },
+      builder: { id: 'thread_builder', mode: 'build', requested: { model: null, effort: null, agent: 'diomedes.builder' } },
+      // Saved before agents: an Ask thread reads as Researcher.
+      legacy: { id: 'thread_legacy', mode: 'ask', requested: null },
+      // A project's own reading agent keeps the kind the thread stored when it was chosen.
+      added: { id: 'thread_added', mode: 'plan', requested: { model: null, effort: null, agent: 'acme.menu-planner' } },
+    };
+    let current: keyof typeof threads = 'reviewer';
+    const sent: unknown[] = [];
+    const store = {
+      locked: <T>(action: () => Promise<T>) => action(),
+      provisionProjectConversation: async () => ({ projectId: 'project_menu', threadId: threads[current].id }),
+      state: () => ({ conversations: Object.values(threads) }),
+      on: () => {},
+      off: () => {},
+    } as unknown as Store;
+    const unused = (): never => {
+      throw new Error('Not used here.');
+    };
+    const paths: DesktopPaths = {
+      store, personId: () => null, includes: () => false, organizationFor: () => null, resolveNeed: unused, stop: unused, harnessRuns: unused,
+      teamMessage: unused, messageWarns: unused, wakeWarns: unused, updates: { closing: () => false, hold: () => () => {} }, teamWake: unused,
+      message: async (_projectId, _threadId, command) => {
+        sent.push(command);
+        return { answerText: 'Answered.', interrupted: false } as never;
+      },
+    };
+    const ports = desktopRelayPorts(paths);
+    const at = (name: keyof typeof threads) => {
+      current = name;
+      return ports.thread({ kind: 'project', projectId: 'project_menu' });
+    };
+    const reviewer = await at('reviewer');
+    expect(reviewer).toEqual({ projectId: 'project_menu', threadId: 'thread_reviewer', mode: 'ask', agent: 'diomedes.reviewer' });
+    await ports.message({ ...reviewer, commandId: 'phone.1', text: 'Is the menu right?' }, Promise.resolve());
+    expect(sent.at(-1)).toEqual({ commandId: 'phone.1', text: 'Is the menu right?', mode: 'ask', sources: [], agent: 'diomedes.reviewer' });
+    expect(await at('auto')).toEqual({ projectId: 'project_menu', threadId: 'thread_auto', mode: 'auto' });
+    expect(await at('builder')).toEqual({ projectId: 'project_menu', threadId: 'thread_builder', mode: 'auto' });
+    expect(await at('legacy')).toEqual({ projectId: 'project_menu', threadId: 'thread_legacy', mode: 'ask', agent: 'diomedes.researcher' });
+    expect(await at('added')).toEqual({ projectId: 'project_menu', threadId: 'thread_added', mode: 'plan', agent: 'acme.menu-planner' });
+    const auto = await at('auto');
+    await ports.message({ ...auto, commandId: 'phone.2', text: 'Good morning.' }, Promise.resolve());
+    expect(sent.at(-1)).toEqual({ commandId: 'phone.2', text: 'Good morning.', mode: 'auto', sources: [] });
+  });
+
   it("wakes a Team member only after the relay's check passes, inside the same Store lock", async () => {
     const steps: string[] = [];
     let queue = Promise.resolve();

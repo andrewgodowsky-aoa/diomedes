@@ -94,8 +94,9 @@ async function open(screen, scale = 1.1, theme = 'ember') {
   await page.locator('.app .page-frame, .console .stage').first().waitFor();
   if (screen === 'settings') {
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Engines', exact: true }).click();
-    await page.getByRole('heading', { name: 'Engines', level: 1 }).waitFor();
+    // Named Engines in the technical view, which the Software Engineering pack brings.
+    await page.getByRole('button', { name: /^(Engines|Helpers on this computer)$/ }).click();
+    await page.getByRole('heading', { name: /^(Engines|Helpers on this computer)$/, level: 1 }).waitFor();
   }
   if (screen === 'team' || screen === 'connections') {
     await page

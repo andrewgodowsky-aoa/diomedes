@@ -153,10 +153,10 @@ try {
       .click();
     await record(page, `maximized-${name.toLowerCase()}`);
   }
-  // The thread offers work styles, not models (client/console/WorkStylePicker.tsx).
-  await page.locator('.style-picker > button').click();
+  // The thread header's menu chooses an agent (client/console/AgentPicker.tsx).
+  await page.locator('.agent-picker > button').click();
   await expect(page.getByRole('menu')).toBeVisible();
-  await record(page, 'maximized-model-menu');
+  await record(page, 'maximized-agent-menu');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('dialog', { name: 'Find and act' })).toBeVisible();
@@ -166,7 +166,7 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Engines', exact: true })
+    .getByRole('button', { name: /^(Engines|Helpers on this computer)$/ })
     .click();
   await record(page, 'maximized-engines');
   for (const name of ['Appearance', 'Permissions']) {

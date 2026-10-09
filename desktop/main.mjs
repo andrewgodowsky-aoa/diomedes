@@ -332,7 +332,13 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // Capture callbacks before ready; main retains single-instance ownership.
   const nativeCallbacks = captureNativeAuthCallbacks(app, process.argv);
-  app.on('will-quit', () => { nativeCallbacks.dispose(); nativeAuth?.dispose(); });
+  app.on('will-quit', () => {
+    nativeCallbacks.dispose();
+    // Native sign-in closes after the local service, on the second pass below. A renewal the
+    // service started while closing gets a new refresh token from WorkOS and spends the old one,
+    // and closed storage would refuse the new one, so the next launch could not renew.
+    if (shuttingDown || !service) nativeAuth?.dispose();
+  });
   app.on('second-instance', () => {
     if (!window || window.isDestroyed()) return;
     if (window.isMinimized()) window.restore();

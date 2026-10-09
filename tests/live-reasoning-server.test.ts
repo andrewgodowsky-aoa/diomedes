@@ -5,7 +5,7 @@
  * transport is scripted: it reports thinking through the adapter-facing `onReasoningDelta` sink
  * that EngineService alone hands it, and only on a route whose descriptor declares thinking.
  */
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -72,6 +72,9 @@ const inspect = async () => ({
   detail: 'Fixture only',
   models: [{ slug: MODEL, name: MODEL, description: '', efforts: [], defaultEffort: null }],
 });
+
+/** What a scripted provider does with one request; it may wait, as a real engine does. */
+type Work = (input: TextRequest) => void | Promise<void>;
 
 /** The provider's scripted work: thinking with a secret split across two chunks, then the answer. */
 function think(input: TextRequest) {
@@ -170,6 +173,30 @@ async function leaks(dir: string, marker: string): Promise<string[]> {
   return found;
 }
 
+/**
+ * A provider that finishes its thinking, says so, then writes a two-part answer, and keeps
+ * writing until the first part has reached the events stream. `seenWhileWriting` is what had
+ * been shown by then: what a person reads while the engine is still at work.
+ */
+function thinkThenAnswer(seenWhileWriting: Frame[][]): Work {
+  return async (input) => {
+    input.onReasoningDelta?.(THOUGHT);
+    input.onReasoningDelta?.('Then the prices.');
+    input.onReasoningEnd?.();
+    input.onDelta?.('Soup and bread are on the menu today. ');
+    input.onDelta?.('Coffee and cake come after the meal.');
+    await vi.waitFor(() =>
+      expect(frames.some((frame) => frame.channel === 'text' && frame.kind === 'delta')).toBe(true),
+    );
+    seenWhileWriting.push(structuredClone(frames));
+  };
+}
+const shownOn = (list: readonly Frame[], channel: 'text' | 'reasoning') =>
+  list
+    .filter((frame) => frame.channel === channel && frame.kind !== 'started' && frame.kind !== 'ended')
+    .map((frame) => frame.text)
+    .join('');
+
 const replies = (projectId: string): Turn[] =>
   store()
     .state(projectId)
@@ -179,14 +206,14 @@ const replies = (projectId: string): Turn[] =>
 describe('thread Ask on an external engine', () => {
   const adapter = (
     reasoning: 'reasoning-delta' | 'none',
-    work: (input: TextRequest) => void = think,
+    work: Work = think,
   ): TextEngineAdapter => ({
     id: ENGINE,
     contract: declaring(routeContractFor(ENGINE), reasoning),
     inspect,
     generate: async (input) => {
       seen.push(input);
-      work(input);
+      await work(input);
       return {
         projectId: input.projectId,
         threadId: input.threadId,
@@ -260,7 +287,18 @@ describe('thread Ask on an external engine', () => {
     expect(reply.thinking!.ms).toBeGreaterThanOrEqual(0);
     // The adapter got the raw sink and never the caller's frame channel.
     expect(typeof seen[0].onReasoningDelta).toBe('function');
+    expect(typeof seen[0].onReasoningEnd).toBe('function');
     expect(seen[0].onReasoning).toBeUndefined();
+  });
+
+  test('a finished block of thinking is shown whole, and the answer streams while the engine is still writing', async () => {
+    const seenWhileWriting: Frame[][] = [];
+    await open(adapter('reasoning-delta', thinkThenAnswer(seenWhileWriting)));
+    await ask();
+    expect(seenWhileWriting).toHaveLength(1);
+    expect(shownOn(seenWhileWriting[0], 'reasoning')).toBe('Weighing the menu. Then the prices.');
+    // The answer's own newest part is still held for redaction; the rest is on screen.
+    expect(shownOn(seenWhileWriting[0], 'text')).toBe('Soup and bread are on the menu today. ');
   });
 
   test('a route that declares no thinking never gets the sink and saves none', async () => {
@@ -268,6 +306,7 @@ describe('thread Ask on an external engine', () => {
     const project = await ask();
     expect(frames.some((frame) => frame.channel === 'reasoning')).toBe(false);
     expect(seen[0].onReasoningDelta).toBeUndefined();
+    expect(seen[0].onReasoningEnd).toBeUndefined();
     expect(replies(project.id).at(-1)!.thinking).toBeUndefined();
   });
 
@@ -308,12 +347,25 @@ describe('thread Ask on an external engine', () => {
         onReasoningDelta: () => undefined,
       }),
     ).rejects.toMatchObject({ code: 'PREVIEW_CONTRACT' });
+    await expect(
+      service.generate(ENGINE, {
+        projectId: 'P1',
+        threadId: 'T1',
+        requestId: 'R2',
+        prompt: 'x',
+        documents: [],
+        instructions: '',
+        model: MODEL,
+        accountRoute: ACCOUNT,
+        onReasoningEnd: () => undefined,
+      }),
+    ).rejects.toMatchObject({ code: 'PREVIEW_CONTRACT' });
     expect(seen).toHaveLength(0);
   });
 });
 
 describe('the Diomedes conversation driver', () => {
-  const sessionAdapter = (work: typeof think = think): PersistentTextAdapter<ClaudeSessionCheckpoint> => ({
+  const sessionAdapter = (work: Work = think): PersistentTextAdapter<ClaudeSessionCheckpoint> => ({
     id: ENGINE,
     contract: routeContractFor(ENGINE),
     sessionContract: declaring(routeContractFor('claude-code-session'), 'reasoning-delta'),
@@ -359,7 +411,7 @@ describe('the Diomedes conversation driver', () => {
             requests: [...checkpoint.requests, { id: turn.requestId, digest: hash(turn.prompt)! }],
           };
           await options.onCheckpoint(checkpoint, signal);
-          work(turn);
+          await work(turn);
           const text = 'Soup and bread.';
           checkpoint = {
             ...checkpoint,
@@ -413,6 +465,7 @@ describe('the Diomedes conversation driver', () => {
       thinking: { text: 'Weighing the menu. The key [redacted] is not needed.', shortened: false },
     });
     expect(typeof seen[0].onReasoningDelta).toBe('function');
+    expect(typeof seen[0].onReasoningEnd).toBe('function');
     expect(seen[0].onReasoning).toBeUndefined();
     // The run record, the carried history and every other saved file never hold the thinking.
     expect(await leaks(path.join(root, 'data'), THOUGHT.trim())).toEqual([]);
@@ -425,6 +478,26 @@ describe('the Diomedes conversation driver', () => {
     expect(frames.length - before.frames).toBeLessThanOrEqual(2);
     expect(thread().turns).toHaveLength(before.turns);
     expect(thread().turns.at(-1)!.thinking).toEqual(saved.thinking);
+  });
+
+  test('a kept conversation shows a finished block of thinking whole, and streams the answer before the turn ends', async () => {
+    const seenWhileWriting: Frame[][] = [];
+    await open(sessionAdapter(thinkThenAnswer(seenWhileWriting)));
+    await api('/ai/discover', 'POST', { consent: true });
+    await api('/ai/check/claude-code', 'POST', {});
+    await api('/ai/select', 'POST', { engine: ENGINE, model: MODEL });
+    const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST');
+    await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', { engine: ENGINE });
+    await api(`/projects/${home.projectId}/threads/${home.threadId}/messages`, 'POST', {
+      commandId: 'm-streams',
+      text: 'What is on the menu?',
+      mode: 'ask',
+      sources: [],
+      consent: true,
+    });
+    expect(seenWhileWriting).toHaveLength(1);
+    expect(shownOn(seenWhileWriting[0], 'reasoning')).toBe('Weighing the menu. Then the prices.');
+    expect(shownOn(seenWhileWriting[0], 'text')).toBe('Soup and bread are on the menu today. ');
   });
 
   test('a home message that fails still shows what it had held back, redacted', async () => {

@@ -141,6 +141,19 @@ async function seedCatalogue(
 const object = (value: unknown): Json =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {};
 
+/**
+ * Removes the folder a server ran in once its process is closed. Windows can hold a file of a
+ * process that has just ended for a moment (EBUSY, EPERM, ENOTEMPTY), so the removal retries,
+ * and a folder that still will not go stays in the engine's own folder. It never replaces the
+ * answer or the failure the request already has: every message is checked with its own server
+ * first, and a raw error here reached the person as a message that could not be confirmed.
+ */
+async function removeServerFolder(root: string): Promise<void> {
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }).catch(() => {
+    /* A leftover folder is not the request's outcome. */
+  });
+}
+
 async function cappedText(response: Response, limit: number, stage: SetupStage): Promise<string> {
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -174,6 +187,14 @@ export const OPENCODE_READ_TOOLS = ['read', 'glob', 'grep', 'list'] as const;
 export const OPENCODE_WEB_TOOLS = ['webfetch', 'websearch'] as const;
 /** Tool steps a read turn may take before OpenCode itself stops the agent. */
 export const OPENCODE_READ_STEPS = 16;
+/**
+ * The text-only route's step limit. On the step that reaches an agent's limit, OpenCode 1.18.4
+ * adds its own instruction that the steps are spent and the model must summarise its work
+ * instead (packages/opencode/src/session/prompt.ts:1178-1281, MAX_STEPS_PROMPT), so a limit of
+ * one put that instruction on every message and every answer was that summary. A text-only
+ * answer is one step; the limit sits past it, and with every tool off a second never comes.
+ */
+export const OPENCODE_TEXT_STEPS = 2;
 /** OpenCode names an MCP tool `<server>_<tool>`. */
 const mcpToolName = (server: string, tool: string) => `${server}_${tool}`;
 /**
@@ -192,7 +213,7 @@ export function opencodeAllowedTools(scope: ReadScope): string[] {
 }
 /**
  * The whole configuration, passed inline. Without a scope it is the text-only
- * route: every tool off and denied, one step. With one, the web tools and the
+ * route: every tool off and denied, one answer. With one, the web tools and the
  * owner's approved MCP read tools are the only ones on and allowed; file reads,
  * edit, bash, task and everything else stay off and denied, and a turn may take
  * a bounded number of steps.
@@ -228,7 +249,7 @@ export function configContent(scope?: ReadScope): string {
       diomedes: {
         mode: 'primary',
         description: scope ? 'Read-only Diomedes route.' : 'Text-only Diomedes route.',
-        steps: scope ? OPENCODE_READ_STEPS : 1,
+        steps: scope ? OPENCODE_READ_STEPS : OPENCODE_TEXT_STEPS,
         tools: { '*': false, ...on },
         permission: {
           edit: 'deny',
@@ -704,7 +725,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       port = await this.reserve();
       command = launchCommand(this.file, opencodeArguments(port));
     } catch (error) {
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
+      await removeServerFolder(root);
       throw atStage(error, 'launch');
     }
     const password = randomBytes(32).toString('hex');
@@ -722,7 +743,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch {
-      await fs.rm(root, { recursive: true, force: true });
+      await removeServerFolder(root);
       throw new EngineError(
         'LAUNCH_FAILED',
         'OpenCode could not start. Recheck its installation and dependencies.',
@@ -784,7 +805,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       ready.dispose();
       const failure = atStage(error, 'launch');
       await this.closeChild(child, failure);
-      await fs.rm(root, { recursive: true, force: true });
+      await removeServerFolder(root);
       throw failure;
     }
   }
@@ -1068,6 +1089,10 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
               }
               reasoningParts.set(partId, prior + next);
               if (next) input.onReasoningDelta?.(next);
+              // OpenCode stamps `time.end` on a reasoning part once that block of thinking is
+              // finished (opencode v1.18.4, packages/opencode/src/session/processor.ts:207-213).
+              // What the thinking channel still holds is shown now, ahead of the answer.
+              if (Number.isFinite(object(partValue.time).end)) input.onReasoningEnd?.();
               continue;
             }
             if (partType !== 'text') continue;
@@ -1161,7 +1186,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
         try {
           await this.closeChild(server.child, primary);
         } finally {
-          await fs.rm(server.root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
+          await removeServerFolder(server.root);
         }
       },
       request: (server, route, init, signal, stage) =>
@@ -1236,7 +1261,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
     } finally {
       control.dispose();
       await this.closeChild(server.child);
-      await fs.rm(server.root, { recursive: true, force: true });
+      await removeServerFolder(server.root);
     }
   }
 
@@ -1347,7 +1372,7 @@ export class OpenCodeAdapter implements PersistentTextAdapter<OpenCodeSessionChe
       });
       control.dispose();
       await this.closeChild(server.child, primary);
-      await fs.rm(server.root, { recursive: true, force: true });
+      await removeServerFolder(server.root);
     }
   }
 }

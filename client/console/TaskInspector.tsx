@@ -93,8 +93,8 @@ export interface TaskInspectorProps {
   issue: string | null;
   busy: boolean;
   /**
-   * Technical detail. Customers do not choose routes (2026-09-23), so the per-task profile
-   * choice is offered only here; other levels read the task's profile, when it has one.
+   * The technical view (`technical-view.ts`). Customers do not choose routes (2026-09-23), so the
+   * per-task profile choice is offered only here; the plain view reads the task's profile, when it has one.
    */
   technical: boolean;
   /** Bumped by the Board after each change, so the execution view is read again. */
@@ -115,7 +115,7 @@ export interface TaskInspectorProps {
  * view (shared/task-execution.ts): the worker, the route, the model and the permissions a
  * Start would resolve now, read through the services admission uses, with every reason a
  * Start would be refused, and the one per-task choice this build keeps, the task's own profile
- * list (H09), at Technical detail only. Past runs are listed as their records say; the thread
+ * list (H09), in the technical view only. Past runs are listed as their records say; the thread
  * holds each run's full record, so it is linked rather than repeated here.
  *
  * Every action is a Board move, sent through the same table and command a drag sends.

@@ -19,6 +19,7 @@ test.describe.configure({ mode: 'serial' });
 
 const HEADERS = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const TASK = 'Compare supplier quotes';
+const ENGINEERING_PACK = 'diomedes.software-engineering';
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let baseURL = '';
@@ -75,16 +76,17 @@ test.beforeAll(async () => {
     description: 'Read the three quotes, note what changed since last month, and recommend one.',
   });
   await api('/settings', 'PUT', {
-    detail: 'technical',
     onboarding: {
       work: 'business',
-      detail: 'technical',
       familiarity: 'comfortable',
       resumeAt: 'done',
       completedAt: new Date().toISOString(),
     },
     openProjects: [project.id],
   });
+  // The technical view, which offers the task's own profile choice, comes with the Software
+  // Engineering pack (QUESTIONS.md R17).
+  await api(`/projects/${project.id}/packs/${ENGINEERING_PACK}/activate`, 'POST');
 });
 
 test.afterAll(async () => {
@@ -264,9 +266,10 @@ test('a drag asks for the Board’s own commands and refuses, on the card, what 
   expect(errors).toEqual([]);
 });
 
-test('below Technical detail the card says how it runs but offers no route choice', async ({ page }) => {
-  // Customers do not choose routes (2026-09-23): the task's own profile choice is Technical only.
-  await api('/settings', 'PUT', { detail: 'standard' });
+test('without the Software Engineering pack the card says how it runs but offers no route choice', async ({ page }) => {
+  // Customers do not choose routes (2026-09-23): the task's own profile choice is in the technical
+  // view only, which the Software Engineering pack brings.
+  await api(`/projects/${project.id}/packs/${ENGINEERING_PACK}/deactivate`, 'POST');
   try {
     await openBoard(page);
     await card(page, 'Review').getByRole('button', { name: TASK, exact: true }).click();
@@ -274,7 +277,7 @@ test('below Technical detail the card says how it runs but offers no route choic
     await expect(inspector.locator('.ti-controls')).toContainText('Sample');
     await expect(inspector.getByRole('combobox', { name: 'Profile for this task' })).toHaveCount(0);
   } finally {
-    await api('/settings', 'PUT', { detail: 'technical' });
+    await api(`/projects/${project.id}/packs/${ENGINEERING_PACK}/activate`, 'POST');
   }
 });
 

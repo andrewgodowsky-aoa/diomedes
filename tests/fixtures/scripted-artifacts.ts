@@ -4,6 +4,7 @@ import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock';
 import { EngineService, TESTED_VERSIONS } from '../../server/engines/service';
 import { routeContractFor } from '../../server/harness/route-contract';
 import { ApiError } from '../../server/paths';
+import { spokenPrompt } from '../../server/lane-recap';
 import { responsesAnswer } from './model-api-streams.js';
 
 // A model that answers with artifacts, for tests/artifacts-ui.spec.ts. It sits where
@@ -341,8 +342,10 @@ export const ANSWERS: Readonly<Record<string, string>> = {
 };
 
 export function artifactAnswer(prompt: string): string {
-  const word = /^[A-Z]+/.exec(prompt.trim())?.[0] ?? '';
-  const text = ANSWERS[word] ?? `You said: ${prompt}`;
+  // What the person said: the role line an Agent opens with, or a recap the host puts first, is not that.
+  const said = spokenPrompt(prompt);
+  const word = /^[A-Z]+/.exec(said.trim())?.[0] ?? '';
+  const text = ANSWERS[word] ?? `You said: ${said}`;
   return text
     .replaceAll('{{STUN}}', probes.stun)
     .replaceAll('{{LEAK}}', probes.leak)
@@ -457,7 +460,7 @@ export function artifactEngine(enginesDir: string): ArtifactEngine {
       generate: async (input) => {
         prompts.push(input.prompt);
         const text = artifactAnswer(input.prompt);
-        if (input.prompt.startsWith('STREAM')) {
+        if (spokenPrompt(input.prompt).startsWith('STREAM')) {
           const held = new Promise<void>((resolve) => {
             release = resolve;
           });

@@ -22,6 +22,7 @@ import { ReplyBody } from '../client/console/ReplyBody';
 import { updateBar } from '../client/update-progress';
 import { updateInMotion } from '../client/use-update-status';
 import { ThreadView } from '../client/console/ThreadView';
+import { choiceView } from '../client/console/agent-ui';
 import { MODES, VISUAL_INSTRUCTIONS } from '../server/modes';
 import { parseProposal } from '../server/native-work';
 import { defaults } from '../server/store';
@@ -548,8 +549,9 @@ describe('ReplyBody and the reply renderers', () => {
     const out = renderToStaticMarkup(
       createElement(ThreadView, {
         thread, title: 'Visuals', task: null, sessions: [], mail: [], members: [], member: null,
-        needs: [], settings: defaults(), mode: 'ask', route: 'codex', busy: false, online: true,
-        onMode: noAction, onPermission: noAction, onRename: noAction, prepareSources: async () => [],
+        needs: [], settings: defaults(), choice: choiceView(thread), route: 'codex', busy: false, online: true,
+        onPermission: noAction, onRename: noAction, prepareSources: async () => [],
+        pick: () => Promise.reject(new Error('Nothing is sent in a render.')),
         onSend: noAction, onResolve: noAction, onPreview: noAction, onStopSession: noAction,
         onOpenBoard: noAction,
         streaming: { requestId: 'r1', text: 'Drafting\n```visual\n{"kind"', engine: 'codex' },

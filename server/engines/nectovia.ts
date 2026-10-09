@@ -27,6 +27,7 @@ import { MEMBER_LIMIT_REACHED } from '../../shared/credit-allotments.js';
 import { OUT_OF_CREDITS_PERSONAL, PAY_AS_YOU_GO_PLAN_ONLY_REASON } from '../../shared/access.js';
 import { ESCALATION_HEADER, escalationAllows, type EscalationRole } from '../../shared/escalation-controls.js';
 import { GPT6_LUNA, MANAGED_LUNA, NECTOVIA_ROUTE } from '../../shared/model-api.js';
+import { cycleContains, individualCycleId, verifiedIndividualCycle, type IndividualBillingCycle } from '../../shared/individual-period.js';
 import type { TierResolution } from '../../shared/tier-map.js';
 import { routingPriceSchema, routingReceiptSchema, routingScopeKey, type ResolvedRoutingSnapshot, type AccountScope, type HardRestrictions, type RoutingReceipt } from '../../shared/routing-policy.js';
 import { classifyTask, WORK_STYLE_LABELS, type WorkStyle } from '../../shared/work-style.js';
@@ -102,6 +103,8 @@ export interface ManagedAdmission {
   /** The run the admission was pinned to: every call of the work names it as its job. */
   rootJobId: string;
   scope?: AccountScope;
+  /** Verified paid Individual term from the account service's admission. */
+  billingCycle?: IndividualBillingCycle;
   /**
    * The person's role in the business when the work was admitted, or null when this computer does
    * not know it. It decides only which sentence a refusal for want of credits reads as.
@@ -134,11 +137,18 @@ export const usageClassFor = (surface: string): UsageClass =>
 export const nectoviaAccountRoute = (organizationId: string) => `${NECTOVIA_ROUTE}:${organizationId}`;
 
 /**
- * The local guard's ledger connection for one business and one month. A connection's exposure
- * counts everything it ever settled, so the guard is scoped to the month it guards; the business's
- * real allowance is the gateway's, and is never read from here.
+ * The local guard's ledger connection for one billing account and period. Verified Individual
+ * admission terms keep one connection across calendar boundaries and receive a new one on paid
+ * renewal. Business, legacy Individual and no-plan bought credits retain the calendar-month path.
+ * Existing holds and settlements keep the original connection. The gateway owns the real balance.
  */
-export function nectoviaConnectionId(organizationId: string, at: Date): string {
+export function nectoviaConnectionId(organizationId: string, at: Date, billingCycle?: IndividualBillingCycle): string {
+  if (billingCycle) {
+    const cycle = verifiedIndividualCycle(billingCycle);
+    if (!cycle || !cycleContains(cycle, at.getTime()))
+      throw new ModelApiError('nectovia_admission_invalid', 'Your Individual billing period could not be confirmed. Nothing was sent.', false);
+    return `${NECTOVIA_ROUTE}-${digest(organizationId).slice(0, 12)}-individual-${digest(individualCycleId(cycle)).slice(0, 16)}`;
+  }
   const month = `${at.getUTCFullYear()}${String(at.getUTCMonth() + 1).padStart(2, '0')}`;
   return `${NECTOVIA_ROUTE}-${digest(organizationId).slice(0, 12)}-${month}`;
 }
@@ -644,9 +654,9 @@ export function nectoviaTier(input: {
   };
 }
 
-/** Build and Fix run through Work; the Nectovia Agent answers in the conversation. */
+/** Agents that change files run through Work; the Nectovia Agent answers in the conversation. */
 export const NECTOVIA_WORK_REFUSED =
-  'The Nectovia Agent answers in the conversation. Build and Fix are not on it yet, so nothing was sent.';
+  "The Nectovia Agent answers in the conversation. That agent isn't on Nectovia yet, so nothing was sent.";
 
 /**
  * Managed loops require one stable root job and fresh admission before every model step.

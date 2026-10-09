@@ -1764,7 +1764,7 @@ export class EngineService {
     this.running.set(key, controller);
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
-      if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
+      if (input.onDelta || input.onToolActivity || input.onReasoningDelta || input.onReasoningEnd)
         throw new EngineError(
           'PREVIEW_CONTRACT',
           'Preview frames reach the caller through onPreview and onActivity; the raw adapter sinks are not caller-facing.',
@@ -1865,6 +1865,7 @@ export class EngineService {
               onToolActivity,
               onReasoning: undefined,
               onReasoningDelta: thinking,
+              onReasoningEnd: thinking?.flush,
             });
           } finally {
             // What the channels still hold is shown before they close.
@@ -2053,7 +2054,7 @@ export class EngineService {
     const driver = route.driver;
     if (!driver)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
-    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta || input.onReasoningEnd)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     // What the route declares, read from the adapter admission resolved for this request.
     let declared: AdapterRouteContract | undefined;
@@ -2194,6 +2195,7 @@ export class EngineService {
             onDelta,
             onToolActivity,
             onReasoningDelta: thinking,
+            onReasoningEnd: thinking?.flush,
             finish: async () => {
               // What the channels still hold is shown before they close.
               order.flush();
@@ -2443,6 +2445,7 @@ export class EngineService {
       admissionId: admitted.admissionId,
       organizationId,
       scope: admitted.scope,
+      billingCycle: admitted.billingCycle,
       // Read here, so a refusal for want of credits can say who can buy more. Never a credential.
       role: account.roleFor?.(organizationId) ?? null,
       routing: policy.resolved,
@@ -2537,7 +2540,7 @@ export class EngineService {
     const api = this.modelApi;
     if (!driver || !api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API conversation runtime is not attached.', true);
-    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta || input.onReasoningEnd)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     try {
       let thinking: ReasoningSink | undefined;
@@ -2611,7 +2614,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta || input.onReasoningEnd)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     // A team turn on this route runs through generateModelApiTools; this one offers no tools.
     if (input.team)
@@ -2763,7 +2766,7 @@ export class EngineService {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
-    if (input.onDelta || input.onToolActivity || input.onReasoningDelta)
+    if (input.onDelta || input.onToolActivity || input.onReasoningDelta || input.onReasoningEnd)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     if (input.team || input.readScope)
       throw new EngineError('POLICY_MISMATCH', 'A model-API team turn carries its tools in the host registry only.', true);
@@ -3437,7 +3440,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute, work: 
       const organizationId = work.managed?.organizationId ?? account?.organizationFor(work.projectId ?? null) ?? null;
       if (!services || !account?.signedIn() || !organizationId) return { connected: false, route, names };
       const now = services.now ?? (() => new Date());
-      const connectionId = nectoviaConnectionId(organizationId, now());
+      const connectionId = nectoviaConnectionId(organizationId, now(), work.managed?.billingCycle);
       const policy = work.managed?.routing ? { revision: work.managed.routing.revision, tiers: work.managed.routing.tiers, resolved: work.managed.routing }
         : account.policy(work.projectId ?? null);
       const scopedAccount = { policy: () => account.policy(work.projectId ?? null), refreshPolicy: () => account.refreshPolicy(work.projectId ?? null) };

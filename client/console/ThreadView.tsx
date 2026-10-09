@@ -25,8 +25,9 @@ import {
 } from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
-import { isExternalEngine, isRoute } from '../../shared/engines';
-import { isModelApiRoute } from '../../shared/model-api';
+import { isRoute } from '../../shared/engines';
+import type { AgentPickView } from '../../shared/agent-choice';
+import { agentCaption, confirmFor, type AgentChoiceView } from './agent-ui';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
 import { ContextUsed } from './ContextUsed';
@@ -50,7 +51,7 @@ import type { RememberOffer } from '../../shared/permissions';
 import { ChangeReview } from './ChangeReview';
 import { ChangeDiffs } from './ChangeDiffs';
 import type { ReviewComment } from '../../shared/review-comments';
-import { useWorkingWord, workingLine } from './working-words';
+import { toolWorkingWord, useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import type { LiveThinking } from './engine-reasoning';
 import { Thinking } from './Thinking';
@@ -95,6 +96,12 @@ interface ThreadViewProps {
   needs: Need[];
   receiptNeeds?: Need[];
   projectId?: string;
+  /**
+   * The technical view (`technical-view.ts`): on while the Software Engineering pack is active
+   * for this project. Tool calls name their tool and open to their detail, and WorkStyle
+   * details show without asking.
+   */
+  technical?: boolean;
   history?: HistoryEntry[];
   allNeeds?: Need[];
   changes?: Change[];
@@ -118,21 +125,21 @@ interface ThreadViewProps {
   onScope?(): void;
   grantActive?: boolean;
   settings: Settings;
-  mode: Mode;
+  /** The thread's Agent box (DIO-292). */
+  choice: AgentChoiceView;
   route: Route;
   busy: boolean;
   online: boolean;
-  onMode(mode: Mode): void;
   onPermission(permission: ThreadPermission): void;
   onRename(): void;
-  prepareSources(mode: Mode, text: string, failingDocument: string): Promise<string[]>;
+  /** Auto's pick for one message, or the Agent the box names (`thread-send.ts` `pickForMessage`). */
+  pick(text: string, attachments: string[]): Promise<AgentPickView>;
+  prepareSources(kind: Mode, text: string): Promise<string[]>;
   onSend(
-    mode: Mode,
     text: string,
-    route: Route,
-    failing?: { document?: string; text?: string },
-    sources?: string[],
-    readAccess?: import('../../shared/read-access').ReadAccess,
+    sources: string[],
+    readAccess: import('../../shared/read-access').ReadAccess,
+    pick: AgentPickView,
   ): void;
   onResolve(need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean): void;
   onPreview(need: Need): void;
@@ -238,13 +245,13 @@ export function ThreadView({
   onScope,
   grantActive = false,
   settings,
-  mode,
+  choice,
   route,
   busy,
   online,
-  onMode,
   onPermission,
   onRename,
+  pick,
   prepareSources,
   onSend,
   onResolve,
@@ -278,8 +285,8 @@ export function ThreadView({
   onChoose,
   agentControl = null,
   pinChart = false,
+  technical = false,
 }: ThreadViewProps) {
-  const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   // The pinned chart, and whether a step is running now: a reply's tool call or a run's.
@@ -307,12 +314,14 @@ export function ThreadView({
       : '';
   const modelId = thread.requested?.model || savedModel || 'engine default';
   const wantedEffort = route === 'codex' ? thread.requested?.effort || savedEffort || 'medium' : '';
-  const runsAt = effortFor(mode, wantedEffort, wantedEffort);
+  // The kind of run the Agent box holds. On Auto, each message's own pick decides it.
+  const kind = choice.kind;
+  const runsAt = effortFor(kind, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
   // A thread on a WorkStyle names the style for everyone; the model and level it resolves to
-  // are details, shown at technical detail or on request. A pinned model is named as before.
+  // are details, shown in the technical view or on request. A pinned model is named as before.
   const style = thread.requested?.model ? null : threadStyle(thread, settings);
-  const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
+  const styleView = useWorkStyleView(projectId, thread, [route, kind, settings.services?.workStyle]);
   // The route the host says the next request runs on (the owner's tier map, else the thread's
   // own route). The confirmation names it and decides by it; the recorded route stands only
   // until the host has answered.
@@ -320,7 +329,7 @@ export function ThreadView({
   // On a local model, the profile the host declares: the ring's window and whether images go.
   const localProfile = useLocalProfile(route, integrations, thread.requested?.model);
   const [styleDetails, setStyleDetails] = useState(false);
-  const showStyleDetails = settings.detail === 'technical' || styleDetails;
+  const showStyleDetails = technical || styleDetails;
   const context =
     live?.engine.context ??
     [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
@@ -359,17 +368,26 @@ export function ThreadView({
   // A turn's place in the thread, which names it when an old record has no id.
   const turnIndex = new Map(thread.turns.map((turn, index) => [turn, index]));
 
-  // While an answer is on its way and nothing has streamed yet, the agent
-  // says what it is up to. Display only; nothing here is recorded. A tool
-  // call in progress already says it, so the line waits behind it.
-  const streamWaiting = Boolean(
-    streaming && !streaming.text && !toolRunning(streaming.activity) && !streaming.thinking?.text,
-  );
-  // The engine's thinking on the answer on its way; a lost stream shows none.
+  // The engine's thinking on the answer on its way; a lost stream shows none. As it streams it
+  // shows only when the person asked for it (Settings, Appearance). Otherwise the working line
+  // stands in for it, and once the answer starts it folds to one line that opens on click.
+  const showThinking = settings.appearance.showThinking === true;
   const liveThinking =
-    streaming?.thinking && streaming.thinking.position !== 'lost' && streaming.thinking.text ? streaming.thinking : null;
+    streaming?.thinking &&
+    streaming.thinking.position !== 'lost' &&
+    streaming.thinking.text &&
+    (showThinking || streaming.thinking.endedAt !== null)
+      ? streaming.thinking
+      : null;
+  // While an answer is on its way and nothing has streamed yet, the agent says what it is up to.
+  // Display only; nothing here is recorded. A tool call in progress is said in the same voice,
+  // and its plain line stays in the list; thinking shown as it streams takes the line's place.
+  const toolWord = streaming && !streaming.text ? toolWorkingWord(streaming.activity) : null;
+  const streamWaiting = Boolean(
+    streaming && !streaming.text && !toolWord && !(liveThinking && liveThinking.endedAt === null),
+  );
   const streamWord = useWorkingWord(
-    mode === 'plan' ? 'drafting the plan' : 'replying',
+    kind === 'plan' ? 'drafting the plan' : 'replying',
     streamWaiting,
   );
   const body = useRef<HTMLDivElement>(null);
@@ -407,6 +425,7 @@ export function ThreadView({
                     {formatOrigin(originForTurn(t)).secondary}
                   </span>
                 )}
+                {t.role !== 'you' && t.agent && <span className="lc">{agentCaption(t.agent)}</span>}
                 <span className="mono">{time(t.at).toLowerCase()}</span>
                 {t.role === 'you' && t.skill && (
                   <span className="mono lc" title={`${t.skill.packId} ${t.skill.packVersion}`}>
@@ -589,27 +608,6 @@ export function ThreadView({
   });
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
 
-  function submit(
-    text: string,
-    failingDocument: string,
-    failingText: string,
-    sources: string[],
-    readAccess: import('../../shared/read-access').ReadAccess,
-  ) {
-    if (mode === 'fix') {
-      const doc = failingDocument.trim();
-      const txt = failingText.trim();
-      onSend(
-        mode,
-        text,
-        sendRoute,
-        { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
-        sources,
-      );
-      return;
-    }
-    onSend(mode, text, sendRoute, undefined, sources, readAccess);
-  }
 
   return (
     <main className={`work${pinned ? ' pinned' : ''}`} aria-label={title}>
@@ -657,7 +655,7 @@ export function ThreadView({
       <div className="col instr" aria-label="Thread instruments">
         {style ? (
           <span>
-            next request <b>{mode}</b> <span className="lc">{WORK_STYLE_LABELS[style]}</span>{' '}
+            next request <b>{choice.name}</b> <span className="lc">{WORK_STYLE_LABELS[style]}</span>{' '}
             {showStyleDetails ? (
               <span className="lc">{resolvedDetail(styleView)}</span>
             ) : (
@@ -672,7 +670,7 @@ export function ThreadView({
           </span>
         ) : (
           <span>
-            next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
+            next request <b>{choice.name}</b> <span className="lc">{modelId}</span>{' '}
             <span className="lc">
               {runsAt}
               {capped ? ', capped' : ''}
@@ -798,7 +796,7 @@ export function ThreadView({
           {!thread.turns.length && !live && (
             <div className="greeting" data-thread-point>
               <p>A new thread.</p>
-              <p>Ask, or choose Plan, Build or Fix below. Nothing changes until you say so.</p>
+              <p>Ask, or pick an agent below. Nothing changes until you say so.</p>
             </div>
           )}
           {items.map((entry, i) => (
@@ -822,6 +820,8 @@ export function ThreadView({
                 <div className="body">
                   {streaming.text ? (
                     <TurnBody text={streaming.text} preview session={live} />
+                  ) : toolWord ? (
+                    <p className="caption">{workingLine(toolWord)}</p>
                   ) : (
                     streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
                   )}
@@ -838,10 +838,7 @@ export function ThreadView({
           )}
           {unconfirmed && !streaming && !busy && (
             <div role="group" aria-label="A message that was not confirmed">
-              <p className="caption">
-                Nectovia could not confirm your last message. Sending it again checks what
-                happened and never asks twice.
-              </p>
+              <p className="caption">Nectovia couldn't confirm your last message.</p>
               <p className="caption" title={unconfirmed.text}>
                 {unconfirmed.text}
               </p>
@@ -863,19 +860,14 @@ export function ThreadView({
       <Composer
         thread={thread}
         projectId={projectId}
-        mode={mode}
-        onMode={onMode}
+        choice={choice}
         busy={busy}
         online={online}
         route={sendRoute}
-        confirmSend={
-          isExternalEngine(sendRoute) ||
-          (sendRoute === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending)) ||
-          // Build and Fix send the selected documents to the company's provider account.
-          (isModelApiRoute(sendRoute) && (mode === 'build' || mode === 'fix'))
-        }
-        prepareSources={(text, doc) => prepareSources(mode, text, doc)}
-        onSend={submit}
+        pick={pick}
+        confirmFor={(picked) => confirmFor(picked, settings.permissions.sending)}
+        prepareSources={(text, picked) => prepareSources(picked, text)}
+        onSend={onSend}
         skill={skill}
         onClearSkill={onClearSkill}
         insert={insert}
@@ -887,7 +879,7 @@ export function ThreadView({
           onChoose ? (
             <AskRow
               thread={thread}
-              mode={mode}
+              mode={kind}
               route={route}
               integrations={integrations}
               settings={settings}

@@ -137,6 +137,20 @@ describe('kept OpenCode session transport', () => {
     expect(deltas.join('')).toBe(result.text);
   });
 
+  it('says when OpenCode finishes a block of thinking, once and before the answer starts', async () => {
+    const f = await fixture();
+    f.state.mode = 'think';
+    const session = await f.openSession(request('first'));
+    const events: string[] = [];
+    await session.turn({
+      ...request('first'),
+      onDelta: () => events.push('answer'),
+      onReasoningDelta: (text) => events.push(`thinking:${text}`),
+      onReasoningEnd: () => events.push('end'),
+    });
+    expect(events).toEqual(['thinking:Weighing the menu. ', 'thinking:Checking prices.', 'end', 'answer']);
+  });
+
   it('refuses a turn outside the scope it was opened with, and a second turn while one runs', async () => {
     const f = await fixture();
     f.state.mode = 'slow';

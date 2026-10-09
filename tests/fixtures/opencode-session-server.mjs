@@ -87,9 +87,10 @@ function prompt(sessionID, payload) {
     send(info());
     if (mode === 'think') {
       const reason = `reason_${id}`;
-      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: '' } } });
+      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: '', time: { start: 1 } } } });
       send({ type: 'message.part.delta', properties: { sessionID, messageID: id, partID: reason, field: 'text', delta: 'Weighing the menu. ' } });
-      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: 'Weighing the menu. Checking prices.' } } });
+      // The block finished: its full text, stamped with an end, as opencode's finishReasoning sends it.
+      send({ type: 'message.part.updated', properties: { part: { id: reason, sessionID, messageID: id, type: 'reasoning', text: 'Weighing the menu. Checking prices.', time: { start: 1, end: 2 } } } });
     }
     send({ type: 'message.part.updated', properties: { part: { id: `part_${id}`, sessionID, messageID: id, type: 'text', text: '' } } });
     if (mode === 'slow' || mode === 'stuck-abort') {

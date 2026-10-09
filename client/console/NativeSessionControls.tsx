@@ -10,6 +10,8 @@ interface NativeSessionControlsProps {
   projectId: string;
   threadId: string;
   mode: ConversationMode;
+  /** The Agent a queued message runs as, when it isn't Auto's own answer (DIO-292). */
+  agent?: string;
   /** This page's own message is being answered now. */
   answering: boolean;
   /** A queued message was answered: the transcript has something new to read. */
@@ -30,7 +32,7 @@ interface Held {
  * no native session. Stop stays the composer's own; this adds the queue and says what the
  * session can do next.
  */
-export function NativeSessionControls({ projectId, threadId, mode, answering, onAnswered }: NativeSessionControlsProps) {
+export function NativeSessionControls({ projectId, threadId, mode, agent, answering, onAnswered }: NativeSessionControlsProps) {
   const [view, setView] = useState<ThreadSessionView | null>(null);
   const [text, setText] = useState('');
   const [held, setHeld] = useState<Held[]>([]);
@@ -70,7 +72,9 @@ export function NativeSessionControls({ projectId, threadId, mode, answering, on
     const commandId = mintCommandId();
     setText('');
     setHeld((items) => [...items, { commandId, text: words, error: null }]);
-    const body: MessageRequest = { commandId, text: words, mode, sources: [], consent: true, queued: true };
+    const body: MessageRequest = {
+      commandId, text: words, mode, sources: [], consent: true, queued: true, ...(agent ? { agent } : {}),
+    };
     void api<MessageResult>(`${path}/messages`, 'POST', body).then(
       () => {
         setHeld((items) => items.filter((item) => item.commandId !== commandId));

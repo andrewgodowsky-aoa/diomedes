@@ -3,7 +3,7 @@ import type { Conversation, DocumentInfo, EngineModel, Mode, Route } from '../..
 import { imageMediaType, MODEL_IMAGE_COUNT } from '../../shared/model-images';
 import { localSlug } from '../../shared/local-model';
 import { api, listDocuments } from '../api';
-import { AgentPicker } from './AgentPicker';
+import { choiceView } from './agent-ui';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import './local-models.css';
@@ -171,14 +171,12 @@ export function LocalModelControls({ projectId, thread, route, mode, busy, live,
       </select>
       {profile && <>
         <select aria-label="Local reasoning effort" value={level} disabled={locked}
-          title={mode === 'fix' ? 'Fix caps the reasoning level.' : 'Reasoning effort'}
+          title={mode === 'fix' ? `${choiceView(thread).name} caps the reasoning level.` : 'Reasoning effort'}
           onChange={e => void change(profile.slug, e.target.value)}>
           {profile.efforts.map(effort => <option key={effort.id} value={effort.id} disabled={effortFor(mode, effort.id, effort.id) !== effort.id}>
             {'label' in effort ? String(effort.label) : effort.id}
           </option>)}
         </select>
-        <AgentPicker projectId={projectId} thread={thread} mode={mode} route={route} live={live} busy={locked}
-          onPick={agent => void change(profile.slug, level, agent)} />
         <span className="local-context" title={`${profile.contextTokens.toLocaleString('en-US')} token context. ${recorded == null ? 'Usage not measured yet.' : `${recorded.toLocaleString('en-US')} tokens reported on the last message.`} ${profile.inputModalities.includes('image') ? 'Text and images.' : 'Text only.'}`}>
           <svg width="18" height="18" viewBox="0 0 20 20" role="img" aria-label={`${profile.contextTokens.toLocaleString('en-US')} token context`}>
             <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" opacity=".25" />

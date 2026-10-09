@@ -462,6 +462,19 @@ test('validateSettings keeps the two new appearance fields, and refuses a bad on
   );
 });
 
+test('showing thinking while it works is its own switch, off until it is turned on', async () => {
+  expect((await request<Settings>('/settings')).data.appearance.showThinking).toBeUndefined();
+  const on = await request<Settings>('/settings', 'PUT', { appearance: { showThinking: true } });
+  expect(on.status).toBe(200);
+  expect(on.data.appearance.showThinking).toBe(true);
+  // The detail level is its own setting; changing it leaves this switch alone.
+  const detail = await request<Settings>('/settings', 'PUT', { detail: 'guided' });
+  expect(detail.data.appearance.showThinking).toBe(true);
+  const off = await request<Settings>('/settings', 'PUT', { appearance: { showThinking: false } });
+  expect(off.data.appearance.showThinking).toBe(false);
+  expect((await request('/settings', 'PUT', { appearance: { showThinking: 'yes' } })).status).toBe(400);
+});
+
 test('editing the applied theme moves the pointer with it, and it survives a restart', async () => {
   await save('living', pack('living', { name: 'Before' }));
   await request('/themes/living/activate', 'POST');

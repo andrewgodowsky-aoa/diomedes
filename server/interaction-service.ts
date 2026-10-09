@@ -51,6 +51,8 @@ export interface MessageCommand {
   sources: { path: string; sha: string }[];
   /** Absent means the selected documents only. Never saved; it binds this one message. */
   readAccess?: 'selected' | 'project';
+  /** The Agent it runs as. Absent means its kind's default. Bound when it frames the message. */
+  agent?: string;
   /** H03: wait behind a running answer instead of being refused as busy. Not part of the binding. */
   queued?: true;
 }
@@ -83,6 +85,8 @@ export interface ResolvedMessage {
   /** What the person typed, for projection. The prompt may carry more than this. */
   text: string;
   mode: ConversationMode;
+  /** Which Agent answers, and whether Auto picked it. Absent when Auto answers itself. */
+  agent?: import('../shared/types.js').Turn['agent'];
   /**
    * The Mode control as it stands now, which is what admission is held to. For a new message
    * it is the Mode the message was sent with. For a command read back later it is the thread's

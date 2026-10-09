@@ -156,12 +156,10 @@ await step('02-first-run-questions', async () => {
   };
   await pick('Kind of work');
   await button('Continue').click();
-  await pick('Detail preference');
-  await button('Continue').click();
   await button('Continue').click();
   const heading = page.getByRole('heading', { name: 'Connect an AI service' });
   await heading.waitFor();
-  return { status: 'traversed', note: 'Welcome, then Business, Guided detail and the default file-change answer; the AI setup screen followed.' };
+  return { status: 'traversed', note: 'Welcome, then Business and the default file-change answer; the AI setup screen followed.' };
 });
 
 let connections = [];
@@ -558,7 +556,9 @@ await step('17-ask-for-one-revision', async () => {
   }
   if (!(await composer.isVisible().catch(() => false)))
     return { status: 'not-reachable', note: 'No thread was open and none could be opened from the rail, so the composer was not reachable.' };
-  await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'ask' }).click().catch(() => {});
+  // The Agent box replaced the mode strip (DIO-292).
+  await page.getByRole('button', { name: 'Agent for this thread' }).click().catch(() => {});
+  await page.getByRole('menuitemradio', { name: /^Researcher\b/ }).click().catch(() => {});
   const instruction = 'Shorten the brief to the three things that changed most, and keep the source markers.';
   const sentAt = new Date().toISOString();
   const settings = await api('/settings');

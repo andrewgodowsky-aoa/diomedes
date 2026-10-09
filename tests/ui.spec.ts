@@ -10,7 +10,9 @@ import type {
   Settings,
   TaskCandidate,
 } from '../shared/types';
+import { isPackActive } from '../shared/capability-packs';
 import { reopenLastProject } from './fixtures/landing';
+import { AGENT_MENU, chooseAgent } from './fixtures/agent-menu';
 
 /**
  * The acceptance scenarios, driven through the Console. They were written
@@ -156,13 +158,27 @@ async function newThread(page: Page) {
   await expect(page.getByText('A new thread.', { exact: true })).toBeVisible();
 }
 
-async function chooseDetail(page: Page, name: 'Guided' | 'Standard' | 'Technical') {
-  await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('menuitemradio', { name, exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', name.toLowerCase());
-}
-
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const ENGINEERING_PACK = 'diomedes.software-engineering';
+/**
+ * Settings is one screen for every project, so it is in the technical view while the Software
+ * Engineering pack is on for any of them (`client/console/technical-view.ts`). Specs that run
+ * before this file leave the pack on for their own projects. This turns it off wherever it is on
+ * and returns what turns it back on.
+ */
+async function engineeringPackOff(page: Page): Promise<() => Promise<void>> {
+  const { projects }: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
+  const on = projects.filter((project) => isPackActive(project.packs, ENGINEERING_PACK));
+  const set = async (id: string, state: 'activate' | 'deactivate') =>
+    expect(
+      (await page.request.post(`/api/projects/${id}/packs/${ENGINEERING_PACK}/${state}`, { headers: HEADERS })).ok(),
+    ).toBe(true);
+  for (const project of on) await set(project.id, 'deactivate');
+  return async () => {
+    for (const project of on) await set(project.id, 'activate');
+  };
+}
 
 /**
  * Open a project document in the Console's editor, through the Files pane. The
@@ -215,7 +231,7 @@ async function startFirstReady(page: Page): Promise<string> {
   return started.name;
 }
 
-test('F01-F02: first run preserves detail and approvals, supports AI skip, and resumes', async ({
+test('F01-F02: first run preserves approvals, supports AI skip, and resumes', async ({
   page,
 }, testInfo) => {
   let codexLogin = false;
@@ -234,15 +250,17 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('radio', { name: 'Business', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Business', exact: true })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  // The detail question is retired (Andrew, 2026-10-08; QUESTIONS.md R17): the file-changes
+  // question follows the first, and setup asks two questions.
   await expect(
-    page.getByRole('heading', { name: 'How much detail do you want?', exact: true }),
+    page.getByRole('heading', { name: 'How should file changes work?', exact: true }),
   ).toBeVisible();
+  await expect(page.getByText('Question 2 of 2', { exact: true })).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole('heading', { name: 'How much detail do you want?', exact: true }),
+    page.getByRole('heading', { name: 'How should file changes work?', exact: true }),
   ).toBeVisible();
-  await page.getByRole('radio', { name: /^Guided/ }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Detail preference' })).toHaveCount(0);
   await expect(
     page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
   ).toBeChecked();
@@ -304,17 +322,17 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(settings.explanations).toBe('persistent');
   expect(settings.onboarding.completedAt).toBeTruthy();
 
+  // Setup saved on the retired detail question resumes at the next question.
   const resume = await page.request.put('/api/settings', {
     headers: HEADERS,
     data: { onboarding: { resumeAt: 'q2', completedAt: null } },
   });
   expect(resume.ok()).toBe(true);
+  expect((await readSettings(page)).onboarding.resumeAt).toBe('q3');
   await page.reload();
   await expect(
-    page.getByRole('heading', { name: 'How much detail do you want?', exact: true }),
+    page.getByRole('heading', { name: 'How should file changes work?', exact: true }),
   ).toBeVisible();
-  await page.getByRole('radio', { name: /^Technical/ }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(
     page.getByRole('checkbox', { name: 'Ask before changing files in a project' }),
   ).toBeChecked();
@@ -339,7 +357,8 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await showProjects(page);
   await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  // No detail level is chosen or shown any more.
+  await expect(page.locator('html')).not.toHaveAttribute('data-detail');
   // A new person starts in the Conversation view (shared/onboarding.ts): the
   // project is open, and its panel, which carries the project heading, is not.
   await expect(page.locator('html')).toHaveAttribute('data-view', 'conversation');
@@ -350,20 +369,19 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   const comfortableSettings = await readSettings(page);
   expect(comfortableSettings.view).toBe('conversation');
   expectNoRetiredKeys(comfortableSettings);
-  expect(comfortableSettings.detail).toBe('technical');
+  // The stored level is left as it was: setup no longer asks, and nothing reads it.
+  expect(comfortableSettings.detail).toBe('guided');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
   // The two views are the top switch, Nectovia | Work (round 2 reskin, slice 3). The menu
-  // offers the detail levels and the conversation text size, and nothing that leaves the Console.
+  // offers the conversation text size, and nothing that leaves the Console. The detail levels
+  // are retired, so it offers none of them.
   const views = page.getByRole('navigation', { name: 'View', exact: true });
   await expect(views.getByRole('button')).toHaveText(['Nectovia', 'Work']);
   await expect(views.getByRole('button', { name: 'Nectovia', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Interface detail menu' }).click();
+  await page.getByRole('button', { name: 'More options' }).click();
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitemradio')).toHaveText([
-    'Guided',
-    'Standard',
-    'Technical',
     '90%',
     '100% (Default)',
     '110%',
@@ -373,7 +391,7 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.keyboard.press('Escape');
   // A client from before the Workbook's removal can still ask for it. The
   // server refuses the whole write as unknown, so the detail level it carried
-  // is not applied either, and the Console stays as it was.
+  // is not stored either, and the Console stays as it was.
   const legacy = await page.request.put('/api/settings', {
     headers: HEADERS,
     data: { surface: 'workbook', detail: 'standard' },
@@ -382,15 +400,12 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(await legacy.text()).toContain('Unknown setting: surface');
   const afterLegacy = await readSettings(page);
   expectNoRetiredKeys(afterLegacy);
-  expect(afterLegacy.detail).toBe('technical');
+  expect(afterLegacy.detail).toBe('guided');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.locator('html')).not.toHaveAttribute('data-detail');
   await expect(railOf(page)).toBeVisible();
-  await chooseDetail(page, 'Guided');
-  const guidedSettings = await readSettings(page);
-  expectNoRetiredKeys(guidedSettings);
-  expect(guidedSettings.appearance.interfaceScale).toBeUndefined();
+  expect(afterLegacy.appearance.interfaceScale).toBeUndefined();
   await expect
     .poll(async () =>
       page.evaluate(() =>
@@ -425,7 +440,6 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   }
   await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(railOf(page)).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await expect(
     openProjects(page).getByRole('button', { name: 'Harbor Street restaurants', exact: true }),
   ).toHaveClass(/(?:^|\s)on(?:\s|$)/);
@@ -507,13 +521,6 @@ test('F10: plan steps become real tasks with provenance and a History entry', as
     fullPage: true,
     animations: 'disabled',
   });
-  await chooseDetail(page, 'Standard');
-  await page.screenshot({
-    path: testInfo.outputPath('tasks-standard.png'),
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await chooseDetail(page, 'Guided');
 });
 
 test('F11-F13: work asks twice, decline skips creation, and the remaining change is recorded', async ({
@@ -746,15 +753,12 @@ test('F14: Stop settles a started sample promptly and expires its approval', asy
   ).toBe(true);
 });
 
-test('F17, F20-F22: detail changes preserve data; the Console meets layout and motion checks', async ({
+test('F17, F20-F22: moving between views and Settings preserves data; the Console meets layout and motion checks', async ({
   page,
 }, testInfo) => {
   await openProject(page);
   const before = await projectState(page);
-  for (const detail of ['Guided', 'Standard'] as const) {
-    await chooseDetail(page, detail);
-    for (const view of ['Thread', 'Board', 'Team'] as const) await goTo(page, view);
-  }
+  for (const view of ['Thread', 'Board', 'Team'] as const) await goTo(page, view);
 
   // Asking from a thread of the project's own records the turn on that thread.
   await goTo(page, 'Thread');
@@ -764,12 +768,7 @@ test('F17, F20-F22: detail changes preserve data; the Console meets layout and m
   );
   await newThread(page);
   const askText = 'How should I organize the restaurant menu work?';
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  await modes.getByRole('radio', { name: 'ask', exact: true }).click();
-  await expect(modes.getByRole('radio', { name: 'ask', exact: true })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await chooseAgent(page, 'Researcher');
   await page.getByRole('textbox', { name: 'Message this thread', exact: true }).fill(askText);
   await page.locator('.console .composer').getByRole('button', { name: 'Send', exact: true }).click();
   await expect
@@ -802,21 +801,16 @@ test('F17, F20-F22: detail changes preserve data; the Console meets layout and m
   });
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  // Settings offers no surface to choose between.
+  // Settings offers no surface to choose between, and no detail level: the levels are retired,
+  // and the technical view comes with the Software Engineering pack (QUESTIONS.md R17).
   await expect(page.getByRole('radio', { name: /^The (Console|Workbook)\b/ })).toHaveCount(0);
-  // Detail is the person's own setting, and opening Settings from the Console
-  // leaves it alone.
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'standard');
-  await page
-    .getByRole('navigation', { name: 'Settings', exact: true })
-    .getByRole('button', { name: 'Interface detail', exact: true })
-    .click();
-  await expect(page.getByRole('radio', { name: /^Standard\b/ })).toBeChecked();
-  await page.getByRole('radio', { name: /^Guided\b/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
+  const settingsNav = page.getByRole('navigation', { name: 'Settings', exact: true });
+  await expect(settingsNav.getByRole('button', { name: 'Interface detail', exact: true })).toHaveCount(0);
+  await expect(settingsNav.getByRole('button', { name: 'Account', exact: true })).toHaveClass(/active/);
+  await expect(page.getByRole('radio', { name: /^(Guided|Standard|Technical)\b/ })).toHaveCount(0);
   await openProjects(page).getByRole('button', { name: /Harbor Street/ }).click();
   await expect(railOf(page)).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
+  await expect(page.locator('html')).not.toHaveAttribute('data-detail');
   expectNoRetiredKeys(await readSettings(page));
   const after = await projectState(page);
   expect(after.tasks).toEqual(before.tasks);
@@ -958,12 +952,9 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await editor.fill(draftA);
   await expect(notSaved).toHaveText('Not saved yet');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  // Settings leaves the detail level alone.
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await expect(page.getByRole('navigation', { name: 'Settings', exact: true })).toBeVisible();
   await tabs.getByRole('button', { name: first.name, exact: true }).click();
   await expect(railOf(page)).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   editor = await openInEditor(page, file);
   await expect(editor).toHaveValue(draftA);
   await expect(page.locator('.docedit [role="status"]')).toHaveText(
@@ -1050,7 +1041,7 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   expect(await fs.readFile(path.join(first.folder, file), 'utf8')).toBe(external);
 });
 
-test('Services roster: every reported engine listed with switch discipline at every detail level; Console has no Connections', async ({
+test('Services roster: every reported engine listed with switch discipline in either view; Console has no Connections', async ({
   page,
 }) => {
   const setup = await page.request.put('/api/settings', {
@@ -1068,62 +1059,66 @@ test('Services roster: every reported engine listed with switch discipline at ev
     },
   });
   expect(setup.ok()).toBe(true);
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const rail = page.getByRole('navigation', { name: 'Settings', exact: true });
-  await rail.getByRole('button', { name: 'Helpers on this computer', exact: true }).click();
+  const restorePack = await engineeringPackOff(page);
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const rail = page.getByRole('navigation', { name: 'Settings', exact: true });
+    await rail.getByRole('button', { name: 'Helpers on this computer', exact: true }).click();
 
-  const service = (name: string | RegExp) =>
-    page.locator('.service', { has: page.getByRole('heading', { name }) });
-  // Every reported engine is listed. The Workbook hid the observe-only entries
-  // at Guided; the Console lists the same roster at every detail level, so
-  // Guided and Standard are both checked against the whole list below.
-  await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/Codex/)).toBeVisible();
-  await expect(service('LocalAI supervisor')).toBeVisible();
-  await expect(service('AionCore')).toBeVisible();
-  // The Codex entry has a switch; Sample work has none.
-  await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
-  await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
-  await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
-  await expect(service(/Codex/).getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
-  await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
-  // Check connections reaches the server with a refresh request.
-  const [refreshRequest] = await Promise.all([
-    page.waitForRequest(
-      (request) =>
-        request.url().includes('/api/integrations') && request.url().includes('refresh=1'),
-    ),
-    page.getByRole('button', { name: 'Check connections', exact: true }).click(),
-  ]);
-  expect(refreshRequest.url()).toContain('refresh=1');
+    const service = (name: string | RegExp) =>
+      page.locator('.service', { has: page.getByRole('heading', { name }) });
+    // Every reported engine is listed. The Workbook hid the observe-only entries
+    // at Guided; the Console lists the same roster in the plain view and the
+    // technical one, so both are checked against the whole list below.
+    await expect(service('Sample work')).toHaveCount(0);
+    await expect(service(/Codex/)).toBeVisible();
+    await expect(service('LocalAI supervisor')).toBeVisible();
+    await expect(service('AionCore')).toBeVisible();
+    // The Codex entry has a switch; Sample work has none.
+    await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
+    await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
+    await expect(service(/Codex/).getByRole('button', { name: 'Sign in to ChatGPT', exact: true })).toBeVisible();
+    await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
+    // Check connections reaches the server with a refresh request.
+    const [refreshRequest] = await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          request.url().includes('/api/integrations') && request.url().includes('refresh=1'),
+      ),
+      page.getByRole('button', { name: 'Check connections', exact: true }).click(),
+    ]);
+    expect(refreshRequest.url()).toContain('refresh=1');
 
-  // Standard shows the same roster, the observe-only entries included.
-  await chooseDetail(page, 'Standard');
-  await expect(service(/Codex/)).toBeVisible();
-  await expect(service('LocalAI supervisor')).toBeVisible();
-  await expect(service('AionCore')).toBeVisible();
-  // Entries without a switch offer no "What is sent" button either.
-  for (const name of ['LocalAI supervisor', 'AionCore']) {
-    await expect(service(name).locator('input[type="checkbox"]')).toHaveCount(0);
-    await expect(service(name).getByRole('button', { name: 'What is sent' })).toHaveCount(0);
+    // Entries without a switch offer no "What is sent" button either.
+    for (const name of ['LocalAI supervisor', 'AionCore']) {
+      await expect(service(name).locator('input[type="checkbox"]')).toHaveCount(0);
+      await expect(service(name).getByRole('button', { name: 'What is sent' })).toHaveCount(0);
+    }
+
+    // The same section is named Engines in the technical view, which the Software Engineering pack
+    // brings while it is on for any project (QUESTIONS.md R17), and never duplicates itself.
+    await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
+    const pack = `/api/projects/${projectId}/packs/${ENGINEERING_PACK}`;
+    expect((await page.request.post(`${pack}/activate`, { headers: HEADERS })).ok()).toBe(true);
+    try {
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toBeVisible();
+      await expect(rail.getByRole('button', { name: 'Helpers on this computer', exact: true })).toHaveCount(0);
+      await expect(rail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
+      await rail.getByRole('button', { name: 'Engines', exact: true }).click();
+      await expect(service('Sample work')).toHaveCount(0);
+      await expect(service(/Codex/)).toBeVisible();
+      await expect(service('LocalAI supervisor')).toBeVisible();
+      await expect(service('AionCore')).toBeVisible();
+    } finally {
+      expect((await page.request.post(`${pack}/deactivate`, { headers: HEADERS })).ok()).toBe(true);
+    }
+  } finally {
+    await restorePack();
   }
-
-  // The same section changes its label at technical detail, never duplicates itself.
-  await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toHaveCount(0);
-  await chooseDetail(page, 'Technical');
-  await expect(rail.getByRole('button', { name: 'Engines', exact: true })).toBeVisible();
-  await expect(rail.getByRole('button', { name: 'Helpers on this computer', exact: true })).toHaveCount(0);
-  await expect(rail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
-  await rail.getByRole('button', { name: 'Engines', exact: true }).click();
-  await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/Codex/)).toBeVisible();
-
-  const back = await page.request.put('/api/settings', {
-    headers: HEADERS,
-    data: { detail: 'guided' },
-  });
-  expect(back.ok()).toBe(true);
 });
 
 test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', async ({ page }) => {
@@ -1169,7 +1164,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the engines section with both bars.
   await chip.click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Helpers on this computer', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^(Engines|Helpers on this computer)$/ })).toBeVisible();
   const codexService = page.locator('.service', {
     has: page.getByRole('heading', { name: /Codex/ }),
   });
@@ -1242,8 +1237,10 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   await expect(projectSelect).toHaveValue(latest.id);
   const askText = 'Which suppliers are late?';
   await startHere.getByRole('textbox').fill(askText);
+  // Nothing about who answers is chosen here (DIO-292): the draft carries no mode.
+  await expect(startHere.getByLabel('Mode')).toHaveCount(0);
   await startHere.getByRole('button', { name: 'Send', exact: true }).click();
-  // The draft arrives in the chosen project's Console composer, in Ask.
+  // The draft arrives in the chosen project's Console composer.
   await expect(railOf(page)).toBeVisible();
   await expect(
     openProjects(page).getByRole('button', { name: latest.name, exact: true }),
@@ -1251,9 +1248,9 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   await expect(page.getByRole('textbox', { name: 'Message this thread', exact: true })).toHaveValue(
     askText,
   );
-  await expect(
-    page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'ask', exact: true }),
-  ).toHaveAttribute('aria-checked', 'true');
+  // The thread's Agent box decides who answers it; there is no mode strip to set.
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: AGENT_MENU })).toBeVisible();
   // Empty state (three cards with no projects): skipped. There is no existing
   // helper for a fresh data dir in this spec and projects cannot be deleted
   // via the API, so the no-projects cards cannot be reached in this run.
@@ -1263,8 +1260,7 @@ test('Unavailable helper: the application notice has no invented runtime caption
   await openProject(page);
   await goTo(page, 'Thread');
   await newThread(page);
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  await modes.getByRole('radio', { name: 'ask', exact: true }).click();
+  await chooseAgent(page, 'Researcher');
   await page
     .getByRole('textbox', { name: 'Message this thread', exact: true })
     .fill('Which soups are local?');
@@ -1384,7 +1380,7 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
   expect(off.ok()).toBe(true);
 });
 
-test('Modes: the Console composer shows four modes and Fix needs what is failing', async ({
+test('Agents: the ask box has no mode strip, and Fixer takes what is failing in the message', async ({
   page,
 }) => {
   // A project of its own, so no other test's sample work is in progress here.
@@ -1415,26 +1411,23 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
   await expect(railOf(page)).toBeVisible();
   // A new project has no thread yet; the rail's New opens one.
   await newThread(page);
-  const modes = page.getByRole('radiogroup', { name: 'Mode' });
-  for (const name of ['ask', 'plan', 'build', 'fix'])
-    await expect(modes.getByRole('radio', { name, exact: true })).toBeVisible();
-  await modes.getByRole('radio', { name: 'fix', exact: true }).click();
-  await expect(modes.getByRole('radio', { name: 'fix', exact: true })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  // The Agent box is the choice (DIO-292): no Mode radio group, and no Fix fields.
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: AGENT_MENU }).locator('.mdl')).toHaveText('Auto');
+  await chooseAgent(page, 'Fixer');
   const composer = page.locator('.console .composer');
-  await expect(composer.getByLabel('What is failing', { exact: true })).toBeVisible();
+  await expect(composer.getByLabel('What is failing', { exact: true })).toHaveCount(0);
+  await expect(composer.getByLabel('Paste what went wrong')).toHaveCount(0);
   // Send stays focusable while it is not ready, so it says so with aria-disabled.
   const send = composer.getByRole('button', { name: 'Send', exact: true });
   await expect(send).toHaveAttribute('aria-disabled', 'true');
-  await page.getByRole('textbox', { name: 'Message this thread', exact: true }).fill('Fix the patio list');
-  await expect(send).toHaveAttribute('aria-disabled', 'true');
-  await composer.getByLabel('Paste what went wrong').fill('The list shows the wrong day.');
+  await page
+    .getByRole('textbox', { name: 'Message this thread', exact: true })
+    .fill('Fix the patio list. It shows the wrong day.');
   await expect(send).toHaveAttribute('aria-disabled', 'false');
   await send.click();
-  // The stored turns carry the try. The Console does not draw the Workbook's
-  // "Fix, try 1 of 3" chip, so the try is read from the record.
+  // The stored turns carry the try and the thread its Agent. The Console does not draw the
+  // Workbook's "Fix, try 1 of 3" chip, so the try is read from the record.
   await expect
     .poll(async () => {
       const response = await page.request.get(`/api/projects/${project.id}/state`);
@@ -1443,28 +1436,55 @@ test('Modes: the Console composer shows four modes and Fix needs what is failing
         c.turns.some((t) => t.role !== 'you' && t.mode === 'fix'),
       );
       const reply = thread?.turns.filter((t) => t.role !== 'you' && t.mode === 'fix').at(-1);
-      return { mode: thread?.mode, attempt: reply?.attempt };
+      return { mode: thread?.mode, agent: thread?.requested?.agent, attempt: reply?.attempt };
     })
-    .toEqual({ mode: 'fix', attempt: { n: 1, of: 3 } });
-  // The thread keeps its mode: reloading shows it still in Fix.
+    .toEqual({ mode: 'fix', agent: 'diomedes.debugger', attempt: { n: 1, of: 3 } });
+  // The thread keeps its Agent: reloading shows Fixer in the box.
   await page.reload();
   await expect(railOf(page)).toBeVisible();
-  await expect(
-    page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'fix', exact: true }),
-  ).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('button', { name: AGENT_MENU }).locator('.mdl')).toHaveText('Fixer');
   await expect(page.locator('#scrThread .turn.dio').last()).toContainText(
     'Started a clearly labelled sample fix.',
   );
+});
+
+test('Agents: a new thread starts on Auto, and the menu lists Auto, then each Agent with its line', async ({
+  page,
+}) => {
+  await openProject(page);
+  await goTo(page, 'Thread');
+  await newThread(page);
+  const box = page.getByRole('button', { name: AGENT_MENU });
+  await expect(box.locator('.mdl')).toHaveText('Auto');
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toHaveCount(0);
+  await box.click();
+  const menu = page.getByRole('menu');
+  const items = menu.getByRole('menuitemradio');
+  await expect(items.first()).toBeVisible();
+  const names = await items.locator('> span:first-child').allTextContents();
+  expect(names.slice(0, 9)).toEqual([
+    'Auto',
+    'Researcher',
+    'Planner',
+    'Builder',
+    'Fixer',
+    'Reviewer',
+    'Explorer',
+    'Analyst',
+    'Writer',
+  ]);
+  await expect(items.first().locator('small')).toHaveText('Picks the right agent for each message.');
+  for (const line of await items.locator('small').allTextContents()) expect(line.trim()).not.toBe('');
+  await expect(menu).toContainText('Permissions decide what each agent can do.');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
 });
 
 test('Enter sends from the Console composer and Shift+Enter adds a line', async ({ page }) => {
   await openProject(page);
   await goTo(page, 'Thread');
   await newThread(page);
-  await page
-    .getByRole('radiogroup', { name: 'Mode' })
-    .getByRole('radio', { name: 'ask', exact: true })
-    .click();
+  await chooseAgent(page, 'Researcher');
   const box = page.getByRole('textbox', { name: 'Message this thread', exact: true });
   await expect(box).toHaveValue('');
   const heldText = `Shift+Enter held line ${Date.now()}`;
@@ -1535,9 +1555,9 @@ test('Usage: a settings save preserves a concurrent engine setting while refresh
     expect(on.ok()).toBe(true);
     // The Workbook saved its page on every navigation, with a write that named
     // only that field. The Console saves no navigation, so the client save here
-    // is the detail menu, which writes the whole settings object this client
-    // read before the engine changed. That write is guarded: it is refused
-    // rather than allowed to switch the engine back off.
+    // is the text size in the More options menu, which writes the whole settings
+    // object this client read before the engine changed. That write is guarded:
+    // it is refused rather than allowed to switch the engine back off.
     const menuSave = () =>
       page.waitForResponse(
         (response) =>
@@ -1545,23 +1565,23 @@ test('Usage: a settings save preserves a concurrent engine setting while refresh
           response.request().method() === 'PUT',
       );
     const refused = menuSave();
-    await page.getByRole('button', { name: 'Interface detail menu' }).click();
-    await page.getByRole('menuitemradio', { name: 'Guided', exact: true }).click();
+    await page.getByRole('button', { name: 'More options' }).click();
+    await page.getByRole('menuitemradio', { name: '110%', exact: true }).click();
     expect((await refused).status()).toBe(409);
     await expect(
       page.getByText('Settings changed while this screen was saving. The saved settings were reloaded.'),
     ).toBeVisible();
     let saved = await readSettings(page);
     expect(saved.services?.codex).toBe(true);
-    expect(saved.detail).toBe('standard');
+    expect(saved.appearance.readingScale ?? 1).toBe(1);
     // The refusal carried the saved settings back, so choosing again saves over
     // them, while the refresh is still held, and keeps the engine on.
     const accepted = menuSave();
-    await page.getByRole('button', { name: 'Interface detail menu' }).click();
-    await page.getByRole('menuitemradio', { name: 'Guided', exact: true }).click();
+    await page.getByRole('button', { name: 'More options' }).click();
+    await page.getByRole('menuitemradio', { name: '110%', exact: true }).click();
     expect((await accepted).ok()).toBe(true);
     saved = await readSettings(page);
-    expect(saved.detail).toBe('guided');
+    expect(saved.appearance.readingScale).toBe(1.1);
     expect(saved.services?.codex).toBe(true);
     expectNoRetiredKeys(saved);
   } finally {
@@ -1572,7 +1592,7 @@ test('Usage: a settings save preserves a concurrent engine setting while refresh
   await expect(page.locator('.usage-chip')).toBeVisible();
   const off = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { services: { codex: false } },
+    data: { services: { codex: false }, appearance: { readingScale: 1 } },
   });
   expect(off.ok()).toBe(true);
 });

@@ -24,6 +24,7 @@ import type { MessageResult } from '../server/interaction-service';
 import type { AwsConnectionView } from '../shared/model-api';
 import type { Conversation, Project, ProjectState } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { spokenPrompt } from '../server/lane-recap';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -120,7 +121,8 @@ function respond(body: Seen['body']): Item[] | 'hang' {
   }
   const message = text.split("The person's message:\n\n")[1] ?? '';
   const issued = /\[\[diomedes source_message_id=(sm\.[0-9a-f]{32})\]\]\s*$/.exec(message)?.[1];
-  const said = message.split('\n\n[[diomedes')[0];
+  // What the person said: the role line an Agent opens with is not that.
+  const said = spokenPrompt(message);
   if (said.startsWith('SLOW')) return 'hang';
   if (said.startsWith('ACT') && issued)
     return [answer(`I can draft that checklist from the linen records.\n\n${decisionBlock(issued, 'Draft a linen delivery checklist')}`)];
@@ -586,6 +588,33 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
 // CD-01 Decision 5's refusal of Build and Fix on a model-API thread.
 // close/open below is orderly restart evidence, not an abrupt OS crash test.
 describe('AWS conversation authority: independent integration counterexamples', () => {
+  // DIO-292 (Review Focus 2): the Mode control became the Agent box. The narrowing act is choosing
+  // an Agent that only reads or only plans, then sending a real message as it. A message Auto hands
+  // to such an Agent never narrows the thread; interaction-seam.test.ts pins that twin.
+  const READER = { ask: 'diomedes.researcher', plan: 'diomedes.architect' } as const;
+  test("an Agent Auto picks rides Auto's own lane held to its own kind: Researcher answers an ACT and proposes nothing", async () => {
+    await connected();
+    const asked = await api<MessageResult>(messages(), 'POST', {
+      commandId: 'review-rides-researcher',
+      text: 'ACT draft a linen checklist',
+      mode: 'auto',
+      agent: 'diomedes.researcher',
+      sources: [],
+      consent: true,
+    });
+    expect(asked.outcome.status).not.toBe('proposed');
+    expect(workFor(asked.sourceMessageId)).toHaveLength(0);
+    // The same words from Auto itself, on the same lane, still propose.
+    const proposed = await send('review-rides-auto', 'ACT draft a linen checklist');
+    expect(proposed.outcome.status).toBe('proposed');
+    const saved = store().state(project.id).conversations.find((item) => item.id === thread.id)!;
+    expect(saved.lineages!.map((lineage) => lineage.mode)).toEqual(['auto']);
+    expect(assistantTurns().map((turn) => turn.agent ?? null)).toEqual([
+      { id: 'diomedes.researcher', name: 'Researcher', picked: true },
+      null,
+    ]);
+    expect(saved.requested?.agent).toBe('auto');
+  });
   for (const mode of ['ask', 'plan'] as const) {
     test(`a real ${mode} message after work-input prevents new Work`, async () => {
       await connected();
@@ -599,10 +628,14 @@ describe('AWS conversation authority: independent integration counterexamples', 
         await original(...args);
         if (args[2].some((phase) => phase.phase === 'work-input')) {
           barrierReached = true;
+          await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+            requested: { model: null, effort: null, agent: READER[mode] },
+          });
           await api(messages(), 'POST', {
             commandId: `review-narrow-${mode}`,
             text: 'Only respond under the selected mode',
             mode,
+            agent: READER[mode],
             sources: [],
             consent: true,
           });
@@ -622,6 +655,7 @@ describe('AWS conversation authority: independent integration counterexamples', 
         console.log('AWS_AUTHORITY_MODE', JSON.stringify({ mode, barrierReached, status: response.status, body, tasks: tasks.length, work: work.length }));
         expect(barrierReached).toBe(true);
         expect(current.conversations.find((item) => item.id === thread.id)?.mode).toBe(mode);
+        expect(current.conversations.find((item) => item.id === thread.id)?.requested?.agent).toBe(READER[mode]);
         // The earlier task was validly committed before the narrowing message.
         expect(tasks).toHaveLength(1);
         expect(work).toHaveLength(0);

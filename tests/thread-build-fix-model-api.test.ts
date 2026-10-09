@@ -360,16 +360,29 @@ describe('Fix on a model-API route keeps its limits', () => {
     const calls = seen.length;
     const fourth = await fix(route);
     expect(fourth.status).toBe(409);
-    expect(await fourth.text()).toMatch(/Three tries have not fixed this/);
+    expect(await fourth.text()).toMatch(/Three tries haven't fixed this/);
     expect(seen).toHaveLength(calls);
   });
 
-  test('Fix without a failing target is refused before anything is sent', async () => {
+  test('Fix takes the message as the report; a malformed report is refused before anything is sent', async () => {
+    // DIO-292: Fix's own fields left the ask box. A failure report an API caller sends is still checked.
     await onRoute('openrouter');
-    const refused = await ask('openrouter', { mode: 'fix', text: 'Something is off', sources: [MENU] });
+    const refused = await ask('openrouter', {
+      mode: 'fix',
+      text: 'Something is off',
+      sources: [MENU],
+      failing: { document: 'elsewhere.md' },
+    });
     expect(refused.status).toBe(400);
     expect(await refused.text()).toMatch(/Say what is failing/);
     expect(seen).toHaveLength(0);
+    const sent = await ask('openrouter', { mode: 'fix', text: 'The menu lists the soup twice', sources: [MENU] });
+    expect(sent.status, await sent.clone().text()).toBe(200);
+    expect(((await sent.json()) as { turn: { attempt: unknown } }).turn.attempt).toEqual({ n: 1, of: 3 });
+    await openNeed();
+    // The message is the whole report: the proposal writer was given no separate failure block.
+    expect(JSON.stringify(seen)).toContain('The menu lists the soup twice');
+    expect(JSON.stringify(seen)).not.toContain('Failing:');
   });
 });
 

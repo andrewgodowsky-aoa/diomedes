@@ -704,6 +704,28 @@ separately in `docs/implementation/2026-09-28-operations-routing.md`.
 
 ## Resolved
 
+### R17. The detail levels are retired (raised as O46)
+
+Decided by Andrew on 2026-10-08, while choosing how thinking shows while Nectovia works: the
+Guided, Standard and Technical levels are unnecessary. Business owners get the plain view, close to
+Guided, and the Software Engineering Capability Pack brings the technical view. Decision 14 already
+lets a pack compose the interface; the pack grants nothing.
+(`docs/implementation/2026-10-08-retire-detail-levels.md`)
+
+- **The technical view** (`client/console/technical-view.ts`) is on for a project while the
+  Software Engineering pack is active there: tool names and details, the whole diff, the per-task
+  profile choice and the project's folder. Settings belongs to no one project, so it names its
+  helpers section Engines while the pack is on for any project.
+- **Everyone else** gets the plain view, which is what Guided showed.
+- **No control is left.** Settings, the ··· menu (now More options), the Projects and Nectovia pages
+  and setup no longer offer a level. Setup asks two questions; one saved on the old detail question
+  resumes at the next.
+- **A stored level** (`detail`, `onboarding.detail`) is kept and still accepted, as `familiarity`
+  is, and nothing reads it.
+- **Thinking** keeps its own switch, `appearance.showThinking` (Settings, Appearance).
+- The three canonical documents still name the levels. The proposed wording is in the
+  implementation note; cloud synchronisation is pending.
+
 ### R16. Kept-session engines hold Console conversations (raised as O19 and O39 item 1)
 
 Decided by Andrew on 2026-09-27

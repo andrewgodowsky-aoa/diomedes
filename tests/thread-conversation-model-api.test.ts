@@ -381,6 +381,92 @@ describe('a project thread on AWS through its tier', () => {
     expect(store().state(project.id).sessions).toHaveLength(0);
   });
 
+  test('a Plan after an Ask carries the last answer into its lane, where history is shared', async () => {
+    // DIO-292: lanes are per kind of run, so Plan's lane hasn't seen what Ask's lane answered.
+    await connectAws();
+    await tier('efficient');
+    await sendThreadConversation({
+      projectId: project.id,
+      threadId: thread.id,
+      text: 'How many napkins were short on Friday?',
+      mode: 'ask',
+      paths: [DELIVERY.path],
+    });
+    await sendThreadConversation({
+      projectId: project.id,
+      threadId: thread.id,
+      text: 'Make a plan to fix that.',
+      mode: 'plan',
+      paths: [],
+    });
+    const planned = userText(seen.at(-1)!.body);
+    expect(planned).toContain('Earlier in this thread:\n\nPerson: How many napkins were short on Friday?');
+    expect(planned).toContain('Diomedes: Six napkins were short on Friday.');
+    expect(planned).toContain('The new message:\n\nMake a plan to fix that.');
+    // The person's turns are what they typed. The recap is only ever the lane's.
+    expect(current().turns.filter((turn) => turn.role === 'you').map((turn) => turn.text)).toEqual([
+      'How many napkins were short on Friday?',
+      'Make a plan to fix that.',
+    ]);
+  });
+
+  test('a Plan after an Ask brings nothing along where history is not shared', async () => {
+    await connectAws();
+    await tier('efficient');
+    await sendThreadConversation({
+      projectId: project.id,
+      threadId: thread.id,
+      text: 'How many napkins were short on Friday?',
+      mode: 'ask',
+      paths: [DELIVERY.path],
+    });
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1,
+      routes: ROUTES.filter((route) => route !== 'sample'),
+      documents: [ORDER.path, DELIVERY.path],
+      shareConversationHistory: false,
+      shareReviewPackets: true,
+    });
+    await sendThreadConversation({
+      projectId: project.id,
+      threadId: thread.id,
+      text: 'Make a plan to fix that.',
+      mode: 'plan',
+      paths: [],
+    });
+    const planned = userText(seen.at(-1)!.body);
+    expect(planned).not.toContain('Earlier in this thread:');
+    expect(planned).toContain("The person's message:\n\nMake a plan to fix that.");
+  });
+
+  test('a Plan after an Ask brings nothing along from a lane that was retired, or from an answer on another route', async () => {
+    await connectAws();
+    await tier('efficient');
+    const ask = (text: string) =>
+      sendThreadConversation({ projectId: project.id, threadId: thread.id, text, mode: 'ask', paths: [DELIVERY.path] });
+    const plan = (text: string) =>
+      sendThreadConversation({ projectId: project.id, threadId: thread.id, text, mode: 'plan', paths: [] });
+    const edit = async (change: (thread: Conversation) => void) => {
+      const state = store().state(project.id);
+      change(state.conversations.find((item) => item.id === thread.id)!);
+      await store().persist(state);
+    };
+    await ask('How many napkins were short on Friday?');
+    // A fresh start leaves what came before behind, and a recap never brings it back.
+    await edit((saved) => {
+      saved.lineages = saved.lineages!.map((lineage) => (lineage.mode === 'ask' ? { ...lineage, retired: 'scope-change' } : lineage));
+    });
+    await plan('Make a plan to fix that.');
+    expect(userText(seen.at(-1)!.body)).not.toContain('Earlier in this thread:');
+    // An answer another route gave stays with that route.
+    await ask('And on Saturday?');
+    await edit((saved) => {
+      saved.turns.at(-1)!.route = 'openrouter';
+    });
+    await plan('Plan Saturday too.');
+    expect(userText(seen.at(-1)!.body)).not.toContain('Earlier in this thread:');
+  });
+
   test('Stop during a turn interrupts that command; the thread keeps going', async () => {
     await connectAws();
     await tier('efficient');

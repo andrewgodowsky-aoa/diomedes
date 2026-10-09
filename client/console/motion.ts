@@ -134,37 +134,6 @@ export function travel(from: TravelFrom, to: TravelTo, kind: string, ms: number)
   }
 }
 
-/**
- * The mode-strip spring (stiffness 210, damping 22): the sampled positions
- * from `from` to `to` at 120 Hz. The exit test scales with the trip and the
- * loop is capped at 0.29 s, so the strip settles in at most 267 ms; callers
- * map the frames to `translateX()`/`scaleX()` transforms in one WAAPI
- * animation.
- */
-export function spring(from: number, to: number): number[] {
-  const frames: number[] = [];
-  const k = 210;
-  const c = 22;
-  const m = 1;
-  const dt = 1 / 120;
-  // The exit test scales with the trip: an absolute 0.15 px never arrives
-  // inside the budget on a long trip, so the strip overran its 300 ms.
-  const span = Math.abs(to - from);
-  const nearX = Math.max(0.15, span * 0.01);
-  const nearV = Math.max(2, span * 8);
-  let x = from;
-  let v = 0;
-  for (let t = 0; t < 0.29; t += dt) {
-    const a = (-k * (x - to) - c * v) / m;
-    v += a * dt;
-    x += v * dt;
-    frames.push(x);
-    if (Math.abs(x - to) < nearX && Math.abs(v) < nearV && t > 0.12) break;
-  }
-  frames.push(to);
-  return frames;
-}
-
 function esc(id: string): string {
   try {
     if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(id);

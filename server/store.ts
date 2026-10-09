@@ -7,6 +7,9 @@ import { validateAgentResolutions } from './agents.js';
 import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
+import { migrateProjectConversation } from './project-conversation.js';
+import { AGENT_CATALOG, AUTO_AGENT, DEFAULT_AGENT, runKindOf } from '../shared/agents.js';
+import { GENERAL_AGENT } from '../shared/agent-choice.js';
 import { needsYou, WAITING_NAMED } from '../shared/needs-you.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
@@ -131,6 +134,24 @@ export function migrateConversation(
         ? raw
         : 'ask';
   }
+  // An Agent chosen before agents carried the limits (DIO-292). The general worker left the menu,
+  // so a thread that chose it is on Auto. A built-in whose kind changed since keeps the thread on
+  // the kind it ran as, with that kind's own Agent: Debugger answered in Ask and is Fixer now, and
+  // a saved choice never starts changing documents by itself. An added Agent's kind is the one the
+  // thread stored for it, so it stays.
+  const saved = conversation.requested?.profile ? undefined : conversation.requested?.agent?.trim();
+  if (saved && conversation.requested) {
+    const listed = AGENT_CATALOG.find((item) => item.id === saved);
+    const agent =
+      saved === GENERAL_AGENT
+        ? AUTO_AGENT
+        : listed && runKindOf(listed) !== conversation.mode
+          ? conversation.mode === 'auto'
+            ? AUTO_AGENT
+            : DEFAULT_AGENT[conversation.mode]
+          : saved;
+    if (agent !== saved) conversation.requested = { ...conversation.requested, agent };
+  }
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;
   }
@@ -177,6 +198,9 @@ export function migrateSettings(settings: Settings): void {
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
+  // The detail question is retired (Andrew, 2026-10-08; QUESTIONS.md R17). Setup saved on it
+  // resumes at the next question, which kept its name, `q3`.
+  if ((settings.onboarding.resumeAt as string) === 'q2') settings.onboarding.resumeAt = 'q3';
   // The Workbook is gone (Andrew, 2026-09-23), and with it the keys only it
   // read: `surface` (which of the two surfaces opened), `lastPage` and
   // `tasksView`. The API refuses them as unknown, but a file written by 0.1.8 or
@@ -501,6 +525,8 @@ export class Store extends EventEmitter {
     await this.recover();
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
+      // Recover prepared writes first: their newer snapshot may contain the conversation.
+      migrateProjectConversation(state, this.isHomeProject(state.project.id));
       for (const session of state.sessions.filter((item) =>
         ![FIXTURE_ENGINE, CODEX_ENGINE, NATIVE_LOOP_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
@@ -552,6 +578,7 @@ export class Store extends EventEmitter {
       validateAgentResolutions(fresh);
       fresh.teamMeta ??= emptyTeamMeta();
       this.states.set(id, fresh);
+      if (migrateProjectConversation(fresh, this.isHomeProject(id))) await this.persist(fresh);
     }
     await this.interruptUnpreparedApprovals();
     this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
@@ -932,6 +959,7 @@ export class Store extends EventEmitter {
       history: [],
       changes: [],
       conversations: [],
+      projectConversationIdentity: 1,
       autoUpdate: false,
       team: emptyTeam(),
       teamMeta: emptyTeamMeta(),
@@ -1066,7 +1094,7 @@ export class Store extends EventEmitter {
   }
   /**
    * A project's own Diomedes conversation: the thread `diomedesThread` picks,
-   * adopted when it is already there and made once when it is not. Two windows
+   * identified by its durable marker and made once when it is not there. Two windows
    * sending their first message in a fresh project both arrive here, and one
    * locked sequence is what makes that one conversation rather than two.
    *
@@ -1091,6 +1119,7 @@ export class Store extends EventEmitter {
           attachedTo: { kind: 'project', ref: projectId },
           turns: [],
           name: PROJECT_THREAD_NAME,
+          conversation: 'project',
           createdAt: stamped,
           updatedAt: stamped,
           taskId: null,
@@ -1752,6 +1781,10 @@ export class Store extends EventEmitter {
         }
       }
       carryRememberedDecisions(journal.state, currentState);
+      const loadTime = now();
+      for (const conversation of journal.state.conversations ?? [])
+        migrateConversation(conversation, journal.state.tasks ?? [], loadTime);
+      migrateProjectConversation(journal.state, this.isHomeProject(journal.projectId));
       await this.persist(journal.state);
       this.invalidateDocuments(journal.projectId);
       await fs.unlink(path.join(pending, name));

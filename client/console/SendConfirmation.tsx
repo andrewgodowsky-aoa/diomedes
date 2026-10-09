@@ -12,7 +12,7 @@ import { Button, Modal } from '../components';
 
 /** Sending context and authorizing a later file proposal are separate decisions. */
 export function SendConfirmation({
-  kind, instruction, route, sources, mode, picker, disabled, readAccess = 'selected', onReadAccess,
+  kind, instruction, route, sources, mode, agent = null, picker, disabled, readAccess = 'selected', onReadAccess,
   onClose, onSend,
 }: {
   kind: 'task' | 'message';
@@ -20,6 +20,8 @@ export function SendConfirmation({
   route: Route;
   sources: readonly string[];
   mode: Mode;
+  /** Who answers, when it isn't Auto itself: "Reviewer", or "Fixer, picked by Auto" (DIO-292). */
+  agent?: string | null;
   /** A control that changes `sources` for this send only; the line below states the result. */
   picker?: ReactNode;
   disabled?: boolean;
@@ -42,6 +44,7 @@ export function SendConfirmation({
   return (
     <Modal title={`Send this ${kind}?`} onClose={onClose}>
       <p className="prose" style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{instruction}</p>
+      {agent && <p className="prose">Agent: {agent}</p>}
       <p className="prose">
         {local ? (
           'Send this instruction to the local model on this computer.'
@@ -70,8 +73,8 @@ export function SendConfirmation({
         {mode === 'ask'
           ? 'Nothing in the project changes.'
           : mode === 'plan'
-            ? 'The returned plan is saved for you to read before work begins.'
-            : "File proposals follow the task's existing approval and scope requirements."}
+            ? 'You read the plan before any work starts.'
+            : 'Your Permissions decide which changes come to you first.'}
       </p>
       <div className="dialog-actions">
         <Button onClick={onClose}>Cancel</Button>

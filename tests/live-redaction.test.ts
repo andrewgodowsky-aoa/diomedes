@@ -448,6 +448,61 @@ describe('one attempt keeps its live channels in order', () => {
     ]);
   });
 
+  test('a finished block of thinking is shown whole, and the answer after it streams before the attempt ends', () => {
+    const order = liveOrder();
+    const events: [string, string][] = [];
+    const thinking = reasoningSink({ identity, redact: scrub, order, onReasoning: (frame) => events.push(['think', frame.text]) });
+    const text = previewSink({ identity, redact: scrub, order, onPreview: (frame) => events.push(['text', frame.text]) });
+    for (const piece of pieces(`The user said hi. ${KEY} is not needed for a greeting.`, 6)) thinking(piece);
+    // The engine reports the block finished (`TextRequest.onReasoningEnd`).
+    thinking.flush();
+    text('Soup and bread are on the menu today. ');
+    text('Coffee and cake come after the meal.');
+    // While the engine is still writing: the whole thought, then the answer but for its own held tail.
+    expect(runs(events)).toEqual([
+      ['think', 'The user said hi. [redacted] is not needed for a greeting.'],
+      ['text', 'Soup and bread are on the menu today. '],
+    ]);
+    order.flush();
+    expect(runs(events)).toEqual([
+      ['think', 'The user said hi. [redacted] is not needed for a greeting.'],
+      ['text', 'Soup and bread are on the menu today. Coffee and cake come after the meal.'],
+    ]);
+    expect(thinking.finish()?.text).toBe('The user said hi. [redacted] is not needed for a greeting.');
+    expect(JSON.stringify(events)).not.toContain(KEY);
+  });
+
+  test('thinking after a finished block starts its own window, which still catches a split secret', () => {
+    const order = liveOrder();
+    const events: [string, string][] = [];
+    const thinking = reasoningSink({ identity, redact: scrub, order, onReasoning: (frame) => events.push(['think', frame.text]) });
+    const text = previewSink({ identity, redact: scrub, order, onPreview: (frame) => events.push(['text', frame.text]) });
+    thinking('Weighing the menu. ');
+    thinking.flush();
+    text('Let me check the prices first. ');
+    for (const piece of pieces(`Using ${KEY} for the lookup.`, 4)) thinking(piece);
+    order.flush();
+    const shown = events.filter(([kind]) => kind === 'think').map(([, value]) => value).join('');
+    expect(shown).toBe(`Weighing the menu. Using [redacted] for the lookup.`);
+    expect(JSON.stringify(events)).not.toContain(KEY);
+  });
+
+  test('without the end of a block, held thinking still holds back the answer behind it', () => {
+    const order = liveOrder();
+    const events: [string, string][] = [];
+    const thinking = reasoningSink({ identity, redact: baselineRedact, order, onReasoning: (frame) => events.push(['think', frame.text]) });
+    const text = previewSink({ identity, redact: baselineRedact, order, onPreview: (frame) => events.push(['text', frame.text]) });
+    thinking('Credential sk-abcde');
+    text('Soup and bread are on the menu today. Coffee and cake come after the meal.');
+    expect(events).toEqual([]);
+    thinking('fghijk stays private.');
+    order.flush();
+    expect(events.filter(([kind]) => kind === 'think').map(([, value]) => value).join('')).toBe(
+      'Credential [redacted] stays private.',
+    );
+    expect(JSON.stringify(events)).not.toContain('sk-abcde');
+  });
+
   test('a secret split across one channel is still caught when another channel speaks after it', () => {
     const order = liveOrder();
     const events: [string, string][] = [];
