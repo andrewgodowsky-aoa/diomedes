@@ -1,0 +1,238 @@
+{
+ "artifact": {
+  "component": "@tursodatabase/database",
+  "version": "0.4.4",
+  "platform": "win32-x64"
+ },
+ "loaderOverrides": [],
+ "identity": {
+  "component": "@tursodatabase/database",
+  "version": "0.4.4",
+  "platform": "win32-x64",
+  "family": "turso",
+  "sqliteCompatibility": "3.50.4",
+  "sqliteSourceIdForm": "git-commit",
+  "sourceRevision": "dc7781a52b888e323bb12e76c2793d3bab5f9106",
+  "reportedBuild": "0.4.4",
+  "writtenFileBuild": "3.47.0",
+  "contradictions": [
+   "turso_version() answered 3.47.0 on a file it wrote and reopened; the artifact is 0.4.4"
+  ]
+ },
+ "protections": [
+  {
+   "id": "strict-typing",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "check-constraints",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "foreign-keys-on",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA foreign_keys = 1"
+  },
+  {
+   "id": "scoped-composite-foreign-key",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "deferred-event-command-key",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "immutable-rows",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "monotonic-epoch",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "foreign-key-check-detects-orphan",
+   "proof": "behavior",
+   "status": "unsupported",
+   "observed": "prepare failed: Parse error: Not a valid pragma name"
+  },
+  {
+   "id": "trusted-schema-off",
+   "proof": "readback",
+   "status": "unsupported",
+   "observed": "PRAGMA trusted_schema = OFF failed: failed to consume stmt: Parse error: Not a valid pragma name"
+  },
+  {
+   "id": "trusted-schema-refuses-unsafe-function",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "no application function could be registered to test it: not implemented"
+  },
+  {
+   "id": "busy-timeout",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA busy_timeout = 100"
+  },
+  {
+   "id": "busy-timeout-waits",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "the second writer waited at least 80 ms, then: database is locked"
+  },
+  {
+   "id": "synchronous-full",
+   "proof": "readback",
+   "status": "violated",
+   "observed": "PRAGMA synchronous = 0; expected 2"
+  },
+  {
+   "id": "cache-spill-off",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA cache_spill = 0"
+  },
+  {
+   "id": "max-page-count-ceiling",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "refused after 4 rows: step failed: Database is full: database or disk is full"
+  },
+  {
+   "id": "capacity-error-code",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "the full-database error carries no SQLite result code: step failed: Database is full: database or disk is full"
+  },
+  {
+   "id": "journal-size-limit",
+   "proof": "readback",
+   "status": "unsupported",
+   "observed": "PRAGMA journal_size_limit = 0 failed: failed to consume stmt: Parse error: Not a valid pragma name"
+  },
+  {
+   "id": "wal-mode",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "journal_mode = wal"
+  },
+  {
+   "id": "wal-autocheckpoint",
+   "proof": "readback",
+   "status": "unsupported",
+   "observed": "PRAGMA wal_autocheckpoint = 100 failed: failed to consume stmt: Parse error: Not a valid pragma name"
+  },
+  {
+   "id": "wal-checkpoint-truncate",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "WAL 115392 bytes, then 0"
+  },
+  {
+   "id": "wal-frame-accounting",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "7 frames of 4120 bytes"
+  },
+  {
+   "id": "application-id-user-version",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both survived a reopen"
+  },
+  {
+   "id": "immediate-write-exclusion",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "database is locked"
+  },
+  {
+   "id": "quick-check-detects-corruption",
+   "proof": "behavior",
+   "status": "unsupported",
+   "observed": "quick_check failed on a healthy file: prepare failed: Parse error: Not a valid pragma name"
+  },
+  {
+   "id": "read-only-inspection",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: Error: Resource is read-only"
+  },
+  {
+   "id": "double-quoted-identifiers-only",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "a double-quoted name read as the string \"nectovia_probe_missing\""
+  },
+  {
+   "id": "extension-loading-off",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: Parse error: runtime extension loading is disabled"
+  },
+  {
+   "id": "rollback-across-await",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: Runtime error: UNIQUE constraint failed: t.id (19)"
+  },
+  {
+   "id": "transaction-state-reported",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "the flag answered false after BEGIN, false after a write, false after a failed statement; a second BEGIN IMMEDIATE inside the failed transaction then failed: step failed: Transaction error: cannot start a transaction within a transaction"
+  },
+  {
+   "id": "read-snapshot-isolation",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both reads saw 1 row; the new row appeared after COMMIT"
+  },
+  {
+   "id": "same-engine-schema-reference",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "the probe itself failed: failed to consume stmt: Parse error: STRICT tables are an experimental feature. Enable them with --experimental-strict flag"
+  },
+  {
+   "id": "fts5-module",
+   "proof": "behavior",
+   "status": "unsupported",
+   "observed": "failed to consume stmt: Parse error: no such module: fts5"
+  }
+ ],
+ "conformance": {
+  "verdict": "retain-sqlite",
+  "missing": [
+   "strict-typing",
+   "check-constraints",
+   "scoped-composite-foreign-key",
+   "deferred-event-command-key",
+   "immutable-rows",
+   "monotonic-epoch",
+   "foreign-key-check-detects-orphan",
+   "trusted-schema-off",
+   "trusted-schema-refuses-unsafe-function",
+   "synchronous-full",
+   "capacity-error-code",
+   "journal-size-limit",
+   "wal-autocheckpoint",
+   "quick-check-detects-corruption",
+   "double-quoted-identifiers-only",
+   "transaction-state-reported",
+   "same-engine-schema-reference"
+  ]
+ }
+}

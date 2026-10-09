@@ -1,0 +1,946 @@
+{
+ "platform": "win32-x64",
+ "components": [
+  {
+   "component": "@tursodatabase/database",
+   "version": "0.8.2",
+   "platform": "win32-x64",
+   "main": "@tursodatabase/database",
+   "artifactDigest": "5c991b2cf0fff5203e425bdb67d9aaede65e8943a39dd0437aa5b8f3fd010480",
+   "packages": [
+    {
+     "name": "@tursodatabase/database",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "11875e77c67eec2473ae226b9455878fe7b0bc0e721b84d658b9155e92c496a4",
+      "dist/compat.d.ts": "b0dc32a727501de09802b0da5f217cd47462538c32b40822a051f1b6b48e6dd6",
+      "dist/compat.d.ts.map": "70f03a2e5478873057824b79cc6a149ffd0e5f3f9e8b954dbc651f36a8c9a341",
+      "dist/compat.js": "abaa874ca567b4aa7c39385183f3723be6e882dc11d147179f91a9fe5c418841",
+      "dist/compat.test.d.ts": "6b0c7d1c38c604d37d116a397744920a5a877b8d3779bbfa5dd28db94aab4f77",
+      "dist/compat.test.d.ts.map": "aeeb7c85a94862c88a7bbf3d2f9434687e2b38393da1aafd7a8d5e98473dc7c8",
+      "dist/compat.test.js": "d815584720a2d9e8ce1f2d9ec10a09dcf04c3b82912b5ec900becdfab28b077f",
+      "dist/promise.d.ts": "be77adf917251b1eb8edf3ebaeb05d202e8e1727f9400195113f4c2d3e580dc1",
+      "dist/promise.d.ts.map": "6ebe66f9b9a0cc80487be4813d6a414e48a228a59c48e2b5d532e78f91dd68cf",
+      "dist/promise.js": "2e01e898d9770fc97b26376b342d26d14e428f7d032e5d5682743f02aa51a771",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "c52a4dbdf022c8d620a0ee2dbb660170ee1d0c8e68304d2893686269c23bc813",
+      "dist/turso-sql-runner-split.test.d.ts": "f14a8d1f272fdcc9850347c767fc82890096ba5882c226c777fb0176bca2f44d",
+      "dist/turso-sql-runner-split.test.d.ts.map": "a5943058892e02bad723937a986436f28213c1fcf06eb2fd58811c0db9c3bb14",
+      "dist/turso-sql-runner-split.test.js": "adc5de6e5578b3ec86897c86a6c2dab109984e3768e1f150474122efd86f0eba",
+      "index.js": "4b59fb2de4295b6ebd11375a263b6efca2149d8a7bb028f5c1b32089dc30f0d8",
+      "README.md": "aef86f8635eba3d515a66f770e3d9206083d5da4b1243a3a0702b3fa219f04b2"
+     },
+     "integrity": "sha512-iz7uj5uM/pkOyKFYNW6Y4LnbzKntv74TpsVqOKNck9Jl4uyynnZodoxw72d4Hd41xfIuANzQa+0Pf9RRwGOVfQ=="
+    },
+    {
+     "name": "@tursodatabase/database-common",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "2884ff3c5a8171cb67a2401bcccbbcf9059cf72e21d9a59748edfceefe2ca033",
+      "dist/async-lock.d.ts": "6da66f62aed080a4335284141e864169bcb0ba5a28144144dd5ae033f4dfc8a3",
+      "dist/async-lock.d.ts.map": "01023dca2fa5bf6a015b336e55f3d095b1907337229dfbf9fe4d80502b75ce50",
+      "dist/async-lock.js": "481d248d12de8619e61139a87ba6c6863937530773f6c9b5f4c14564c04982c5",
+      "dist/bind.d.ts": "25f369fb7daf2580331ac3cfe3bea4f4e415e73701c77201b0699b576780496f",
+      "dist/bind.d.ts.map": "f45af1572030a4d8a7b35e72419f95098e47efdcaae4560c9c8c8ae1cbe0cb3d",
+      "dist/bind.js": "70c39cac296a3a80db6e2f99ff7bab4abbe0bdc2e4151a61daf873cfe5fc6168",
+      "dist/compat.d.ts": "c5e8265da5739042dc32fa74f583083e71ea6ec66a86b913e9d3193784ee9c74",
+      "dist/compat.d.ts.map": "cab1ddad94791cd07aa2c67244c36f23c37f69123fda9a424ebb2020d7bff017",
+      "dist/compat.js": "3fb5e4622a7c24b49d44cfade341aa8c4d2336a1229fd86292696d92ae671a5c",
+      "dist/index.d.ts": "0dc157e2868250c3e8410bdd0b1bcef33e2c3436eb86b953b93bed09a5dec695",
+      "dist/index.d.ts.map": "df95a87f89eb24fb5a2be7ab33b330bf53b3ca735398feebb8c14f24e4ea02f6",
+      "dist/index.js": "a8c3fc438902573879cd234108976905e19400507ec9b9331a0f64a4a6cb9595",
+      "dist/promise.d.ts": "361c79d775d74697020aec454a15194a230631f3e2b1defc08c3ab4df831dadb",
+      "dist/promise.d.ts.map": "04dacafb08830280771b34ebbb45338889d678b57ca0cdca2d8bced9d339b6a6",
+      "dist/promise.js": "cd3691094f03e2b270327152c759f96fcb7b7d80a2f5d848188ab96a512b5506",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "6307c084b6064ffdb72af9e4789eda4875eff58daccd49a59d9c018f0bf2c6c9",
+      "dist/sqlite-error.d.ts": "772974d546741fcd7d751d63689e654110e2fb7942e56d672b3d239b6714ceca",
+      "dist/sqlite-error.d.ts.map": "c912d56ffe2c24c66b4ddb008816923b3e5d292fa00ec246724a5f48364c1d42",
+      "dist/sqlite-error.js": "2790de847e516369f4bdbcbeff70e3b19be98685ea6062f30284296d2a68c2f9",
+      "dist/types.d.ts": "ddbeea1bd68e1bd61b0a94489add8c748a343650ba0e1ec16fc66484af08cfcb",
+      "dist/types.d.ts.map": "1adb1008cb9b003f4d0e6e4de1c1dc292cc86cd448b2ff58685438a71c61c0b7",
+      "dist/types.js": "56d16540e06aa721aed3f220be4d245f4c721448ee687725774056dbf9b2d49a",
+      "README.md": "11b659b05c029b342380ffa956c89d844260d2327145b97b8b5f48910e6b2325"
+     },
+     "integrity": "sha512-1G0n/ZDhQELm/lu/tOHUmJZsLBxSK2k8OVXqS/WPJD70wTaFjaWY8C4UBe/AjfOzkhE3qbiUUMRv4Fbt5cDnew=="
+    },
+    {
+     "name": "@tursodatabase/database-win32-x64-msvc",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "45441c2f99667e840d8b0c2d64311511166ed56d1b95b14ffd04ffdafa39257a",
+      "README.md": "4757bdabd906721a1b23db5b3a9f5ef054c0811aec3736a090aa58add9725a8f",
+      "turso.win32-x64-msvc.node": "004f0a3f8087fd21c1385b993014e7955347e238fbed89abe336e6e68002a586"
+     },
+     "integrity": "sha512-/wsPLULURwCL7I2BJPYYHjOd9HssKN62oatXh4rnfVCWiD4bncGlNcZXE5Q2lGqdZUcVBEKIfBlEShOR8acaTg=="
+    }
+   ],
+   "binary": {
+    "package": "@tursodatabase/database-win32-x64-msvc",
+    "file": "turso.win32-x64-msvc.node",
+    "bytes": 16189952,
+    "sha256": "004f0a3f8087fd21c1385b993014e7955347e238fbed89abe336e6e68002a586"
+   },
+   "sources": [
+    {
+     "key": "turso@v0.8.2",
+     "repository": "https://github.com/tursodatabase/turso",
+     "tag": "v0.8.2",
+     "commit": "5c168be5ef6a32ac966daf5983502a4f694b37ad",
+     "excluded": []
+    }
+   ],
+   "notices": {
+    "licenses": [
+     {
+      "package": "@tursodatabase/database@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/database-common@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/database-win32-x64-msvc@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     }
+    ],
+    "upstream": [
+     {
+      "path": "turso@v0.8.2/LICENSE.md",
+      "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+     },
+     {
+      "path": "turso@v0.8.2/NOTICE.md",
+      "sha256": "efbb757e38448cca646247fd07a4201735533acad9aa1e92184821c02fff9e94"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/crossbeam-skiplist-apache-license.md",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/crossbeam-skiplist-mit-license.md",
+      "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/libm-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/pastey-apache-license.md",
+      "sha256": "27ba0fdfa70b6adf9521f3a1b865cb9347261c018243fa074bab5ff5e54dd188"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/pastey-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde-apache-license.md",
+      "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde_json5-license.md",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/windows-apache.license.md",
+      "sha256": "c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/windows-mit-license.md",
+      "sha256": "7ed4b96bdab9fc581e04229c810adef21d1b91af6cce7a02762365406c2d86e3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/extensions/ipnetwork-apache-license.md",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/extensions/ipnetwork-mit-license.md",
+      "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/postgres-license.md",
+      "sha256": "3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd"
+     }
+    ],
+    "shipped": [],
+    "bundled": []
+   },
+   "redistribution": {
+    "status": "needs-bundled-notices",
+    "reasons": [
+     "turso@v0.8.2/LICENSE.md is carried by neither the package nor the app",
+     "turso@v0.8.2/NOTICE.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/crossbeam-skiplist-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/crossbeam-skiplist-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/libm-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/pastey-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/pastey-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde_json5-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/windows-apache.license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/windows-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/extensions/ipnetwork-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/extensions/ipnetwork-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/postgres-license.md is carried by neither the package nor the app"
+    ]
+   }
+  },
+  {
+   "component": "@tursodatabase/sync",
+   "version": "0.8.2",
+   "platform": "win32-x64",
+   "main": "@tursodatabase/sync",
+   "artifactDigest": "6cd0c7c3ddecbaf8f847b8cbca69c724d7cdc61a7f9142b09878965d03822633",
+   "packages": [
+    {
+     "name": "@tursodatabase/sync",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "9cc9c278e738a9f3f34ef444e576de242ec57410f78afc00c42d685892d609a6",
+      "dist/promise.d.ts": "96e7686f9e4f408bd4b111c5993fb9cdbe68d707d2ecb13dc7bafa47e2462f66",
+      "dist/promise.d.ts.map": "6c6f2dcb436be4ab9f19bc93cbbe3e69c9568d65ce84ea18e498610c1293af8f",
+      "dist/promise.js": "5aa830e1af990d4ce85a61cc4bd57be90fd3951e3b5a448187ca56e69395ebe6",
+      "index.js": "e046e374450aab75185ce8567e0cd8856cea7b20c7bef67ae1bc8766d5cfb50b",
+      "README.md": "ce2c7303949e6a09e8688d67706e8d055841fb3dc216c6850450c48a7343a927"
+     },
+     "integrity": "sha512-cQSJVUqvP0YgfZuHL1DLmBT3obpjtlDr7Zk1MptnurZv9cPBAtWZ/Qy8tUSQWNT1KRECOg5w5rRGsFcP8vV+4A=="
+    },
+    {
+     "name": "@tursodatabase/database-common",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "2884ff3c5a8171cb67a2401bcccbbcf9059cf72e21d9a59748edfceefe2ca033",
+      "dist/async-lock.d.ts": "6da66f62aed080a4335284141e864169bcb0ba5a28144144dd5ae033f4dfc8a3",
+      "dist/async-lock.d.ts.map": "01023dca2fa5bf6a015b336e55f3d095b1907337229dfbf9fe4d80502b75ce50",
+      "dist/async-lock.js": "481d248d12de8619e61139a87ba6c6863937530773f6c9b5f4c14564c04982c5",
+      "dist/bind.d.ts": "25f369fb7daf2580331ac3cfe3bea4f4e415e73701c77201b0699b576780496f",
+      "dist/bind.d.ts.map": "f45af1572030a4d8a7b35e72419f95098e47efdcaae4560c9c8c8ae1cbe0cb3d",
+      "dist/bind.js": "70c39cac296a3a80db6e2f99ff7bab4abbe0bdc2e4151a61daf873cfe5fc6168",
+      "dist/compat.d.ts": "c5e8265da5739042dc32fa74f583083e71ea6ec66a86b913e9d3193784ee9c74",
+      "dist/compat.d.ts.map": "cab1ddad94791cd07aa2c67244c36f23c37f69123fda9a424ebb2020d7bff017",
+      "dist/compat.js": "3fb5e4622a7c24b49d44cfade341aa8c4d2336a1229fd86292696d92ae671a5c",
+      "dist/index.d.ts": "0dc157e2868250c3e8410bdd0b1bcef33e2c3436eb86b953b93bed09a5dec695",
+      "dist/index.d.ts.map": "df95a87f89eb24fb5a2be7ab33b330bf53b3ca735398feebb8c14f24e4ea02f6",
+      "dist/index.js": "a8c3fc438902573879cd234108976905e19400507ec9b9331a0f64a4a6cb9595",
+      "dist/promise.d.ts": "361c79d775d74697020aec454a15194a230631f3e2b1defc08c3ab4df831dadb",
+      "dist/promise.d.ts.map": "04dacafb08830280771b34ebbb45338889d678b57ca0cdca2d8bced9d339b6a6",
+      "dist/promise.js": "cd3691094f03e2b270327152c759f96fcb7b7d80a2f5d848188ab96a512b5506",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "6307c084b6064ffdb72af9e4789eda4875eff58daccd49a59d9c018f0bf2c6c9",
+      "dist/sqlite-error.d.ts": "772974d546741fcd7d751d63689e654110e2fb7942e56d672b3d239b6714ceca",
+      "dist/sqlite-error.d.ts.map": "c912d56ffe2c24c66b4ddb008816923b3e5d292fa00ec246724a5f48364c1d42",
+      "dist/sqlite-error.js": "2790de847e516369f4bdbcbeff70e3b19be98685ea6062f30284296d2a68c2f9",
+      "dist/types.d.ts": "ddbeea1bd68e1bd61b0a94489add8c748a343650ba0e1ec16fc66484af08cfcb",
+      "dist/types.d.ts.map": "1adb1008cb9b003f4d0e6e4de1c1dc292cc86cd448b2ff58685438a71c61c0b7",
+      "dist/types.js": "56d16540e06aa721aed3f220be4d245f4c721448ee687725774056dbf9b2d49a",
+      "README.md": "11b659b05c029b342380ffa956c89d844260d2327145b97b8b5f48910e6b2325"
+     },
+     "integrity": "sha512-1G0n/ZDhQELm/lu/tOHUmJZsLBxSK2k8OVXqS/WPJD70wTaFjaWY8C4UBe/AjfOzkhE3qbiUUMRv4Fbt5cDnew=="
+    },
+    {
+     "name": "@tursodatabase/sync-common",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "3256195772db298464fb0146c13aa22f050bfa68a3f145fd25ccec079cfe1f81",
+      "dist/index.d.ts": "d2303d144b1027a87ccb584a3a2b7d109dfd403070fc8c58a9af0176256111ce",
+      "dist/index.d.ts.map": "41a1b80347911589caf8019c3dfa3bdbf989f4bd869e5ae229433f3cd7239417",
+      "dist/index.js": "ae298b12b7b5935936cd8ac9579fb7e75635e3ac109a25cb85f4b7becda486c5",
+      "dist/remote-write-statement.d.ts": "f031ad429200c35edccb867d0772da9ff87b83d9665e5825bac0c5dd9b1852cc",
+      "dist/remote-write-statement.d.ts.map": "437c42177673f381a1ca0ce4cbcf45c26a2c9d4a09dc9bb5c0fcd43c13aa5e87",
+      "dist/remote-write-statement.js": "e014e585269fe46f93acdfff2283728cbcfb1147cc201ec91e82b9d066c83b5d",
+      "dist/remote-writer.d.ts": "8bad8e674fca2c35008762ca8d124893af2bf688c018c5de8612aff34f578d13",
+      "dist/remote-writer.d.ts.map": "8949ca220b79ec666cd9b20dfc59dcbea82d83a27fabb10d2d461539dcecc934",
+      "dist/remote-writer.js": "79880e39812ab4a99e39a0d72601aa3ff8df8a1d23fc82ce6df106397c7372c9",
+      "dist/run.d.ts": "bc00e3aa23939ec8c9ba087fe542fe27f683d1f4155c0b3abede6d388b933199",
+      "dist/run.d.ts.map": "24025dc02cdb1f0cdf08fc706c50d7df41c5d37572b8201b016ddab45488bd3b",
+      "dist/run.js": "25d427a47014ed8827cbf30490095e594b8a14e3ce45068aeae687a9392a8756",
+      "dist/types.d.ts": "a8fd7d4061887d4838c505b0d3d2ced7af75b4fa754bc1ebfbb093c389707a35",
+      "dist/types.d.ts.map": "5f7b80f0a828ff1a88734a018f690d62e1517178653a489c2d16f08629b9fdaf",
+      "dist/types.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+      "README.md": "c6e351fefb340762a17451ff3dda788db6a966e11e77fc643a3828c27903e70f"
+     },
+     "integrity": "sha512-XtEeTKOqGJHuyGWnH+2dGraRh37OkdNC9rdtlZf8iLHO/b1m+tS/mNl9pkd0O08ek/rEzk5AXbAlAovYR7pSnA=="
+    },
+    {
+     "name": "@tursodatabase/serverless",
+     "version": "0.2.4",
+     "files": {
+      "package.json": "9f94ce3608099ece45f12128e971f958e9cfb62f2570ce02cc690b7c03cf1660",
+      "dist/async-lock.d.ts": "e95565c01e9e9d0a57e0fad9058c1ba2e372ea3b2f5d6055e510fdde77ce2d7d",
+      "dist/async-lock.js": "64419035dd315fc87244d11634f207b8776775e13e6b26bcd7fcb06b8d8b629b",
+      "dist/compat/index.d.ts": "d5912a877cca8044c7c35deb100bdd03b7517cc615235ebae94e2798a0bc6db9",
+      "dist/compat/index.js": "d5912a877cca8044c7c35deb100bdd03b7517cc615235ebae94e2798a0bc6db9",
+      "dist/compat.d.ts": "5c3110ef15812b18318805e8f7445301192e6dc585fdd9c1f994a32d17328d7e",
+      "dist/compat.js": "dd42b32c35d9bb975313a61aed2fea3b4c957ed5a25f09cbac69b9dc1a8cf275",
+      "dist/connection.d.ts": "b34c8252c22a4d074700281a3a329387ed6effaacb951449c47804c7439918da",
+      "dist/connection.js": "62f9362dbf147ab864f5b1195d408be09f2f4ddb7309ce14088f37617b088cc3",
+      "dist/error.d.ts": "3dbe72e0a3702bf6637a753285ecbbbbf23eff83a400f948b87b7b847327a5e6",
+      "dist/error.js": "45b6af752f37f4b70c19031c34fa10fe964ee6aff7d96bd53e873135d674ce20",
+      "dist/index.d.ts": "d8803cbf76042fe4d1dd95f9fedb6b084f5cbdc92b7934a954d8cf1c3253f595",
+      "dist/index.js": "45835edf0541eb714df2edbcb4092b6b9ec1492f2da2fa53bd43f85580a47f40",
+      "dist/protocol.d.ts": "ff11f8393643734d3ea45451b63c1baa92dd201d7f6aa2e7618c1544c30b5855",
+      "dist/protocol.js": "26a9a7875bd559a2057255c9b70298ca026879ccedf13d976215da3f440a978b",
+      "dist/session.d.ts": "5c48ed5471a370499aefbeee1f4297720eef9621a8966f516146d8a3f83bda5c",
+      "dist/session.js": "9ab90c575887e2cc979be8232bfbdc5692932400baa329c474bbadd3b3e36fe6",
+      "dist/statement.d.ts": "2545a20d03e2b2bbe7ff45314548d54a18619c62f5d1f40cf6b57e04535cdc1c",
+      "dist/statement.js": "ed9f57899aef721e4434454563d6242585365bd90fd55b9713f95cfdc42cd13b",
+      "README.md": "ba2788bb9782a8f93a3a0c8aff9ee4dc185cf8a2a113f556fcde5a389a4f3faf"
+     },
+     "integrity": "sha512-kqf3FINvTGx8N1iH/4e1Dkbr/om5q9qitshzvljtQXwZFQIsVP/mDE76mGg9U2dg/ElOZKFKtT1VXDgd39Dr1w=="
+    },
+    {
+     "name": "@tursodatabase/sync-win32-x64-msvc",
+     "version": "0.8.2",
+     "files": {
+      "package.json": "bb80e4cc77e02175bfe04446299f2cfbcdfbeea205b024a01b08754e29d64a79",
+      "README.md": "b45423ccd61896b90d6d232507049c1008ca9884f8d4cfd54f9bb387867d4034",
+      "sync.win32-x64-msvc.node": "4fda8896a25bbf872556cfccc14447f3cacab05ce4be976a9654689b5b9c1030"
+     },
+     "integrity": "sha512-xZ6xnNtcX+mBvZRk6ECieushGdI5pkM3+RfGhGORPcasQvppDiPqAY7/lsHDtcGstLODopYUM2QDhezcep9BEA=="
+    }
+   ],
+   "binary": {
+    "package": "@tursodatabase/sync-win32-x64-msvc",
+    "file": "sync.win32-x64-msvc.node",
+    "bytes": 18087936,
+    "sha256": "4fda8896a25bbf872556cfccc14447f3cacab05ce4be976a9654689b5b9c1030"
+   },
+   "sources": [
+    {
+     "key": "turso@v0.8.2",
+     "repository": "https://github.com/tursodatabase/turso",
+     "tag": "v0.8.2",
+     "commit": "5c168be5ef6a32ac966daf5983502a4f694b37ad",
+     "excluded": []
+    },
+    {
+     "key": "@tursodatabase/serverless@0.2.4",
+     "repository": "https://github.com/tursodatabase/turso",
+     "tag": null,
+     "commit": "7838c3e73baaa88e1a73c153609f439a3f3cb7ef",
+     "excluded": []
+    }
+   ],
+   "notices": {
+    "licenses": [
+     {
+      "package": "@tursodatabase/sync@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/database-common@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/sync-common@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/serverless@0.2.4",
+      "declared": "MIT",
+      "text": {
+       "path": "@tursodatabase/serverless@0.2.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "@tursodatabase/sync-win32-x64-msvc@0.8.2",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.8.2/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     }
+    ],
+    "upstream": [
+     {
+      "path": "turso@v0.8.2/LICENSE.md",
+      "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+     },
+     {
+      "path": "turso@v0.8.2/NOTICE.md",
+      "sha256": "efbb757e38448cca646247fd07a4201735533acad9aa1e92184821c02fff9e94"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/crossbeam-skiplist-apache-license.md",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/crossbeam-skiplist-mit-license.md",
+      "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/libm-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/pastey-apache-license.md",
+      "sha256": "27ba0fdfa70b6adf9521f3a1b865cb9347261c018243fa074bab5ff5e54dd188"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/pastey-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde-apache-license.md",
+      "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/serde_json5-license.md",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/windows-apache.license.md",
+      "sha256": "c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/core/windows-mit-license.md",
+      "sha256": "7ed4b96bdab9fc581e04229c810adef21d1b91af6cce7a02762365406c2d86e3"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/extensions/ipnetwork-apache-license.md",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/extensions/ipnetwork-mit-license.md",
+      "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca"
+     },
+     {
+      "path": "turso@v0.8.2/licenses/postgres-license.md",
+      "sha256": "3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd"
+     },
+     {
+      "path": "@tursodatabase/serverless@0.2.4/LICENSE.md",
+      "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+     }
+    ],
+    "shipped": [],
+    "bundled": []
+   },
+   "redistribution": {
+    "status": "needs-bundled-notices",
+    "reasons": [
+     "turso@v0.8.2/LICENSE.md is carried by neither the package nor the app",
+     "@tursodatabase/serverless@0.2.4/LICENSE.md is carried by neither the package nor the app",
+     "turso@v0.8.2/NOTICE.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/crossbeam-skiplist-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/crossbeam-skiplist-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/libm-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/pastey-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/pastey-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/serde_json5-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/windows-apache.license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/core/windows-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/extensions/ipnetwork-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/extensions/ipnetwork-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.8.2/licenses/postgres-license.md is carried by neither the package nor the app"
+    ]
+   }
+  },
+  {
+   "component": "agentfs-sdk",
+   "version": "0.6.4",
+   "platform": "win32-x64",
+   "main": "agentfs-sdk",
+   "artifactDigest": "69f1fa6ccb9d828757ae655e838192142cf370c26f67642b5d9315fc9bbabba9",
+   "packages": [
+    {
+     "name": "agentfs-sdk",
+     "version": "0.6.4",
+     "files": {
+      "package.json": "f07055bba53c3705c1b0c6a6c94493e5d58da568d4b4e165be98c54e5ef2ad6b",
+      "dist/agentfs.d.ts": "b9a799835c8de7be074fc7d065ce8e942340d92f8c14c85885ddb324f3d20702",
+      "dist/agentfs.js": "094526b9c6082a588173fbcf514a6c0236b185c2c47612c43529896b21db38f3",
+      "dist/errors.d.ts": "31b1222a736a5a6ec670ea600cdaca7064f5bc0e8a8dacca92d910b50b6637f2",
+      "dist/errors.js": "945a448f9db0a73e2d2c4bd4763187f176a57f7f6f31d5c6dca6196ef5f5bf45",
+      "dist/filesystem/agentfs.d.ts": "0cb526629b18bc40f138aa7a3708370b4195c6b7ec5ca42d15b379bb4e610bbb",
+      "dist/filesystem/agentfs.js": "9b5ffce50003669865c13e13eef92669bf914d5c9b100515c5d2a3ca0d5830e6",
+      "dist/filesystem/index.d.ts": "3c3d42e8871a81120b140836d38123888defb4140a6331d66cb3fd099bb86e7d",
+      "dist/filesystem/index.js": "ed0895f3820998440128448d23c4fe081a459ce5749209cebf4f78b6a2e4fb33",
+      "dist/filesystem/interface.d.ts": "0551d6075ca146296af2e6af759c2440220a7e2c235104f28813a6952dc99f9d",
+      "dist/filesystem/interface.js": "d68f09c970166b40a57510c509bb5523a111b8d06e7627c32ba0a12f7e427560",
+      "dist/guards.d.ts": "59562a0566bf8f58682720317596aab522d506ba6d8f4d8446a64909ca4222fa",
+      "dist/guards.js": "75d43ab3fe7e461f9440c54bfef92d08921e75407a0b339f13af25f02a891095",
+      "dist/index_browser.d.ts": "397a58018adee9352c9c1ec25150bee195b8b88071a670ff6b81ea47166c7481",
+      "dist/index_browser.js": "97ae80f0c5002a65d829e505b22b9374b6e2bdbc1290c0981773d25cde7671bd",
+      "dist/index_node.d.ts": "333b01d2224e7c10036088ee29660f5e388380d30c2c016dacd76bee61bc4134",
+      "dist/index_node.js": "4fa9b8ac552971e690d4424971fec6903b6ffa4218ecd80b7a088ad484d3e27a",
+      "dist/integrations/cloudflare/agentfs.d.ts": "6ee96fbc2155481e7ce9feb72246c6bbb6c43a657a9895699925220a99b20455",
+      "dist/integrations/cloudflare/agentfs.js": "c532ce57706860d97b83bbc034a52f200a8e4754c4ed191c22a634a26abb6064",
+      "dist/integrations/cloudflare/index.d.ts": "7409d0676e2ab7508f00b9233ec7eda9ee6d15a36e6a0300e4ae7a6033cf1c2d",
+      "dist/integrations/cloudflare/index.js": "4c2c144b63e384940bdcd723c2d358eb608cc17d098e3df21b912b8affc7fda1",
+      "dist/integrations/just-bash/AgentFs.d.ts": "3e9ac2ed0233247f3584695b2342f2e44c40c4f450dcd13ce959463876afb0b1",
+      "dist/integrations/just-bash/AgentFs.js": "fc0328cbbb8788dbf247497d1e8a644b6835f999822b503460ca28807fc95a9f",
+      "dist/integrations/just-bash/AgentFs.test.d.ts": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+      "dist/integrations/just-bash/AgentFs.test.js": "b55288ad5e2210c535d103eff0e1bcdf7cba55cdcdb487fd49324619203929ee",
+      "dist/integrations/just-bash/index.d.ts": "10c2b07007f9c2f8bc840488b0e63b9ac12aabb032a29ecbab2c77f0fdc17fda",
+      "dist/integrations/just-bash/index.js": "9d78c8af26e20de332825651d7d71bdc412c21b69e433b41808619abced1ba72",
+      "dist/integrations/serverless/adapter.d.ts": "90bd0b1b0ae93d75fb2fa8d76c8878c31137cbbcafefe8ba5fafd6fa0b5fa0d4",
+      "dist/integrations/serverless/adapter.js": "a7da849ea5956a056535d7be5b8fb86aad020b67eaf2176de5927e64319908a9",
+      "dist/integrations/serverless/index.d.ts": "fa562f6374b6e94ebcfec7e3708a9421005186529032a94d7ea2687d4c3f8894",
+      "dist/integrations/serverless/index.js": "fa562f6374b6e94ebcfec7e3708a9421005186529032a94d7ea2687d4c3f8894",
+      "dist/kvstore.d.ts": "84ce422b396fefb65042071cdd3599646718e41a8dbe0f8d5a7db7c8d0c4bb1b",
+      "dist/kvstore.js": "1b859273da313c11b42328cc447579068dbeb3efb208b63d2f2b92526eb131cd",
+      "dist/toolcalls.d.ts": "cd13944a1250617e2339267b9389cd555ff1951891ff972216465336f8a3dfd5",
+      "dist/toolcalls.js": "7b30d139a5d780a3d030df33eed7eb742c5bcd89deb69ae6f0017f619e023c8b"
+     },
+     "integrity": "sha512-exhzph6u+jZlh2V24O0Af9j9iweNYQ4Yb7M1SEYKE9ljxB/kKVaiaumK2zsTW/Pmi8kqPSezGvqqpi4+vkZTfQ=="
+    },
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "4d4ab0cd2c315c7c2aae10478ae7ff1ddca6123d656d2e9792f8c749b6657ef5",
+      "dist/compat.d.ts": "b0dc32a727501de09802b0da5f217cd47462538c32b40822a051f1b6b48e6dd6",
+      "dist/compat.d.ts.map": "55afa2dce12300e6281609ac6aa0c75d5c812e3893cd7ad210d864b204c7c29b",
+      "dist/compat.js": "0185b1127cfc5ef0cde112b57454629b761214e3fa3cec6883f1b149c89766da",
+      "dist/compat.test.d.ts": "6b0c7d1c38c604d37d116a397744920a5a877b8d3779bbfa5dd28db94aab4f77",
+      "dist/compat.test.d.ts.map": "aeeb7c85a94862c88a7bbf3d2f9434687e2b38393da1aafd7a8d5e98473dc7c8",
+      "dist/compat.test.js": "1068e959d9b3c22097bfcee299d2da2e42b33afaf34e593157ab303ef763c77f",
+      "dist/promise.d.ts": "dfb38a096259421e4b7f96f434a11ca3125582d524abc9c6af52b923abae6516",
+      "dist/promise.d.ts.map": "fc5644d673a3c3c7ed77f4c6b8eb9b17a369f26c91ddb82107de0b99858f0249",
+      "dist/promise.js": "f1f9e7be42c702eaa57b19a5e5455b8f1c91b4485b9ba4f6f10888a89bccfa44",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "54c96733fba17b6b1a6dd121695f4b97a366fa56b46e1fbbbdb51fc98359ab37",
+      "index.js": "bf251b394c2e5bcc011f4b0a2d418b7fe2a19673a7e7b6175eaf9419277399c0",
+      "README.md": "3ee1538966aade16d8ff40ef9abcfddaf5f5be00b3c37ddfce00511e898fdd77"
+     },
+     "integrity": "sha512-QkQ0qLp0AY8dC9BOrIMyeyUXoFCvhlRaH+wcg013OvzYufSmDnnzg44U0tQkmnXYfUZEIp+IpADO/UeGNL0M2Q=="
+    },
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database-common",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "227476ae3748371425e16ac6e3bb54cca74d68f6c1fbfbcb09f699ef995a654b",
+      "dist/async-lock.d.ts": "ade3a38734d8a34d45d6561fdfe5482652f4fb5ea408f8a471a742783d3c837c",
+      "dist/async-lock.d.ts.map": "efa5705671cbf3c5290601be80b415e5ae280537aff231d51ec76c93e8108151",
+      "dist/async-lock.js": "481d248d12de8619e61139a87ba6c6863937530773f6c9b5f4c14564c04982c5",
+      "dist/bind.d.ts": "25f369fb7daf2580331ac3cfe3bea4f4e415e73701c77201b0699b576780496f",
+      "dist/bind.d.ts.map": "f45af1572030a4d8a7b35e72419f95098e47efdcaae4560c9c8c8ae1cbe0cb3d",
+      "dist/bind.js": "70c39cac296a3a80db6e2f99ff7bab4abbe0bdc2e4151a61daf873cfe5fc6168",
+      "dist/compat.d.ts": "59dd65bfe819b7de7eae118f0b1954623dfb37749ce5b0d6c2b9dbb54e867b53",
+      "dist/compat.d.ts.map": "fb794b29f72f50a2619082dd8b49851092860715fe26138302c20c85a5bd34cb",
+      "dist/compat.js": "fcadb1c0ba2811065928e03af386446baa20f9fcfdfaaf2a5330b1ece09330ee",
+      "dist/index.d.ts": "1b1fc03279356a87b90c10df5bda265bc9f06751041499e1d71c32a90d5c4050",
+      "dist/index.d.ts.map": "b9fb28e08e678af415df1236f68ccd9efd6c2dd423378ccca43fe32d4552d023",
+      "dist/index.js": "ca914a56bbc78c45a959ded2b42a0fac2a49e8b1625ddbeb9af89bda3a3c3640",
+      "dist/promise.d.ts": "72a652286c8de8657afb0e44d3c7e7a7713c5241e745f37f429c3847ed22b50d",
+      "dist/promise.d.ts.map": "677a0bb182b3574c7e32465cee8b7ca062d431777156dee1cac5ae3f7b5dae5c",
+      "dist/promise.js": "812580dce9e00767404848eca2b952f56d71cd0381bb12a21cd94195d783c17a",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "6307c084b6064ffdb72af9e4789eda4875eff58daccd49a59d9c018f0bf2c6c9",
+      "dist/sqlite-error.d.ts": "05f84a5f92cd34c70ed1b48700f008ac6101fd5a450250295d47770c913075cc",
+      "dist/sqlite-error.d.ts.map": "b8e10851d1d3c3bac4ab9430d80d6b0123969bef0ec87c3672aed603cd43804b",
+      "dist/sqlite-error.js": "def097132e45971dfa0081771589aa630df2ef2c2b842a2cffc82ee2274805ac",
+      "dist/types.d.ts": "46e7fce14af5086554f495c489149d9abf4e94ee529bb4033bf4f8f5d235c072",
+      "dist/types.d.ts.map": "a7ed93ce7bf97bbe30a35366fc31ce3aa84a69915e22aa23dddc5301c890a606",
+      "dist/types.js": "0e48ede5f49fe5be08adfe29fc44b73fdf4bfec5b5b21376f00fdde7adb08bb9",
+      "README.md": "2b2708e58a8dfe0f5fcb0a75c63b66eab9b4a3b840afba8eb09d508565b66d7f"
+     },
+     "integrity": "sha512-iuSYWgBQEETjwfWOmi3E4Q++jQTb+VOPXeaKozQqW8fXtgU6ZaYUMmWbqQVMGSS9sAWZlZi9qyPVz0rkT8zoqQ=="
+    },
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database-win32-x64-msvc",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "811c4ba5e10d0cdaedad143e4495b85ab905f03e7884864e00301acf5d5f74c3",
+      "README.md": "4757bdabd906721a1b23db5b3a9f5ef054c0811aec3736a090aa58add9725a8f",
+      "turso.win32-x64-msvc.node": "30f92ca6b7dc36895099ab1b657d3a818e9b5bb08031e7428f5bb4e4eeb83165"
+     },
+     "integrity": "sha512-TYEl5FaUAImgZew05FvxvcFWLb1AQ+Zeyw/ApEbBDqS7mQmbz8VGs4iq04ECzJG2esfBR+zrLdDEG3X1BnaDTg=="
+    },
+    {
+     "name": "buffer",
+     "version": "6.0.3",
+     "files": {
+      "package.json": "5b105ac0abbf5985cbe62ad28a34032d85c7ef623e0eb01f39441b0feb419004",
+      "AUTHORS.md": "ca3d96437f69ceb38df1972db017fcd6303b02f57ea1f838ab9f9c3db3e789e0",
+      "index.d.ts": "4967529644e391115ca5592184d4b63980569adf60ee685f968fd59ab1557188",
+      "index.js": "c25853fd31addfce188b01061fe85bfe667d5fb6c7a7bbb1c83d0ddfd8627acc",
+      "LICENSE": "06bafa45fdad2579ba0e43b0c9b2c6290287c99c4203c300254a462b38a307f6",
+      "README.md": "115dd8925d8f387b2970bd492188a008695f179ed93319a993ce384fa470d3bf"
+     },
+     "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA=="
+    },
+    {
+     "name": "base64-js",
+     "version": "1.5.1",
+     "files": {
+      "package.json": "9758f3ab8c45e07bb9a368e32f9a8b3729623bbf47cbbb205b32d674ab2a91f0",
+      "base64js.min.js": "d2e82495607abf54f16e21de04d90ba9ce1605451667d88425babece988f148b",
+      "index.d.ts": "96da6c81cd788939a7cf6546ea1f65ab5ca38952e5bd7d8c284bfe1f3c22dce7",
+      "index.js": "829eadd8a1a441d25be0cb93b00e16a0d0c20fd294db95d8f2ed87e6954b7182",
+      "LICENSE": "5b37224c080cdcc97c871ada971c224e9926370fe74f11b539aa1cf9f3b1aca1",
+      "README.md": "057ef3ae4f4b4c9d3dcd257d3b2f38632de3c3a2ff068e5be14cb56a61d6daba"
+     },
+     "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA=="
+    },
+    {
+     "name": "ieee754",
+     "version": "1.2.1",
+     "files": {
+      "package.json": "a8004b9c8dffe2e1b01a058ecf968a5d50beabcabc43cc98c655184ba6afc050",
+      "index.d.ts": "1eb4db5f83679b3b6f8683611c93938948aa2d5d5e3988755f9e3a289388b75e",
+      "index.js": "fe3e2b20c1ebb57c3b390c8f685ad1e04e6f493517fa7e432f4351bb77a1a4d0",
+      "LICENSE": "18d45466ba3253deae04667e267a91ea8de8548f18c1125264d1c9db28194cc1",
+      "README.md": "27827383727dcc6bb9f6f591e4b9204e35b6389bfba60df7a400371dac23b3ed"
+     },
+     "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA=="
+    }
+   ],
+   "binary": null,
+   "sources": [
+    {
+     "key": "agentfs@v0.6.4",
+     "repository": "https://github.com/tursodatabase/agentfs",
+     "tag": "v0.6.4",
+     "commit": "3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0",
+     "excluded": [
+      {
+       "path": "licenses/LICENSE-fuser.md",
+       "sha256": "e5de4041803ce3d7b1b269165677baabbeb9e43252ad176a877bd544ca04d748",
+       "reason": "the CLI's FUSE mount crate; the npm SDK is JavaScript only and does not include it"
+      },
+      {
+       "path": "licenses/LICENSE-nfsserve.md",
+       "sha256": "99cbb513e18ecf180a25f5c2e8f2980a91ead909c191fd4c34323497d13a3c74",
+       "reason": "the CLI's NFS server crate; the npm SDK is JavaScript only and does not include it"
+      }
+     ]
+    },
+    {
+     "key": "turso@v0.4.4",
+     "repository": "https://github.com/tursodatabase/turso",
+     "tag": "v0.4.4",
+     "commit": "dc7781a52b888e323bb12e76c2793d3bab5f9106",
+     "excluded": []
+    }
+   ],
+   "notices": {
+    "licenses": [
+     {
+      "package": "agentfs-sdk@0.6.4",
+      "declared": "MIT",
+      "text": null
+     },
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database-common@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database-win32-x64-msvc@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "buffer@6.0.3",
+      "declared": "MIT",
+      "text": {
+       "path": "buffer/LICENSE",
+       "sha256": "06bafa45fdad2579ba0e43b0c9b2c6290287c99c4203c300254a462b38a307f6"
+      }
+     },
+     {
+      "package": "base64-js@1.5.1",
+      "declared": "MIT",
+      "text": {
+       "path": "base64-js/LICENSE",
+       "sha256": "5b37224c080cdcc97c871ada971c224e9926370fe74f11b539aa1cf9f3b1aca1"
+      }
+     },
+     {
+      "package": "ieee754@1.2.1",
+      "declared": "BSD-3-Clause",
+      "text": {
+       "path": "ieee754/LICENSE",
+       "sha256": "18d45466ba3253deae04667e267a91ea8de8548f18c1125264d1c9db28194cc1"
+      }
+     }
+    ],
+    "upstream": [
+     {
+      "path": "turso@v0.4.4/LICENSE.md",
+      "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+     },
+     {
+      "path": "turso@v0.4.4/NOTICE.md",
+      "sha256": "bf1ffa54b5c3754741e91498db2cbc91e23e10f21ffcbfb2930f63aff5faa7de"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/libm-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde-apache-license.md",
+      "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde_json5-license.md",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/extensions/ipnetwork-apache-license.md",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/extensions/ipnetwork-mit-license.md",
+      "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca"
+     }
+    ],
+    "shipped": [
+     {
+      "path": "buffer/LICENSE",
+      "sha256": "06bafa45fdad2579ba0e43b0c9b2c6290287c99c4203c300254a462b38a307f6"
+     },
+     {
+      "path": "base64-js/LICENSE",
+      "sha256": "5b37224c080cdcc97c871ada971c224e9926370fe74f11b539aa1cf9f3b1aca1"
+     },
+     {
+      "path": "ieee754/LICENSE",
+      "sha256": "18d45466ba3253deae04667e267a91ea8de8548f18c1125264d1c9db28194cc1"
+     }
+    ],
+    "bundled": []
+   },
+   "redistribution": {
+    "status": "blocked",
+    "reasons": [
+     "agentfs-sdk@0.6.4 declares MIT, but neither its pinned source nor the package carries that text"
+    ]
+   }
+  },
+  {
+   "component": "@tursodatabase/database",
+   "version": "0.4.4",
+   "platform": "win32-x64",
+   "main": "agentfs-sdk/node_modules/@tursodatabase/database",
+   "artifactDigest": "93de4d357f1a45944efe5b13d4cc513f7333b5d7337c508ab8df931db85caae1",
+   "packages": [
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "4d4ab0cd2c315c7c2aae10478ae7ff1ddca6123d656d2e9792f8c749b6657ef5",
+      "dist/compat.d.ts": "b0dc32a727501de09802b0da5f217cd47462538c32b40822a051f1b6b48e6dd6",
+      "dist/compat.d.ts.map": "55afa2dce12300e6281609ac6aa0c75d5c812e3893cd7ad210d864b204c7c29b",
+      "dist/compat.js": "0185b1127cfc5ef0cde112b57454629b761214e3fa3cec6883f1b149c89766da",
+      "dist/compat.test.d.ts": "6b0c7d1c38c604d37d116a397744920a5a877b8d3779bbfa5dd28db94aab4f77",
+      "dist/compat.test.d.ts.map": "aeeb7c85a94862c88a7bbf3d2f9434687e2b38393da1aafd7a8d5e98473dc7c8",
+      "dist/compat.test.js": "1068e959d9b3c22097bfcee299d2da2e42b33afaf34e593157ab303ef763c77f",
+      "dist/promise.d.ts": "dfb38a096259421e4b7f96f434a11ca3125582d524abc9c6af52b923abae6516",
+      "dist/promise.d.ts.map": "fc5644d673a3c3c7ed77f4c6b8eb9b17a369f26c91ddb82107de0b99858f0249",
+      "dist/promise.js": "f1f9e7be42c702eaa57b19a5e5455b8f1c91b4485b9ba4f6f10888a89bccfa44",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "54c96733fba17b6b1a6dd121695f4b97a366fa56b46e1fbbbdb51fc98359ab37",
+      "index.js": "bf251b394c2e5bcc011f4b0a2d418b7fe2a19673a7e7b6175eaf9419277399c0",
+      "README.md": "3ee1538966aade16d8ff40ef9abcfddaf5f5be00b3c37ddfce00511e898fdd77"
+     },
+     "integrity": "sha512-QkQ0qLp0AY8dC9BOrIMyeyUXoFCvhlRaH+wcg013OvzYufSmDnnzg44U0tQkmnXYfUZEIp+IpADO/UeGNL0M2Q=="
+    },
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database-common",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "227476ae3748371425e16ac6e3bb54cca74d68f6c1fbfbcb09f699ef995a654b",
+      "dist/async-lock.d.ts": "ade3a38734d8a34d45d6561fdfe5482652f4fb5ea408f8a471a742783d3c837c",
+      "dist/async-lock.d.ts.map": "efa5705671cbf3c5290601be80b415e5ae280537aff231d51ec76c93e8108151",
+      "dist/async-lock.js": "481d248d12de8619e61139a87ba6c6863937530773f6c9b5f4c14564c04982c5",
+      "dist/bind.d.ts": "25f369fb7daf2580331ac3cfe3bea4f4e415e73701c77201b0699b576780496f",
+      "dist/bind.d.ts.map": "f45af1572030a4d8a7b35e72419f95098e47efdcaae4560c9c8c8ae1cbe0cb3d",
+      "dist/bind.js": "70c39cac296a3a80db6e2f99ff7bab4abbe0bdc2e4151a61daf873cfe5fc6168",
+      "dist/compat.d.ts": "59dd65bfe819b7de7eae118f0b1954623dfb37749ce5b0d6c2b9dbb54e867b53",
+      "dist/compat.d.ts.map": "fb794b29f72f50a2619082dd8b49851092860715fe26138302c20c85a5bd34cb",
+      "dist/compat.js": "fcadb1c0ba2811065928e03af386446baa20f9fcfdfaaf2a5330b1ece09330ee",
+      "dist/index.d.ts": "1b1fc03279356a87b90c10df5bda265bc9f06751041499e1d71c32a90d5c4050",
+      "dist/index.d.ts.map": "b9fb28e08e678af415df1236f68ccd9efd6c2dd423378ccca43fe32d4552d023",
+      "dist/index.js": "ca914a56bbc78c45a959ded2b42a0fac2a49e8b1625ddbeb9af89bda3a3c3640",
+      "dist/promise.d.ts": "72a652286c8de8657afb0e44d3c7e7a7713c5241e745f37f429c3847ed22b50d",
+      "dist/promise.d.ts.map": "677a0bb182b3574c7e32465cee8b7ca062d431777156dee1cac5ae3f7b5dae5c",
+      "dist/promise.js": "812580dce9e00767404848eca2b952f56d71cd0381bb12a21cd94195d783c17a",
+      "dist/promise.test.d.ts": "5f13a2c07049f324b78bc06657639ff47e9534b46b21aab3ff20db790626bf07",
+      "dist/promise.test.d.ts.map": "8f742b046398444f53a833d2cdca2191240c16fac90e133ca24ff4bedaaddaf2",
+      "dist/promise.test.js": "6307c084b6064ffdb72af9e4789eda4875eff58daccd49a59d9c018f0bf2c6c9",
+      "dist/sqlite-error.d.ts": "05f84a5f92cd34c70ed1b48700f008ac6101fd5a450250295d47770c913075cc",
+      "dist/sqlite-error.d.ts.map": "b8e10851d1d3c3bac4ab9430d80d6b0123969bef0ec87c3672aed603cd43804b",
+      "dist/sqlite-error.js": "def097132e45971dfa0081771589aa630df2ef2c2b842a2cffc82ee2274805ac",
+      "dist/types.d.ts": "46e7fce14af5086554f495c489149d9abf4e94ee529bb4033bf4f8f5d235c072",
+      "dist/types.d.ts.map": "a7ed93ce7bf97bbe30a35366fc31ce3aa84a69915e22aa23dddc5301c890a606",
+      "dist/types.js": "0e48ede5f49fe5be08adfe29fc44b73fdf4bfec5b5b21376f00fdde7adb08bb9",
+      "README.md": "2b2708e58a8dfe0f5fcb0a75c63b66eab9b4a3b840afba8eb09d508565b66d7f"
+     },
+     "integrity": "sha512-iuSYWgBQEETjwfWOmi3E4Q++jQTb+VOPXeaKozQqW8fXtgU6ZaYUMmWbqQVMGSS9sAWZlZi9qyPVz0rkT8zoqQ=="
+    },
+    {
+     "name": "agentfs-sdk/node_modules/@tursodatabase/database-win32-x64-msvc",
+     "version": "0.4.4",
+     "files": {
+      "package.json": "811c4ba5e10d0cdaedad143e4495b85ab905f03e7884864e00301acf5d5f74c3",
+      "README.md": "4757bdabd906721a1b23db5b3a9f5ef054c0811aec3736a090aa58add9725a8f",
+      "turso.win32-x64-msvc.node": "30f92ca6b7dc36895099ab1b657d3a818e9b5bb08031e7428f5bb4e4eeb83165"
+     },
+     "integrity": "sha512-TYEl5FaUAImgZew05FvxvcFWLb1AQ+Zeyw/ApEbBDqS7mQmbz8VGs4iq04ECzJG2esfBR+zrLdDEG3X1BnaDTg=="
+    }
+   ],
+   "binary": {
+    "package": "agentfs-sdk/node_modules/@tursodatabase/database-win32-x64-msvc",
+    "file": "turso.win32-x64-msvc.node",
+    "bytes": 7422976,
+    "sha256": "30f92ca6b7dc36895099ab1b657d3a818e9b5bb08031e7428f5bb4e4eeb83165"
+   },
+   "sources": [
+    {
+     "key": "turso@v0.4.4",
+     "repository": "https://github.com/tursodatabase/turso",
+     "tag": "v0.4.4",
+     "commit": "dc7781a52b888e323bb12e76c2793d3bab5f9106",
+     "excluded": []
+    }
+   ],
+   "notices": {
+    "licenses": [
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database-common@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     },
+     {
+      "package": "agentfs-sdk/node_modules/@tursodatabase/database-win32-x64-msvc@0.4.4",
+      "declared": "MIT",
+      "text": {
+       "path": "turso@v0.4.4/LICENSE.md",
+       "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+      }
+     }
+    ],
+    "upstream": [
+     {
+      "path": "turso@v0.4.4/LICENSE.md",
+      "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5"
+     },
+     {
+      "path": "turso@v0.4.4/NOTICE.md",
+      "sha256": "bf1ffa54b5c3754741e91498db2cbc91e23e10f21ffcbfb2930f63aff5faa7de"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/libm-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde-apache-license.md",
+      "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde-mit-license.md",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/core/serde_json5-license.md",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/extensions/ipnetwork-apache-license.md",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+     },
+     {
+      "path": "turso@v0.4.4/licenses/extensions/ipnetwork-mit-license.md",
+      "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca"
+     }
+    ],
+    "shipped": [],
+    "bundled": []
+   },
+   "redistribution": {
+    "status": "needs-bundled-notices",
+    "reasons": [
+     "turso@v0.4.4/LICENSE.md is carried by neither the package nor the app",
+     "turso@v0.4.4/NOTICE.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/core/libm-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/core/serde-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/core/serde-mit-license.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/core/serde_json5-license.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/extensions/ipnetwork-apache-license.md is carried by neither the package nor the app",
+     "turso@v0.4.4/licenses/extensions/ipnetwork-mit-license.md is carried by neither the package nor the app"
+    ]
+   }
+  }
+ ],
+ "runtime": {
+  "node": "v22.23.2",
+  "sqlite": "3.51.3",
+  "electron": "44.2.0",
+  "electronSqlite": "not measured by this runner"
+ }
+}

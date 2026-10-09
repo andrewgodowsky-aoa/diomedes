@@ -1,0 +1,50 @@
+{
+ "method": {
+  "recorded": "2026-10-09",
+  "selection": "At each pinned commit: root LICENSE*, NOTICE* and COPYING* files, and every file under licenses/ except licenses/bindings/ (Java and Python binding dependencies) and licenses/perf/ (profiling tools), neither of which ships in the JavaScript packages pinned here. Hashes are SHA-256 of the raw blob bytes.",
+  "commands": [
+   "gh api repos/tursodatabase/<repository>/commits/<tag> --jq .sha",
+   "gh api 'repos/tursodatabase/<repository>/git/trees/<commit>?recursive=1' --jq '.tree[] | select(.type==\"blob\") | .path'",
+   "gh api 'repos/tursodatabase/<repository>/contents/<path>?ref=<commit>' -H 'Accept: application/vnd.github.raw' | sha256sum"
+  ],
+  "limits": [
+   "The Rust dependency graph compiled into each native binding was not audited against licenses/core and licenses/extensions; the selection takes the upstream's own notice set as given.",
+   "NOTICE.md at turso v0.8.2 cites licenses/extensions/libm-apache-license.md and licenses/extensions/libm-mit-license.md; the tag carries licenses/core/libm-mit-license.md and no libm Apache file.",
+   "NOTICE.md at turso v0.8.2 gives Error Prone the path licenses/bindings/java/assertj-license.md and AssertJ the path licenses/bindings/java/errorprone-license.md.",
+   "@tursodatabase/serverless 0.2.4 installs without a repository field. Its source is taken from the npm registry's gitHead, a commit in tursodatabase/turso titled 'serverless: 0.2.4' that v0.8.2 contains."
+  ]
+ },
+ "sources": {
+  "turso@v0.8.2": { "repository": "https://github.com/tursodatabase/turso", "tag": "v0.8.2", "commit": "5c168be5ef6a32ac966daf5983502a4f694b37ad", "files": [
+   { "path": "LICENSE.md", "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5" },
+   { "path": "NOTICE.md", "sha256": "efbb757e38448cca646247fd07a4201735533acad9aa1e92184821c02fff9e94" },
+   { "path": "licenses/core/crossbeam-skiplist-apache-license.md", "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2" },
+   { "path": "licenses/core/crossbeam-skiplist-mit-license.md", "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab" },
+   { "path": "licenses/core/libm-mit-license.md", "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" },
+   { "path": "licenses/core/pastey-apache-license.md", "sha256": "27ba0fdfa70b6adf9521f3a1b865cb9347261c018243fa074bab5ff5e54dd188" },
+   { "path": "licenses/core/pastey-mit-license.md", "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" },
+   { "path": "licenses/core/serde-apache-license.md", "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475" },
+   { "path": "licenses/core/serde-mit-license.md", "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" },
+   { "path": "licenses/core/serde_json5-license.md", "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd" },
+   { "path": "licenses/core/windows-apache.license.md", "sha256": "c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b" },
+   { "path": "licenses/core/windows-mit-license.md", "sha256": "7ed4b96bdab9fc581e04229c810adef21d1b91af6cce7a02762365406c2d86e3" },
+   { "path": "licenses/extensions/ipnetwork-apache-license.md", "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1" },
+   { "path": "licenses/extensions/ipnetwork-mit-license.md", "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca" },
+   { "path": "licenses/postgres-license.md", "sha256": "3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd" } ] },
+  "turso@v0.4.4": { "repository": "https://github.com/tursodatabase/turso", "tag": "v0.4.4", "commit": "dc7781a52b888e323bb12e76c2793d3bab5f9106", "files": [
+   { "path": "LICENSE.md", "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5" },
+   { "path": "NOTICE.md", "sha256": "bf1ffa54b5c3754741e91498db2cbc91e23e10f21ffcbfb2930f63aff5faa7de" },
+   { "path": "licenses/core/libm-mit-license.md", "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" },
+   { "path": "licenses/core/serde-apache-license.md", "sha256": "122686c559146c3946e4ebd3f828a3e6d87ed41b6664772899ff0264b6f28475" },
+   { "path": "licenses/core/serde-mit-license.md", "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" },
+   { "path": "licenses/core/serde_json5-license.md", "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd" },
+   { "path": "licenses/extensions/ipnetwork-apache-license.md", "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1" },
+   { "path": "licenses/extensions/ipnetwork-mit-license.md", "sha256": "69d42a32f6597af73843e0a4ffb3f3c11cafddf1df85986748c74296450a45ca" } ] },
+  "agentfs@v0.6.4": { "repository": "https://github.com/tursodatabase/agentfs", "tag": "v0.6.4", "commit": "3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0", "files": [],
+   "excluded": [
+    { "path": "licenses/LICENSE-fuser.md", "sha256": "e5de4041803ce3d7b1b269165677baabbeb9e43252ad176a877bd544ca04d748", "reason": "the CLI's FUSE mount crate; the npm SDK is JavaScript only and does not include it" },
+    { "path": "licenses/LICENSE-nfsserve.md", "sha256": "99cbb513e18ecf180a25f5c2e8f2980a91ead909c191fd4c34323497d13a3c74", "reason": "the CLI's NFS server crate; the npm SDK is JavaScript only and does not include it" } ] },
+  "@tursodatabase/serverless@0.2.4": { "repository": "https://github.com/tursodatabase/turso", "tag": null, "commit": "7838c3e73baaa88e1a73c153609f439a3f3cb7ef", "files": [
+   { "path": "LICENSE.md", "sha256": "b646f9ee8bcaf87e8de75153b9df7a2861c7ac445c87e741768b3c2bccf47bc5" } ] }
+ }
+}

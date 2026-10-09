@@ -1,0 +1,117 @@
+{
+  "recorded": "2026-10-09T14:20:35Z",
+  "firstObserved": "2026-10-09T13:58:07Z",
+  "app": {
+    "repository": "andrewgodowsky-aoa/diomedes",
+    "base": "92bc57bd678865390f17291beb382642769e73e5",
+    "branch": "feature/turso-baseline",
+    "baseIsOriginMain": true
+  },
+  "expertMerge": {
+    "pullRequest": 249,
+    "title": "Add Managed Expert tier for Agent and Bot",
+    "commit": "92bc57bd678865390f17291beb382642769e73e5",
+    "mergedAt": "2026-10-09T10:49:59Z"
+  },
+  "releases": {
+    "latest": {
+      "tag": "v0.2.4",
+      "name": "Diomedes 0.2.4 (experimental, unsigned)",
+      "published": "2026-10-07T06:39:19Z",
+      "target": "2229babf233628e976b9238653f5bdc4aa102dc3",
+      "targetInMainHistory": true,
+      "containsExpert": false
+    }
+  },
+  "observations": [
+    { "subject": "expert-tier", "kind": "git-main", "ref": "92bc57bd678865390f17291beb382642769e73e5", "state": "merged", "observed": "2026-10-09T13:58:07Z" },
+    { "subject": "expert-tier", "kind": "git-main", "ref": "92bc57bd678865390f17291beb382642769e73e5", "state": "merged", "observed": "2026-10-09T14:20:35Z" },
+    { "subject": "expert-tier", "kind": "canonical-doc", "ref": "docs/DIOMEDES_LIVE_ROADMAP.md at 92bc57b, Roadmap version 2026-10-06.1, line 10: Expert amendment pending cloud synchronization", "state": "draft", "observed": "2026-10-09T14:20:35Z" },
+    { "subject": "expert-tier", "kind": "canonical-doc", "ref": "docs/DIOMEDES_PROJECT_MEMORY.md at 92bc57b, version 2026-10-06.1, lines 8 and 16: an implementation candidate, not a production availability statement", "state": "draft", "observed": "2026-10-09T14:20:35Z" },
+    { "subject": "app", "kind": "release-record", "ref": "v0.2.4 at 2229babf233628e976b9238653f5bdc4aa102dc3", "state": "released", "observed": "2026-10-09T14:20:35Z" }
+  ],
+  "canonicalDocs": {
+    "repositoryMirrors": [
+      { "name": "Core Pillars", "path": "docs/DIOMEDES_CORE_PILLARS.md", "version": "2026-10-06.1", "cloudDocument": "1O0bWr5HEryEQmtOsUput0sgzLhk2c_Ze6MaXoMfKta4" },
+      { "name": "Live Roadmap", "path": "docs/DIOMEDES_LIVE_ROADMAP.md", "version": "2026-10-06.1", "cloudDocument": "1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE" },
+      { "name": "Project Memory", "path": "docs/DIOMEDES_PROJECT_MEMORY.md", "version": "2026-10-06.1", "cloudDocument": "13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw" }
+    ],
+    "cloudRead": false,
+    "cloudReadBlocked": "Both document connectors in this session refused the three cloud documents (one reported the file as not found, the other denied permission). The mirrors above were read instead.",
+    "packageReported": "NC-TS-2026-10-09.1 docs/10_SOURCE_RECONCILIATION.md line 23 reports the cloud Pillars header as NC-PICKER-2026-10-08.1, and the cloud Roadmap and Project Memory as 2026-10-06.1 with newer October 8 amendments. The repository mirrors lag the cloud documents."
+  },
+  "memoryLanes": {
+    "w00": { "pullRequest": 241, "state": "OPEN", "branch": "feature/memory-context-contracts", "head": "144d8927eaf84bb10ccbceb095f4ed4b028421c8", "updated": "2026-10-07T05:01:26Z" },
+    "w01": {
+      "owner": "DIO-228",
+      "branch": "feature/memory-ledger",
+      "commit": "d05a6b10d71199631ec254d5eec8e9ff9e737aad",
+      "committed": "2026-10-06T15:34:24-04:00",
+      "onOrigin": true,
+      "onMain": false,
+      "commitsAheadOfMain": 4,
+      "pullRequest": null,
+      "worktreeLocked": "W01 memory-ledger implementation, tests explicitly deferred; preserve unpublished work",
+      "gate": "W01 gets no gates or pull request until W00's pull request 241 lands (owner decision, 2026-10-06)",
+      "schemaBlob": "d4b93eb5ab210065ec266201a3860e2b0e072899"
+    }
+  },
+  "openPullRequests": {
+    "searched": ["turso", "agentfs", "libsql", "memory-ledger", "memory ledger"],
+    "found": []
+  },
+  "nextCheckpoint": {
+    "observed": "2026-10-09T14:47:03Z",
+    "ts07": {
+      "owner": "DIO-128",
+      "startsAfter": "TS00's gates and independent review pass, and the bought-credit-regression candidate and pull request 259 reach main",
+      "fundingLane": {
+        "branch": "feature/bought-credit-regression",
+        "base": "92bc57bd678865390f17291beb382642769e73e5",
+        "state": "uncommitted candidate, ready for validation",
+        "claims": ["claim_mv0vku9w_0b13b97a", "claim_mv0vwzlk_492814e6", "claim_mv0w06ln_2502fce3", "claim_mv0w81vq_ec3c05da", "claim_mv0w8dia_bddf1fb2", "claim_mv0wafux_61d0c66c", "claim_mv0wp06t_2b8016d6"],
+        "seams": [
+          "shared/access.ts", "server/accounts/agent-gate.ts", "server/accounts/routing-session.ts", "server/accounts/session.ts",
+          "server/engines/service.ts", "server/engines/nectovia.ts", "services/control-plane/src/managed-inference.ts",
+          "services/control-plane/src/routing.ts", "services/control-plane/contract/contract.ts"
+        ],
+        "heavySlot": { "id": "slot_mv12ofd4_351dc557", "acquired": "2026-10-09T14:40:27.592Z" }
+      },
+      "openPullRequests": [
+        { "number": 259, "head": "9b3e870d79b513d26f9698fd22171fa13b6c57dc", "touches": "the three canonical mirrors: the subscriber-only Agent (October 8) and the hybrid picker (October 9)" },
+        { "number": 244, "head": "3031d3a3727256adf2e8a378a11bdfccf5366364", "touches": "tests/pay-as-you-go-desktop.test.ts" },
+        { "number": 198, "head": "87d4277e04449dcd2ea05891aafe45d4d8ad84d0", "touches": "control-plane funding and member limits" },
+        { "number": 182, "head": "00676a1dc55128d0b5a79bc2a413db9fc48c0aee", "touches": "control-plane commercial records and staff funding" }
+      ],
+      "mainCarries": "bought credits open the Agent for Personal work (shared/access.ts, pay as you go), which pull request 259 records as superseded",
+      "casesNeedingUnbuiltServices": {
+        "TS-057": "W01's local store",
+        "TS-059": "Dreaming (TS04)",
+        "TS-061": "a trial, which stays off by policy",
+        "TS-062": "managed sync (TS03)",
+        "TS-063": "a memory quota"
+      }
+    },
+    "ts05": {
+      "owner": "DIO-31",
+      "seams": ["server/harness/tools.ts", "server/paths.ts", "server/sandbox/"],
+      "claims": [{ "id": "claim_mv0w5tou_8517679b", "node": "APP-WORDING-RECONCILIATION", "path": "server/sandbox/change-sets.ts" }],
+      "openPullRequests": [{ "number": 248, "head": "7cd70ac822add2cea0a7d54fa19629dcc25bc4b1", "touches": "server/sandbox/sandbox.ts" }],
+      "shipping": "blocked: agentfs-sdk has no license text, and Windows run isolation needs the CLI, which needs Andrew's approval"
+    }
+  },
+  "commands": [
+    "git fetch origin main; git rev-parse origin/main; git merge-base HEAD origin/main",
+    "gh pr view 249 --json number,state,mergedAt,mergeCommit,title",
+    "gh pr view 241 --json number,state,title,updatedAt,headRefName,mergedAt",
+    "gh pr list --state open --search <term> for each searched term",
+    "gh pr list --head feature/memory-ledger --state all",
+    "gh release view v0.2.4 --json tagName,publishedAt,targetCommitish,isDraft,isPrerelease",
+    "git merge-base --is-ancestor 2229bab 92bc57b (true); git merge-base --is-ancestor 92bc57b 2229bab (false)",
+    "git ls-remote origin refs/heads/feature/memory-ledger refs/heads/feature/memory-context-contracts",
+    "git show 92bc57b:docs/<mirror>.md",
+    "node <coordination tool> status, for path claims and the heavy slot",
+    "gh pr list --state open --json number,title,headRefName,updatedAt",
+    "gh pr view <n> --json number,headRefOid,files for each open pull request"
+  ]
+}

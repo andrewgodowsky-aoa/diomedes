@@ -1,0 +1,50 @@
+{
+ "loaderOverrides": [],
+ "schemaSha256": "9ddf989729b79ffd98f9cf49a160fccd848f5c5565d3ee2a30f7b40238181e6b",
+ "reference": {
+  "component": "node:sqlite",
+  "version": "3.51.3",
+  "objects": 48
+ },
+ "candidate": {
+  "component": "@tursodatabase/database",
+  "version": "0.8.2",
+  "objects": 48
+ },
+ "onlyInCandidate": [],
+ "onlyInReference": [],
+ "sqlTextDiffers": [
+  "table:memory_acknowledgements",
+  "table:memory_aliases",
+  "table:memory_commands",
+  "table:memory_conflict_claims",
+  "table:memory_dependencies",
+  "table:memory_entity_links",
+  "table:memory_entries",
+  "table:memory_events",
+  "table:memory_heads",
+  "table:memory_schema",
+  "table:memory_scopes",
+  "table:memory_sources",
+  "trigger:memory_ack_monotonic",
+  "trigger:memory_aliases_immutable_delete",
+  "trigger:memory_aliases_immutable_update",
+  "trigger:memory_commands_immutable_delete",
+  "trigger:memory_commands_immutable_update",
+  "trigger:memory_conflict_claims_immutable_delete",
+  "trigger:memory_conflict_claims_immutable_update",
+  "trigger:memory_dependencies_immutable_delete",
+  "trigger:memory_dependencies_immutable_update",
+  "trigger:memory_entity_links_immutable_delete",
+  "trigger:memory_entity_links_immutable_update",
+  "trigger:memory_entries_immutable_delete",
+  "trigger:memory_entries_immutable_update",
+  "trigger:memory_epochs_monotonic",
+  "trigger:memory_events_immutable_delete",
+  "trigger:memory_events_immutable_update",
+  "trigger:memory_schema_immutable_delete",
+  "trigger:memory_schema_immutable_update",
+  "trigger:memory_sources_immutable_delete",
+  "trigger:memory_sources_immutable_update"
+ ]
+}

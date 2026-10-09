@@ -1,0 +1,29 @@
+{
+ "platform": "win32-x64",
+ "loaderOverrides": [],
+ "credentialsRemoved": [
+  "NECTOVIA_PROBE_TOKEN"
+ ],
+ "credentialsDuringRun": [],
+ "localDatabase": {
+  "ok": true,
+  "value": {
+   "lookup": "kept on this computer"
+  },
+  "networkAttempts": []
+ },
+ "syncWithNoRemote": {
+  "ok": true,
+  "value": {
+   "lookup": "kept on this computer"
+  },
+  "networkAttempts": []
+ },
+ "syncDefaultBootstrap": {
+  "ok": false,
+  "error": "sync engine operation failed: database sync engine error: fetch error: TypeError: fetch failed: the network is refused for this check",
+  "networkAttempts": [
+   "fetch https://nectovia-probe.invalid/pull-updates"
+  ]
+ }
+}
