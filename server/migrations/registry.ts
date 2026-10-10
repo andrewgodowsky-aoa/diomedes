@@ -56,6 +56,21 @@ export const HARNESS_RUN = family({
   reader: { file: 'server/harness/run-store.ts', throughFramework: true },
 });
 
+/** W01's separate SQLite ledger. It never migrates the existing run store. */
+export const MEMORY_LEDGER = family({
+  id: 'memory-ledger',
+  title: 'memory ledger database',
+  location: 'memory/ledger.sqlite',
+  versionField: 'user_version',
+  ...single,
+  unversioned: null,
+  reader: {
+    file: 'server/memory/local-store.ts',
+    throughFramework: false,
+    note: 'SQLite header and schema checks refuse unknown/newer versions. Only an empty database initializes v1; upgrades require explicit transactional migrations and retained backups.',
+  },
+});
+
 export const AUTOMATION_OCCURRENCES = family({
   id: 'automation-occurrences',
   title: 'automation record',
@@ -177,6 +192,7 @@ const own = (id: string, title: string, location: string, versionField: string, 
   });
 
 export const DURABLE_FAMILIES: readonly DurableFamily[] = Object.freeze([
+  MEMORY_LEDGER,
   SETTINGS,
   PROJECT_STATE,
   HARNESS_RUN,

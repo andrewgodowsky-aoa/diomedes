@@ -1,0 +1,41 @@
+{
+  "feature": "memory-ledger",
+  "promptId": "NC-MEM-LC-2026-10-06.1/W01",
+  "issue": "DIO-228",
+  "branch": "feature/memory-ledger",
+  "worktree": "F:/Diomedes/diomedes-wt/memory-ledger",
+  "currentMainAtStart": "710a8c1f3b86cb6cbf82996ba9ad46869c03a1fb",
+  "reviewedW00Dependency": "b9ffd6eebaf6ebd552f488be2dffc893f73ead24",
+  "base": "063035ed9feee446352dbf445208577d021c71d4",
+  "baseMeaning": "Local merge of current main and reviewed W00 draft PR241. W00 remains unmerged upstream. Current main changed canonical synchronization documentation only since W00's executable baseline.",
+  "owner": "primary Codex architect",
+  "claims": ["claim_muwj0kw7_d2f36c88", "claim_muwja6yq_6920417c"],
+  "mainAtHandoffInspection": "6a0ec1cedc66d1163f4dc5e21974971c3ae19c2b",
+  "mainDrift": "PR243 Work view changes arrived after source authoring began. No W01 candidate path overlap in the inspected diff. Not integrated or tested with this candidate; reconcile before validation.",
+  "authorization": "User asked W01 to begin and not be tested because other heavy tests are running or expected.",
+  "testExecution": "DID_NOT_RUN",
+  "testsPassed": 0,
+  "testsFailed": 0,
+  "testsSkipped": 0,
+  "authoredUnrunCases": 85,
+  "authoredCaseCountMethod": "Static inventory, not Vitest discovery",
+  "redEvidence": "DID_NOT_RUN; authored regression expectations are not executed RED evidence",
+  "heavySlotRequested": false,
+  "deployment": "Not authorized or attempted",
+  "runtimeActivation": "No active profile, existing RunStore or production startup wiring changed",
+  "delegation": {
+    "authorization": "User explicitly authorized native Astra subagents in this task",
+    "route": "OpenAI/gpt-6-astra via native Codex, high effort, existing Codex account pool",
+    "availability": "Current spawn_agent advertised inventory; context limit not advertised; bounded briefs",
+    "fallbacks": [],
+    "lanes": {
+      "parent": "Ledger contracts, service, integration, source reconciliation and final record",
+      "memory_sqlite": "local-store.ts and schema.ts; production adapter implementation, no execution",
+      "memory_ledger_tests": "Ledger/recovery tests and fixtures only; no execution",
+      "regression_reconciliation": "Independent read-only authority/recovery review; no execution"
+    }
+  },
+  "localAcceptance": false,
+  "mergedCompletion": false,
+  "canonicalDivergenceOwner": "DIO-222"
+}
