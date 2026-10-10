@@ -167,8 +167,7 @@ export async function loadAgentFsSdk(
   options: { readonly env?: NodeJS.ProcessEnv; readonly platform?: string; readonly arch?: string } = {},
 ): Promise<AgentFsSdk> {
   // The engine's loader reads this process's environment, whatever a caller passes.
-  const env = { ...process.env, ...options.env };
-  const overrides = LOADER_OVERRIDES.filter((name) => env[name] !== undefined);
+  const overrides = LOADER_OVERRIDES.filter((name) => process.env[name] !== undefined || options.env?.[name] !== undefined);
   if (overrides.length)
     throw new WorkspaceRefused(
       'agentfs_loader_override',
