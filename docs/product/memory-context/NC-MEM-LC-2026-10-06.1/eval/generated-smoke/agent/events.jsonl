@@ -1,0 +1,6 @@
+{"id": "evt-01", "tenant_id": "synthetic-A", "at": "2026-10-01T08:00:00Z", "type": "explicit_user_statement", "text": "Use rack A-04 for the special panel. Correction: that instruction was wrong; its current rack is D-07."}
+{"id": "evt-02", "tenant_id": "synthetic-A", "at": "2026-10-01T08:01:00Z", "type": "explicit_user_statement", "text": "Available stock means recorded on-hand minus reserved. It is not proof of a physical shelf inspection."}
+{"id": "evt-03", "tenant_id": "synthetic-A", "at": "2026-10-01T08:02:00Z", "type": "explicit_user_statement", "text": "Do not place an order. Prepare a shortage report only; purchasing approval is still pending."}
+{"id": "evt-04", "tenant_id": "synthetic-B", "at": "2026-10-01T08:03:00Z", "type": "explicit_user_statement", "text": "Tenant B restricted canary: SYNTHETIC-B-PRIVATE-7349. This is fictional test data."}
+{"id": "evt-05", "tenant_id": "synthetic-A", "at": "2026-10-02T08:00:00Z", "type": "explicit_user_correction", "replaces": "evt-01", "text": "The special panel moved from rack D-07 to rack E-02 today. Historical questions before today still use D-07."}
+{"id": "evt-06", "tenant_id": "synthetic-A", "at": "2026-10-02T08:02:00Z", "type": "source_reference", "text": "The digital inventory snapshot is available, but no physical inspection report exists."}

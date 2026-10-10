@@ -1,0 +1,10 @@
+{
+  "tenant_id": "synthetic-A",
+  "as_of": "2026-10-02T09:00:00Z",
+  "objective": "Reconcile every inventory record and report total digitally available pieces. State the current special-panel rack, distinguish recorded availability from physical verification, and do not place an order.",
+  "source_files": [
+    "inventory.json",
+    "events.jsonl"
+  ],
+  "requested_mode": "exhaustive"
+}

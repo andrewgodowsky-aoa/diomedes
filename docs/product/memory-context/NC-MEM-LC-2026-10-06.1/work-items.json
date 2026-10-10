@@ -1,0 +1,631 @@
+{
+  "package": "NC-MEM-LC-2026-10-06.1",
+  "work_items": [
+    {
+      "id": "W00",
+      "title": "Reconcile source, ownership and baseline; freeze integration contracts",
+      "depends_on": [],
+      "files": [
+        "docs/implementation/2026-10-06-memory-context-baseline.md",
+        "tests/memory-context-baseline.test.ts",
+        "tests/fixtures/memory-context/",
+        "shared/memory.ts (new contract only after reconciliation)",
+        "shared/continuation.ts (new)"
+      ],
+      "existing": [
+        "AGENTS.md",
+        "docs/DIOMEDES_CORE_PILLARS.md",
+        "docs/DIOMEDES_LIVE_ROADMAP.md",
+        "docs/DIOMEDES_PROJECT_MEMORY.md",
+        "server/harness/context-assembly.ts",
+        "server/harness/native-agent.ts",
+        "server/harness/native-loop.ts",
+        "shared/context-accounting.ts"
+      ],
+      "deliverables": [
+        "Map live main, local worktrees, DIO-23/H18, H11/H13/H09, H20 and active plugin/hooks work. Record conflicts and reuse implemented slices, not old task counts.",
+        "Import this package into docs/product/memory-context/ in an owned worktree only; validate hashes before trusting it. Preserve the archived first pass. Record exact known/current/assumed boundaries.",
+        "Create deterministic two-tenant baseline fixtures and run current selectHistory/compactTurns/prepare behavior. Record the first-sentence correction counterexample without calling it a model hallucination benchmark.",
+        "Map route byte/JSON/token limits, actual supported SQLite packaging driver, cloud schema/migration ownership, budget reservation seams and lifecycle coordination. Commit no dependency or production schema choice without the required source/security review.",
+        "Freeze strict portable contracts and adapters to existing canonical types; distinguish host fields from generated proposals. Reconcile the 262144 JSON length guard, underscore tool names, and current pure prepare contract."
+      ],
+      "tests": [
+        "memory-context-baseline.test.ts",
+        "memory-contracts.test.ts"
+      ],
+      "red": "Add fixtures for late corrections, unknown window, a source epoch change and repeated opaque transcript references. Demonstrate the current limitation or the new contract test failing for the intended missing behavior, not a missing import.",
+      "gate": "A reproducible baseline and interface map exist; every touched hot file has ownership checked. No claim that existing acceptance ledgers are closed.",
+      "boundary": "Read-only source exploration and owned offline tests are allowed. Do not reset another worktree, alter global credentials, launch paid calls or update unrelated canonical text.",
+      "acceptance_ids": [
+        "L01"
+      ],
+      "linear_id": "DIO-227",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-227/nc-mem-lc-w00-reconcile-source-and-freeze-memorycontext-contracts",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W01",
+      "title": "Implement versioned memory ledger and transactional local persistence",
+      "depends_on": [
+        "W00"
+      ],
+      "files": [
+        "shared/memory.ts",
+        "server/memory/store.ts",
+        "server/memory/local-store.ts",
+        "server/memory/service.ts",
+        "tests/memory-ledger.test.ts",
+        "tests/memory-store-recovery.test.ts"
+      ],
+      "existing": [
+        "server/store.ts",
+        "server/harness/run-store.ts",
+        "server/migrations/registry.ts",
+        "server/lock.ts"
+      ],
+      "deliverables": [
+        "Implement strict record/revision/source/dependency entities with expected-revision writes, immutable source links, lifecycle and epistemic status separated.",
+        "Provide a production local storage adapter with transaction tests, bounded file/database growth policies and safe schema upgrades. Store scope and tenant keys on every primary/foreign key path. Do not migrate existing run records.",
+        "Add tenant-scoped entity aliases and explicit conflict records. Temporal valid and recorded intervals preserve historical questions and future-effective policies.",
+        "Implement stable command identity and an outbox/event projection for memory changes, with crash recovery and deterministic read snapshots. No global Store lock spans a model or network call.",
+        "Add backup/readability checks and migration round trips. Rollback must not roll back revocation generations."
+      ],
+      "tests": [
+        "memory-ledger.test.ts",
+        "memory-store-recovery.test.ts",
+        "memory-contracts.test.ts"
+      ],
+      "red": "Show cross-tenant IDs, stale expected revisions and interrupted transactions fail without the ledger protections; then implement only the transaction boundary needed to make them pass.",
+      "gate": "Records survive close/reopen and injected crash points; duplicate commands do not duplicate revisions; no partially visible transaction.",
+      "boundary": "Use isolated local test profiles and disposable stores only. Do not touch the active user profile or silently select an incompatible native dependency.",
+      "acceptance_ids": [
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M08",
+        "M09",
+        "M28",
+        "M29",
+        "M30",
+        "M41",
+        "M42"
+      ],
+      "linear_id": "DIO-228",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-228/nc-mem-lc-w01-versioned-memory-ledger-and-transactional-local",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W02",
+      "title": "Enforce evidence scope, corrections, forgetting and managed-store isolation",
+      "depends_on": [
+        "W01"
+      ],
+      "files": [
+        "server/memory/evidence.ts",
+        "server/memory/access.ts",
+        "server/memory/invalidation.ts",
+        "server/memory/managed-store.ts",
+        "services/control-plane: proposed memory repository/routes after owner mapping",
+        "tests/memory-privacy.test.ts",
+        "tests/memory-forgetting.test.ts"
+      ],
+      "existing": [
+        "server/trust/",
+        "server/discovery/service.ts",
+        "server/workspaces.ts",
+        "server/connection-secrets.ts",
+        "services/control-plane",
+        "server/harness/policy.ts"
+      ],
+      "deliverables": [
+        "Bind principals, organization/location/project scope, source rights and processing policy on the server. Enforce before retrieval, reranking, compaction, prompt assembly and response delivery.",
+        "Add source revision/locator validation and original-span recovery; distinguish asserted/source-supported/live-verified/inferred evidence. Models never set tenant, epoch, approval or verification authority.",
+        "Implement correction/retraction/tombstone commands, synchronous active-record and cache invalidation, transitive derivative invalidation and queue suppression. Minimal non-content tombstones stop resurrection.",
+        "Implement managed PostgreSQL persistence within existing control-plane identity and funding boundaries, with restricted-role tests, composite tenant references and transaction semantics. Allocate the migration number from current source; apply only to disposable databases in this lane.",
+        "Define explicit retention modes and purge/export/backup limitations. Recheck current generations on restore, owner transfer and retained-session use. Preserve deliberate History lifecycle constraints."
+      ],
+      "tests": [
+        "memory-privacy.test.ts",
+        "memory-forgetting.test.ts",
+        "memory-managed-store.test.ts"
+      ],
+      "red": "Inject forbidden vector candidates, revoked source dependencies, stale queued capture and a restored older database; assert no content or metadata escapes and deleted content cannot reactivate.",
+      "gate": "Isolated local and disposable managed-store tests prove the same conformance suite, including restricted runtime roles; live deployment remains separate.",
+      "boundary": "No live migration or data deletion. Do not equate database row security alone with proof of tenant isolation.",
+      "acceptance_ids": [
+        "M02",
+        "M07",
+        "M17",
+        "M18",
+        "M19",
+        "M21",
+        "M22",
+        "M23",
+        "M24",
+        "M33",
+        "M34",
+        "M43",
+        "M44",
+        "M46",
+        "L11"
+      ],
+      "linear_id": "DIO-229",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-229/nc-mem-lc-w02-evidence-scope-corrections-forgetting-and-managed-store",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W03",
+      "title": "Deliver exact/text recall and immutable evidence receipts through the harness",
+      "depends_on": [
+        "W02"
+      ],
+      "files": [
+        "server/memory/retrieval.ts",
+        "server/memory/tools.ts",
+        "server/memory/receipts.ts",
+        "shared/context-accounting.ts",
+        "server/harness/context-assembly.ts",
+        "server/harness/native-agent.ts",
+        "tests/memory-recall.test.ts",
+        "tests/memory-context-receipts.test.ts"
+      ],
+      "existing": [
+        "server/harness/tools.ts",
+        "server/harness/run-service.ts",
+        "server/harness/instruction-delivery.ts",
+        "server/harness/model-session-run.ts"
+      ],
+      "deliverables": [
+        "Implement exact IDs and full-text retrieval first, with deterministic ordering, bounded source snippets, quoted exact clauses and explicit misses/conflicts.",
+        "Register memory_search/memory_read and restricted mutation tools using existing H12 schemas/effect classes. Do not put dots in registered names or classify a remote write as pure to evade current effect rules.",
+        "Make ordinary native turns host-recall eligible; models can request more through tools. Keep retrieval/network/extraction in separate recorded admitted steps before deterministic prepare.",
+        "Add a frozen MemoryUseReceipt and versioned H18 sections for memory/capsule/coverage. Preserve source restrictions and opaque transcript identity through validatePrepared.",
+        "Expose source lookup and citation validation. Claims citing nonexistent/not-delivered IDs fail; historical replay retains exact old context bytes but rechecks present authority."
+      ],
+      "tests": [
+        "memory-recall.test.ts",
+        "memory-context-receipts.test.ts",
+        "memory-tool-contracts.test.ts"
+      ],
+      "red": "A new session misses a saved scoped preference on baseline; the new path must recall it with source/revision receipt. Also fail fabricated citations and stale-epoch replay.",
+      "gate": "One real native model-API path with scripted adapter proves retain/correct/recall/receipt/forget behavior without any hidden network call inside prepare.",
+      "boundary": "Pure preparation is not a free place to call an LLM, database mutation or remote search. Keep existing read-scope limitations explicit.",
+      "acceptance_ids": [
+        "M01",
+        "M10",
+        "M11",
+        "M16",
+        "M37",
+        "M39",
+        "M40",
+        "L27",
+        "L28",
+        "L29"
+      ],
+      "linear_id": "DIO-230",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-230/nc-mem-lc-w03-native-recall-tools-and-immutable-memory-use-receipts",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W04",
+      "title": "Extend H18 with model-aware budgets, continuation capsules and safe compaction",
+      "depends_on": [
+        "W03"
+      ],
+      "files": [
+        "shared/continuation.ts",
+        "server/harness/context-controller.ts",
+        "server/harness/context-budget.ts",
+        "server/harness/continuation.ts",
+        "server/harness/context-compaction.ts",
+        "tests/context-controller.test.ts",
+        "tests/context-rollover.test.ts"
+      ],
+      "existing": [
+        "server/harness/context-assembly.ts",
+        "shared/context-accounting.ts",
+        "server/harness/native-agent.ts",
+        "server/harness/native-loop.ts",
+        "server/lineage-continuity.ts"
+      ],
+      "deliverables": [
+        "Compute bounded input room from native/qualified/configured limits and output/protocol/tool/multimodal reserves. Retain byte/JSON guards separately; unknowns are not infinity.",
+        "Build deterministic capsules from goal, declared checks, exact active constraints, observable progress, unresolved questions, evidence references and runtime effect/approval checkpoints.",
+        "Implement high/low-watermark planning and durable compaction intents. Optional model narrative is separately metered and checked; commit only against unchanged input/authority/deletion epochs and expected capsule revision.",
+        "Preserve tool-call/result pairing and uncertain-effect state across rollover, stop, process restart, task fork and a deliberately reset engine session. Nothing in a capsule grants permission or completes a task.",
+        "Support original-evidence rehydration and periodic rebase rather than unbounded summary-of-summary drift. Failed/null summaries retain the last valid capsule; no fallback route is selected silently."
+      ],
+      "tests": [
+        "context-controller.test.ts",
+        "context-rollover.test.ts",
+        "context-protocol-integrity.test.ts"
+      ],
+      "red": "Force a tiny but declared test context across twenty rollovers; lose a mid-source negation, crash after a tool intent, then revoke a supporting source. Each violated invariant must be caught before implementation.",
+      "gate": "At least twenty scripted rollovers and a hundred-step fixture retain exact critical facts and do not duplicate any uncertain effect; live reasoning quality is still unmeasured.",
+      "boundary": "This extends DIO-23. Do not remove the serialization guard or change opaque transcript state inside prepare. Do not request/store hidden chain-of-thought.",
+      "acceptance_ids": [
+        "M14",
+        "M38",
+        "M45",
+        "L02",
+        "L03",
+        "L04",
+        "L05",
+        "L06",
+        "L07",
+        "L08",
+        "L09",
+        "L10",
+        "L17",
+        "L18"
+      ],
+      "linear_id": "DIO-231",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-231/nc-mem-lc-w04-h18-continuation-capsules-budgets-and-safe-context",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W05",
+      "title": "Implement exhaustive corpus traversal and source-coverage accounting",
+      "depends_on": [
+        "W03",
+        "W04"
+      ],
+      "files": [
+        "shared/coverage.ts",
+        "server/memory/coverage.ts",
+        "server/memory/partitioning.ts",
+        "server/memory/reducers.ts",
+        "tests/context-coverage.test.ts",
+        "tests/context-aggregation.test.ts"
+      ],
+      "existing": [
+        "server/harness/tools.ts",
+        "server/harness/native-loop.ts",
+        "server/task-workflow.ts",
+        "server/outcome-evidence/"
+      ],
+      "deliverables": [
+        "Implement point/contextual/document/exhaustive retrieval modes with host-validated coverage requirements. Explicit all/every/reconcile cannot silently degrade to top-k.",
+        "Create source snapshot manifests, stable partition IDs, expected counts when known, cursors, visited frontiers and result digests. Unknown source cardinality stays partial until enumerated.",
+        "Preserve row/header/units and clause/exception relationships across chunk boundaries. Keep exact row identity separate from overlapping passage context.",
+        "Implement bounded deterministic reducers and duplicate-safe partition results. Reconcile mid-scan source changes and restart from the saved frontier without duplicate effects.",
+        "Connect coverage checks to existing outcome verification and capsule references; final prose cannot override an incomplete manifest."
+      ],
+      "tests": [
+        "context-coverage.test.ts",
+        "context-aggregation.test.ts",
+        "context-source-snapshot.test.ts"
+      ],
+      "red": "A 512-row fixture has crucial records outside the top results and duplicate overlap. The expected exact total must fail a top-k or naive overlapping reducer; resume and source-change variants must also fail unsafely implemented versions.",
+      "gate": "Exact totals match independent deterministic gold, every counted record has an eligible unique source ID, and partial sources never show complete.",
+      "boundary": "No generic unrestricted Python/SQL executor. Use existing mediated tools and sandbox contracts; source APIs without snapshot guarantees must disclose observation intervals.",
+      "acceptance_ids": [
+        "L19",
+        "L20",
+        "L21",
+        "L22",
+        "L23",
+        "L24",
+        "L25",
+        "L26"
+      ],
+      "linear_id": "DIO-232",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-232/nc-mem-lc-w05-exhaustive-corpus-coverage-and-duplicate-safe",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W06",
+      "title": "Qualify model/engine continuity adapters, caching and complete compaction metering",
+      "depends_on": [
+        "W04"
+      ],
+      "files": [
+        "shared/route-capabilities.ts",
+        "server/harness: existing provider adapters",
+        "server/memory/engine-port.ts",
+        "tests/context-adapter-conformance.test.ts",
+        "tests/context-compaction-usage.test.ts"
+      ],
+      "existing": [
+        "server/harness/model-transcripts.ts",
+        "server/harness/model-api-adapter.ts",
+        "server/harness/aws-model-adapter.ts",
+        "server/harness/claude-session-run.ts",
+        "server/harness/codex-session-run.ts",
+        "server/managed-usage.ts"
+      ],
+      "deliverables": [
+        "Define capability support for portable memory delivery, native opaque compaction, token counting, reset, cancellation and actual usage. Unsupported and unverified are distinct.",
+        "Implement provider-specific optional compaction only where the exact route supports it. Preserve full standalone output where required; never send opaque state to another provider.",
+        "Account all compaction/extraction/rerank/embedding iterations without double-counting top-level totals, preserve uncertain charges, and use the existing reserve/settle authority.",
+        "Scope context caches by tenant/visibility/epochs/snapshot/serializer/provider model. Keep stable instructions separate from dynamic evidence. Test cache on/off behavior rather than assuming prompt reuse.",
+        "Deliver permitted portable evidence to supported external engines through actual interfaces; test session retirement and rebuild on access reduction, model switch or incompatible update."
+      ],
+      "tests": [
+        "context-adapter-conformance.test.ts",
+        "context-compaction-usage.test.ts",
+        "context-cache-invalidation.test.ts"
+      ],
+      "red": "Use synthetic provider envelopes with top-level usage excluding compaction iterations, null compaction content, opaque items and stale sessions. Reject missing accounting and invalid continuation.",
+      "gate": "Contract fixtures pass for each supported adapter; real provider/installed-engine tests are separately budgeted and reported, never inferred from mocked responses.",
+      "boundary": "No new paid API calls or credential copying by default. Do not change account routing or privacy floors. Use official current docs and capture their date/version in the adapter evidence.",
+      "acceptance_ids": [
+        "M20",
+        "L12",
+        "L13",
+        "L14",
+        "L15",
+        "L16"
+      ],
+      "linear_id": "DIO-233",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-233/nc-mem-lc-w06-engine-adapters-context-caching-and-complete-compaction",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W07",
+      "title": "Implement Agent Memory Repo round trips and scoped plugin access",
+      "depends_on": [
+        "W03"
+      ],
+      "files": [
+        "server/memory/interop/agent-memory-repo.ts",
+        "server/memory/interop/import-policy.ts",
+        "tests/memory-interop.test.ts",
+        "tests/memory-hostile-import.test.ts",
+        "docs/product/memory-context/upstream-adoption.md"
+      ],
+      "existing": [
+        "server/pack-contributions.ts",
+        "server/pack-lifecycle.ts",
+        "server/paths.ts",
+        "server/harness/tools.ts"
+      ],
+      "deliverables": [
+        "Pin and verify upstream spec/skill/license. Implement required entry point, topic notes, wikilinks and optional metadata without copying its runtime assumptions.",
+        "Export authorized current-state projections with stable Nectovia sidecar IDs/revisions/digests. No organization-wide dump or hidden historical Git export by default.",
+        "Treat imports and outside edits as source-attributed candidates with expected-base conflicts. Do not trust imported policy/tenant/verification fields.",
+        "Limit import count/bytes/depth, resolve platform paths safely, and refuse symlink traversal, hook/submodule execution, active URLs and query/script execution.",
+        "Expose least-privilege memory capabilities to the existing plugin system. Installing a pack neither enables source retention nor grants account-wide memory access."
+      ],
+      "tests": [
+        "memory-interop.test.ts",
+        "memory-hostile-import.test.ts",
+        "memory-plugin-scope.test.ts"
+      ],
+      "red": "Round-trip a two-scope fixture and edit an export after a concurrent correction. Reject stale mutation and malicious wikilinks/Windows alias escapes.",
+      "gate": "Interop preserves supported meaning and provenance with explicit unsupported fields; unsafe inputs execute nothing and no hidden source is exported.",
+      "boundary": "No private remote is created or pushed automatically. Preserve MIT notices for any actual copied upstream material and record exact revisions.",
+      "acceptance_ids": [
+        "M25",
+        "M26",
+        "M27",
+        "L30",
+        "L31"
+      ],
+      "linear_id": "DIO-234",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-234/nc-mem-lc-w07-agent-memory-repo-interoperability-and-scoped-plugin",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W08",
+      "title": "Add governed observational capture and bounded Dreaming maintenance",
+      "depends_on": [
+        "W02",
+        "W03",
+        "W04"
+      ],
+      "files": [
+        "server/memory/capture.ts",
+        "server/memory/consolidation.ts",
+        "server/harness/capabilities/memory-maintenance.ts",
+        "tests/memory-maintenance.test.ts",
+        "tests/memory-promotion.test.ts"
+      ],
+      "existing": [
+        "server/guidance.ts",
+        "server/task-skills.ts",
+        "server/automation-scheduler.ts",
+        "server/automations.ts",
+        "server/harness/run-service.ts",
+        "server/rehearsal/"
+      ],
+      "deliverables": [
+        "Add opt-in incremental observation extraction with source watermarks, idempotent queue entries, qualified route selection and bounded repair.",
+        "Implement dirty-scope consolidation as an existing Runtime/Automations capability, not a second scheduler. Check host ownership, current unattended authority, entitlement and budgets each run.",
+        "Propose deduplication, temporal conflict links and private procedural improvements. Ground all candidates in original evidence; repeated generated summaries never add independent support.",
+        "Promote meaning-preserving changes under an explicitly configured standing policy; route procedural changes to existing guidance/skill review, replay, monitoring and rollback.",
+        "Yield to foreground work, cap batches and local concurrency, stop/resume safely, and block deletion resurrection after late extraction responses."
+      ],
+      "tests": [
+        "memory-maintenance.test.ts",
+        "memory-promotion.test.ts",
+        "memory-maintenance-scheduler.test.ts"
+      ],
+      "red": "A correction/forget arrives while consolidation is in flight; a model proposes permission expansion and a summary cites itself. All must be refused without corrupting the last valid state.",
+      "gate": "Dirty-set runs are repeatable, bounded and attributable; scheduling or a positive model judgment never promotes an operational permission.",
+      "boundary": "The current scheduler is single-host. Do not claim maintenance occurs while the host is off or fund automated work through a personal bought-credit exception.",
+      "acceptance_ids": [
+        "M12",
+        "M13",
+        "M15",
+        "M31",
+        "M32",
+        "M36",
+        "M47",
+        "L32",
+        "L33",
+        "L34"
+      ],
+      "linear_id": "DIO-235",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-235/nc-mem-lc-w08-governed-capture-and-bounded-dreaming-maintenance",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W09",
+      "title": "Add temporal relationships and optional hybrid retrieval behind evaluation gates",
+      "depends_on": [
+        "W03",
+        "W05"
+      ],
+      "files": [
+        "server/memory/graph.ts",
+        "server/memory/embeddings.ts",
+        "server/memory/reranking.ts",
+        "tests/memory-hybrid.test.ts",
+        "tests/memory-index-migration.test.ts"
+      ],
+      "existing": [
+        "server/harness: ModelAdapter/route interfaces",
+        "server/evaluation/",
+        "server/harness/evaluation-adapter.ts"
+      ],
+      "deliverables": [
+        "Implement tenant-scoped entity/edge relations with explicit support/contradiction/supersession/dependency semantics. Access checks apply before traversal and visible graph statistics.",
+        "Add replaceable embedding and reranking providers through existing allowed routes. Store embedding model/version/dimension/index generation and source epochs.",
+        "Implement bounded keyword/vector union, reranking and limited relationship expansion with deterministic tie-breaking, quotas and original-source recovery.",
+        "Provide rebuild/cutover and rollback of indexes without changing canonical records or final-answer model requirements. Exact/text retrieval remains a working fallback.",
+        "Run approved paired ablations; enable hybrid only for qualified task profiles with measured benefit. A negative result disables the accelerator, not basic memory."
+      ],
+      "tests": [
+        "memory-hybrid.test.ts",
+        "memory-index-migration.test.ts",
+        "memory-graph-isolation.test.ts"
+      ],
+      "red": "Inject wrong-dimension vectors, revoked graph neighbors, repeated self-support and unavailable embedding service; prove safe behavior without cross-tenant or silent cloud fallback.",
+      "gate": "Deterministic conformance and migration tests pass; real-model benefit/cost evidence is separately recorded before choosing a default.",
+      "boundary": "Do not add a dedicated graph database or new model service merely to meet the feature name. Local generation must not hide cloud embeddings.",
+      "acceptance_ids": [
+        "M35",
+        "L35",
+        "L36",
+        "L37"
+      ],
+      "linear_id": "DIO-236",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-236/nc-mem-lc-w09-temporal-relationships-and-measured-hybrid-retrieval",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W10",
+      "title": "Complete Console controls, shared-service operations and opt-in rollout",
+      "depends_on": [
+        "W02",
+        "W03",
+        "W04",
+        "W05",
+        "W06",
+        "W07",
+        "W08"
+      ],
+      "files": [
+        "client/console: existing inspector/settings surfaces after ownership mapping",
+        "server/memory/routes.ts",
+        "services/control-plane: memory API integration",
+        "tests/memory-console.spec.ts",
+        "docs/product/memory-context/operations.md"
+      ],
+      "existing": [
+        "client/console/",
+        "server/workspace-routes.ts",
+        "server/observability/",
+        "server/organization-export.ts",
+        "server/support-bundle.ts"
+      ],
+      "deliverables": [
+        "Ship memory/source/period/conflict inspector and edit/forget/export controls in the one Console. Show unknown, partial, stale, unverified and permission-denied states honestly.",
+        "Add task context budget/omission/capsule/coverage/receipt views, with readable scope and actor attribution. Do not resurrect a retired History UI as an unapproved parallel surface.",
+        "Implement source-retention/egress and unattended-maintenance controls distinct from full-computer file permissions. Preserve Free/Individual/Business boundaries and existing billing decisions.",
+        "Integrate managed API identity, rate/size quotas, current permissions, offline cache limitations, backup/restore, purge and offboarding with existing control plane.",
+        "Instrument metadata-only analytics, redact support bundles, mask sensitive replay, provide kill switches and bounded opt-in rollout/recovery runbooks."
+      ],
+      "tests": [
+        "memory-console.spec.ts",
+        "memory-routes.test.ts",
+        "memory-observability.test.ts",
+        "memory-offboarding.test.ts"
+      ],
+      "red": "Drive UI/API fixtures with hidden source titles, revoked access, unavailable indexes, failed export and queued forget. The UI must not imply saved/complete/verified states without records.",
+      "gate": "Browser and route tests prove core user controls and no content leakage in logs/replay/export; hosted and physical-device qualification remain explicitly separate.",
+      "boundary": "No production rollout or broader sharing. Add no pricing gates or automatic full-disk ingestion. Existing appearance and Console contracts govern design.",
+      "acceptance_ids": [
+        "M48",
+        "L43",
+        "L44",
+        "L45"
+      ],
+      "linear_id": "DIO-237",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-237/nc-mem-lc-w10-console-memory-controls-observability-and-rollout",
+      "publication_status": "created-backlog"
+    },
+    {
+      "id": "W11",
+      "title": "Run complete acceptance, comparative evaluation and platform release qualification",
+      "depends_on": [
+        "W00",
+        "W01",
+        "W02",
+        "W03",
+        "W04",
+        "W05",
+        "W06",
+        "W07",
+        "W08",
+        "W09",
+        "W10"
+      ],
+      "files": [
+        "tests/memory-context-acceptance.test.ts",
+        "scripts/eval-memory-context.ts (new adapter to existing H20 runner)",
+        "evidence/memory-context/",
+        "docs/implementation/2026-10-06-memory-context-acceptance.md"
+      ],
+      "existing": [
+        "server/evaluation/",
+        "server/harness/evaluation-adapter.ts",
+        "tests/",
+        "evidence/release-candidates/",
+        "docs/harness/RUNTIME_VERIFICATION.md"
+      ],
+      "deliverables": [
+        "Map all M01\u2013M48 and L01\u2013L48 to actual assertions and evidence. No checklist-only closure or copied counts from old runs.",
+        "Run identical harness/model/configuration ablations, including current H18, genuine fit-only full context, AMR notes, exact/text, capsules, hybrid and consolidation. Separate indexing/maintenance from question time and prohibit label leakage.",
+        "Use synthetic cross-industry episodes plus approved/pinned RULER/LongMemEval/V2 tracks. Report correctness, abstention, constraint retention, coverage, source support, privacy, repeated effects, latency and all-in cost.",
+        "Qualify Windows and macOS packaging/local stores, actual supported external engines and authorized hosted routes. Record unavailable credentials/hardware as unverified, not passed.",
+        "Reconcile feature/Linear/Notion states and proposed focused canonical amendment with source evidence; prepare reviewable release notes and opt-in rollback. Publishing requires separate actual authorization."
+      ],
+      "tests": [
+        "memory-context-acceptance.test.ts",
+        "memory-context-model-eval (budgeted)",
+        "memory-console.spec.ts"
+      ],
+      "red": "Mutation tests must break removal of epoch checks, coverage completion rules, compaction usage accounting and exact constraint retention. A suite that stays green after these mutations is not sufficient.",
+      "gate": "Every required feature is built and every claimed route/platform has fresh evidence, or the scope is explicitly narrowed in the release matrix. Neither research nor a scripted success proves model reasoning.",
+      "boundary": "Do not download giant benchmarks, spend AWS credits or call teachers by default. No public superiority claim until statistically supported within a named tested scope.",
+      "acceptance_ids": [
+        "L38",
+        "L39",
+        "L40",
+        "L41",
+        "L42",
+        "L46",
+        "L47",
+        "L48"
+      ],
+      "linear_id": "DIO-238",
+      "state": "planned-not-implemented",
+      "linear_url": "https://linear.app/diomedesdevs/issue/DIO-238/nc-mem-lc-w11-full-memorycontext-evaluation-and-release-qualification",
+      "publication_status": "created-backlog"
+    }
+  ]
+}

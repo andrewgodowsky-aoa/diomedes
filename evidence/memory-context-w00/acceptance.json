@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "package": "NC-MEM-LC-2026-10-06.1",
+  "slice": "W00",
+  "scope": "Owned offline contract and current-source baseline; not customer, provider or release acceptance",
+  "executionBase": "30b35903ffffbd02eb987e534966405fe7bcec3d",
+  "composedGateBase": "c02ddac80a48e2ee247d72d6e172ad754e2c1286",
+  "sourceDrift": "Only canonical documentation changed between execution and composed-gate bases",
+  "matrix": [
+    {
+      "id": "L01",
+      "status": "local-pass",
+      "testFile": "tests/memory-context-baseline.test.ts",
+      "assertions": [
+        "262144 is the inclusive serialized UTF-16 code-unit guard, even with a million-token declaration",
+        "Unicode and JSON escaping distinguish serialized units from bytes and estimates",
+        "unknown native window and unknown usage remain unknown in the real account"
+      ],
+      "evidence": "green-vitest.json",
+      "boundary": "Existing validation and accounting paths; no live provider window qualification"
+    }
+  ],
+  "remainingPackageCases": {
+    "count": 95,
+    "status": "not-accepted-by-W00",
+    "reason": "Future slices own the remaining matrix cases. Current loss observations contribute development evidence without claiming rollover, memory or effect recovery acceptance."
+  },
+  "investigation": {
+    "issue": "DIO-239",
+    "status": "source-level-reproduced",
+    "customerIncident": false,
+    "modelReasoningEvaluated": false,
+    "productionFixImplemented": false,
+    "red": {
+      "report": "red-final-vitest.json",
+      "observations": "baseline-red-observations.json",
+      "exitCode": 1,
+      "passed": 12,
+      "failed": 9,
+      "skipped": 0,
+      "unrun": 0,
+      "failureReason": "All nine failures are exact correction or exception absent from selected or dispatched context",
+      "selectorCompactorCases": 6,
+      "actualDriverDispatchCases": 3
+    },
+    "green": {
+      "report": "green-vitest.json",
+      "observations": "baseline-current-observations.json",
+      "exitCode": 0,
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "unrun": 0,
+      "baselineTests": 21,
+      "contractTests": 49,
+      "meaning": "Current limitation characterization plus source preservation, authority, replay, limits and strict contract controls; not a compaction fix"
+    },
+    "excludedAttempts": [
+      { "report": "red-vitest.json", "reason": "Missing ai dependency; zero tests collected" },
+      { "report": "red-source-vitest.json", "reason": "Six intended RED failures and three invalid immutable-wait assertions; superseded by final repaired run" }
+    ]
+  },
+  "storageCapability": {
+    "driver": "node:sqlite",
+    "adopted": false,
+    "host": { "evidence": "sqlite-host-node.log", "passed": 4, "failed": 0, "node": "22.23.2", "sqlite": "3.51.3" },
+    "electron": { "evidence": "sqlite-electron-probe.json", "passed": 4, "failed": 0, "electron": "44.2.0", "node": "24.20.0", "sqlite": "3.53.4" },
+    "platform": "win32/x64",
+    "qualificationUnrun": ["packaged-app", "persistence and crash recovery", "macOS arm64"],
+    "boundary": "In-memory synthetic feature probes only; W01 retains dependency/security and packaging qualification"
+  },
+  "packageIntegrity": { "passed": 142, "failed": 0, "optionalSchemaChecksUnrun": 6, "reason": "Existing Python environments lack jsonschema; no dependency installed" },
+  "repositoryGates": {
+    "typescript": { "status": "passed", "exitCode": 0, "record": "typescript-execution.json" },
+    "firstFullSuiteAttempt": {
+      "status": "interrupted-unresolved",
+      "log": "full-vitest.log",
+      "exitCode": null,
+      "finalReport": null,
+      "cause": "unknown; exec session unavailable and process absent before any final report",
+      "counts": null
+    },
+    "fullSuiteRerun": { "status": "passed", "workers": 2, "exitCode": 0, "passed": 10223, "failed": 0, "skipped": 5, "todo": 0, "files": 603, "record": "unit-execution.json", "report": "full-final-vitest.json", "overlapsFocusedSuite": true },
+    "skippedConditions": [
+      { "count": 1, "file": "tests/conversation-engines.test.ts", "reason": "Cursor-only signed-out assertion omitted for Devin parameter" },
+      { "count": 2, "file": "tests/dev-server-guard-platform.test.ts", "reason": "Unix process-table checks skipped on Windows" },
+      { "count": 1, "file": "tests/paths.test.ts", "reason": "No readable temporary-volume 8.3 alias returned by the detector; does not prove volume configuration" },
+      { "count": 1, "file": "tests/sign-in-recheck-wiring.test.ts", "reason": "Unsupported-console-platform case skipped on Windows" }
+    ],
+    "build": { "status": "passed", "exitCode": 0, "record": "build-execution.json", "warning": "Chunks larger than 500 kB after minification" },
+    "browser": { "status": "passed", "exitCode": 0, "passed": 36, "failed": 0, "skipped": 0, "flaky": 0, "files": 3, "workers": 1, "record": "browser-execution.json", "report": "playwright.json", "ports": [5184, 47642, 47644], "schedulingException": "parallel-validation-authorization.json" }
+  },
+  "localW00Acceptance": "passed-independent-review",
+  "mergedCompletion": false,
+  "publicationCheckpoint": "Pre-publication; remote CI, merge and deployment are not established by local gate results",
+  "w01Started": false,
+  "canonicalDivergenceOwner": "DIO-222",
+  "trackerMutationsAtLocalAcceptance": 1,
+  "trackerChange": { "issue": "DIO-227", "from": "Backlog", "to": "In Progress", "confirmedAt": "2026-10-06T09:26:51.798Z", "otherFieldsChanged": false }
+}

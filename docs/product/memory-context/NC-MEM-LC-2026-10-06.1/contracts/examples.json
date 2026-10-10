@@ -1,0 +1,157 @@
+[
+  {
+    "v": 1,
+    "id": "synthetic-memory-1",
+    "revision": 1,
+    "tenantId": "synthetic-A",
+    "workspaceId": "synthetic-personal-A",
+    "accessEpoch": 1,
+    "deletionEpoch": 0,
+    "createdAt": "2026-10-06T00:00:00Z",
+    "recordType": "memory",
+    "kind": "preference",
+    "body": "Use concise operational summaries.",
+    "lifecycle": "active",
+    "epistemic": "asserted",
+    "scopeRef": "synthetic-scope-1",
+    "restrictionsRef": "local-only",
+    "sources": [
+      {
+        "sourceId": "synthetic-source-1",
+        "revision": "1",
+        "locator": "message:1",
+        "sourceType": "message",
+        "contentSha256": null,
+        "observedAt": "2026-10-06T00:00:00Z",
+        "accessPolicyRef": "synthetic-policy-1",
+        "restrictionsRef": "local-only"
+      }
+    ],
+    "validFrom": null,
+    "validTo": null,
+    "dependencies": [],
+    "retentionClass": "user-selected"
+  },
+  {
+    "v": 1,
+    "id": "synthetic-capsule-1",
+    "revision": 1,
+    "tenantId": "synthetic-A",
+    "workspaceId": "synthetic-personal-A",
+    "accessEpoch": 1,
+    "deletionEpoch": 0,
+    "createdAt": "2026-10-06T00:00:00Z",
+    "recordType": "capsule",
+    "taskId": "task-1",
+    "runId": "run-1",
+    "sourceSnapshotId": "snapshot-1",
+    "goal": "Prepare a report without sending it.",
+    "constraints": [
+      {
+        "text": "Do not send the report.",
+        "sources": [
+          {
+            "sourceId": "synthetic-source-1",
+            "revision": "1",
+            "locator": "message:1",
+            "sourceType": "message",
+            "contentSha256": null,
+            "observedAt": "2026-10-06T00:00:00Z",
+            "accessPolicyRef": "synthetic-policy-1",
+            "restrictionsRef": "local-only"
+          }
+        ]
+      }
+    ],
+    "runtimeStateRefs": [
+      "run-1/step-2"
+    ],
+    "memoryRevisionRefs": [
+      "synthetic-memory-1@1"
+    ],
+    "openQuestions": [
+      "No physical inspection evidence is available."
+    ],
+    "nextIntentions": [
+      "Read the remaining authorized records."
+    ],
+    "coverageRefs": [
+      "coverage-1"
+    ],
+    "previousRevision": null,
+    "continuationIndex": 0
+  },
+  {
+    "v": 1,
+    "id": "synthetic-receipt-1",
+    "revision": 1,
+    "tenantId": "synthetic-A",
+    "workspaceId": "synthetic-personal-A",
+    "accessEpoch": 1,
+    "deletionEpoch": 0,
+    "createdAt": "2026-10-06T00:00:00Z",
+    "recordType": "memory-use",
+    "runId": "run-1",
+    "stepId": "context-1",
+    "sourceSnapshotId": "snapshot-1",
+    "memoryRevisionRefs": [
+      "synthetic-memory-1@1"
+    ],
+    "sources": [
+      {
+        "sourceId": "synthetic-source-1",
+        "revision": "1",
+        "locator": "message:1",
+        "sourceType": "message",
+        "contentSha256": null,
+        "observedAt": "2026-10-06T00:00:00Z",
+        "accessPolicyRef": "synthetic-policy-1",
+        "restrictionsRef": "local-only"
+      }
+    ],
+    "compilerVersion": "synthetic-compiler/1",
+    "renderedSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "tokenCountQuality": "estimated",
+    "estimatedTokens": 80,
+    "reportedTokens": null,
+    "omissions": []
+  },
+  {
+    "v": 1,
+    "id": "synthetic-coverage-1",
+    "revision": 1,
+    "tenantId": "synthetic-A",
+    "workspaceId": "synthetic-personal-A",
+    "accessEpoch": 1,
+    "deletionEpoch": 0,
+    "createdAt": "2026-10-06T00:00:00Z",
+    "recordType": "coverage",
+    "taskId": "task-1",
+    "runId": "run-1",
+    "sourceSnapshotId": "snapshot-1",
+    "mode": "exhaustive",
+    "expectedItems": 10,
+    "completedItems": 0,
+    "status": "partial",
+    "partitions": [
+      {
+        "id": "p-1",
+        "sourceRevision": "1",
+        "state": "pending",
+        "resultSha256": null,
+        "recordIds": []
+      }
+    ],
+    "reducerVersion": "sum-integer/1"
+  },
+  {
+    "kind": "fact",
+    "body": "The explicit statement has a later correction.",
+    "sourceLocators": [
+      {
+        "sourceId": "synthetic-source-1",
+        "locator": "message:1"
+      }
+    ]
+  }
+]

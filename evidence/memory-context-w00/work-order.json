@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "feature": "memory-context-contracts",
+  "promptId": "NC-MEM-LC-2026-10-06.1/W00",
+  "issue": "DIO-227",
+  "investigation": "DIO-239",
+  "branch": "feature/memory-context-contracts",
+  "worktree": "F:/Diomedes/diomedes-wt/memory-context-contracts",
+  "initialBase": "9f14078eef3d864f4c2569ac61ce791577cf8b2c",
+  "base": "c02ddac80a48e2ee247d72d6e172ad754e2c1286",
+  "focusedExecutionBase": "30b35903ffffbd02eb987e534966405fe7bcec3d",
+  "preTestDrift": "Fast-forwarded PR239 Console changes. Reconciled harness/shared memory dependencies/control-plane/package files unchanged.",
+  "composedGateDrift": "Fast-forwarded PR240 canonical documentation only. All executable source and tests unchanged.",
+  "owner": "primary Codex architect",
+  "claim": "claim_muwea9i0_074bd432",
+  "scope": "W00 reconciliation, strict portable contracts, owned offline actual-harness baselines and independent review. No W01 implementation.",
+  "w01Started": false,
+  "canonicalDivergenceOwner": "DIO-222",
+  "delegation": {
+    "authorization": "User explicitly authorized Astra subagents during this task",
+    "role": "bounded source investigation, implementation and independent review",
+    "model": "gpt-6-astra",
+    "provider": "OpenAI",
+    "harness": "native Codex subagents",
+    "effort": "high",
+    "availabilityCheck": "Current advertised spawn_agent model and effort inventory",
+    "authPool": "Existing Codex account pool",
+    "contextLimit": "Not advertised; bounded briefs used",
+    "toolAccess": "Inherited tools, narrowed per brief",
+    "fallbacks": [],
+    "boundaries": {
+      "source_reconciliation": "Source map only; independent read-only baseline fixture review",
+      "regression_reconciliation": "Local regression metadata register only; independent read-only parent contract review",
+      "baseline_reproduction": "tests/memory-context-baseline.test.ts, tests/fixtures/memory-context/baseline.ts and baseline evidence only",
+      "parent": "Contracts, contract tests, final reconciliation, test execution and acceptance"
+    }
+  },
+  "package": {
+    "source": "F:/Diomedes/NC-MEM-LC-2026-10-06.1.zip",
+    "sha256": "f7e4584fecc966bdb103ce012383ebc1850868d6bf799b9c4f2f7261a56379b7",
+    "originalFiles": 57,
+    "baseChecksPassed": 142,
+    "baseChecksFailed": 0,
+    "optionalSchemaChecksUnrun": 6,
+    "optionalSchemaReason": "jsonschema not installed; no dependency installed"
+  },
+  "verification": "Focused RED 9 failed/12 passed; GREEN 70 passed. TypeScript and build passed. Full unit run 10223 passed/0 failed/5 skipped. Required browser run 36 passed/0 failed/0 skipped/0 flaky. All implementation hashes match. Independent bounded review accepted.",
+  "schedulingException": "User authorized remaining tests now if possible. Build/browser ran with separate worktree outputs, data, dependency cache and ports; see parallel-validation-authorization.json. No foreign slot was changed.",
+  "localAcceptance": "passed",
+  "acceptedMeaning": "Merged prompt completion; local qualification alone does not set accepted true",
+  "accepted": false
+}

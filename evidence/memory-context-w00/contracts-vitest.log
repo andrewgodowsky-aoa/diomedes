@@ -1,0 +1,11 @@
+
+ RUN  v3.2.7 F:/Diomedes/diomedes-wt/memory-context-contracts
+
+ ✓ tests/memory-contracts.test.ts (49 tests) 21ms
+
+ Test Files  1 passed (1)
+      Tests  49 passed (49)
+   Start at  04:32:48
+   Duration  814ms (transform 67ms, setup 0ms, collect 204ms, tests 21ms, environment 0ms, prepare 114ms)
+
+JSON report written to F:/Diomedes/diomedes-wt/memory-context-contracts/evidence/memory-context-w00/contracts-vitest.json

@@ -1,0 +1,16 @@
+{
+  "kind": "synthetic-fixture-only",
+  "seed": 42,
+  "rows": 512,
+  "files": {
+    "evaluator/perturbations.json": "2e041affa7160ba2a1a0b95fd0887749106622357916d6ab30a84338844050ea",
+    "evaluator/gold.json": "8af02fb012e61616ef75879ff26d5bc4fff17489ec3d48aecfa444400d9c0f2a",
+    "agent/task.json": "72733c55b98ce4b0a1a3b8eeb1ffc3fdc9c4cca06ecfd170ed4ce7464d5c3cf1",
+    "agent/inventory.json": "af9157301f01df0e1eab75cf1dd64872c364d0738c39b470a2dc9eeb7ee2ae9f",
+    "agent/events.jsonl": "3453cb9f6c264a39c506d8548eb5f7c7bc42569294d867d6ccd16adedcf3b95b",
+    "agent/source_manifest.json": "c3ff4d31d6b64d0b9e8a41624f9ed6df2b1a8da5e83779d041a0a41d43e79848"
+  },
+  "ingestion_root": "agent",
+  "evaluation_root": "evaluator",
+  "model_evaluation_performed": false
+}

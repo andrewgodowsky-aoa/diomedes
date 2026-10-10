@@ -1,0 +1,45 @@
+{
+  "gate": "browser",
+  "command": [
+    "node",
+    "node_modules/@playwright/test/cli.js",
+    "test",
+    "tests/ui.spec.ts",
+    "tests/native-ui.spec.ts",
+    "tests/field.spec.ts",
+    "--reporter=list,json"
+  ],
+  "cwd": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts",
+  "base": "c02ddac80a48e2ee247d72d6e172ad754e2c1286",
+  "startedAt": "2026-10-06T09:42:01.9936655+00:00",
+  "finishedAt": "2026-10-06T09:44:49.9433418+00:00",
+  "exitCode": 0,
+  "launchError": null,
+  "browserPorts": {
+    "client": "5184",
+    "service": "47642",
+    "native": "47644"
+  },
+  "implementation": [
+    {
+      "path": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts\\shared\\memory.ts",
+      "sha256": "6318518e09eeddf479c2f5b7d4289c0af2e123bf2fd21ce4ff40388594d4ae4c"
+    },
+    {
+      "path": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts\\shared\\continuation.ts",
+      "sha256": "0767f20c62f1a443653ac429c259d12c687503e206c64d555e148b7f2338ff88"
+    },
+    {
+      "path": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts\\tests\\memory-contracts.test.ts",
+      "sha256": "c7cfa88ade7f02e169ea24b1dc6db5f7e7a817b9070b19ce1815902738dd005b"
+    },
+    {
+      "path": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts\\tests\\memory-context-baseline.test.ts",
+      "sha256": "85fbfbb1c9fb9f4df168bb68332418360b55fbafb37beccc1b607165edff0a44"
+    },
+    {
+      "path": "F:\\Diomedes\\diomedes-wt\\memory-context-contracts\\tests\\fixtures\\memory-context\\baseline.ts",
+      "sha256": "2399adc3576078f1bb16053c81a8f3b1c2ace904a5c1145f40aa41993f28e146"
+    }
+  ]
+}

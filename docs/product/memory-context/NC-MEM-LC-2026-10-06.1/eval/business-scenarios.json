@@ -1,0 +1,101 @@
+{
+  "status": "scenario-specifications-not-executed",
+  "scenarios": [
+    {
+      "id": "B01",
+      "name": "Fictional Alder Warehouse",
+      "workload": "Inventory and reservations across two warehouses",
+      "required_behavior": "Current availability requires qualified source snapshot; physical shelf status remains unknown.",
+      "owner": "W05",
+      "fictional": true
+    },
+    {
+      "id": "B02",
+      "name": "Fictional Copper Remodeling",
+      "workload": "Change orders and a future-effective material substitution",
+      "required_behavior": "Keep signed scope, later proposals and approved exceptions distinct.",
+      "owner": "W04",
+      "fictional": true
+    },
+    {
+      "id": "B03",
+      "name": "Fictional Juniper Restaurant Group",
+      "workload": "Chef and general manager discuss recipe costs and staffing separately",
+      "required_behavior": "Retrieve authorized department evidence without exposing HR notes to kitchen role.",
+      "owner": "W02",
+      "fictional": true
+    },
+    {
+      "id": "B04",
+      "name": "Fictional Fieldline Landscaping",
+      "workload": "Reschedule recurring jobs after a changed forecast export",
+      "required_behavior": "Treat forecast as time-bound source and schedules as separate authoritative state.",
+      "owner": "W08",
+      "fictional": true
+    },
+    {
+      "id": "B05",
+      "name": "Fictional Northstar Auto Retail",
+      "workload": "Deposit and vehicle availability across locations",
+      "required_behavior": "Same display model name is not vehicle identity; a drafted reservation is not a paid deposit.",
+      "owner": "W01",
+      "fictional": true
+    },
+    {
+      "id": "B06",
+      "name": "Fictional Cedar HVAC",
+      "workload": "Parts substitutions and a technician work-order handoff",
+      "required_behavior": "Learn useful local procedure but preserve source schema and approval preconditions.",
+      "owner": "W08",
+      "fictional": true
+    },
+    {
+      "id": "B07",
+      "name": "Fictional Meridian Property Services",
+      "workload": "Maintenance work and owner/tenant contact permissions",
+      "required_behavior": "Cross-property context never grants access to another owner’s records.",
+      "owner": "W02",
+      "fictional": true
+    },
+    {
+      "id": "B08",
+      "name": "Fictional Rivet Fabrication",
+      "workload": "Bill of materials and revised machine/tool constraints",
+      "required_behavior": "Review every required component, units and version; partial retrieval is not completeness.",
+      "owner": "W05",
+      "fictional": true
+    },
+    {
+      "id": "B09",
+      "name": "Fictional Pine Accounting Operations",
+      "workload": "Monthly invoice matching with late credits and duplicate imports",
+      "required_behavior": "Deterministic cents arithmetic, snapshot/coverage evidence and temporal correction.",
+      "owner": "W05",
+      "fictional": true
+    },
+    {
+      "id": "B10",
+      "name": "Fictional Harbor Retail Cooperative",
+      "workload": "Product aliases, bundles and cross-location stock counts",
+      "required_behavior": "Keep entity identity and bundle conversions explicit; do not merge similar names.",
+      "owner": "W09",
+      "fictional": true
+    },
+    {
+      "id": "B11",
+      "name": "Fictional Signal Software Studio",
+      "workload": "Repository migration across repeated context windows",
+      "required_behavior": "Preserve exact test evidence, unresolved failures and task authority after restart.",
+      "owner": "W04",
+      "fictional": true
+    },
+    {
+      "id": "B12",
+      "name": "Fictional Atlas Professional Services",
+      "workload": "Long project history with changed client deliverables",
+      "required_behavior": "Abstain on missing authorizations and recover source clauses rather than inventing them.",
+      "owner": "W11",
+      "fictional": true
+    }
+  ]
+}

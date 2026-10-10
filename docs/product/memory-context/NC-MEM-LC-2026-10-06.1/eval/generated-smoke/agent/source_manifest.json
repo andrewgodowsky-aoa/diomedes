@@ -1,0 +1,87 @@
+{
+  "source_id": "synthetic-inventory-001",
+  "source_revision": "snapshot-1",
+  "total_rows": 512,
+  "partitions": [
+    {
+      "id": "partition-0000",
+      "start": 0,
+      "end_exclusive": 32
+    },
+    {
+      "id": "partition-0001",
+      "start": 32,
+      "end_exclusive": 64
+    },
+    {
+      "id": "partition-0002",
+      "start": 64,
+      "end_exclusive": 96
+    },
+    {
+      "id": "partition-0003",
+      "start": 96,
+      "end_exclusive": 128
+    },
+    {
+      "id": "partition-0004",
+      "start": 128,
+      "end_exclusive": 160
+    },
+    {
+      "id": "partition-0005",
+      "start": 160,
+      "end_exclusive": 192
+    },
+    {
+      "id": "partition-0006",
+      "start": 192,
+      "end_exclusive": 224
+    },
+    {
+      "id": "partition-0007",
+      "start": 224,
+      "end_exclusive": 256
+    },
+    {
+      "id": "partition-0008",
+      "start": 256,
+      "end_exclusive": 288
+    },
+    {
+      "id": "partition-0009",
+      "start": 288,
+      "end_exclusive": 320
+    },
+    {
+      "id": "partition-0010",
+      "start": 320,
+      "end_exclusive": 352
+    },
+    {
+      "id": "partition-0011",
+      "start": 352,
+      "end_exclusive": 384
+    },
+    {
+      "id": "partition-0012",
+      "start": 384,
+      "end_exclusive": 416
+    },
+    {
+      "id": "partition-0013",
+      "start": 416,
+      "end_exclusive": 448
+    },
+    {
+      "id": "partition-0014",
+      "start": 448,
+      "end_exclusive": 480
+    },
+    {
+      "id": "partition-0015",
+      "start": 480,
+      "end_exclusive": 512
+    }
+  ]
+}
