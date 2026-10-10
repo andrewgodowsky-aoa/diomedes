@@ -304,18 +304,18 @@ export class MemoryService {
   }
 
   outbox(scope: MemoryLedgerScope, afterSequence: number, limit: number) {
-    this.snapshot(scope);
+    this.snapshot(scope, 0);
     const events = this.store.outbox(key(scope), afterSequence, limit);
     if (events.some(event => !sameEpochs(event.epochs, scope))) throw new MemoryLedgerError('revoked_epoch');
     if (!sameEpochs(scope, this.current(scope))) throw new MemoryLedgerError('revoked_epoch');
     return events;
   }
   acknowledge(scope: MemoryLedgerScope, consumerId: string, throughSequence: number): void {
-    this.snapshot(scope);
+    this.snapshot(scope, 0);
     this.store.acknowledge(key(scope), consumerId, throughSequence);
   }
   acknowledged(scope: MemoryLedgerScope, consumerId: string): number {
-    this.snapshot(scope);
+    this.snapshot(scope, 0);
     return this.store.acknowledged(key(scope), consumerId);
   }
 }
