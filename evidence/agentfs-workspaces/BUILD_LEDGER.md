@@ -1,6 +1,6 @@
 # NC-TS build ledger, TS05
 
-Program NC-TS-2026-10-09.1, Turso and AgentFS qualification. This ledger covers TS05 only, newest state last. TS00's entry is `evidence/turso-qualification/BUILD_LEDGER.md` on feature/turso-baseline, which this branch does not contain. A restarted session reads this file first, then `docs/implementation/2026-10-09-agentfs-workspaces.md`.
+Program NC-TS-2026-10-09.1, Turso and AgentFS qualification. This ledger covers TS05 only, newest state last. TS00's entry is `evidence/turso-qualification/BUILD_LEDGER.md`, in main since 6b38ffc. A restarted session reads this file first, then `docs/implementation/2026-10-09-agentfs-workspaces.md`.
 
 ## TS05, AgentFS workspaces and Files promotion
 
@@ -13,14 +13,14 @@ Program NC-TS-2026-10-09.1, Turso and AgentFS qualification. This ledger covers 
 | Builder | Claude Opus 5.5 |
 | Branch | feature/agentfs-workspaces |
 | Worktree | F:/Diomedes/diomedes-wt/agentfs-workspaces |
-| Base | 92bc57bd678865390f17291beb382642769e73e5, origin/main, re-checked at 00:06:12Z on 10 October |
-| Claim | claim_mv19iu1z_7a0fd19c, node DIO-31.TS05, from 17:52:04Z |
+| Base | 92bc57bd678865390f17291beb382642769e73e5, origin/main until 10 October. The follow-up is based on 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c. |
+| Claim | claim_mv19iu1z_7a0fd19c, node DIO-31.TS05, from 17:52:04Z, transferred to the integrator on 10 October at Andrew's direction. The follow-up holds claim_mv1ubgrf_7ea0d5a8, from 03:34:12Z on 10 October. |
 | Record | `docs/implementation/2026-10-09-agentfs-workspaces.md` |
 | Operations page | `docs/operations/agentfs-workspaces.md` |
 
 ### Files in the patch
 
-All new. No existing file, dependency or lockfile changes.
+All new. No existing file, dependency or lockfile changes. All six reached main at 6b38ffc. The follow-up edits this ledger, the record and the operations page.
 
 - `server/files/agentfs-workspace.ts`
 - `tests/agentfs-files-conformance.test.ts`
@@ -70,6 +70,13 @@ The package named the module, the test file and the operations page, and they si
 26. **The full gates, from 22:12:10Z.** Slot slot_mv1itbz3_77a4a793, tree aee9c8383f99184128c71e804541900716aa0fb9. Stage 1 passed. tsc passed, and the TS05 file had 61 passed and 63 skipped of 124 on the stand-in, and 124 of 124 on the real SDK. Stage 2 caught all 52 mutations on the code as it was then. In stage 3 the full unit suite passed from 22:44:48Z, in 719 s: 623 files, 10,580 tests passed and 68 skipped. The run was then ended through its stop file before the build, for step 27. The module and the test file matched their hashes, and the slot was released at 22:56:47Z.
 27. **A writer race, about 22:40Z.** Found while the mutation stage ran. Two write sessions opened at the same moment in one process could both hold the workspace. A writer was held in this process only once its lock file was made. A second writer opened meanwhile found that lock written but not yet held. A lock with this process's id and no writer held for it counts as left behind, so the second took it over. A writer is now held from before its lock file is made, and one that fails to make its lock file holds nothing. Two tests pin it through a hook on the lock file's write, so no timing is involved. Mutations Nl and Nm undo each half. A dry run on scratch copies applied all 54 mutations exactly once.
 28. **The final gates, 23:15:46Z to 00:01:13Z on 10 October.** Slot slot_mv1l35jk_e9b6890a, tree 9e4a888a4fc3b568b498b7832327bb25d5c828b1. The wait began at 22:58Z, behind the app-wording lane. The tree includes the operations page's new paragraph on lock files left behind. Stage 1 passed. tsc passed, and the TS05 file had 63 passed and 65 skipped of 128 on the stand-in, and 128 of 128 on the real SDK. Stage 2 caught all 54 mutations, Nl and Nm first. Stage 3 passed: the full unit suite in 623 s (623 files, 10,582 tests passed and 70 skipped), the build, and 37 browser tests. Playwright rewrote two committed screenshots, and both were put back. The tree and the worktree's status were the same after the run as before it. The module and the test file matched their hashes, and the slot was released at 00:01:13Z.
+29. **Phase 2, from about 00:08Z on 10 October.** The review ref was re-cut at 9ea1870dc57d48a3a88fa37765af49432850e068, tree cf3fba33e1f2058e4a25f6fc3050daf41d946c0c: the gated tree with the record and this ledger filled in. The same reviewer ran it in its own worktree, `F:/Diomedes/diomedes-wt/agentfs-workspaces-review`. It took slot slot_mv1ngpob_64081903 at 00:22Z, ran G1 to G3, and caught the first 21 of the builder's mutations.
+30. **Paused, 00:46Z to 02:14Z.** The review released the slot and stopped until Andrew said to go on. From then on, a scratch script outside the repository checked before each heavy command that the machine was free for test work. The review then waited for the slot behind the integration lane, which had held it since 01:11Z.
+31. **Phase 2 accepted, 03:14Z.** Slot slot_mv1shbnw_5313fc17, 02:42:46Z to 03:13:16Z. The record's Phase 2 section has the results. All 54 builder mutations and 11 of the reviewer's 13 were caught, every reproduction passed, and its three notes are optional.
+32. **Main had moved, found at 03:19Z.** origin/main was 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c, fast-forwarded at 03:01Z by the performance-audit integration. It carries 9ea1870 with AUDIT-01, AUDIT-02 and AUDIT-03 on top, and W00, W01 and TS00. PR 264 and PR 241 show merged. Workers Builds skipped it. Step 28's planned local commit was dropped, because main already holds the accepted candidate.
+33. **This branch moved onto main, about 03:24Z.** The six uncommitted files matched 9ea1870 byte for byte, and a copy was kept outside the repository. They were removed, and feature/agentfs-workspaces was reset to 6b38ffc. The review worktree and ref stay for the follow-up review.
+34. **Tracking, 03:33Z.** Linear results on DIO-31 (comment 02800765), DIO-317 (db0180d0) and DIO-227 (fcc8d617). The Notion program page's build progress was updated. Statuses unchanged.
+35. **The follow-up, from 03:34Z.** Claim claim_mv1ubgrf_7ea0d5a8. The record and this ledger now describe main's code and the review's result, and the operations page gains AUDIT-02's and AUDIT-03's rules. The real-SDK run on main's code waits, because step 30's check found the machine was not free for test work.
 
 ### Gates
 
@@ -86,6 +93,8 @@ The package named the module, the test file and the operations page, and they si
 | Browser | `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts` | 37 passed |
 
 Round 2's first full run, on tree aee9c838, is step 26. The full suite's totals differ from round 1's only by the TS05 file's own counts: 30 more passed and 28 more skipped. Without `NCTS_TURSO_NODE_MODULES`, that file's real-SDK block is skipped there.
+
+**On main.** These gates ran on this patch before the integration's repairs, and this packet has not run them on main's code at 6b38ffc yet. The integration's record describes its own gate runs without counts, and records no run of the real-SDK block.
 
 **Round 1.** Tree 96d5466a1d077b2014c947f5a2f7b39f320300c6, slot slot_mv1ek4n1_71f0dcbf, 20:13:02Z to 20:31:10Z, then the unit suite again under slot slot_mv1f7t0a_74a019ba. Each command ran from the worktree root through the repository's own binaries.
 
@@ -104,15 +113,16 @@ Playwright rewrote two committed screenshots under `evidence/screenshots/`. Both
 
 ### Review
 
-The independent review uses `prompts/TS05_REVIEW.md` on an exact candidate ref. Phase 1 read candidate 2d05ec3a and asked for corrections (step 19). They are made (steps 20 to 27), and the final gates passed on them (step 28). Phase 2 runs the gates, the mutations and its own reproductions on the re-cut candidate, under the slot. It has not returned yet.
+The independent review uses `prompts/TS05_REVIEW.md` on an exact candidate ref. Phase 1 read candidate 2d05ec3a and asked for corrections (step 19). They are made (steps 20 to 27), and the final gates passed on them (step 28). Phase 2 accepted the re-cut candidate 9ea1870 (steps 29 to 31), with three optional notes. The integration's three repairs were reviewed by its integrator, not by this review. A delta review from 9ea1870 to the follow-up candidate is planned.
 
 ### State
 
-Authored and implemented. Round 2's final gates passed (step 28). Phase 1 of the independent review is done, and its corrections are made. Phase 2 has not returned. Not committed, not integrated into main, not deployed, not released. Not DONE.
+Authored and implemented. Round 2's final gates passed (step 28). Independently reviewed: Phase 2 accepted 9ea1870 (step 31). Integrated into main at 6b38ffc with three repairs (step 32). Not deployed, not released. Not DONE: the record's Publication boundary gives the reasons.
 
 ### Next
 
-1. Phase 2 with the same reviewer, on `refs/review/agentfs-workspaces-ts05` re-cut at the gated tree with these documents.
-2. Once Phase 2 accepts it, a gated local commit with no trailer, the review ref deleted and the claim released.
-3. Linear: results on DIO-31 and DIO-317. Notion: the TS05 row. Owner statuses stay as they are.
-4. Pushing and opening a PR need Andrew's approval for this patch. Shipping also waits for the SDK's license text and PR 248. The record's two decisions for Andrew, the 409 replay and two workspaces made at once, wait for him.
+1. When the machine is free for test work: the TS05 file on main's code, on the stand-in and on the real SDK, under the slot. Then the 54 mutations again on main's code.
+2. O1 and O2 as a code patch on this branch, each with its failing test first, then the full gates.
+3. A delta review by the same reviewer, from 9ea1870 to the follow-up candidate: AUDIT-01 to AUDIT-03, O1, O2 and these documents.
+4. Then a gated local commit with no trailer. Pushing and opening a PR need Andrew's approval for the patch. After that, the review worktree (its junctions first) and the review ref are removed, and the claim is released.
+5. Unchanged: shipping waits for the SDK's license text and PR 248. The record's two decisions for Andrew, the 409 replay and two workspaces made at once, wait for him.

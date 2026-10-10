@@ -35,7 +35,7 @@ NCTS_TURSO_NODE_MODULES=<node_modules folder> npx vitest run tests/agentfs-files
 - any platform but win32-x64, the only one qualified;
 - another version of the SDK, the engine, the engine's common package or its native binding, each found the way Node would find it;
 - a native file whose sha256 is not the one TS00 pinned, and a native file left beside the engine's loader, which that loader would try first;
-- either loader variable that swaps the native binary (`NAPI_RS_NATIVE_LIBRARY_PATH`, `NAPI_RS_FORCE_WASI`), when this process has it set. The engine reads this process's environment, so a caller cannot clear it.
+- either loader variable that swaps the native binary (`NAPI_RS_NATIVE_LIBRARY_PATH`, `NAPI_RS_FORCE_WASI`), when this process or the caller's environment has it set, even to an empty string. The engine reads this process's environment, so a caller cannot clear it.
 
 ## How a workspace works
 
@@ -72,7 +72,7 @@ So a workspace whose database file is missing or empty is refused, and nothing i
 | The database on disk, journal files included | 32 MB | The engine's journal grows faster than the changes. |
 | Free disk left after a write | 256 MB | A workspace never fills the disk. |
 
-Each write reserves its cost before anything is written. A write that does not fit is refused with the numbers. Pinning a scope, copying a checkpoint and opening one reserve their disk space first too. A checkpoint opened here gets this host's limits, whatever limits it carries.
+Each write reserves its cost before anything is written. A write that does not fit is refused with the numbers. Listing the changes, handing them back and opening a checkpoint also count every file in the database by its actual bytes. They refuse past the same budget, so bytes written around the tools cannot pass it. Pinning a scope, copying a checkpoint and opening one reserve their disk space first too. A checkpoint opened here gets this host's limits, whatever limits it carries.
 
 A database stores its own chunk size, and the SDK writes in chunks of that size. A database storing anything but the SDK's own 4,096 bytes is refused before it is used, since another size could write far more than was reserved.
 
