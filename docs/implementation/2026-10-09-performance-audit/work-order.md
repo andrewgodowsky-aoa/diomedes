@@ -35,8 +35,13 @@ The sanitized W00 contract commit `144d8927eaf84bb10ccbceb095f4ed4b028421c8`
 and committed W01 candidate `d05a6b10d71199631ec254d5eec8e9ff9e737aad`
 are staged in this isolated integration branch. TS00 qualification starts at
 `7c40ce5ff7b52d8c93e245d13c7d08a44e44a56e`. Original worktrees remain untouched.
-The AgentFS candidate requires a recorded snapshot handoff before adoption.
-Its optional adapter remains unwired and its SDK is not redistributed.
+The original author already committed the AgentFS review snapshot as
+`9ea1870dc57d48a3a88fa37765af49432850e068`. Its implementation and tests match
+the audited files ignoring line endings. This existing commit is the repair
+baseline; no uncommitted source files were copied or adopted. The integrator
+recorded the owner-directed claim transfer on 2026-10-10 UTC, leaving both
+original worktrees intact. The unrepaired review snapshot is not accepted as-is.
+The optional adapter remains unwired and its SDK is not redistributed.
 
 The pinned coordinator holds the edited paths and the shared heavy-test slot.
 Targeted tests are serialized. Final gates are TypeScript, full unit tests,
