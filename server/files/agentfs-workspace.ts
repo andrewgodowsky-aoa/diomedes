@@ -802,12 +802,15 @@ export class AgentFsWorkspaces {
     const manifest: BaseManifest = { v: 1, projectId, jobId, scope: draft.allowedOutputPaths, files };
     const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
     await fs.writeFile(path.join(dir, 'base.json'), manifestBytes);
+    // A subset has its own digest. Capture it before the final full-scope check, so a later generation is never bound to earlier bytes.
+    // If every path was pinned, retain the generation already checked around its bytes instead of reading it again unchecked.
+    const sourceGeneration =
+      files.length === scoped.length ? before : await this.sources.generation(projectId, files.map((file) => file.path));
     if ((await this.sources.generation(projectId, scoped)) !== before)
       throw new WorkspaceRefused(
         'workspace_source_changed',
         'Who may read the files in this scope changed while they were being pinned, so no workspace was made. Ask for it again.',
       );
-    const sourceGeneration = await this.sources.generation(projectId, files.map((file) => file.path));
     const baseManifestRef = sha256(manifestBytes);
     // The delta is bound to its project, job and base, so a database from another workspace is never taken for this one's.
     const handle = await this.sdk.open({ path: path.join(dir, draft.delta) });

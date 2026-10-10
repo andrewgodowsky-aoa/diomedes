@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto';
 import type { OriginSnapshot } from '../shared/attribution.js';
 import type { CapabilityManifest, HarnessPrincipal, Json } from '../shared/harness.js';
 import { Store } from '../server/store.js';
+import { ApiError } from '../server/paths.js';
 import { FileRunStore, RunService } from '../server/harness/index.js';
 import { minimalEnvironment } from '../server/harness/containment.js';
 import { SandboxStore } from '../server/sandbox/sandbox.js';
@@ -1479,6 +1480,87 @@ function conformance(load: () => Promise<AgentFsSdk>) {
   });
 
   describe('pinning a base', () => {
+    describe('source-generation binding', () => {
+      test('a same-scope generation validated while pinning is retained, so later read-rights drift refuses promotion', async () => {
+        let reads = 0;
+        workspaces = new AgentFsWorkspaces({
+          store,
+          sdk,
+          sources: {
+            generation: () => {
+              // The first two snapshots agree. Any later snapshot observes changed rights.
+              if (++reads > 2) grants = 'grants-2';
+              return grants;
+            },
+          },
+          freeBytes: async () => free,
+        });
+        const lease = await materialize('Rjob-a');
+        await edit(lease, { 'Menu/Prices.md': SOUP_7 });
+        const proposal = await workspaces.proposeOutputs(lease);
+        await expect(workspaces.promote(lease, request(proposal.digest))).rejects.toMatchObject({ code: 'workspace_source_changed' });
+        expect(lease.sourceGeneration).toBe('grants-1');
+        expect(await read('Menu/Prices.md')).toBe(PRICES);
+        expect(recorded()).toHaveLength(0);
+      });
+
+      test('rights that drift while the generation for a guarded-path subset is captured make no workspace', async () => {
+        const current = store.currentBytes.bind(store);
+        vi.spyOn(store, 'currentBytes').mockImplementation(async (id, relative) => {
+          if (relative === 'Menu/Fall.md') throw new ApiError(403, 'The test path guard refused this file.');
+          return current(id, relative);
+        });
+        workspaces = new AgentFsWorkspaces({
+          store,
+          sdk,
+          sources: {
+            generation: (_id, paths) => {
+              // Digests differ by path set even when rights agree. Capturing the subset moves its rights on.
+              if (paths.length === 1) grants = 'grants-2';
+              return `${grants}:${[...paths].sort().join('|')}`;
+            },
+          },
+          freeBytes: async () => free,
+        });
+        await expect(materialize('Rjob-a')).rejects.toMatchObject({ code: 'workspace_source_changed' });
+        await expect(fs.lstat(workspaces.dir(projectId, 'Rjob-a'))).rejects.toThrow();
+        expect(recorded()).toHaveLength(0);
+      });
+
+      test('a stable subset keeps its own generation and can promote when a listed file disappeared before pinning', async () => {
+        let first = true;
+        workspaces = new AgentFsWorkspaces({
+          store,
+          sdk,
+          sources: {
+            generation: async (_id, paths) => {
+              if (first) {
+                first = false;
+                await fs.rm(path.join(folder, 'Menu', 'Fall.md'));
+              }
+              return `${grants}:${[...paths].sort().join('|')}`;
+            },
+          },
+          freeBytes: async () => free,
+        });
+        const lease = await materialize('Rjob-a');
+        expect(lease.sourceGeneration).toBe('grants-1:Menu/Prices.md');
+        const reader = await session(lease, { write: false });
+        expect(await reader.call('list_project_files', {})).toMatchObject({ files: ['Menu/Prices.md'] });
+        expect(await reader.call('read_project_file', { path: 'Menu/Prices.md' })).toMatchObject({ found: true, text: PRICES });
+        await reader.close();
+        await edit(lease, { 'Menu/Prices.md': SOUP_7 });
+        const proposal = await workspaces.proposeOutputs(lease);
+        expect(await workspaces.promote(lease, request(proposal.digest))).toMatchObject({
+          applied: [{ path: 'Menu/Prices.md', sha: sha256(SOUP_7), replayed: false }],
+          conflicts: [],
+          waiting: [],
+        });
+        expect(await read('Menu/Prices.md')).toBe(SOUP_7);
+        expect(recorded()).toHaveLength(1);
+      });
+    });
+
     test('a change in who may read the scope while its files are pinned makes no workspace', async () => {
       // Read rights change while the files are being read.
       const current = store.currentBytes.bind(store);
