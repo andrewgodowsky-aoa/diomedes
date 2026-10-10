@@ -53,6 +53,10 @@ export interface ApprovedMcpServer {
 }
 
 export interface ReadScope {
+  /** The project that issued this turn's host read grant. */
+  readonly projectId?: string;
+  /** The route this per-turn grant was admitted for. */
+  readonly route?: string;
   /** The project folder, already resolved through `safeAbsolute` by the host. */
   readonly root: string;
   /** Whether web search and page fetches are allowed. */
@@ -76,10 +80,26 @@ export interface ReadScope {
    */
   readonly shared?: readonly string[];
   /**
-   * The host grant this turn's reads are answered under (`openReadGrant`). A
-   * whole-project read needs a live one; revoking it ends the turn's reads.
+   * The host grant this turn's reads are answered under (`openReadGrant`).
+   * An external read needs a live matching one; a whole-project read needs a live
+   * grant. Revoking it ends the turn's reads.
    */
   readonly grant?: string;
+}
+
+/** A retained client sees the admitted snapshot, never a caller's mutable arrays. */
+export function snapshotReadScope(scope: ReadScope): ReadScope {
+  return Object.freeze({
+    ...scope,
+    ...(scope.files ? { files: Object.freeze([...scope.files]) } : {}),
+    ...(scope.shared ? { shared: Object.freeze([...scope.shared]) } : {}),
+    ...(scope.mcp ? { mcp: Object.freeze(scope.mcp.map(server => Object.freeze({
+      ...server,
+      args: Object.freeze([...server.args]),
+      envFrom: Object.freeze([...server.envFrom]),
+      readTools: Object.freeze([...server.readTools]),
+    }))) } : {}),
+  });
 }
 
 export type { ReadAccess };

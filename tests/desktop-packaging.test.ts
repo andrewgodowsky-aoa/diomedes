@@ -71,6 +71,10 @@ async function fixture() {
     path.join(root, 'electron-zips/electron-v44.2.0-darwin-arm64.zip'),
     'fixture archive; packager is substituted',
   );
+  await fs.writeFile(path.join(root, 'node_modules/electron/checksums.json'), JSON.stringify({
+    'electron-v44.2.0-darwin-arm64.zip': createHash('sha256')
+      .update('fixture archive; packager is substituted').digest('hex'),
+  }));
   const build = vi.fn(async (options: { outfile: string }) =>
     fs.writeFile(options.outfile, 'fixture bundled service'),
   );
@@ -194,7 +198,7 @@ describe('FD01 same desktop packaging entry point', () => {
         name: 'Nectovia',
         appBundleId: 'com.electron.diomedes',
         asar: true,
-        electronZipDir: options.electronZipDir,
+        electronZipDir: expect.stringContaining('.desktop-stage-'),
       }),
     );
     const call = deps.packager.mock.calls[0][0];
@@ -214,6 +218,11 @@ describe('FD01 same desktop packaging entry point', () => {
         expectedOnMachine: expect.arrayContaining(['codex']),
       },
       signing: 'unsigned-experimental',
+      electronArchive: {
+        name: 'electron-v44.2.0-darwin-arm64.zip',
+        sha256: createHash('sha256').update('fixture archive; packager is substituted').digest('hex'),
+        bytes: Buffer.byteLength('fixture archive; packager is substituted'),
+      },
     });
     expect(JSON.stringify(manifest.nativeRuntime)).not.toMatch(/\.exe/);
     const output = JSON.parse(
@@ -357,6 +366,52 @@ describe('FD01 same desktop packaging entry point', () => {
     ).rejects.toThrow('electron-v44.2.0-darwin-arm64.zip');
     expect(deps.build).not.toHaveBeenCalled();
     expect(deps.packager).not.toHaveBeenCalled();
+  });
+
+  it('refuses offline Electron bytes that differ from the locked package digest', async () => {
+    const { root, deps, options } = await fixture();
+    await fs.writeFile(path.join(root, 'node_modules/electron/checksums.json'), JSON.stringify({
+      'electron-v44.2.0-darwin-arm64.zip': 'a'.repeat(64),
+    }));
+    await expect(packageDesktop(options, deps)).rejects.toThrow(/Electron archive.*SHA-256 mismatch/);
+    expect(deps.packager).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { 'electron-v44.2.0-darwin-arm64.zip': 'unreadable' }])(
+    'refuses an offline archive without a valid locked digest: %j', async (checksums) => {
+      const { root, deps, options } = await fixture();
+      await fs.writeFile(path.join(root, 'node_modules/electron/checksums.json'), JSON.stringify(checksums));
+      await expect(packageDesktop(options, deps)).rejects.toThrow('no valid SHA-256');
+      expect(deps.packager).not.toHaveBeenCalled();
+      expect((await fs.readdir(root)).filter((entry) => entry.startsWith('.desktop-stage-'))).toEqual([]);
+    },
+  );
+
+  it('refuses Electron archive drift while bundling, before packager dispatch', async () => {
+    const { deps, options } = await fixture();
+    deps.build.mockImplementationOnce(async (buildOptions) => {
+      await fs.writeFile(buildOptions.outfile, 'fixture bundled service');
+      await fs.writeFile(path.join(options.electronZipDir, 'electron-v44.2.0-darwin-arm64.zip'), 'changed during build');
+    });
+    await expect(packageDesktop(options, deps)).rejects.toThrow('Electron archive SHA-256 mismatch');
+    expect(deps.packager).not.toHaveBeenCalled();
+  });
+
+  it('gives the packager a verified private copy independent of later cache writes', async () => {
+    const { deps, options } = await fixture();
+    deps.packager.mockImplementationOnce(async (packageOptions) => {
+      const input = packageOptions as typeof packageOptions & { electronZipDir: string; ignore: RegExp };
+      expect(input.electronZipDir).not.toBe(options.electronZipDir);
+      expect(input.ignore.test('/.electron-zips/archive.zip')).toBe(true);
+      await fs.writeFile(path.join(options.electronZipDir, 'electron-v44.2.0-darwin-arm64.zip'), 'changed at dispatch');
+      expect(await fs.readFile(path.join(input.electronZipDir, 'electron-v44.2.0-darwin-arm64.zip'), 'utf8'))
+        .toBe('fixture archive; packager is substituted');
+      const output = path.join(options.root, 'release/fixture');
+      await fs.mkdir(output, { recursive: true });
+      return [output];
+    });
+    await packageDesktop(options, deps);
+    expect(deps.packager).toHaveBeenCalledOnce();
   });
 
   it('retains the current integrity/signing policy as a scoped Mac-host build blocker', async () => {

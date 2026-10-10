@@ -71,6 +71,8 @@ export const RELAY_CLOSE = {
   heartbeatTimeout: { code: 4001, reason: 'heartbeat_timeout' },
   challengeTimeout: { code: 4002, reason: 'challenge_timeout' },
   recheckUnavailable: { code: 4003, reason: 'recheck_unavailable' },
+  connectionLimit: { code: 4004, reason: 'connection_limit' },
+  upgradeRateLimited: { code: 4005, reason: 'upgrade_rate_limited' },
   protocolError: { code: 4400, reason: 'protocol_error' },
   sessionEnded: { code: 4401, reason: 'session_ended' },
   badSignature: { code: 4401, reason: 'bad_signature' },
@@ -236,6 +238,24 @@ const RELAY_ACCOUNT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /** What the hub holds phones and desktops to. */
 export const RELAY_LIMITS = {
+  /** One ready socket plus at most two concurrent reconnect challenges for a device. */
+  desktopPendingPerDevice: 2,
+  desktopSocketsPerDevice: 3,
+  /** Bound independent devices and reconnects opened by one verified person. */
+  desktopPendingPerPerson: 8,
+  desktopSocketsPerPerson: 16,
+  /** One core is one organization's hub. These include restored sockets. */
+  desktopPendingPerOrganization: 64,
+  desktopSocketsPerOrganization: 256,
+  /** Both desktop and phone sockets, including bounded phone replacement overlap. */
+  socketsPerPerson: 21,
+  socketsPerOrganization: 512,
+  /** Bound queued storage work before any upgrade is accepted. */
+  queuedUpgradesPerOrganization: 64,
+  /** Upgrade reservations per minute. Capacity refusals allocate no rate or socket state. */
+  upgradesPerDevice: 6,
+  upgradesPerPerson: 30,
+  upgradesPerOrganization: 240,
   /** Phone connections one person may hold to one business's hub. A newer one replaces the oldest (4409). */
   phoneSocketsPerPerson: 5,
   /** Frames one person's phones may send to desktops, per minute. Over it, a command is refused `rate_limited`. */

@@ -152,6 +152,21 @@ export interface PhoneTransport {
   heardAt?(): number | null;
 }
 
+/** Bounded resource accounting, never a sign-in or a replacement for the Worker's grant. */
+const upgradeAccountingSchema = z.strictObject({
+  v: z.literal(1),
+  events: z.array(z.strictObject({ at: moment, personId: accountId, deviceId: accountId.nullable() }))
+    .max(RELAY_LIMITS.upgradesPerOrganization),
+});
+export type UpgradeAccounting = z.infer<typeof upgradeAccountingSchema>;
+
+/** A one-use reservation. Hosts persist accounting, recheck, then allocate the transport without another await. */
+export interface PreparedUpgrade<T extends HubTransport | PhoneTransport> {
+  accounting: UpgradeAccounting;
+  recheck(): RelayClose | null;
+  open(transport: T): string;
+}
+
 export interface HubAuthority {
   /** Null while the connection may stay; otherwise why not. Throws when it cannot tell. */
   recheck(grant: DesktopGrant, at: string): Promise<RelayRefusalCode | null>;
@@ -223,6 +238,7 @@ export class RelayHubCore {
   private readonly phones = new Map<string, PhoneConnection>();
   /** Recent frame times per rate-limited sender (`person:<id>` or `desktop:<id>`), newest last. */
   private readonly rates = new Map<string, number[]>();
+  private upgrades: UpgradeAccounting['events'] = [];
   private readonly authority: HubAuthority;
   private readonly now: () => number;
   private readonly record: (event: HubEvent) => void;
@@ -250,10 +266,47 @@ export class RelayHubCore {
     return this.phones.size;
   }
 
+  /** Check before a host allocates/accepts its socket. */
+  admitDesktop(grant: DesktopGrant): RelayClose | null {
+    const at = this.now();
+    return this.desktopAvailability(grant) ?? (this.allowUpgrade(grant, at, false) ? null : RELAY_CLOSE.upgradeRateLimited);
+  }
+
+  /** Phones retain their bounded newest-screen replacement, within the total hub and person budgets. */
+  admitPhone(grant: PhoneGrant): RelayClose | null {
+    const at = this.now();
+    return this.phoneAvailability(grant) ?? (this.allowUpgrade(grant, at, false) ? null : RELAY_CLOSE.upgradeRateLimited);
+  }
+
+  /** Called once by a durable host before admission. Invalid accounting fails closed at that host. */
+  restoreUpgradeAccounting(saved: unknown): boolean {
+    const parsed = upgradeAccountingSchema.safeParse(saved === undefined ? { v: 1, events: [] } : saved);
+    if (!parsed.success) return false;
+    this.upgrades = parsed.data.events;
+    this.pruneRates(this.now());
+    return true;
+  }
+
+  prepareDesktop(grant: DesktopGrant): PreparedUpgrade<HubTransport> | RelayClose {
+    return this.prepare<HubTransport>(grant, () => this.desktopAvailability(grant), (transport, id) => this.openDesktop(transport, grant, id));
+  }
+
+  preparePhone(grant: PhoneGrant): PreparedUpgrade<PhoneTransport> | RelayClose {
+    return this.prepare<PhoneTransport>(grant, () => this.phoneAvailability(grant), (transport, id) => this.openPreparedPhone(transport, grant, id));
+  }
+
   /** A desktop the Worker front authorized. Sends the challenge; answers the connection's id. */
   open(transport: HubTransport, grant: DesktopGrant): string {
+    const prepared = this.prepareDesktop(grant);
+    if ('reason' in prepared) {
+      this.reject(transport, prepared);
+      return randomToken(16);
+    }
+    return prepared.open(transport);
+  }
+
+  private openDesktop(transport: HubTransport, grant: DesktopGrant, id: string): string {
     const at = this.now();
-    const id = randomToken(16);
     const nonce = randomToken(32);
     const state: ConnectionState = {
       v: 1,
@@ -288,8 +341,17 @@ export class RelayHubCore {
   restore(transport: HubTransport, saved: unknown): boolean {
     const parsed = connectionStateSchema.safeParse(saved);
     if (!parsed.success) return false;
-    if (!this.connections.has(parsed.data.id))
-      this.connections.set(parsed.data.id, { transport, state: parsed.data, verifying: false, checking: false, seeing: false });
+    const state = parsed.data;
+    if (this.has(state.id)) return false;
+    const connection = { transport, state, verifying: false, checking: false, seeing: false };
+    if (this.desktopEnding(connection, this.now()) || this.desktopCapacity(state.grant, state.phase)) return false;
+    // Rebuild the same one-proven-socket invariant regardless of the runtime's socket iteration order.
+    if (state.phase === 'ready') {
+      const older = [...this.connections.values()].filter((other) => other.state.phase === 'ready' && other.state.grant.deviceId === state.grant.deviceId);
+      if (older.some((other) => other.state.openedAt >= state.openedAt)) return false;
+      for (const other of older) this.finish(other, RELAY_CLOSE.replaced);
+    }
+    this.connections.set(state.id, connection);
     return true;
   }
 
@@ -298,8 +360,16 @@ export class RelayHubCore {
    * open at once; the hub sends it nothing until a desktop does. Answers the connection's id.
    */
   openPhone(transport: PhoneTransport, grant: PhoneGrant): string {
+    const prepared = this.preparePhone(grant);
+    if ('reason' in prepared) {
+      this.reject(transport, prepared);
+      return randomToken(16);
+    }
+    return prepared.open(transport);
+  }
+
+  private openPreparedPhone(transport: PhoneTransport, grant: PhoneGrant, id: string): string {
     const at = this.now();
-    const id = randomToken(16);
     const state: PhoneConnectionState = {
       v: 1,
       kind: 'phone',
@@ -319,9 +389,7 @@ export class RelayHubCore {
     }
     transport.save(state);
     // Replace, not refuse: the newest is the screen the person is looking at.
-    const mine = [...this.phones.values()].filter((other) => other.state.grant.personId === grant.personId);
-    for (const old of mine.slice(0, Math.max(0, mine.length - RELAY_LIMITS.phoneSocketsPerPerson)))
-      this.finishPhone(old, RELAY_CLOSE.replaced);
+    this.trimPhones(grant.personId);
     return id;
   }
 
@@ -329,8 +397,13 @@ export class RelayHubCore {
   restorePhone(transport: PhoneTransport, saved: unknown): boolean {
     const parsed = phoneConnectionStateSchema.safeParse(saved);
     if (!parsed.success) return false;
-    if (!this.phones.has(parsed.data.id)) this.phones.set(parsed.data.id, { transport, state: parsed.data, checking: false });
-    return true;
+    const state = parsed.data;
+    if (this.has(state.id)) return false;
+    const phone = { transport, state, checking: false };
+    if (this.phoneEnding(phone, this.now()) || this.phoneCapacity(state.grant)) return false;
+    this.phones.set(state.id, phone);
+    this.trimPhones(state.grant.personId);
+    return this.phones.get(state.id) === phone;
   }
 
   /**
@@ -343,6 +416,11 @@ export class RelayHubCore {
     if (phone) return this.phoneMessage(phone, data);
     const connection = this.connections.get(id);
     if (!connection) return;
+    const ending = this.desktopEnding(connection, this.now());
+    if (ending) {
+      this.finish(connection, ending);
+      return this.settle();
+    }
     const text = frameText(data);
     const message = text === null ? null : parseDesktopMessage(text);
     const { grant } = connection.state;
@@ -360,8 +438,9 @@ export class RelayHubCore {
       // The connection may have ended while the signature was checked.
       if (this.connections.get(id) !== connection) return this.settle();
       const at = this.now();
-      if (!valid) this.finish(connection, RELAY_CLOSE.badSignature);
-      else if (at >= connection.state.challengeExpiresAt) this.finish(connection, RELAY_CLOSE.challengeTimeout);
+      const ending = this.desktopEnding(connection, at);
+      if (ending) this.finish(connection, ending);
+      else if (!valid) this.finish(connection, RELAY_CLOSE.badSignature);
       else {
         for (const other of [...this.connections.values()])
           if (other !== connection && other.state.phase === 'ready' && other.state.grant.deviceId === grant.deviceId)
@@ -393,6 +472,9 @@ export class RelayHubCore {
   private toPhones(desktop: Connection, message: DesktopToPhoneMessage): void {
     const { grant } = desktop.state;
     const at = this.now();
+    if (this.connections.get(desktop.state.id) !== desktop) return;
+    const ending = this.desktopEnding(desktop, at);
+    if (ending) return this.finish(desktop, ending);
     if (!this.allow(`desktop:${grant.deviceId}`, RELAY_LIMITS.desktopFramesPerMinute, at)) {
       this.record({ event: 'relay-frame-refused', organizationId: grant.organizationId, from: 'desktop', id: grant.deviceId, type: message.type, reason: 'rate_limited' });
       return;
@@ -450,6 +532,7 @@ export class RelayHubCore {
 
   /** Counts one frame against a sender's per-minute limit. False: over it, and not counted. */
   private allow(key: string, limit: number, at: number): boolean {
+    this.pruneRates(at);
     const recent = (this.rates.get(key) ?? []).filter((moment) => moment > at - RATE_WINDOW_MS);
     if (recent.length >= limit) {
       this.rates.set(key, recent);
@@ -462,10 +545,17 @@ export class RelayHubCore {
 
   /** A proven desktop connection that is live right now: what presence counts. */
   private desktopLive(connection: Connection, at: number): boolean {
+    return this.connections.get(connection.state.id) === connection && connection.state.phase === 'ready' && this.desktopEnding(connection, at) === null;
+  }
+
+  /** The same deadlines govern entry, proof completion, presence, admission reclamation and alarms. */
+  private desktopEnding(connection: Connection, at: number): RelayClose | null {
     const { state } = connection;
-    if (state.phase !== 'ready') return false;
-    if (at >= Date.parse(state.grant.authorizedUntil) || at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return false;
-    return at < this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs;
+    if (at >= Date.parse(state.grant.authorizedUntil)) return RELAY_CLOSE.sessionExpired;
+    if (at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) return RELAY_CLOSE.recheckUnavailable;
+    if (state.phase === 'challenged') return at >= state.challengeExpiresAt ? RELAY_CLOSE.challengeTimeout : null;
+    if (at >= this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs) return RELAY_CLOSE.heartbeatTimeout;
+    return null;
   }
 
   /** A phone connection that is live right now. */
@@ -532,7 +622,7 @@ export class RelayHubCore {
       const { state } = connection;
       next = Math.min(next, Date.parse(state.grant.authorizedUntil), state.checkedAt + RELAY_TIMINGS.authorityWindowMs);
       if (state.phase === 'challenged') {
-        if (!connection.verifying) next = Math.min(next, state.challengeExpiresAt);
+        next = Math.min(next, state.challengeExpiresAt);
         continue;
       }
       next = Math.min(next, this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs);
@@ -565,12 +655,9 @@ export class RelayHubCore {
     const work: Promise<void>[] = [];
     for (const connection of [...this.connections.values()]) {
       const { state } = connection;
-      if (at >= Date.parse(state.grant.authorizedUntil)) this.finish(connection, RELAY_CLOSE.sessionExpired);
-      else if (at >= state.checkedAt + RELAY_TIMINGS.authorityWindowMs) this.finish(connection, RELAY_CLOSE.recheckUnavailable);
-      else if (state.phase === 'challenged') {
-        if (!connection.verifying && at >= state.challengeExpiresAt) this.finish(connection, RELAY_CLOSE.challengeTimeout);
-      } else if (at >= this.heard(connection) + RELAY_TIMINGS.heartbeatTimeoutMs) this.finish(connection, RELAY_CLOSE.heartbeatTimeout);
-      else {
+      const ending = this.desktopEnding(connection, at);
+      if (ending) this.finish(connection, ending);
+      else if (state.phase === 'ready') {
         if (!connection.checking && at >= state.nextCheckAt) work.push(this.recheck(connection));
         if (!connection.seeing && at >= state.nextSeenAt) work.push(this.markSeen(connection));
       }
@@ -582,6 +669,108 @@ export class RelayHubCore {
     }
     await Promise.all(work);
     await this.settle();
+  }
+
+  /** Admission must not depend on an alarm having already run. */
+  private retireExpired(at: number): void {
+    for (const connection of [...this.connections.values()]) {
+      const ending = this.desktopEnding(connection, at);
+      if (ending) this.finish(connection, ending);
+    }
+    for (const phone of [...this.phones.values()]) {
+      const ending = this.phoneEnding(phone, at);
+      if (ending) this.finishPhone(phone, ending);
+    }
+  }
+
+  private desktopAvailability(grant: DesktopGrant): RelayClose | null {
+    return this.grantAvailability(grant) ?? this.desktopCapacity(grant, 'challenged');
+  }
+
+  private phoneAvailability(grant: PhoneGrant): RelayClose | null {
+    return this.grantAvailability(grant) ?? this.phoneCapacity(grant);
+  }
+
+  private grantAvailability(grant: DesktopGrant | PhoneGrant): RelayClose | null {
+    const at = this.now();
+    this.retireExpired(at);
+    if (at >= Date.parse(grant.authorizedUntil)) return RELAY_CLOSE.sessionExpired;
+    if (at >= Math.min(at, Date.parse(grant.checkedAt)) + RELAY_TIMINGS.authorityWindowMs) return RELAY_CLOSE.recheckUnavailable;
+    return null;
+  }
+
+  private prepare<T extends HubTransport | PhoneTransport>(grant: DesktopGrant | PhoneGrant,
+    available: () => RelayClose | null, open: (transport: T, id: string) => string): PreparedUpgrade<T> | RelayClose {
+    const refusal = available();
+    if (refusal) return refusal;
+    if (!this.allowUpgrade(grant, this.now(), true)) return RELAY_CLOSE.upgradeRateLimited;
+    const id = randomToken(16);
+    let used = false;
+    const recheck = () => used ? RELAY_CLOSE.protocolError : available();
+    return {
+      accounting: { v: 1, events: this.upgrades.map((event) => ({ ...event })) },
+      recheck,
+      open: (transport) => {
+        const ending = recheck();
+        used = true;
+        if (ending) { this.reject(transport, ending); return id; }
+        return open(transport, id);
+      },
+    };
+  }
+
+  private desktopCapacity(grant: DesktopGrant, phase: ConnectionState['phase']): RelayClose | null {
+    const desktops = [...this.connections.values()];
+    const device = desktops.filter((connection) => connection.state.grant.deviceId === grant.deviceId);
+    const person = desktops.filter((connection) => connection.state.grant.personId === grant.personId);
+    const phones = [...this.phones.values()].filter((phone) => phone.state.grant.personId === grant.personId);
+    const pending = (connections: Connection[]) => connections.filter((connection) => connection.state.phase === 'challenged').length;
+    const additionalPending = phase === 'challenged' ? 1 : 0;
+    if (device.length + 1 > RELAY_LIMITS.desktopSocketsPerDevice || pending(device) + additionalPending > RELAY_LIMITS.desktopPendingPerDevice
+      || person.length + 1 > RELAY_LIMITS.desktopSocketsPerPerson || pending(person) + additionalPending > RELAY_LIMITS.desktopPendingPerPerson
+      || desktops.length + 1 > RELAY_LIMITS.desktopSocketsPerOrganization || pending(desktops) + additionalPending > RELAY_LIMITS.desktopPendingPerOrganization
+      || person.length + phones.length + 1 > RELAY_LIMITS.socketsPerPerson || this.size + 1 > RELAY_LIMITS.socketsPerOrganization)
+      return RELAY_CLOSE.connectionLimit;
+    return null;
+  }
+
+  private phoneCapacity(grant: PhoneGrant): RelayClose | null {
+    const mine = [...this.phones.values()].filter((phone) => phone.state.grant.personId === grant.personId).length;
+    const desktops = [...this.connections.values()].filter((connection) => connection.state.grant.personId === grant.personId).length;
+    const additional = mine >= RELAY_LIMITS.phoneSocketsPerPerson ? 0 : 1;
+    if (desktops + mine + additional > RELAY_LIMITS.socketsPerPerson || this.size + additional > RELAY_LIMITS.socketsPerOrganization)
+      return RELAY_CLOSE.connectionLimit;
+    return null;
+  }
+
+  private trimPhones(personId: string): void {
+    const mine = [...this.phones.values()].filter((phone) => phone.state.grant.personId === personId).sort((a, b) => a.state.openedAt - b.state.openedAt);
+    for (const old of mine.slice(0, Math.max(0, mine.length - RELAY_LIMITS.phoneSocketsPerPerson))) this.finishPhone(old, RELAY_CLOSE.replaced);
+  }
+
+  /** At most 240 ID/time events. A failed durable write conservatively retains its attempt charge. */
+  private allowUpgrade(grant: DesktopGrant | PhoneGrant, at: number, consume: boolean): boolean {
+    this.pruneRates(at);
+    if (this.upgrades.length >= RELAY_LIMITS.upgradesPerOrganization
+      || this.upgrades.filter((event) => event.personId === grant.personId).length >= RELAY_LIMITS.upgradesPerPerson
+      || ('deviceId' in grant && this.upgrades.filter((event) => event.deviceId === grant.deviceId).length >= RELAY_LIMITS.upgradesPerDevice)) return false;
+    if (consume) this.upgrades.push({ at, personId: grant.personId, deviceId: 'deviceId' in grant ? grant.deviceId : null });
+    return true;
+  }
+
+  private pruneRates(at: number): void {
+    this.upgrades = this.upgrades.filter((event) => event.at > at - RATE_WINDOW_MS);
+    for (const [key, times] of this.rates) {
+      const recent = times.filter((moment) => moment > at - RATE_WINDOW_MS);
+      if (recent.length) this.rates.set(key, recent);
+      else this.rates.delete(key);
+    }
+  }
+
+  /** A refused open never allocates connection/challenge state or sends a frame. */
+  private reject(transport: HubTransport | PhoneTransport, close: RelayClose): void {
+    try { transport.save(null); } catch { /* The socket is already gone. */ }
+    try { transport.close(close.code, close.reason); } catch { /* The socket is already gone. */ }
   }
 
   private async recheckPhone(phone: PhoneConnection): Promise<void> {

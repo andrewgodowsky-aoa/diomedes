@@ -143,7 +143,6 @@ describe('the relay hub: proving the device key', () => {
 
   it('closes a challenged desktop that sends anything but one proof', async () => {
     const key = keyPair();
-    const core = new RelayHubCore({ authority: authority().authority, now });
     const wrong = [
       RELAY_PING_FRAME,
       'not json',
@@ -153,12 +152,15 @@ describe('the relay hub: proving the device key', () => {
       JSON.stringify({ v: 1, type: 'prove', signature: 'A'.repeat(86), padding: 'x'.repeat(5_000) }),
     ];
     for (const frame of wrong) {
+      // These are independent protocol refusals; continuous upgrade pressure is covered separately.
+      const core = new RelayHubCore({ authority: authority().authority, now });
       const side = socket();
       const id = core.open(side.transport, grantFor(key.publicKey));
       await core.message(id, frame);
       expect(side.closes).toEqual([RELAY_CLOSE.protocolError]);
     }
     // Two proofs for one challenge: the second arrives while the first is checked, and ends the connection.
+    const core = new RelayHubCore({ authority: authority().authority, now });
     const side = socket();
     const id = core.open(side.transport, grantFor(key.publicKey));
     const frame = proveFrame(side, key.privateKey);

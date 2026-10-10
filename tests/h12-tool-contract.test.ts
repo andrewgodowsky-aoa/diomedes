@@ -13,6 +13,8 @@ import type { Json } from '../shared/harness.js';
 import { ToolRegistry, type ToolDefinition } from '../server/harness/tools.js';
 import { sourceTools } from '../server/harness/capabilities/conversation-sources.js';
 import { readScopeTools } from '../server/harness/capabilities/read-scope-tools.js';
+import type { ReadScope } from '../server/engines/read-scope.js';
+import { closeReadGrant, openReadGrant } from '../server/engines/turn-scope.js';
 import { containedFileTools } from '../server/harness/capabilities/contained-file-tools.js';
 import { TEAM_TOOLS, teamToolRegistry } from '../server/team/tools.js';
 
@@ -129,17 +131,19 @@ describe('the declared schemas bind at run time', () => {
 describe('every production registry passes the contract', () => {
   test('attached-source, read-scope, contained-file and team tools all declare a complete contract', async () => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'h12-contract-')));
+    let grant: string | undefined;
+    let reads: ReturnType<typeof readScopeTools> | undefined;
     try {
       const stop = new AbortController();
-      const reads = readScopeTools(
-        {
-          root,
-          access: 'project',
-          web: true,
-          mcp: [{ name: 'pos', command: 'node', args: [], readTools: ['list'] }],
-        } as never,
-        { stop: stop.signal },
-      );
+      const scope: ReadScope = {
+        projectId: 'h12-contract',
+        root,
+        access: 'project',
+        web: true,
+        mcp: [{ name: 'pos', command: 'node', args: [], envFrom: [], readTools: ['list'] }],
+      };
+      grant = openReadGrant('h12-contract', undefined, { scope, text: 'Read https://reference.example.test/manual' });
+      reads = readScopeTools({ ...scope, grant }, { stop: stop.signal });
       const registries = [
         sourceTools([{ path: 'a.md', text: 'a' }]),
         teamToolRegistry({} as never),
@@ -156,9 +160,13 @@ describe('every production registry passes the contract', () => {
           expect(tool.outputSchema, name).toBeDefined();
           expect(tool.effectClass, name).toBeDefined();
         }
-      await reads.close();
     } finally {
-      await fs.rm(root, { recursive: true, force: true });
+      closeReadGrant(grant);
+      try {
+        await reads?.close();
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
     }
   });
 });

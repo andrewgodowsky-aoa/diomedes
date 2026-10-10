@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -140,7 +141,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     if (
       !archive ||
       !(
-        await fs.stat(archive).catch((error) => {
+        await fs.lstat(archive).catch((error) => {
           if (error.code === 'ENOENT') return undefined;
           throw error;
         })
@@ -306,6 +307,27 @@ export async function packageDesktop(options = {}, dependencies = {}) {
     });
     if (sha256(JSON.stringify(await sourceSnapshot())) !== sourceDigest)
       throw new Error('Build inputs changed while packaging; repeat from a stable snapshot.');
+    // The packager bypasses checksum acquisition for electronZipDir. Copy that
+    // input into this build's owned stage and verify the bytes it will consume,
+    // after asynchronous bundling and immediately before packaging.
+    let verifiedElectronZipDir;
+    let electronArchive;
+    if (electronZipDir) {
+      const checksums = JSON.parse(await fs.readFile(
+        path.join(root, 'node_modules/electron/checksums.json'), 'utf8',
+      ));
+      const expected = checksums[archiveName];
+      if (typeof expected !== 'string' || !/^[0-9a-f]{64}$/.test(expected))
+        throw new Error(`The locked Electron package has no valid SHA-256 for ${archiveName}.`);
+      verifiedElectronZipDir = path.join(stage, '.electron-zips');
+      await fs.mkdir(verifiedElectronZipDir);
+      const archive = path.join(verifiedElectronZipDir, archiveName);
+      await fs.copyFile(path.join(electronZipDir, archiveName), archive, constants.COPYFILE_EXCL);
+      const actual = await sha256File(archive);
+      if (actual !== expected)
+        throw new Error(`Electron archive SHA-256 mismatch: ${archiveName}. Expected ${expected}, received ${actual}. Nothing was packaged.`);
+      electronArchive = { name: archiveName, sha256: actual, bytes: (await fs.stat(archive)).size };
+    }
     const buildInfo = {
       schemaVersion: 1,
       version: manifest.version,
@@ -315,6 +337,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       source,
       target: { platform, arch },
       electronVersion,
+      ...(electronArchive ? { electronArchive } : {}),
       nativeRuntime:
         platform === 'win32'
           ? { version: nativeManifest.version, sha256: hashes, notices: nativeNotices.notices }
@@ -351,9 +374,9 @@ export async function packageDesktop(options = {}, dependencies = {}) {
       asar: true,
       icon,
       electronVersion,
-      ...(electronZipDir ? { electronZipDir } : {}),
+      ...(verifiedElectronZipDir ? { electronZipDir: verifiedElectronZipDir } : {}),
       extraResource: [runtime],
-      ignore: /^\/native-runtime(?:\/|$)/,
+      ignore: /^\/(?:native-runtime|\.electron-zips)(?:\/|$)/,
       appVersion: manifest.version,
       overwrite: true,
       ...(platform === 'darwin'
@@ -427,6 +450,7 @@ export async function packageDesktop(options = {}, dependencies = {}) {
             target: { platform, arch },
             signing: buildInfo.signing,
             nativeRuntime: buildInfo.nativeRuntime,
+            ...(electronArchive ? { electronArchive } : {}),
             files: files.sort((a, b) => a.path.localeCompare(b.path)),
           },
           null,

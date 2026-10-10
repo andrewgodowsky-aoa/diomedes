@@ -51,11 +51,13 @@ export class FauxRelayHubs implements RelayHubs {
 
   async connect(grant: DesktopGrant, request: Request): Promise<Response> {
     return this.attach(grant.organizationId, request, 'A computer dials in with a version 13 WebSocket handshake.',
+      (core) => core.admitDesktop(grant),
       (core, transport) => core.open(transport, grant));
   }
 
   async connectPhone(grant: PhoneGrant, request: Request): Promise<Response> {
     return this.attach(grant.organizationId, request, 'A phone dials in with a version 13 WebSocket handshake.',
+      (core) => core.admitPhone(grant),
       (core, transport) => core.openPhone(transport, grant));
   }
 
@@ -84,14 +86,18 @@ export class FauxRelayHubs implements RelayHubs {
 
   /** Answers a held upgrade on its own socket and hands the socket to the business's hub. */
   private attach(organizationId: string, request: Request, invalid: string,
+    admit: (core: RelayHubCore) => RelayClose | null,
     open: (core: RelayHubCore, transport: HubTransport & PhoneTransport) => string): Response {
     const held = this.held.get(request);
     if (!held || held.taken || this.stopped)
       throw new RelayError(503, "Phone access isn't available right now. Try again shortly.", 'relay_unavailable');
     const key = upgradeKey(request.headers);
     if (!key) throw new RelayError(400, invalid, 'invalid_upgrade');
-    held.taken = true;
     const hub = this.hub(organizationId);
+    const refusal = admit(hub.core);
+    if (refusal) throw new RelayError(refusal.reason === 'session_expired' ? 401 : refusal.reason === 'recheck_unavailable' ? 503 : 429,
+      'Phone access cannot accept another connection right now. Try again shortly.', refusal.reason);
+    held.taken = true;
     let id = '';
     const socket: FauxWebSocket = new FauxWebSocket(held.socket, held.head, {
       message: (data) => void hub.core.message(id, data).finally(() => this.schedule(organizationId)),

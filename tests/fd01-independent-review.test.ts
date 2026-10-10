@@ -226,7 +226,11 @@ async function packagingFixture() {
     vars: { WORKOS_CLIENT_ID: 'client_independent_fixture', WORKOS_ISSUER: 'https://api.workos.com', WORKOS_TOKEN_AUDIENCE: 'https://accounts.independent-fixture.invalid' },
   }));
   await fs.writeFile(path.join(root, 'node_modules/electron/package.json'), JSON.stringify({ version: '44.2.0' }));
-  await fs.writeFile(path.join(root, 'cache/electron-v44.2.0-darwin-arm64.zip'), 'fixture only: real packager never runs');
+  const electronArchive = Buffer.from('fixture only: real packager never runs');
+  await fs.writeFile(path.join(root, 'cache/electron-v44.2.0-darwin-arm64.zip'), electronArchive);
+  await fs.writeFile(path.join(root, 'node_modules/electron/checksums.json'), JSON.stringify({
+    'electron-v44.2.0-darwin-arm64.zip': sha(electronArchive),
+  }));
   await fs.writeFile(path.join(root, '.data/native-runtime/codex.exe'), 'Windows poison resource');
   const build = vi.fn(async (call: { outfile: string }) => { await fs.writeFile(call.outfile, 'fixture bundle'); });
   const packager = vi.fn(async (call: PackageCall) => {
@@ -253,6 +257,10 @@ describe('FD01 independent packaging contract (substituted packager, not Mac pro
     expect(call.icon).toBe(path.join(root, 'desktop/nectovia.icns'));
     const output = path.join(root, 'release/Diomedes-darwin-arm64');
     const manifest = JSON.parse(await fs.readFile(`${output}.manifest.json`, 'utf8'));
+    const electronArchive = await fs.readFile(path.join(root, 'cache/electron-v44.2.0-darwin-arm64.zip'));
+    expect(manifest.electronArchive).toEqual({
+      name: 'electron-v44.2.0-darwin-arm64.zip', sha256: sha(electronArchive), bytes: electronArchive.length,
+    });
     expect(manifest.nativeRuntime).toMatchObject({ bundled: false, sha256: {} });
     expect(manifest.signing).toBe('unsigned-experimental');
     expect(manifest.files.some((entry: { path: string }) => /\.exe$/i.test(entry.path))).toBe(false);

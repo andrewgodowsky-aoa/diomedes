@@ -1,7 +1,7 @@
-/** W00 baseline, not a memory implementation or an evaluation of model reasoning.
- * NC_MEMORY_BASELINE_EXPECT_PRESERVED=1 turns the three reproduced information-loss
- * cases per tenant and the real driver cases into ordinary failing desired-invariant tests.
- * Default mode freezes current behavior explicitly. No expected-failure wrappers.
+/** W00 fixtures now enforce the repaired MEM-01 preservation invariant by default.
+ * The original first-sentence failure evidence remains in the security audit.
+ * NC_MEMORY_BASELINE_EXPECT_PRESERVED=1 remains accepted by older runners; both
+ * invocations now require preservation. These tests do not evaluate model reasoning.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -26,7 +26,6 @@ import { AWS_MODEL_CONTRACT } from '../server/harness/aws-model-adapter.js';
 import { BASELINE_TENANTS, BASELINE_QUERY, APPROVAL, CORRECTION, LONG_OPENING,
   OPAQUE_TRANSCRIPT, baselineCases, type BaselineCase } from './fixtures/memory-context/baseline.js';
 
-const expectPreserved = process.env.NC_MEMORY_BASELINE_EXPECT_PRESERVED === '1';
 const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 const roots: string[] = [];
 const drivers: ModelSessionRuns[] = [];
@@ -35,8 +34,8 @@ afterAll(async () => {
   if (process.env.NC_MEMORY_BASELINE_WRITE_EVIDENCE !== '1') return;
   const output = path.resolve('evidence/memory-context-w00');
   await fs.mkdir(output, { recursive: true });
-  await fs.writeFile(path.join(output, `baseline-${expectPreserved ? 'red' : 'current'}-observations.json`), JSON.stringify({
-    schema: 'w00-observed-context/1', synthetic: true, desiredInvariantMode: expectPreserved,
+  await fs.writeFile(path.join(output, 'preservation-observations.json'), JSON.stringify({
+    schema: 'w00-observed-context/1', synthetic: true, desiredInvariantMode: true,
     boundary: 'Observed text and references only; use the test runner log for verdicts. No model reasoning or live provider was tested.',
     observations,
   }, null, 2) + '\n');
@@ -106,21 +105,20 @@ function assertCompaction(fixture: BaselineCase, own: Awaited<ReturnType<RunServ
   expect(compacted.turns).toEqual(omitted.map(turn => ({ runId: own.id, stepId: turn.stepId, index: turn.index,
     promptSha: sha(turn.prompt!), answerSha: sha(turn.answer!) })));
   expect(compacted.id).toBe(sha(JSON.stringify({ method: compacted.method, turns: compacted.turns, text: compacted.text })));
-  expect(compacted.text).toContain(`- Message ${fixture.targetIndex}: the person asked \u201c${fixture.expectedPromptExcerpt}\u201d; Diomedes answered \u201c${fixture.expectedAnswerExcerpt}\u201d`);
-  expect(compacted).toMatchObject({ author: 'diomedes-application', method: 'extract-first-sentence/1', listed: 3 });
+  expect(compacted.text).toContain(`- Message ${fixture.targetIndex}: the person asked \u201c${target.prompt}\u201d; Diomedes answered \u201c${target.answer}\u201d`);
+  expect(compacted).toMatchObject({ author: 'diomedes-application', method: 'verbatim-turns/1', listed: 3 });
   expect(compacted.bytes).toBe(utf8Bytes(compacted.text));
   expect(selected.text).toContain(compacted.text);
   expect(JSON.stringify(own)).toBe(before);
   return selected;
 }
 function assertCriticalText(text: string, critical: string) {
-  if (expectPreserved) expect(text, 'Desired invariant: the exact correction must survive or be rehydrated.').toContain(critical);
-  else expect(text, 'Current baseline limitation: the correction is absent.').not.toContain(critical);
+  expect(text, 'The exact correction must survive or be rehydrated.').toContain(critical);
 }
 
-describe('W00 two-tenant first-sentence baseline', () => {
+describe('W00 two-tenant context preservation', () => {
   test.each(BASELINE_TENANTS.flatMap(tenant => baselineCases().map(fixture => ({ tenant, fixture }))))(
-    '$tenant / $fixture.id: actual selection and compaction preserve references but omit critical text', async ({ tenant, fixture }) => {
+    '$tenant / $fixture.id: actual selection and compaction preserve references and critical text', async ({ tenant, fixture }) => {
       const runs = new RunService(new FileRunStore(await directory()));
       const own = await seed(runs, tenant, fixture);
       const otherTenant = tenant === 'tenant-a' ? 'tenant-b' : 'tenant-a';

@@ -29,14 +29,16 @@ import {
   type HubTransport,
   type PhoneGrant,
   type PhoneTransport,
+  type PreparedUpgrade,
 } from './hub-core.js';
 import { PostgresRelayRepository } from './postgres.js';
-import { RELAY_CLOSE, RELAY_PING_FRAME, RELAY_PONG_FRAME, type RelayClose } from './protocol.js';
+import { RELAY_CLOSE, RELAY_LIMITS, RELAY_PING_FRAME, RELAY_PONG_FRAME, type RelayClose } from './protocol.js';
 import { RelayAuthority, type RelayHubs } from './service.js';
 
 /** The header the Worker front passes its grant to the hub in. A client's copy is always replaced. */
 export const RELAY_GRANT_HEADER = 'X-Nectovia-Relay-Grant';
 const HUB_ORIGIN = 'https://relay-hub.invalid';
+const UPGRADE_ACCOUNTING_KEY = 'relay-upgrade-accounting-v1';
 
 /** The runtime's hibernatable WebSocket, as far as the hub uses it. */
 export interface HubSocket {
@@ -53,7 +55,12 @@ export interface RelayHubState {
   getWebSockets(tag?: string): HubSocket[];
   setWebSocketAutoResponse(pair?: unknown): void;
   getWebSocketAutoResponseTimestamp(ws: HubSocket): Date | null;
-  readonly storage: { setAlarm(scheduledTime: number): Promise<void>; deleteAlarm(): Promise<void> };
+  readonly storage: {
+    get(key: string): Promise<unknown>;
+    put(key: string, value: unknown): Promise<void>;
+    setAlarm(scheduledTime: number): Promise<void>;
+    deleteAlarm(): Promise<void>;
+  };
 }
 
 interface RuntimeGlobals {
@@ -94,6 +101,11 @@ function savedId(ws: HubSocket): string | null {
 
 export class RelayHub {
   private core: RelayHubCore | null = null;
+  private upgradeAccountingLoaded = false;
+  private admission: Promise<void> = Promise.resolve();
+  private queuedAdmissions = 0;
+  /** Only current queued admissions, bounded by queuedAdmissions; no retained device tombstones. */
+  private readonly pendingDesktopAdmissions = new Set<{ deviceId: string; cancelled: boolean }>();
 
   constructor(
     private readonly ctx: RelayHubState,
@@ -109,12 +121,14 @@ export class RelayHub {
     const hub = this.hub();
     const { pathname } = new URL(request.url);
     try {
-      if (pathname === '/desktop') return this.accept(request, desktopGrantSchema, (transport, grant) => hub.open(transport, grant));
-      if (pathname === '/phone') return this.accept(request, phoneGrantSchema, (transport, grant) => hub.openPhone(transport, grant));
+      if (pathname === '/desktop') return await this.accept(request, desktopGrantSchema, (grant) => hub.prepareDesktop(grant));
+      if (pathname === '/phone') return await this.accept(request, phoneGrantSchema, (grant) => hub.preparePhone(grant));
       if (pathname === '/presence' && request.method === 'GET') return Response.json({ online: [...hub.presence()] });
       if (pathname === '/end' && request.method === 'POST') {
         const input = endInput.safeParse(await request.json().catch(() => null));
         if (!input.success) return new Response(null, { status: 400 });
+        for (const pending of this.pendingDesktopAdmissions)
+          if (pending.deviceId === input.data.deviceId) pending.cancelled = true;
         await hub.end(input.data.deviceId, RELAY_CLOSE.deviceRevoked);
         return new Response(null, { status: 204 });
       }
@@ -158,8 +172,9 @@ export class RelayHub {
     return new Response(null, init);
   }
 
-  /** An authorized upgrade: reads the grant the Worker front passed, accepts the socket, and hands it to the hub. */
-  private accept<G>(request: Request, schema: z.ZodType<G>, open: (transport: HubTransport & PhoneTransport, grant: G) => unknown): Response {
+  /** Persist bounded accounting before allocating a socket. Awaited storage must never bypass caps or deadlines. */
+  private async accept<G extends DesktopGrant | PhoneGrant>(request: Request, schema: z.ZodType<G>,
+    prepare: (grant: G) => PreparedUpgrade<HubTransport & PhoneTransport> | RelayClose): Promise<Response> {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response(null, { status: 426 });
     let grant: G;
     try {
@@ -169,10 +184,49 @@ export class RelayHub {
     }
     const Pair = (globalThis as RuntimeGlobals).WebSocketPair;
     if (!Pair) return new Response(null, { status: 503 });
-    const [client, server] = Object.values(new Pair()) as [HubSocket, HubSocket];
-    this.ctx.acceptWebSocket(server);
-    open(this.transport(server), grant);
-    return this.upgraded(client);
+    if (this.queuedAdmissions >= RELAY_LIMITS.queuedUpgradesPerOrganization) return this.refused(RELAY_CLOSE.connectionLimit);
+    const pending = 'deviceId' in grant ? { deviceId: grant.deviceId, cancelled: false } : null;
+    if (pending) this.pendingDesktopAdmissions.add(pending);
+    this.queuedAdmissions++;
+    const previous = this.admission;
+    let release!: () => void;
+    this.admission = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      // Explicit serialization also protects deterministic hosts without the Workers storage input gate.
+      await previous;
+      if (pending?.cancelled) return this.refused(RELAY_CLOSE.deviceRevoked);
+      if (!this.upgradeAccountingLoaded) {
+        try {
+          const saved = await this.ctx.storage.get(UPGRADE_ACCOUNTING_KEY);
+          if (!this.hub().restoreUpgradeAccounting(saved)) return this.refused(RELAY_CLOSE.recheckUnavailable);
+          this.upgradeAccountingLoaded = true;
+        } catch { return this.refused(RELAY_CLOSE.recheckUnavailable); }
+      }
+      if (pending?.cancelled) return this.refused(RELAY_CLOSE.deviceRevoked);
+      const prepared = prepare(grant);
+      if ('reason' in prepared) return this.refused(prepared);
+      try { await this.ctx.storage.put(UPGRADE_ACCOUNTING_KEY, prepared.accounting); }
+      catch { return this.refused(RELAY_CLOSE.recheckUnavailable); }
+      if (pending?.cancelled) return this.refused(RELAY_CLOSE.deviceRevoked);
+      const ending = prepared.recheck();
+      if (ending) return this.refused(ending);
+      // No await between the final check, allocation and opening. The reservation is consumed once.
+      const [client, server] = Object.values(new Pair()) as [HubSocket, HubSocket];
+      this.ctx.acceptWebSocket(server);
+      prepared.open(this.transport(server));
+      return this.upgraded(client);
+    } finally {
+      if (pending) this.pendingDesktopAdmissions.delete(pending);
+      this.queuedAdmissions--;
+      release();
+    }
+  }
+
+  private refused(refusal: RelayClose): Response {
+    return Response.json({ error: 'Phone access cannot accept another connection right now. Try again shortly.', code: refusal.reason }, {
+      status: refusal === RELAY_CLOSE.sessionExpired ? 401 : refusal === RELAY_CLOSE.deviceRevoked ? 403 : refusal === RELAY_CLOSE.recheckUnavailable ? 503 : 429,
+      headers: { 'retry-after': refusal === RELAY_CLOSE.upgradeRateLimited ? '60' : '10' },
+    });
   }
 
   /** A socket as the hub uses it, desktop or phone: each keeps its own state as the socket's attachment. */

@@ -164,14 +164,15 @@ describe('safe compaction', () => {
     const first = compactTurns(turns);
     expect(compactTurns(turns)).toEqual(first);
     expect(first.v).toBe(1);
-    expect(first.method).toBe('extract-first-sentence/1');
+    expect(first.method).toBe('verbatim-turns/1');
     expect(first.author).toBe('diomedes-application');
     expect(first.turns).toEqual([
       { runId: 'own-run', stepId: 'turn:a', index: 2, promptSha: sha(turns[0].prompt), answerSha: sha(turns[0].answer!) },
       { runId: 'own-run', stepId: 'turn:b', index: 4, promptSha: sha('Thanks'), answerSha: null },
     ]);
     expect(first.text).toContain('Where is the linen order?');
-    expect(first.text).not.toContain('It was due');
+    expect(first.text).toContain('It was due');
+    expect(first.text).toContain('Tracking is in orders.md.');
     expect(first.text).toContain('It shipped Tuesday.');
     expect(first.text).toContain('no model wrote');
     expect(first.id).toMatch(/^[a-f0-9]{64}$/);
@@ -188,7 +189,8 @@ describe('safe compaction', () => {
     }));
     const record = compactTurns(turns);
     expect(record.text.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
-    expect(record.text).toMatch(/\d+ more were left out without a line here/);
+    expect(record.text).toContain('60 earlier messages were left out in full');
+    expect(record.listed).toBe(0);
     expect(record.turns).toHaveLength(60);
   });
 

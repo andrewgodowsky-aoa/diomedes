@@ -11,7 +11,7 @@
  * runs them inside the boundary, and what the person sees. It does not prove a
  * live provider accepts these tool descriptors or calls them well.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,10 +26,11 @@ import { AzureConnections } from '../server/engines/azure-openai';
 import { OpenRouterConnections } from '../server/engines/openrouter';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
 import type { ReadScope } from '../server/engines/read-scope';
-import { openReadGrant } from '../server/engines/turn-scope';
+import { openReadGrant, revokeProjectReadGrants } from '../server/engines/turn-scope';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FileModelTranscripts } from '../server/harness/model-transcripts';
 import { modelApiDispatchAuthorizer, modelSessionRunId } from '../server/harness/model-session-run';
+import { readScopeRecord } from '../server/harness/capabilities/read-scope-tools';
 import type { HarnessRun } from '../shared/harness';
 import type { PageRequest, PageResolve } from '../server/harness/capabilities/page-fetch';
 import type { Store } from '../server/store';
@@ -221,6 +222,8 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
+  if (project) revokeProjectReadGrants(project.id);
   if (server) {
     await app.locals.close();
     server.closeAllConnections();
@@ -269,15 +272,20 @@ const pos = { name: 'pos', command: 'pos-server', args: [], envFrom: ['POS_TOKEN
  * A whole-project turn with a live host grant. No model-API route takes one today
  * (`WHOLE_PROJECT_READ_ROUTES`); the file tools are proven as if a route did.
  */
-const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({
-  root: folder,
-  web: true,
-  access: 'project',
-  files: [],
-  shared: ['notes/menu.md'],
-  grant: openReadGrant(project.id),
-  ...extra,
-});
+const scope = (extra: Partial<ReadScope> = {}): ReadScope => {
+  const admitted: ReadScope = {
+    projectId: project.id,
+    root: folder,
+    web: true,
+    access: 'project',
+    files: [],
+    shared: ['notes/menu.md'],
+    ...extra,
+  };
+  return { ...admitted, grant: extra.grant ?? openReadGrant(project.id, undefined, {
+    scope: admitted, text: 'Read https://metadata.example.com/ and https://example.com/specials',
+  }) };
+};
 
 function turnInput(
   overrides: Partial<TextRequest> & Pick<TextRequest, 'model' | 'accountRoute'>,
@@ -357,7 +365,7 @@ describe('a read tool round trip on each model-API route', () => {
   });
 });
 
-describe('the boundary holds, and a refusal does not end the turn', () => {
+describe('the read boundary and no-effect refusals', () => {
   test('a path outside the project is refused; the model reads the refusal and still answers', async () => {
     const accountRoute = await connectAws();
     plan = [{ name: 'read_file', args: { path: '../../outside.txt' } }];
@@ -370,20 +378,20 @@ describe('the boundary holds, and a refusal does not end the turn', () => {
     expect(activity[1].summary).toMatch(/^Not read: That path is outside the project folder/);
   });
 
-  test('an unapproved connector tool is refused before any connector is started; an approved one answers', async () => {
+  test('Runtime refuses an unapproved connector before startup; an authorized turn still answers', async () => {
     const accountRoute = await connectAws();
-    plan = [
-      { name: 'connector_read', args: { server: 'pos', tool: 'void_order', arguments: { id: '1182' } } },
-      { name: 'connector_read', args: { server: 'pos', tool: 'list_orders' } },
-    ];
+    plan = [{ name: 'connector_read', args: { server: 'pos', tool: 'void_order', arguments: { id: '1182' } } }];
+    await expect(turn('aws-bedrock', turnInput({ model: AWS_LUNA_MODEL, accountRoute, readScope: scope({ mcp: [pos] }) }, [])))
+      .rejects.toMatchObject({ code: 'ROUTE_REFUSED' });
+    expect(connectorCalls).toEqual([]);
+    expect(connectorClosed).toBe(0);
+    expect(seen).toHaveLength(1);
+    plan = [{ name: 'connector_read', args: { server: 'pos', tool: 'list_orders' } }];
     const activity: ToolActivity[] = [];
     const result = await turn('aws-bedrock', turnInput({ model: AWS_LUNA_MODEL, accountRoute, readScope: scope({ mcp: [pos] }) }, activity));
-    expect(observed[0]).toContain('not an approved read tool');
     expect(result.response?.text).toContain('Order 1182: 12 tomato soups');
     expect(connectorCalls).toEqual(['list_orders']);
     expect(frames(activity)).toEqual([
-      ['started', 'connector_read', 'Reading from pos (void_order)'],
-      ['failed', 'connector_read', 'Not read: pos (void_order) is not an approved read tool. Only the tools the owner approved can be called.'],
       ['started', 'connector_read', 'Reading from pos (list_orders)'],
       ['finished', 'connector_read', 'Read from pos (list_orders)'],
     ]);
@@ -394,8 +402,12 @@ describe('the boundary holds, and a refusal does not end the turn', () => {
 
   test('a page on a private address is refused before any request; a public page is read as text', async () => {
     const accountRoute = await connectOpenRouter();
+    plan = [{ name: 'fetch_page', args: { url: 'http://169.254.169.254/latest/meta-data/' } }];
+    await expect(turn('openrouter', turnInput({ model: OR_MODEL, accountRoute, readScope: scope() }, [])))
+      .rejects.toMatchObject({ code: 'ROUTE_REFUSED' });
+    expect(pageRequests).toEqual([]);
+    expect(resolved).toEqual([]);
     plan = [
-      { name: 'fetch_page', args: { url: 'http://169.254.169.254/latest/meta-data/' } },
       { name: 'fetch_page', args: { url: 'https://metadata.example.com/' } },
       { name: 'fetch_page', args: { url: 'https://example.com/specials' } },
     ];
@@ -404,8 +416,8 @@ describe('the boundary holds, and a refusal does not end the turn', () => {
     expect(pageRequests).toEqual(['https://example.com/specials']);
     expect(resolved).toEqual(['metadata.example.com', 'example.com']);
     expect(result.response?.text).toContain('Soup of the day: tomato');
-    expect(activity.map((frame) => frame.phase)).toEqual(['started', 'failed', 'started', 'failed', 'started', 'finished']);
-    expect(activity[5].summary).toBe('Opened https://example.com/specials');
+    expect(activity.map((frame) => frame.phase)).toEqual(['started', 'failed', 'started', 'finished']);
+    expect(activity[3].summary).toBe('Opened https://example.com/specials');
   });
 
   test('Stop during a connector call ends the turn as interrupted and closes the connector', async () => {
@@ -471,6 +483,104 @@ describe('no read tools outside Ask and Plan', () => {
     plan = [];
     await send('auto-1', 'auto');
     expect(toolNames(seen[before].body)).toEqual(['list_sources', 'read_source']);
+  });
+
+  test('the conversation route authorizes an exact current human URL, without inheriting it on a later message', async () => {
+    await connectAws();
+    const url = 'https://example.com/specials?day=tuesday';
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    plan = [{ name: 'fetch_page', args: { url } }];
+    await api(`/projects/${project.id}/threads/${thread.id}/messages`, 'POST', {
+      commandId: 'exact-human-url', text: `Read ${url}`, mode: 'ask', sources: [], consent: true,
+    });
+    expect(pageRequests).toEqual([url]);
+    expect(observed.join('')).toContain('Soup of the day: tomato');
+    const before = seen.length;
+    const later = await fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ commandId: 'no-inherited-url', text: 'Open the same page again.', mode: 'ask', sources: [], consent: true }),
+    });
+    await later.text();
+    expect(seen).toHaveLength(before + 1);
+    expect(pageRequests).toEqual([url]);
+    expect(resolved).toEqual(['example.com']);
+  });
+
+  test('cloud-sharing changes cancel a retained page before its stale answer can be accepted', async () => {
+    await connectAws();
+    const url = 'https://example.com/specials';
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    let entered!: (signal: AbortSignal) => void, release!: () => void;
+    const started = new Promise<AbortSignal>(done => { entered = done; });
+    const held = new Promise<void>(done => { release = done; });
+    let cancelled = 0;
+    service.modelApi!.readTools = { resolve, request: async input => {
+      entered(input.signal);
+      await held;
+      return {
+        status: 200, headers: { 'content-type': 'text/plain' },
+        body: (async function* () { yield Buffer.from('STALE_CLOUD_SHARING_PAGE'); })(),
+        cancel: () => { cancelled++; },
+      };
+    } };
+    plan = [{ name: 'fetch_page', args: { url } }];
+    const sending = fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ commandId: 'revoked-page', text: `Read ${url}`, mode: 'ask', sources: [], consent: true }),
+    });
+    const signal = await started;
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false,
+    });
+    expect(signal.aborted).toBe(true);
+    release();
+    const result = await sending;
+    expect(await result.text()).not.toContain('STALE_CLOUD_SHARING_PAGE');
+    expect(observed.join('')).not.toContain('STALE_CLOUD_SHARING_PAGE');
+    expect(seen).toHaveLength(1);
+    expect(cancelled).toBeGreaterThan(0);
+  });
+
+  test.each(['sharing', 'folder'])('scope admission refuses replaced Store state with changed %s during path checks', async change => {
+    await connectAws();
+    const thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>(done => { entered = done; });
+    const held = new Promise<void>(done => { release = done; });
+    let intercepted = false;
+    const stat = fs.stat.bind(fs);
+    vi.spyOn(fs, 'stat').mockImplementation((async (...args: Parameters<typeof fs.stat>) => {
+      if (!intercepted && path.resolve(String(args[0])) === path.resolve(folder)) {
+        intercepted = true;
+        entered();
+        await held;
+      }
+      return stat(...args);
+    }) as typeof fs.stat);
+    plan = [{ name: 'fetch_page', args: { url: 'https://example.com/specials' } }];
+    const sending = fetch(`${base}/api/projects/${project.id}/threads/${thread.id}/messages`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ commandId: `changed-${change}`, text: 'Read https://example.com/specials', mode: 'ask', sources: [], consent: true }),
+    });
+    await started;
+    const fresh = structuredClone(store().state(project.id));
+    if (change === 'sharing') {
+      fresh.cloudSharing = { version: 2, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false };
+    } else {
+      fresh.project.folder = path.join(root, 'replacement-project');
+      await fs.mkdir(fresh.project.folder);
+    }
+    revokeProjectReadGrants(project.id);
+    await store().persist(fresh);
+    release();
+    const result = await sending;
+    expect(await result.text()).toContain('Read access changed');
+    expect(seen).toEqual([]);
+    expect(pageRequests).toEqual([]);
+    expect(resolved).toEqual([]);
   });
 
   test('through the conversation route, each agent reads with its own tools, opens the message with its role and is named on the reply', async () => {
@@ -636,14 +746,17 @@ describe('the egress check for a read tool that leaves this computer', () => {
   const authorize = modelApiDispatchAuthorizer(() => ({ 'aws-bedrock': true, 'aws-bedrockAccountRoute': 'aws-bedrock:aws-bedrock-1@r1' }));
   const turnRun = (read: unknown, tools: string[]) =>
     ({
+      id: 'read-egress-run',
+      projectId: project.id,
       capabilityId: 'model-api-turn',
       capabilityTools: tools,
       input: { route: 'aws-bedrock', accountRoute: 'aws-bedrock:aws-bedrock-1@r1', ...(read ? { read } : {}) },
     }) as unknown as HarnessRun;
-  const step = (name: string) => ({ destination: 'external', kind: 'tool', name });
+  const step = (name: string) => ({ destination: 'external', kind: 'tool', name,
+    input: name === 'fetch_page' ? { url: 'https://example.com/specials' } : { server: 'pos', tool: 'list_orders' } });
 
   test('a page or connector step passes only on a turn whose recorded scope allowed it', async () => {
-    const allowed = turnRun({ web: true, connectors: [{ name: 'pos' }] }, ['read_source', 'fetch_page', 'connector_read']);
+    const allowed = turnRun(readScopeRecord(scope({ mcp: [pos] }), 'read-egress-run'), ['read_source', 'fetch_page', 'connector_read']);
     await expect(authorize(allowed, step('fetch_page'), 'dispatch')).resolves.toBeUndefined();
     await expect(authorize(allowed, step('connector_read'), 'dispatch')).resolves.toBeUndefined();
     await expect(authorize(turnRun({ web: false, connectors: [] }, ['fetch_page', 'connector_read']), step('fetch_page'), 'dispatch')).rejects.toMatchObject({

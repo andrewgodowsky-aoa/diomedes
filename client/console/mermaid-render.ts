@@ -659,7 +659,13 @@ export function mermaidConfig(tokens: FrameTokens, drawing: { math: boolean } = 
   };
 }
 
-export type DiagramResult = { ok: true; svg: string } | { ok: false; problem: string };
+export type DiagramResult = { ok: true; svg: string } | { ok: false; problem: string; cancelled?: true };
+
+export interface DiagramRenderOptions {
+  signal?: AbortSignal;
+  /** One panel's successive source/theme generations share this identity. */
+  owner?: object;
+}
 
 interface MermaidApi {
   initialize(config: Record<string, unknown>): void;
@@ -667,8 +673,21 @@ interface MermaidApi {
 }
 
 let loading: Promise<MermaidApi> | null = null;
-let queue: Promise<unknown> = Promise.resolve();
 let serial = 0;
+const MAX_PENDING_DIAGRAMS = 32;
+const generations = new WeakMap<object, number>();
+interface DiagramJob {
+  source: string;
+  tokens: FrameTokens;
+  owner?: object;
+  current: () => boolean;
+  finish: (result: DiagramResult) => void;
+}
+const pending: DiagramJob[] = [];
+let drawing = false;
+const cancelled = (): DiagramResult => ({
+  ok: false, cancelled: true, problem: 'A newer diagram replaced this pending render. Open the diagram again to draw it.',
+});
 
 function load(): Promise<MermaidApi> {
   loading ??= import('mermaid').then((module) => module.default as unknown as MermaidApi);
@@ -685,7 +704,8 @@ function describe(error: unknown): string {
   return trimmed || 'Mermaid could not read this diagram.';
 }
 
-async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult> {
+async function draw(source: string, tokens: FrameTokens, current: () => boolean): Promise<DiagramResult> {
+  if (!current()) return cancelled();
   const text = preparedSource(source);
   if (!text) return { ok: false, problem: 'The diagram is empty.' };
   // Read from the page at every draw: it carries the app's policy or it does not.
@@ -699,6 +719,9 @@ async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult>
   } catch {
     return { ok: false, problem: 'The diagram drawer could not be loaded. Close the panel and open the diagram again.' };
   }
+  // Importing the drawer is asynchronous too. A closed or superseded panel
+  // must not initialize global configuration or begin a layout after it loads.
+  if (!current()) return cancelled();
   serial += 1;
   const id = `art-mermaid-${serial}`;
   // Mermaid needs a laid-out container to measure text. This one is off
@@ -711,6 +734,7 @@ async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult>
   try {
     mermaid.initialize(mermaidConfig(tokens, { math }));
     const { svg } = await mermaid.render(id, text, host);
+    if (!current()) return cancelled();
     return { ok: true, svg: withoutFetchingSvg(svg) };
   } catch (error) {
     return { ok: false, problem: describe(error) };
@@ -720,9 +744,59 @@ async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult>
   }
 }
 
-/** Draws one diagram. Renders run one at a time: Mermaid's configuration is global. */
-export function renderDiagram(source: string, tokens: FrameTokens): Promise<DiagramResult> {
-  const next = queue.then(() => draw(source, tokens));
-  queue = next.catch(() => undefined);
-  return next;
+async function drain(): Promise<void> {
+  if (drawing) return;
+  drawing = true;
+  try {
+    while (pending.length) {
+      const job = pending.shift()!;
+      if (!job.current()) { job.finish(cancelled()); continue; }
+      try {
+        const result = await draw(job.source, job.tokens, job.current);
+        job.finish(job.current() ? result : cancelled());
+      } catch (error) {
+        job.finish({ ok: false, problem: describe(error) });
+      }
+    }
+  } finally { drawing = false; }
+}
+
+/** Draws live generations serially: Mermaid's configuration is global. */
+export function renderDiagram(
+  source: string,
+  tokens: FrameTokens,
+  options: DiagramRenderOptions = {},
+): Promise<DiagramResult> {
+  if (options.signal?.aborted) return Promise.resolve(cancelled());
+  const generation = options.owner ? (generations.get(options.owner) ?? 0) + 1 : 0;
+  if (options.owner) generations.set(options.owner, generation);
+  for (let index = pending.length - 1; index >= 0; index -= 1) {
+    const old = pending[index];
+    if (!old.current()) { pending.splice(index, 1); old.finish(cancelled()); }
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const job: DiagramJob = {
+      source, tokens, owner: options.owner,
+      current: () => !options.signal?.aborted &&
+        (!options.owner || generations.get(options.owner) === generation),
+      finish: (result) => {
+        if (settled) return;
+        settled = true;
+        options.signal?.removeEventListener('abort', abort);
+        resolve(result);
+      },
+    };
+    const abort = () => {
+      const index = pending.indexOf(job);
+      if (index >= 0) pending.splice(index, 1);
+      job.finish(cancelled());
+    };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    // Keep the newest pending panels when many independent panels request work.
+    // Every displaced promise settles; cancellation never creates a rejection.
+    if (pending.length >= MAX_PENDING_DIAGRAMS) pending.shift()!.finish(cancelled());
+    pending.push(job);
+    void drain();
+  });
 }
