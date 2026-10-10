@@ -377,6 +377,8 @@ export interface NativeStartInput {
    * profile's own Agent, or one the person named, is never replaced by it.
    */
   pickedAgentId?: string | null;
+  /** Host-only restart constraint. Resolve current policy as usual, but never substitute another worker. */
+  restartAgentId?: string;
   /**
    * Host-assembled playbook guidance (AssembledSkill `{section,use}`), loaded
    * through the pack contribution pin and checked against its digest by the
@@ -578,6 +580,10 @@ export class NativeWorkService {
     // Agent must leave no session, no working task and no saved-version entry
     // behind, so this cannot happen after the session is added below.
     const resolved = await this.agentFor(state, taskId, engine, input, profile);
+    if (input.restartAgentId && resolved?.agentId !== input.restartAgentId)
+      throw new ApiError(409, 'The original agent is no longer selected or available. Start new work instead.', {
+        code: 'agent_changed',
+      });
     if (resolved && !resolved.compatible)
       throw new ApiError(
         409,
@@ -699,7 +705,11 @@ export class NativeWorkService {
         sample: false,
         permission: input.permission ?? 'show-first',
         // What was asked, kept so a Resume or Retry asks for exactly this (H08).
-        inputs: { instruction, sources: [...names], agentId: input.agentId ?? null, mode: input.mode ?? 'build' },
+        inputs: {
+          instruction, sources: [...names], agentId: input.agentId ?? null,
+          ...(resolved ? { pickedAgentId: resolved.agentId } : {}),
+          mode: input.mode ?? 'build',
+        },
         ...(resolved ? { agent: structuredClone(resolved) } : {}),
         ...(instructions.delivery ? { instructions: instructions.delivery } : {}),
         // The exact playbook record for the guidance this run sends; the text
