@@ -435,6 +435,35 @@ WHEN NEW.access_epoch < OLD.access_epoch
 BEGIN SELECT RAISE(ABORT, 'revoked_epoch'); END;
 `;
 
+/** Explicit objects and the implicit indexes created by PROBE_SCHEMA's keys. */
+const PROBE_SCHEMA_OBJECTS = [
+  ['table', 'memory_scopes', 'memory_scopes'],
+  ['table', 'memory_entries', 'memory_entries'],
+  ['table', 'memory_commands', 'memory_commands'],
+  ['table', 'memory_events', 'memory_events'],
+  ['index', 'sqlite_autoindex_memory_scopes_1', 'memory_scopes'],
+  ['index', 'sqlite_autoindex_memory_entries_1', 'memory_entries'],
+  ['index', 'sqlite_autoindex_memory_entries_2', 'memory_entries'],
+  ['index', 'sqlite_autoindex_memory_commands_1', 'memory_commands'],
+  ['index', 'sqlite_autoindex_memory_events_1', 'memory_events'],
+  ['trigger', 'memory_entries_immutable_update', 'memory_entries'],
+  ['trigger', 'memory_entries_immutable_delete', 'memory_entries'],
+  ['trigger', 'memory_epochs_monotonic', 'memory_scopes'],
+] as const;
+
+function probeSchemaProblem(rows: readonly Row[]): string | null {
+  if (rows.length !== PROBE_SCHEMA_OBJECTS.length)
+    return `expected ${PROBE_SCHEMA_OBJECTS.length} objects, received ${rows.length}`;
+  for (const [type, name, table] of PROBE_SCHEMA_OBJECTS) {
+    const object = rows.find(row => row.type === type && row.name === name && row.tbl_name === table);
+    if (!object) return `missing ${type} ${name} on ${table}`;
+    // Implicit indexes have null SQL. The tables and triggers must carry a definition.
+    if (type === 'index' ? object.sql !== null : typeof object.sql !== 'string' || object.sql.trim().length === 0)
+      return `${type} ${name} has no valid SQL field`;
+  }
+  return null;
+}
+
 async function seeded(engine: ProbeEngine) {
   await engine.exec('PRAGMA foreign_keys = ON');
   await engine.exec(PROBE_SCHEMA);
@@ -963,6 +992,9 @@ export const W01_PROTECTIONS: readonly Protection[] = [
         await reference.exec(PROBE_SCHEMA);
         expected = await reference.all(SCHEMA_OBJECTS);
       } finally { await reference.close(); }
+      // Equality with an empty or incomplete reference proves nothing about the file's schema.
+      const problem = probeSchemaProblem(expected);
+      if (problem) return { status: 'unverified', observed: `the reference schema is incomplete: ${problem}` };
       return withDatabase(context, async engine => {
         await engine.exec(PROBE_SCHEMA);
         const actual = await engine.all(SCHEMA_OBJECTS);

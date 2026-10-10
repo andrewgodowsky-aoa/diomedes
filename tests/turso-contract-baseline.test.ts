@@ -22,9 +22,9 @@ import { Store } from '../server/store.js';
 import { EXPERT_FEATURE, MANAGED_PLAN_IDS, planTemplate } from '../shared/access.js';
 import { WORK_STYLES } from '../shared/work-style.js';
 import { CREDENTIAL_VARIABLES, refuseNetwork, withoutCredentials } from './fixtures/turso-qualification/offline.js';
-import { nodeSqliteFactory, type NodeSqliteDouble } from './fixtures/turso-qualification/probe-engine.js';
+import { nodeSqliteFactory, type NodeSqliteDouble, type Row } from './fixtures/turso-qualification/probe-engine.js';
 import {
-  PROBE_SCHEMA, W01_CANDIDATE, W01_NOT_PROBED, W01_PROTECTIONS, admitsAsPatchedSqlite, classifyEngine, classifySource, conformance,
+  PROBE_SCHEMA, SCHEMA_OBJECTS, W01_CANDIDATE, W01_NOT_PROBED, W01_PROTECTIONS, admitsAsPatchedSqlite, classifyEngine, classifySource, conformance,
   documentedBehavior, evidenceApplies, identify, loaderOverrides, matrixConflicts, pinDigest, pinInstalled, qualifies, readSqlIdentity,
   redistribution, runProtection, sha256, supportOf, verifyPin, w01OpenCheckPasses, w01Reliances, w01VersionGuardAdmits,
   type ArtifactIdentity, type ArtifactPin, type ComponentClaim, type EngineIdentity, type NoticeFile, type NoticeRecord, type PackagePin,
@@ -400,6 +400,51 @@ describe('TS-003 SQLite protective checks', () => {
     expect(await openCheckWithOrphan(ignoring(/^PRAGMA foreign_key_check\b/), 'silent')).toBe(true);
   });
 
+  const schemaReference = W01_PROTECTIONS.find(item => item.id === 'same-engine-schema-reference')!;
+  const schemaCatalog = async () => {
+    const engine = await nodeSqliteFactory().open(':memory:');
+    try {
+      await engine.exec(PROBE_SCHEMA);
+      return await engine.all(SCHEMA_OBJECTS);
+    } finally { await engine.close(); }
+  };
+  type CatalogDefeat = [how: string, damage: (rows: Row[]) => Row[]];
+  const defeatedCatalogs: CatalogDefeat[] = [
+    ['empty', () => []],
+    ['only one object', rows => rows.slice(0, 1)],
+    ['missing a table', rows => rows.filter(row => row.name !== 'memory_events')],
+    ['missing a trigger', rows => rows.filter(row => row.name !== 'memory_epochs_monotonic')],
+    ['missing an implicit index', rows => rows.filter(row => row.name !== 'sqlite_autoindex_memory_entries_2')],
+    ['wrong table owner', rows => rows.map(row => row.name === 'memory_entries_immutable_update' ? { ...row, tbl_name: 'memory_scopes' } : row)],
+    ['missing SQL definition', rows => rows.map(row => row.name === 'memory_entries' ? { ...row, sql: null } : row)],
+    ['duplicate object at the expected count', rows => rows.map(row => row.name === 'memory_epochs_monotonic' ? rows.find(item => item.name === 'memory_entries')! : row)],
+  ];
+
+  it.each(defeatedCatalogs)('refuses a mirrored %s schema catalog as proof', async (_how, damage) => {
+    const catalog = damage(await schemaCatalog());
+    const result = await runProtection(schemaReference, {
+      factory: nodeSqliteFactory({ intercept: sql => sql === SCHEMA_OBJECTS ? catalog : undefined }), scratch,
+    });
+    expect(result).toMatchObject({ status: 'unverified', observed: expect.stringContaining('reference schema') });
+    expect(conformance([result], [schemaReference])).toEqual({ verdict: 'retain-sqlite', missing: ['same-engine-schema-reference'] });
+  });
+
+  it('refuses an empty file schema catalog after a complete reference schema', async () => {
+    const catalog = await schemaCatalog();
+    let reads = 0;
+    const result = await runProtection(schemaReference, {
+      factory: nodeSqliteFactory({ intercept: sql => sql === SCHEMA_OBJECTS ? (reads++ === 0 ? catalog : []) : undefined }), scratch,
+    });
+    expect(result.status).toBe('violated');
+    expect(conformance([result], [schemaReference])).toEqual({ verdict: 'retain-sqlite', missing: ['same-engine-schema-reference'] });
+  });
+
+  it('proves a complete same-engine schema catalog with twelve objects', async () => {
+    expect(await runProtection(schemaReference, { factory: nodeSqliteFactory(), scratch })).toMatchObject({
+      status: 'proven', observed: '12 schema objects match',
+    });
+  });
+
   /** A setting that reads back as set but was never applied. */
   const readsBackOnly = (set: string, read: string, row: Record<string, unknown>): NodeSqliteDouble =>
     ({ intercept: sql => (sql === set ? [] : sql === read ? [row] : undefined) });
@@ -421,10 +466,11 @@ describe('TS-003 SQLite protective checks', () => {
       sql.replace(/,\s*FOREIGN KEY \(tenant_id, workspace_id, scope_ref\) REFERENCES memory_scopes \(tenant_id, workspace_id, scope_ref\)/g, '') }),
     'violated', {}],
     ['deferred-event-command-key', 'deferral removed', () => ({ rewrite: sql => sql.replace(/\s*DEFERRABLE INITIALLY DEFERRED/g, '') }), 'violated', {}],
+    // Removing a trigger also leaves the same-engine reference short of its required objects.
     ['immutable-rows', 'triggers removed', () => ({ rewrite: sql => sql.replace(/CREATE TRIGGER memory_entries_immutable_\w+[\s\S]*?END;/g, '') }),
-      'violated', {}],
+      'violated', { 'same-engine-schema-reference': 'unverified' }],
     ['monotonic-epoch', 'trigger removed', () => ({ rewrite: sql => sql.replace(/CREATE TRIGGER memory_epochs_monotonic[\s\S]*?END;/g, '') }),
-      'violated', {}],
+      'violated', { 'same-engine-schema-reference': 'unverified' }],
     ['foreign-key-check-detects-orphan', 'check answers nothing', () => ignoring(/^PRAGMA foreign_key_check$/), 'violated', {}],
     ['trusted-schema-off', 'setting not kept', () => answering('PRAGMA trusted_schema', { trusted_schema: 1 }), 'violated', {}],
     // The readback row stays proven: only the refusal shows the setting never took effect.
