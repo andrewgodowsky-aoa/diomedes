@@ -1,8 +1,35 @@
 # Diomedes harness integration map, 2026-09-08
 
-Maps the handoff package's fifteen workstreams (H01 to H15) onto the actual repository. Read `CURRENT_STATE.md` first. Paths are the flat layout (`server/`, `shared/`, `client/`, `tests/`); the package's `packages/*` names are translated, never created. A workstream is "present" only where a file and a test exist; "carried forward" means an existing capability is reused rather than duplicated; "specified" means this map names the owner and the acceptance test but no code exists yet.
+Maps the original handoff package's fifteen workstreams (H01 to H15) onto the repository at that historical checkpoint. Read `RUNTIME_VERIFICATION.md` and `CHANGES.md` before the historical `CURRENT_STATE.md`, then recheck current source. Paths are the flat layout (`server/`, `shared/`, `client/`, `tests/`); the package's `packages/*` names are translated, never created. A workstream is "present" only where a file and a test exist; "carried forward" means an existing capability is reused rather than duplicated; "specified" means this map names the owner and the acceptance test but no code exists yet.
 
 Status words: **present** (code and test on this branch or on main), **carried forward** (existing host capability reused), **partial**, **specified** (no code), **not in scope** (P3 or later; named so nobody creates an empty folder for it).
+
+## Extension contract amendment, 2026-10-03
+
+[EXT-01: Nectovia extensions](EXTENSION_CONTRACT.md) compares current Claude Code
+mods with its original research baseline and audits current main
+`efcc554b71cd1be6100bda0d2dd1ae9cd7dc82c2`. It defines
+proposed observe, hold, candidate-transform and Console-render boundaries.
+It extends the existing Runtime and pack host; it does not implement executable
+plugins or introduce another scheduler, permission model or file writer.
+
+Current `RunService.use` hooks receive copies and run between mandatory policy
+checks. Their return contract now supports an evidenced hold at the existing
+approval gate; it still cannot rewrite or approve the captured intent.
+Hold reasons are re-collected on retry; waiting state alone is not a durable
+required-extension gate, and approval does not bind a gate revision. EXT04 must
+persist and validate those requirements before exposing such gates.
+`createHarnessHost` installs the bridge and H16 stream-rule hooks.
+These trusted in-process hooks do not establish third-party containment.
+Native-loop composition callbacks and Team/worker grants remain host-owned.
+Personal Trust, automatic Team qualification, worker consent/reserves, manual
+card routing and phase/review guards must use their current owners.
+The H05 entry below describes the older checkpoint; the unified program uses
+different H01-H15 identifiers.
+
+Read the [draft implementation prompts](../product/PROMPT_mod-extensions-2026-10-03.md)
+for missing isolation, provenance, controlled transforms, advisory evaluation
+and marketplace/sync work. They do not change program completion status.
 
 ## 0. The authority, and where things appear
 
