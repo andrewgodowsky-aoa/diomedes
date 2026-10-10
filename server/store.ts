@@ -384,11 +384,16 @@ export async function readJson<T>(target: string, initial: () => T): Promise<T> 
  * when a newer Diomedes wrote it (H21). The version belongs to the file, so it
  * is dropped here and stamped again by `persist`.
  */
-async function readProjectState(target: string, id: string): Promise<StoredState> {
+async function readProjectState(
+  target: string,
+  id: string,
+  beforeMigration?: (state: StoredState) => void,
+): Promise<StoredState> {
   const state = await readJson<StoredState>(target, () => {
     throw new Error(`Project state is missing for ${id}.`);
   });
   assertReadable(PROJECT_STATE, state);
+  beforeMigration?.(state);
   delete (state as { schemaVersion?: unknown }).schemaVersion;
   return state;
 }
@@ -494,6 +499,10 @@ export class Store extends EventEmitter {
     await fs.mkdir(path.join(this.dataDir, 'pending'), { recursive: true });
     this.settings = await readSettings(path.join(this.dataDir, 'settings.json'));
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
+    // Keep only a digest of each disk record, including its schema marker. Recovery,
+    // migrations and restart reconciliation still run before deciding whether to write.
+    const saved = new Map<string, string>();
+    const digest = (state: object) => createHash('sha256').update(JSON.stringify(state)).digest('hex');
     for (const project of this.registry) {
       // A project id is generated here and never accepted from anyone, so a
       // saved row naming anything else was not written by this application.
@@ -503,7 +512,8 @@ export class Store extends EventEmitter {
       const id: unknown = (project as { id?: unknown } | null)?.id;
       if (typeof id !== 'string' || !PROJECT_ID.test(id) || id === HOST_TEST_PROJECT)
         throw new Error('A saved project registry entry names an id this build will not open.');
-      const state = await readProjectState(this.statePath(project.id), project.id);
+      const state = await readProjectState(this.statePath(project.id), project.id,
+        original => saved.set(project.id, digest(original)));
       const loadTime = now();
       dropLeftOff(state, project);
       for (const conversation of state.conversations ?? [])
@@ -558,7 +568,11 @@ export class Store extends EventEmitter {
           sample: session.sample,
         });
       }
-      await this.persist(state);
+      this.refreshCounts(state);
+      const next = { schemaVersion: PROJECT_STATE.current, ...state, documents: [] };
+      // An unchanged launch does not need to rewrite and fsync the entire History.
+      // Any migration, repaired count, recovery or stopped work still persists normally.
+      if (saved.get(state.project.id) !== digest(next)) await this.persist(state);
     }
   }
   private async recoverAndReload() {
