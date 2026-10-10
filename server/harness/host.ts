@@ -284,7 +284,14 @@ class ProjectRunStore implements RunStore {
   }
   async ids(projectId: string): Promise<string[]> {
     const revision = this.revisions.get(projectId) ?? 0;
-    const ids = await this.project(projectId).list();
+    const files = this.project(projectId);
+    const ids = await files.list();
+    // A listing can miss a file that is there (`FileRunStore.has`, DIO-318). A run
+    // this store knows leaves its lookup only once its file is really gone, since
+    // a drive reads its run through the lookup and never lists again.
+    const listed = new Set(ids);
+    for (const id of this.catalogs.get(projectId) ?? [])
+      if (!listed.has(id) && (await files.has(id))) ids.push(id);
     // A listing begun before create() must not erase the new run's lookup.
     if (revision !== (this.revisions.get(projectId) ?? 0)) return this.ids(projectId);
     this.catalog(projectId, new Set(ids));
