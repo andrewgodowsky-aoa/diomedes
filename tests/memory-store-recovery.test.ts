@@ -8,6 +8,7 @@ import { LocalMemoryStore } from '../server/memory/local-store.js';
 import { MemoryService } from '../server/memory/service.js';
 import { MEMORY_SQLITE_APPLICATION_ID, MEMORY_SQLITE_SCHEMA_VERSION } from '../server/memory/schema.js';
 import type { MemoryFaultPoint, MemoryTransaction } from '../server/memory/store.js';
+import type { MemoryLedgerScope } from '../shared/memory-ledger.js';
 import {
   command, entityCommand, epochs, keyOf, openFixture, scopeA, scopeB, scopeOtherWorkspace,
   scopeWest, T1, T2, type LedgerFixture,
@@ -276,6 +277,141 @@ describe('W01 bounded outbox admission', () => {
       return page;
     });
     expect(() => fixture.service.outbox(scopeA, 0, 1)).toThrow('revoked_epoch');
+  });
+});
+
+describe('W01 read-only epoch admission', () => {
+  const methods = ['snapshot', 'outbox', 'acknowledged'] as const;
+  type ReadMethod = typeof methods[number];
+  function readScope(fixture: LedgerFixture, method: ReadMethod, scope: MemoryLedgerScope = scopeA) {
+    if (method === 'snapshot') return fixture.service.snapshot(scope);
+    if (method === 'outbox') return fixture.service.outbox(scope, 1, 1);
+    return fixture.service.acknowledged(scope, 'indexer');
+  }
+  function afterRead(fixture: LedgerFixture, method: ReadMethod, changeAuthority: () => void) {
+    if (method === 'snapshot') {
+      const snapshot = fixture.store.snapshot.bind(fixture.store);
+      vi.spyOn(fixture.store, 'snapshot').mockImplementation((...args) => {
+        const result = snapshot(...args);
+        if (args[1] === undefined) changeAuthority();
+        return result;
+      });
+    } else if (method === 'outbox') {
+      const outbox = fixture.store.outbox.bind(fixture.store);
+      vi.spyOn(fixture.store, 'outbox').mockImplementation((...args) => {
+        const result = outbox(...args);
+        changeAuthority();
+        return result;
+      });
+    } else {
+      const acknowledged = fixture.store.acknowledged.bind(fixture.store);
+      vi.spyOn(fixture.store, 'acknowledged').mockImplementation((...args) => {
+        const result = acknowledged(...args);
+        changeAuthority();
+        return result;
+      });
+    }
+  }
+
+  it('reads unchanged epochs without a write transaction or WAL reservation', async () => {
+    const fixture = await owned();
+    const receipt = fixture.service.commit(scopeA, command(scopeA));
+    fixture.service.acknowledge(scopeA, 'indexer', receipt.event.sequence);
+    const before = fixture.store.snapshot(keyOf(scopeA));
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const transaction = vi.spyOn(fixture.store, 'transaction');
+    expect(fixture.store.snapshot(keyOf(scopeA))).toEqual(before);
+    expect(fixture.service.snapshot(scopeA)).toMatchObject(before!);
+    expect(fixture.service.read(scopeA, { validAt: T2 }).records.map(view => view.entry)).toEqual([receipt.entry]);
+    expect(fixture.service.outbox(scopeA, 0, 1)).toEqual([receipt.event]);
+    expect(fixture.service.acknowledged(scopeA, 'indexer')).toBe(receipt.event.sequence);
+    expect(fixture.service.acknowledged(scopeA, 'exporter')).toBe(0);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(() => fixture.service.acknowledge(scopeA, 'exporter', receipt.event.sequence)).toThrow('memory_capacity');
+    expect(fixture.store.acknowledged(keyOf(scopeA), 'exporter')).toBe(0);
+    expect(fixture.store.snapshot(keyOf(scopeA))).toEqual(before);
+  });
+
+  it.each(methods)('persists initial and advancing floors for %s when write capacity is available', async method => {
+    const fixture = await owned();
+    const transaction = vi.spyOn(fixture.store, 'transaction');
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)).toBeNull();
+    expect(() => readScope(fixture, method)).not.toThrow();
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(epochs);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    const current = { ...epochs, accessEpoch: epochs.accessEpoch + 1 };
+    const freshScope = { ...scopeA, ...current };
+    fixture.setAuthority(scopeA, current);
+    expect(() => readScope(fixture, method, freshScope)).not.toThrow();
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(current);
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(() => readScope(fixture, method, freshScope)).not.toThrow();
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(methods)('refuses an unpersisted floor for %s without write capacity', async method => {
+    const fixture = await owned();
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const transaction = vi.spyOn(fixture.store, 'transaction');
+    expect(() => readScope(fixture, method)).toThrow('memory_capacity');
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)).toBeNull();
+  });
+
+  it.each(methods.flatMap(method => (['identityGeneration', 'accessEpoch', 'deletionEpoch'] as const)
+    .map(epoch => ({ method, epoch }))))
+  ('enforces stale, advancing and restored $epoch floors for $method under low WAL capacity', async ({ method, epoch }) => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const transaction = vi.spyOn(fixture.store, 'transaction');
+    const current = { ...epochs, [epoch]: epochs[epoch] + 1 };
+    const freshScope = { ...scopeA, ...current };
+    fixture.setAuthority(scopeA, current);
+    expect(() => readScope(fixture, method)).toThrow('revoked_epoch');
+    expect(transaction).not.toHaveBeenCalled();
+    expect(() => readScope(fixture, method, freshScope)).toThrow('memory_capacity');
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(epochs);
+    await fixture.reopen();
+    expect(() => readScope(fixture, method, freshScope)).not.toThrow();
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(current);
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const rollbackTransaction = vi.spyOn(fixture.store, 'transaction');
+    fixture.setAuthority(scopeA, epochs);
+    expect(() => readScope(fixture, method)).toThrow('revoked_epoch');
+    expect(rollbackTransaction).not.toHaveBeenCalled();
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(current);
+  });
+
+  it.each(methods)('rechecks host authority after the %s data read', async method => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const transaction = vi.spyOn(fixture.store, 'transaction');
+    afterRead(fixture, method, () => {
+      fixture.setAuthority(scopeA, { ...epochs, accessEpoch: epochs.accessEpoch + 1 });
+    });
+    expect(() => readScope(fixture, method)).toThrow('revoked_epoch');
+    expect(transaction).not.toHaveBeenCalled();
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(epochs);
+  });
+
+  it.each(methods)('rechecks a durable floor advanced by another connection after the %s data read', async method => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    await fixture.reopen({ limits: { maxWalBytes: 1024 } });
+    const writer = await LocalMemoryStore.open({ path: fixture.file });
+    try {
+      const transaction = vi.spyOn(fixture.store, 'transaction');
+      const current = { ...epochs, deletionEpoch: epochs.deletionEpoch + 1 };
+      afterRead(fixture, method, () => {
+        writer.transaction(keyOf(scopeA), tx => tx.advanceEpochs(current));
+      });
+      expect(() => readScope(fixture, method)).toThrow('revoked_epoch');
+      expect(transaction).not.toHaveBeenCalled();
+      expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(current);
+    } finally { writer.close(); }
   });
 });
 
