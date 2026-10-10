@@ -14,6 +14,7 @@ import { createFauxCloud, type FauxCloud } from '../services/control-plane/src/f
 import { seedDemo, DEMO_ACCOUNTS, FAUX_DEMO_PASSWORD, type DemoAccount } from '../services/control-plane/src/faux/seed';
 import { ControlPlaneClient } from '../server/accounts/client';
 import { AccountRoutingSession } from '../server/accounts/routing-session';
+import type { AdmittedAgentWork } from '../server/accounts/agent-gate';
 import type { AccountSessionService } from '../server/accounts/session';
 import type { WorkspaceService } from '../server/workspaces';
 import { ROUTING_CONSENT_VERSION, STRICT_RESTRICTIONS, type AccountScope, type ModelBinding, type ProviderConnection } from '../shared/routing-policy';
@@ -119,11 +120,11 @@ async function holdTheRest(token: string, personId: string, scope: AccountScope)
 const admitJob = (d: Awaited<ReturnType<typeof desktop>>, job: string) =>
   d.routing.admit({ phase: 'admit', surface: 'conversation', projectId: null, rootJobId: job, routeKind: 'managed' });
 /** One step of a Personal job, as the Nectovia route sends it, under the job's admission (admitted here unless given). */
-async function step(d: Awaited<ReturnType<typeof desktop>>, job: string, attempt: string, given?: { admissionId: string }) {
+async function step(d: Awaited<ReturnType<typeof desktop>>, job: string, attempt: string, given?: AdmittedAgentWork) {
   const admission = given ?? await admitJob(d, job);
   const policy = d.routing.policy(null)!;
   const connectionId = nectoviaConnectionId(d.scope.id, new Date());
-  await exposure.setCap(connectionId, micro(1_000_000), { approvedBy: 'test host', note: 'Disposable guard' });
+  await ensureNectoviaGuard(exposure, connectionId, admission.planId, admission.boughtAvailable);
   const messages: ModelMessage[] = [{ role: 'user', content: 'Hello from Personal.' }];
   return respondNectovia({ base: client.base, account: { policy: () => d.routing.policy(null), refreshPolicy: () => d.routing.refresh(null) },
     connectionId, model: 'fixture-model', managed: { admissionId: admission.admissionId, organizationId: d.scope.id, scope: d.scope,
@@ -221,6 +222,34 @@ describe("the local guard follows what a person paying as they go bought (DIO-22
     await buy(d.token, credits);
     return d;
   }
+
+  it('dispatches after the old 1,000-credit guard is exhausted, and refreshes the guard after another purchase', async () => {
+    const d = await desktop('free');
+    const connectionId = nectoviaConnectionId(d.scope.id, new Date());
+    await ensureNectoviaGuard(exposure, connectionId, null);
+    await spend(connectionId, 1000);
+    expect(exposure.summary(connectionId).availableMicroUsd).toBe(0);
+
+    // A new purchase must reopen this month's guard on the same connection, without a plan.
+    await buy(d.token, 3000);
+    const result = await step(d, 'after-purchase', 'step-1');
+    expect(result.outcome).toMatchObject({ kind: 'final', text: 'A complete answer.' });
+    expect(sent).toBe(1);
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(4000), revision: 2 });
+    expect(exposure.summary(connectionId).availableMicroUsd).toBe((await client.personalPurchasedBalance(d.token)).availableMicroUsd);
+    expect(cloud.store.snapshot().funding.attempts.find(row => row.rootJobId === 'after-purchase')).toMatchObject({
+      tenantId: d.person.id, organizationId: d.scope.id, periodId: 'bought-credits', monthlyHoldMicroUsd: 0,
+    });
+
+    // A later admission reads the additional purchase through the real account client.
+    await buy(d.token, 100);
+    await step(d, 'after-top-up', 'step-1');
+    expect(sent).toBe(2);
+    expect(exposure.allowance(connectionId)).toMatchObject({ capMicroUsd: creditAmount(4100), revision: 3 });
+    expect(exposure.summary(connectionId).availableMicroUsd).toBe((await client.personalPurchasedBalance(d.token)).availableMicroUsd);
+    expect(d.routing.paysAsYouGo(d.scope)).toBe(true);
+    expect(d.routing.includes(d.scope, 'nectovia-agent')).toBe(false);
+  });
 
   it('carries the service’s amount from the access view to the admission, and lets one computer settle past the default in a month', async () => {
     const d = await boughtWith(3000);
