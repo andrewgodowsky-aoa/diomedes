@@ -1595,8 +1595,10 @@ describe('AgentFS workspaces on the stand-in for agentfs-sdk 0.6.4', () => confo
 describe.skipIf(!realModules)('AgentFS workspaces on the installed agentfs-sdk 0.6.4', () => conformance(() => loadAgentFsSdk(realModules!)));
 
 describe('loading the SDK', () => {
+  const loaderOverrides = ['NAPI_RS_NATIVE_LIBRARY_PATH', 'NAPI_RS_FORCE_WASI'] as const;
   let dir: string, modules: string;
   beforeEach(async () => {
+    for (const name of loaderOverrides) vi.stubEnv(name, undefined);
     dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'agentfs-pins-')));
     modules = path.join(dir, 'node_modules');
   });
@@ -1612,15 +1614,38 @@ describe('loading the SDK', () => {
     await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version }));
   };
 
-  test('a loader override is refused before anything is read, whether a caller passes it or this process has it set', async () => {
+  test.each(loaderOverrides)('a caller\'s %s loader override is refused before anything is read, including an empty string', async (name) => {
     const missing = path.join(dir, 'missing');
-    await expect(loadAgentFsSdk(missing, { ...qualified, env: { NAPI_RS_NATIVE_LIBRARY_PATH: 'C:/elsewhere/agentfs.node' } })).rejects.toMatchObject({
+    await expect(loadAgentFsSdk(missing, { ...qualified, env: { [name]: 'test-loader-override' } })).rejects.toMatchObject({
       code: 'agentfs_loader_override',
     });
-    await expect(loadAgentFsSdk(missing, { ...qualified, env: { NAPI_RS_FORCE_WASI: '1' } })).rejects.toMatchObject({ code: 'agentfs_loader_override' });
-    // The engine's loader reads this process's environment, so an empty one passed in changes nothing.
-    vi.stubEnv('NAPI_RS_FORCE_WASI', '1');
-    await expect(loadAgentFsSdk(missing, qualified)).rejects.toMatchObject({ code: 'agentfs_loader_override' });
+    await expect(loadAgentFsSdk(missing, { ...qualified, env: { [name]: '' } })).rejects.toMatchObject({ code: 'agentfs_loader_override' });
+  });
+
+  describe.each(loaderOverrides)('this process\'s %s loader override', (name) => {
+    test.each([
+      { label: 'a nonempty value', value: 'test-loader-override' },
+      { label: 'an empty string', value: '' },
+    ])('cannot be hidden by an omitted or undefined caller option ($label)', async ({ value }) => {
+      const missing = path.join(dir, 'missing');
+      vi.stubEnv(name, value);
+      await expect(loadAgentFsSdk(missing, { platform: qualified.platform, arch: qualified.arch })).rejects.toMatchObject({
+        code: 'agentfs_loader_override',
+      });
+      await expect(loadAgentFsSdk(missing, qualified)).rejects.toMatchObject({ code: 'agentfs_loader_override' });
+      await expect(loadAgentFsSdk(missing, { ...qualified, env: { [name]: undefined } })).rejects.toMatchObject({
+        code: 'agentfs_loader_override',
+      });
+    });
+  });
+
+  test('absent loader overrides still reach the SDK pin checks when the caller explicitly passes undefined', async () => {
+    await expect(
+      loadAgentFsSdk(path.join(dir, 'missing'), {
+        ...qualified,
+        env: { NAPI_RS_NATIVE_LIBRARY_PATH: undefined, NAPI_RS_FORCE_WASI: undefined },
+      }),
+    ).rejects.toMatchObject({ code: 'agentfs_not_pinned' });
   });
 
   test('only a platform the pins were qualified on loads', async () => {
