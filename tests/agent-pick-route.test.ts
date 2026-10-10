@@ -1,9 +1,12 @@
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
+import { AccountAgentGate, AGENT_NOT_INCLUDED, type AdmittedAgentWork, type AgentWork } from '../server/accounts/agent-gate.js';
+import { EngineError } from '../server/engines/process.js';
+import { EngineService } from '../server/engines/service.js';
 import type { JevAdvisor, PreflightAdvice } from '../server/harness/jev-advisor.js';
 import type { Conversation } from '../shared/types.js';
 
@@ -25,6 +28,18 @@ async function call(route: string, method = 'GET', body?: unknown) {
 /** What Jev would choose from the shortlist it is offered, or nothing. */
 let advised: string | null = null;
 const offered: string[][] = [];
+const admitted: AdmittedAgentWork = {
+  admissionId: 'fixture-advisor-admission',
+  organizationId: null,
+  personId: 'fixture-person',
+  planId: 'individual',
+  policyRevision: 1,
+  routeKind: 'byo',
+  surface: 'other',
+  validUntil: '2099-01-01T00:00:00Z',
+};
+const admitAdvisor = vi.fn<(work: AgentWork) => Promise<AdmittedAgentWork>>();
+let agentGate: AccountAgentGate;
 const advisor: JevAdvisor = {
   preflight: async (input) => {
     offered.push(input.shortlist.map((item) => item.id));
@@ -40,11 +55,23 @@ beforeEach(async () => {
   temp = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'agent-pick-'));
   advised = null;
   offered.length = 0;
+  admitAdvisor.mockReset();
+  admitAdvisor.mockResolvedValue(admitted);
+  agentGate = new AccountAgentGate(
+    { personalIncludes: () => true, personalUnknown: () => false } as never,
+    { projectOwner: () => null, active: () => ({ kind: 'personal' }) } as never,
+    { scopeFor: () => null, admit: admitAdvisor } as never,
+  );
+  const engines = new EngineService(path.join(temp, 'engines'), { discover: async () => [] });
+  engines.agentGate = agentGate;
   app = await createApp({
     dataDir: path.join(temp, 'data'),
     projectRoot: path.join(temp, 'projects'),
     stepMs: 20,
     jevAdvisor: advisor,
+    engineService: engines,
+    accounts: null,
+    managedJev: false,
   });
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -86,6 +113,41 @@ test('Auto hands a failure with its file to Fixer', async () => {
   expect(answer).toMatchObject({ agent: { id: 'diomedes.debugger', name: 'Fixer' }, mode: 'fix', by: 'rule' });
 });
 
+test('a rule pick completes without entering a delayed advisor admission', async () => {
+  const t = await thread('codex');
+  const check = vi.spyOn(agentGate, 'check');
+  let started!: () => void, release!: (value: AdmittedAgentWork) => void;
+  const enteringAdmission = new Promise<void>((resolve) => { started = resolve; });
+  const heldAdmission = new Promise<AdmittedAgentWork>((resolve) => { release = resolve; });
+  admitAdvisor.mockImplementation(() => { started(); return heldAdmission; });
+  const pending = pick(t.projectId, t.threadId, 'hi');
+  // No timing threshold: the rule must answer before the account service is entered.
+  const first = await Promise.race([
+    pending.then(() => 'picked'),
+    enteringAdmission.then(() => 'admitting'),
+  ]);
+  release(admitted);
+  const answer = await pending;
+  expect(first).toBe('picked');
+  expect(answer.status).toBe(200);
+  expect(answer.data).toMatchObject({ agent: { id: 'auto' }, by: 'rule' });
+  expect(check).not.toHaveBeenCalled();
+  expect(admitAdvisor).not.toHaveBeenCalled();
+  expect(offered).toEqual([]);
+});
+
+test('a rule pick never asks a refusing advisor gate', async () => {
+  const t = await thread('codex');
+  const check = vi.spyOn(agentGate, 'check');
+  admitAdvisor.mockRejectedValue(new EngineError(AGENT_NOT_INCLUDED, 'Fixture admission refused. Nothing was sent.', false));
+  const answer = await pick(t.projectId, t.threadId, 'The Friday sales total is off by a day.', ['sales_day.py']);
+  expect(answer.status).toBe(200);
+  expect(answer.data).toMatchObject({ agent: { id: 'diomedes.debugger' }, by: 'rule' });
+  expect(check).not.toHaveBeenCalled();
+  expect(admitAdvisor).not.toHaveBeenCalled();
+  expect(offered).toEqual([]);
+});
+
 test('Auto answers small talk itself where it has a conversation, and sends it to Researcher where it has none', async () => {
   const codex = await thread('codex');
   expect((await pick(codex.projectId, codex.threadId, 'hi')).data).toMatchObject({ agent: { id: 'auto', name: 'Auto' }, mode: 'auto' });
@@ -113,6 +175,42 @@ test("Jev decides when the words don't, and only from the shortlist", async () =
   expect(offered[0]).not.toContain('diomedes.general');
   advised = 'diomedes.general';
   expect((await pick(t.projectId, t.threadId, 'Review the plan and chart the sales.')).data).toMatchObject({ agent: { id: 'auto' }, by: 'default' });
+});
+
+test('an ambiguous pick waits for advisor admission before asking Jev', async () => {
+  const t = await thread('codex');
+  const check = vi.spyOn(agentGate, 'check');
+  advised = 'diomedes.analyst';
+  let started!: () => void, release!: (value: AdmittedAgentWork) => void;
+  const enteringAdmission = new Promise<void>((resolve) => { started = resolve; });
+  const heldAdmission = new Promise<AdmittedAgentWork>((resolve) => { release = resolve; });
+  admitAdvisor.mockImplementation(() => { started(); return heldAdmission; });
+  const pending = pick(t.projectId, t.threadId, 'Review the plan and chart the sales.');
+  try {
+    await enteringAdmission;
+    expect(check).toHaveBeenCalledExactlyOnceWith({ phase: 'admit', surface: 'other', projectId: t.projectId, rootJobId: null, routeKind: 'byo' });
+    expect(offered).toEqual([]);
+  } finally {
+    release(admitted);
+  }
+  const answer = await pending;
+  expect(answer.status).toBe(200);
+  expect(answer.data).toMatchObject({ agent: { id: 'diomedes.analyst' }, by: 'jev' });
+  expect(admitAdvisor).toHaveBeenCalledOnce();
+  expect(offered).toHaveLength(1);
+});
+
+test('a refused ambiguous pick uses its safe default without asking Jev', async () => {
+  const t = await thread('codex');
+  const check = vi.spyOn(agentGate, 'check');
+  advised = 'diomedes.analyst';
+  admitAdvisor.mockRejectedValue(new EngineError(AGENT_NOT_INCLUDED, 'Fixture admission refused. Nothing was sent.', false));
+  const answer = await pick(t.projectId, t.threadId, 'Review the plan and chart the sales.');
+  expect(answer.status).toBe(200);
+  expect(answer.data).toMatchObject({ agent: { id: 'auto' }, by: 'default' });
+  expect(check).toHaveBeenCalledExactlyOnceWith({ phase: 'admit', surface: 'other', projectId: t.projectId, rootJobId: null, routeKind: 'byo' });
+  expect(admitAdvisor).toHaveBeenCalledOnce();
+  expect(offered).toEqual([]);
 });
 
 test("on Auto, an agent that only reads rides Auto's own lane wherever Auto answers in the conversation", async () => {
