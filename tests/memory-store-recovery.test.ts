@@ -3,13 +3,14 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocalMemoryStore } from '../server/memory/local-store.js';
 import { MemoryService } from '../server/memory/service.js';
 import { MEMORY_SQLITE_APPLICATION_ID, MEMORY_SQLITE_SCHEMA_VERSION } from '../server/memory/schema.js';
 import type { MemoryFaultPoint, MemoryTransaction } from '../server/memory/store.js';
 import {
-  command, entityCommand, epochs, keyOf, openFixture, scopeA, scopeB, T1, T2, type LedgerFixture,
+  command, entityCommand, epochs, keyOf, openFixture, scopeA, scopeB, scopeOtherWorkspace,
+  scopeWest, T1, T2, type LedgerFixture,
 } from './fixtures/memory-ledger/fixture.js';
 
 // No runtime qualification or test result is implied by these authored tests.
@@ -160,6 +161,121 @@ describe('W01 atomic SQLite recovery and durable outbox', () => {
     })).toThrow('memory_not_found_or_forbidden');
     expect(fixture.store.snapshot(keyOf(scopeA))).toBeNull();
     expect(fixture.service.snapshot(scopeB).entries).toEqual([original.entry]);
+  });
+});
+
+describe('W01 bounded outbox admission', () => {
+  it('pages events above the snapshot ceiling without loading ledger history', async () => {
+    const fixture = await owned();
+    const one = fixture.service.commit(scopeA, command(scopeA));
+    const two = fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1, maxOutboxPage: 1 } });
+    expect(() => fixture.service.snapshot(scopeA)).toThrow('memory_capacity');
+    expect(fixture.store.outbox(keyOf(scopeA), 0, 1)).toEqual([one.event]);
+    expect(fixture.service.outbox(scopeA, 0, 1)).toEqual([one.event]);
+    expect(fixture.service.outbox(scopeA, one.event.sequence, 1)).toEqual([two.event]);
+    expect(fixture.service.outbox(scopeA, two.event.sequence, 1)).toEqual([]);
+    expect(() => fixture.service.outbox(scopeA, 0, 2)).toThrow('memory_capacity');
+  });
+
+  it('persists monotonic acknowledgements above the snapshot ceiling', async () => {
+    const fixture = await owned();
+    const one = fixture.service.commit(scopeA, command(scopeA));
+    const two = fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    fixture.service.acknowledge(scopeA, 'indexer', one.event.sequence);
+    expect(fixture.store.acknowledged(keyOf(scopeA), 'indexer')).toBe(one.event.sequence);
+    fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence);
+    fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence);
+    expect(() => fixture.service.acknowledge(scopeA, 'indexer', one.event.sequence)).toThrow('revision_conflict');
+    expect(() => fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence + 1)).toThrow('revision_conflict');
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    expect(fixture.store.acknowledged(keyOf(scopeA), 'indexer')).toBe(two.event.sequence);
+  });
+
+  it('reads acknowledgements above the snapshot ceiling independently per consumer', async () => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    const two = fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence);
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    expect(fixture.service.acknowledged(scopeA, 'indexer')).toBe(two.event.sequence);
+    expect(fixture.service.acknowledged(scopeA, 'exporter')).toBe(0);
+  });
+
+  it.each([scopeB, scopeOtherWorkspace, scopeWest])
+  ('isolates bounded pages and acknowledgements in $tenantId/$workspaceId/$scopeRef', async other => {
+    const fixture = await owned();
+    const local = fixture.service.commit(scopeA, command(scopeA));
+    fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    const foreign = fixture.service.commit(other, command(other, { body: 'Different private claim.' }));
+    const foreignTwo = fixture.service.commit(other, command(other, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    expect(fixture.service.outbox(scopeA, 0, 1)).toEqual([local.event]);
+    expect(fixture.service.outbox(other, foreign.event.sequence, 1)).toEqual([foreignTwo.event]);
+    fixture.service.acknowledge(scopeA, 'indexer', local.event.sequence);
+    expect(fixture.service.acknowledged(other, 'indexer')).toBe(0);
+    fixture.service.acknowledge(other, 'indexer', foreignTwo.event.sequence);
+    expect(fixture.service.acknowledged(scopeA, 'indexer')).toBe(local.event.sequence);
+    expect(fixture.service.acknowledged(other, 'indexer')).toBe(foreignTwo.event.sequence);
+    expect(fixture.service.acknowledged(scopeA, 'exporter')).toBe(0);
+  });
+
+  it.each(['identityGeneration', 'accessEpoch', 'deletionEpoch'] as const)
+  ('rejects stale host authority and durable %s rollback above the snapshot ceiling', async epoch => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    const two = fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    const current = { ...epochs, [epoch]: epochs[epoch] + 1 };
+    const freshScope = { ...scopeA, ...current };
+    fixture.setAuthority(scopeA, current);
+    expect(() => fixture.service.outbox(scopeA, 0, 1)).toThrow('revoked_epoch');
+    expect(() => fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence)).toThrow('revoked_epoch');
+    expect(() => fixture.service.acknowledged(scopeA, 'indexer')).toThrow('revoked_epoch');
+    expect(fixture.service.acknowledged(freshScope, 'indexer')).toBe(0);
+    expect(() => fixture.service.outbox(freshScope, 0, 1)).toThrow('revoked_epoch');
+    expect(fixture.service.outbox(freshScope, two.event.sequence, 1)).toEqual([]);
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    expect(fixture.store.snapshot(keyOf(scopeA), 0)?.epochs).toEqual(current);
+    fixture.setAuthority(scopeA, epochs);
+    expect(() => fixture.service.outbox(scopeA, 0, 1)).toThrow('revoked_epoch');
+    expect(() => fixture.service.acknowledge(scopeA, 'indexer', two.event.sequence)).toThrow('revoked_epoch');
+    expect(() => fixture.service.acknowledged(scopeA, 'indexer')).toThrow('revoked_epoch');
+    expect(fixture.store.acknowledged(keyOf(scopeA), 'indexer')).toBe(0);
+  });
+
+  it('keeps malformed bounded requests rejected above the snapshot ceiling', async () => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    for (const invalid of [-1, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => fixture.service.outbox(scopeA, invalid, 1)).toThrow('invalid_memory');
+      expect(() => fixture.service.acknowledge(scopeA, 'indexer', invalid)).toThrow('invalid_memory');
+    }
+    expect(() => fixture.service.outbox(scopeA, 0, 0)).toThrow('invalid_memory');
+    expect(() => fixture.service.acknowledge(scopeA, '', 1)).toThrow('invalid_memory');
+    expect(() => fixture.service.acknowledged(scopeA, '')).toThrow('invalid_memory');
+    const invalidScope = { ...scopeA, tenantId: '' };
+    expect(() => fixture.service.outbox(invalidScope, 0, 1)).toThrow('invalid_memory');
+    expect(() => fixture.service.acknowledge(invalidScope, 'indexer', 1)).toThrow('invalid_memory');
+    expect(() => fixture.service.acknowledged(invalidScope, 'indexer')).toThrow('invalid_memory');
+    expect(fixture.store.acknowledged(keyOf(scopeA), 'indexer')).toBe(0);
+  });
+
+  it('rechecks current host authority before returning a bounded event page', async () => {
+    const fixture = await owned();
+    fixture.service.commit(scopeA, command(scopeA));
+    fixture.service.commit(scopeA, command(scopeA, { revision: 2 }));
+    await fixture.reopen({ limits: { maxSnapshotEntries: 1 } });
+    const readPage = fixture.store.outbox.bind(fixture.store);
+    vi.spyOn(fixture.store, 'outbox').mockImplementation((...args) => {
+      const page = readPage(...args);
+      fixture.setAuthority(scopeA, { ...epochs, accessEpoch: epochs.accessEpoch + 1 });
+      return page;
+    });
+    expect(() => fixture.service.outbox(scopeA, 0, 1)).toThrow('revoked_epoch');
   });
 });
 
