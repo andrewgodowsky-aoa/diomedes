@@ -1,0 +1,218 @@
+{
+ "artifact": {
+  "component": "node:sqlite",
+  "version": "3.51.3",
+  "platform": "win32-x64"
+ },
+ "loaderOverrides": [],
+ "identity": {
+  "component": "node:sqlite",
+  "version": "3.51.3",
+  "platform": "win32-x64",
+  "family": "sqlite",
+  "sqliteCompatibility": "3.51.3",
+  "sqliteSourceIdForm": "sqlite-check-in",
+  "sourceRevision": "737ae4a34738ffa0c3ff7f9bb18df914dd1cad163f28fd6b6e114a344fe6d618",
+  "reportedBuild": null,
+  "writtenFileBuild": null,
+  "contradictions": []
+ },
+ "protections": [
+  {
+   "id": "strict-typing",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "cannot store TEXT value in INTEGER column memory_scopes.access_epoch"
+  },
+  {
+   "id": "check-constraints",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "CHECK constraint failed: access_epoch >= 0"
+  },
+  {
+   "id": "foreign-keys-on",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA foreign_keys = 1"
+  },
+  {
+   "id": "scoped-composite-foreign-key",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "FOREIGN KEY constraint failed"
+  },
+  {
+   "id": "deferred-event-command-key",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "FOREIGN KEY constraint failed"
+  },
+  {
+   "id": "immutable-rows",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "update and delete raised immutable_memory"
+  },
+  {
+   "id": "monotonic-epoch",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "a lower epoch raised revoked_epoch"
+  },
+  {
+   "id": "foreign-key-check-detects-orphan",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "foreign_key_check reported 1 row"
+  },
+  {
+   "id": "trusted-schema-off",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA trusted_schema = 0"
+  },
+  {
+   "id": "trusted-schema-refuses-unsafe-function",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "unsafe use of nectovia_probe_unsafe()"
+  },
+  {
+   "id": "busy-timeout",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA busy_timeout = 100"
+  },
+  {
+   "id": "busy-timeout-waits",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "the second writer waited at least 80 ms, then: database is locked"
+  },
+  {
+   "id": "synchronous-full",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA synchronous = 2"
+  },
+  {
+   "id": "cache-spill-off",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA cache_spill = 0"
+  },
+  {
+   "id": "max-page-count-ceiling",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "refused after 4 rows: database or disk is full"
+  },
+  {
+   "id": "capacity-error-code",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "result code 13: database or disk is full"
+  },
+  {
+   "id": "journal-size-limit",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA journal_size_limit = 0"
+  },
+  {
+   "id": "wal-mode",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "journal_mode = wal"
+  },
+  {
+   "id": "wal-autocheckpoint",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA wal_autocheckpoint = 100"
+  },
+  {
+   "id": "wal-checkpoint-truncate",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "WAL 111272 bytes, then 0"
+  },
+  {
+   "id": "wal-frame-accounting",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "7 frames of 4120 bytes"
+  },
+  {
+   "id": "application-id-user-version",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both survived a reopen"
+  },
+  {
+   "id": "immediate-write-exclusion",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "database is locked"
+  },
+  {
+   "id": "quick-check-detects-corruption",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "*** in database main ***\nTree 2 page 2: btreeInitPage() returns error code 11\nPage 3: never used\nPage 4: never used\nPage 5: never used\nPage 6: never used\nPage 7"
+  },
+  {
+   "id": "read-only-inspection",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "attempt to write a readonly database"
+  },
+  {
+   "id": "double-quoted-identifiers-only",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "no such column: \"nectovia_probe_missing\" - should this be a string literal in single-quotes?"
+  },
+  {
+   "id": "extension-loading-off",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "not authorized"
+  },
+  {
+   "id": "rollback-across-await",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "UNIQUE constraint failed: t.id"
+  },
+  {
+   "id": "transaction-state-reported",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "the flag tracked 6 moments, from before BEGIN to after ROLLBACK"
+  },
+  {
+   "id": "read-snapshot-isolation",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both reads saw 1 row; the new row appeared after COMMIT"
+  },
+  {
+   "id": "same-engine-schema-reference",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "12 schema objects match"
+  },
+  {
+   "id": "fts5-module",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "fts5 table created"
+  }
+ ],
+ "conformance": {
+  "verdict": "conformant",
+  "missing": []
+ }
+}

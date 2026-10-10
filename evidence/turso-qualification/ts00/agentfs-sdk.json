@@ -1,0 +1,49 @@
+{
+ "platform": "win32-x64",
+ "loaderOverrides": [],
+ "sdk": {
+  "name": "agentfs-sdk",
+  "version": "0.6.4",
+  "engineRange": "^0.4.0-pre.18"
+ },
+ "embeddedEngine": {
+  "component": "@tursodatabase/database",
+  "version": "0.4.4",
+  "platform": "win32-x64"
+ },
+ "identityDirect": {
+  "component": "@tursodatabase/database",
+  "version": "0.4.4",
+  "platform": "win32-x64",
+  "family": "turso",
+  "sqliteCompatibility": "3.50.4",
+  "sqliteSourceIdForm": "git-commit",
+  "sourceRevision": "dc7781a52b888e323bb12e76c2793d3bab5f9106",
+  "reportedBuild": "0.4.4",
+  "writtenFileBuild": "3.47.0",
+  "contradictions": [
+   "turso_version() answered 3.47.0 on a file it wrote and reopened; the artifact is 0.4.4"
+  ]
+ },
+ "sqlThroughSdk": {
+  "sqliteVersion": "3.50.4",
+  "sqliteSourceId": "2026-01-30 10:30:26 dc7781a52b888e323bb12e76c2793d3bab5f9106",
+  "tursoVersion": "3.47.0"
+ },
+ "sdkFileOperations": {
+  "ok": true,
+  "value": {
+   "read": "alpha",
+   "listed": [
+    "a.txt"
+   ],
+   "removed": true
+  }
+ },
+ "sdkKeyValue": {
+  "ok": true,
+  "value": {
+   "v": 1
+  }
+ }
+}

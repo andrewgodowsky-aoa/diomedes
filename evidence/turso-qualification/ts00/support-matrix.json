@@ -1,0 +1,333 @@
+{
+  "recorded": "2026-10-09T15:50:05Z",
+  "method": {
+    "cells": "Each cell answers for one exact component, version, platform and capability. A missing cell is unknown. An unknown cell is written out where the decision depends on it, with the reason. Only win32-x64 was measured.",
+    "claims": "Each claim is what one exact library and version documents, in a document at a pinned commit or in a file of the pinned package. Claims are never merged across products or versions.",
+    "documents": [
+      {
+        "repository": "tursodatabase/agentfs",
+        "tag": "v0.6.4",
+        "commit": "3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0",
+        "path": "MANUAL.md",
+        "gitBlob": "d98a634817dce0473e4ce708a0f6afece1d6e840",
+        "sha256": "2332145c92741ef73dbd26a1c12d6a5f91cf9e8a69bbe2ddfbd8b264a39d54ae"
+      },
+      {
+        "repository": "tursodatabase/turso",
+        "tag": "v0.8.2",
+        "commit": "5c168be5ef6a32ac966daf5983502a4f694b37ad",
+        "path": "COMPAT.md",
+        "gitBlob": "7cd85a867ee93427b17a5a6bde127e495185598c",
+        "sha256": "42d5e7a5f7910d5bdfeddad602aa7d021998740dfdb55711744a21f826cfcd88"
+      },
+      {
+        "package": "@tursodatabase/sync-common",
+        "version": "0.8.2",
+        "path": "dist/types.d.ts",
+        "sha256": "a8fd7d4061887d4838c505b0d3d2ced7af75b4fa754bc1ebfbb093c389707a35"
+      }
+    ]
+  },
+  "cells": [
+    {
+      "component": "node:sqlite",
+      "version": "3.51.3",
+      "platform": "win32-x64",
+      "capability": "w01-local-store-protections",
+      "status": "supported",
+      "evidence": "engine-node-sqlite.json: conformant, all 25 required protections proven"
+    },
+    {
+      "component": "node:sqlite",
+      "version": "3.51.3",
+      "platform": "win32-x64",
+      "capability": "fts5",
+      "status": "supported",
+      "evidence": "engine-node-sqlite.json: fts5-module proven"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "local-file-offline",
+      "status": "supported",
+      "evidence": "offline-start.json: localDatabase answered the exact lookup with no network attempt and no credentials"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "w01-local-store-protections",
+      "status": "unsupported",
+      "evidence": "engine-turso-database-0.8.2.json: retain-sqlite; foreign-key-check-detects-orphan and double-quoted-identifiers-only violated; trusted-schema-off, journal-size-limit and wal-autocheckpoint unverified"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "w01-schema-build",
+      "status": "supported",
+      "evidence": "schema-turso-database-0.8.2.json: all 48 objects of the W01 schema built"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "w01-schema-text-parity",
+      "status": "unsupported",
+      "evidence": "schema-turso-database-0.8.2.json: 32 of 48 stored SQL texts differ from node:sqlite, so a file built by one engine fails the other's schema inspection"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "fts5",
+      "status": "unsupported",
+      "evidence": "engine-turso-database-0.8.2.json: fts5-module unsupported (no such module: fts5)"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "platform": "darwin-arm64",
+      "capability": "w01-local-store-protections",
+      "status": "unknown",
+      "evidence": "not measured; a darwin-arm64 binding is published, and the app packages for darwin arm64"
+    },
+    {
+      "component": "electron",
+      "version": "44.2.0",
+      "platform": "win32-x64",
+      "capability": "w01-local-store-protections",
+      "status": "unknown",
+      "evidence": "not measured; the runner ran on Node v22.23.2, and the packaged app runs on Electron 44.2.0 with its own SQLite build"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.4.4",
+      "platform": "win32-x64",
+      "capability": "strict-tables",
+      "status": "unsupported",
+      "evidence": "schema-turso-database-0.4.4.json: STRICT refused unless an experimental flag is set"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.4.4",
+      "platform": "win32-x64",
+      "capability": "w01-local-store-protections",
+      "status": "unsupported",
+      "evidence": "engine-turso-database-0.4.4.json: retain-sqlite with 15 required protections not proven"
+    },
+    {
+      "component": "@tursodatabase/sync",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "local-start-without-remote",
+      "status": "supported",
+      "evidence": "offline-start.json: syncWithNoRemote answered the exact lookup with no network attempt"
+    },
+    {
+      "component": "@tursodatabase/sync",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "default-bootstrap-offline",
+      "status": "unsupported",
+      "evidence": "offline-start.json: syncDefaultBootstrap failed after one refused fetch to the remote"
+    },
+    {
+      "component": "@tursodatabase/sync",
+      "version": "0.8.2",
+      "platform": "win32-x64",
+      "capability": "offline-conflict-replay",
+      "status": "unknown",
+      "evidence": "not tested in TS00; the pinned library and protocol are tested in TS03"
+    },
+    {
+      "component": "agentfs-sdk",
+      "version": "0.6.4",
+      "platform": "win32-x64",
+      "capability": "sdk-file-operations",
+      "status": "supported",
+      "evidence": "agentfs-sdk.json: sdkFileOperations wrote, read, listed and removed a file"
+    },
+    {
+      "component": "agentfs-sdk",
+      "version": "0.6.4",
+      "platform": "win32-x64",
+      "capability": "sdk-key-value",
+      "status": "supported",
+      "evidence": "agentfs-sdk.json: sdkKeyValue stored and read a value"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "platform": "win32-x64",
+      "capability": "published-build",
+      "status": "supported",
+      "evidence": "release metadata only: GitHub release v0.6.4 (2026-03-25T08:03:35Z) publishes agentfs-x86_64-pc-windows-msvc.zip, 7,000,593 bytes, with a .sha256 file; not downloaded or run"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "platform": "win32-x64",
+      "capability": "native-run-isolation",
+      "status": "unknown",
+      "evidence": "the pinned manual documents run isolation for Linux and macOS only; the Windows build was not downloaded or run"
+    }
+  ],
+  "claims": [
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "topic": "run-isolation:linux",
+      "statement": "Linux runs use FUSE and an overlay filesystem with user namespaces (AGENTFS_SANDBOX=linux-namespace).",
+      "source": "tursodatabase/agentfs@3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0:MANUAL.md#L109,L316"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "topic": "run-isolation:macos",
+      "statement": "macOS runs use NFS and an overlay filesystem with Apple's Sandbox (AGENTFS_SANDBOX=macos-sandbox).",
+      "source": "tursodatabase/agentfs@3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0:MANUAL.md#L109,L316"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "topic": "syscall-sandbox:linux",
+      "statement": "--experimental-sandbox uses ptrace-based syscall interception and is Linux only.",
+      "source": "tursodatabase/agentfs@3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0:MANUAL.md#L104"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "topic": "encryption-at-rest",
+      "statement": "The local database can be encrypted at rest using libSQL's encryption feature.",
+      "source": "tursodatabase/agentfs@3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0:MANUAL.md#L321"
+    },
+    {
+      "component": "agentfs-cli",
+      "version": "0.6.4",
+      "topic": "encryption-with-sync",
+      "statement": "Local encryption and cloud sync cannot be used together.",
+      "source": "tursodatabase/agentfs@3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0:MANUAL.md#L37,L360"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "strict-tables",
+      "statement": "CREATE TABLE ... STRICT: yes.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L115"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:application_id",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L220"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:busy_timeout",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L223"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:cache_spill",
+      "statement": "Partial: enabled or disabled only.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L225"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:foreign_key_check",
+      "statement": "Not supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L239"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:foreign_keys",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L241"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:journal_mode",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L253"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:journal_size_limit",
+      "statement": "Not supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L254"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:max_page_count",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L258"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:quick_check",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L267"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:synchronous",
+      "statement": "Partial: OFF and FULL supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L277"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:trusted_schema",
+      "statement": "Not supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L284"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:user_version",
+      "statement": "Supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L285"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:wal_autocheckpoint",
+      "statement": "Not supported.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L290"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "pragma:wal_checkpoint",
+      "statement": "Partial: calling it with a parameter is not needed.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L291"
+    },
+    {
+      "component": "@tursodatabase/database",
+      "version": "0.8.2",
+      "topic": "fts5",
+      "statement": "SQLite FTS3, FTS4 and FTS5 are not supported; Turso's own full-text search uses Tantivy instead.",
+      "source": "tursodatabase/turso@5c168be5ef6a32ac966daf5983502a4f694b37ad:COMPAT.md#L1152,L1161"
+    },
+    {
+      "component": "@tursodatabase/sync",
+      "version": "0.8.2",
+      "topic": "conflict-transform-hook",
+      "statement": "An optional transform callback is called for every mutation before it is sent to the remote, and can rewrite the update to support an application's own conflict resolution strategy.",
+      "source": "@tursodatabase/sync-common@0.8.2:dist/types.d.ts#L94-L98"
+    }
+  ]
+}

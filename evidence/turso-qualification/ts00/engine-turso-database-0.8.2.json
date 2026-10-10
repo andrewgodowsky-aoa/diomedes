@@ -1,0 +1,228 @@
+{
+ "artifact": {
+  "component": "@tursodatabase/database",
+  "version": "0.8.2",
+  "platform": "win32-x64"
+ },
+ "loaderOverrides": [],
+ "identity": {
+  "component": "@tursodatabase/database",
+  "version": "0.8.2",
+  "platform": "win32-x64",
+  "family": "turso",
+  "sqliteCompatibility": "3.50.4",
+  "sqliteSourceIdForm": "git-commit",
+  "sourceRevision": "5c168be5ef6a32ac966daf5983502a4f694b37ad",
+  "reportedBuild": "0.8.2",
+  "writtenFileBuild": "3.47.0",
+  "contradictions": [
+   "turso_version() answered 3.47.0 on a file it wrote and reopened; the artifact is 0.8.2"
+  ]
+ },
+ "protections": [
+  {
+   "id": "strict-typing",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: cannot store TEXT value in INTEGER column memory_scopes.access_epoch (19)"
+  },
+  {
+   "id": "check-constraints",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: CHECK constraint failed: access_epoch >= 0"
+  },
+  {
+   "id": "foreign-keys-on",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA foreign_keys = 1"
+  },
+  {
+   "id": "scoped-composite-foreign-key",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: FOREIGN KEY constraint failed"
+  },
+  {
+   "id": "deferred-event-command-key",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: FOREIGN KEY constraint failed"
+  },
+  {
+   "id": "immutable-rows",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "update and delete raised immutable_memory"
+  },
+  {
+   "id": "monotonic-epoch",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "a lower epoch raised revoked_epoch"
+  },
+  {
+   "id": "foreign-key-check-detects-orphan",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "an orphan row exists and foreign_key_check returned no row"
+  },
+  {
+   "id": "trusted-schema-off",
+   "proof": "readback",
+   "status": "unverified",
+   "observed": "PRAGMA trusted_schema returned no row after PRAGMA trusted_schema = OFF"
+  },
+  {
+   "id": "trusted-schema-refuses-unsafe-function",
+   "proof": "behavior",
+   "status": "unverified",
+   "observed": "no application function could be registered to test it: not implemented"
+  },
+  {
+   "id": "busy-timeout",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA busy_timeout = 100"
+  },
+  {
+   "id": "busy-timeout-waits",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "the second writer waited at least 80 ms, then: database is locked"
+  },
+  {
+   "id": "synchronous-full",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA synchronous = 2"
+  },
+  {
+   "id": "cache-spill-off",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "PRAGMA cache_spill = 0"
+  },
+  {
+   "id": "max-page-count-ceiling",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "refused after 4 rows: step failed: database or disk is full"
+  },
+  {
+   "id": "capacity-error-code",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "the full-database error carries no SQLite result code: step failed: database or disk is full"
+  },
+  {
+   "id": "journal-size-limit",
+   "proof": "readback",
+   "status": "unverified",
+   "observed": "PRAGMA journal_size_limit returned no row after PRAGMA journal_size_limit = 0"
+  },
+  {
+   "id": "wal-mode",
+   "proof": "readback",
+   "status": "proven",
+   "observed": "journal_mode = wal"
+  },
+  {
+   "id": "wal-autocheckpoint",
+   "proof": "readback",
+   "status": "unverified",
+   "observed": "PRAGMA wal_autocheckpoint returned no row after PRAGMA wal_autocheckpoint = 100"
+  },
+  {
+   "id": "wal-checkpoint-truncate",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "WAL 115392 bytes, then 0"
+  },
+  {
+   "id": "wal-frame-accounting",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "7 frames of 4120 bytes"
+  },
+  {
+   "id": "application-id-user-version",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both survived a reopen"
+  },
+  {
+   "id": "immediate-write-exclusion",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "database is locked"
+  },
+  {
+   "id": "quick-check-detects-corruption",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "quick_check failed: step failed: Corrupt database: Invalid page type: 255"
+  },
+  {
+   "id": "read-only-inspection",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: attempt to write a readonly database"
+  },
+  {
+   "id": "double-quoted-identifiers-only",
+   "proof": "behavior",
+   "status": "violated",
+   "observed": "a double-quoted name read as the string \"nectovia_probe_missing\""
+  },
+  {
+   "id": "extension-loading-off",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: Parse error: runtime extension loading is disabled"
+  },
+  {
+   "id": "rollback-across-await",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "step failed: UNIQUE constraint failed: t.id"
+  },
+  {
+   "id": "transaction-state-reported",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "the flag tracked 6 moments, from before BEGIN to after ROLLBACK"
+  },
+  {
+   "id": "read-snapshot-isolation",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "both reads saw 1 row; the new row appeared after COMMIT"
+  },
+  {
+   "id": "same-engine-schema-reference",
+   "proof": "behavior",
+   "status": "proven",
+   "observed": "12 schema objects match"
+  },
+  {
+   "id": "fts5-module",
+   "proof": "behavior",
+   "status": "unsupported",
+   "observed": "failed to consume stmt: Parse error: no such module: fts5"
+  }
+ ],
+ "conformance": {
+  "verdict": "retain-sqlite",
+  "missing": [
+   "foreign-key-check-detects-orphan",
+   "trusted-schema-off",
+   "trusted-schema-refuses-unsafe-function",
+   "capacity-error-code",
+   "journal-size-limit",
+   "wal-autocheckpoint",
+   "double-quoted-identifiers-only"
+  ]
+ }
+}
