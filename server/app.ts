@@ -4761,7 +4761,11 @@ export async function createApp(options: AppOptions) {
         message: { text, attachments, attachedDocument },
         candidates,
         autoItself,
-        advise: (await jevAdvice(projectId, thread.id, text)) ?? undefined,
+        // A rule pick needs no advisor context or account admission.
+        advise: async (shortlist) => {
+          const advice = await jevAdvice(projectId, thread.id, text);
+          return advice ? advice(shortlist) : null;
+        },
       });
       if (picked.agent === AUTO_AGENT) return answer(null, picked.by);
       const definition = named(picked.agent);
