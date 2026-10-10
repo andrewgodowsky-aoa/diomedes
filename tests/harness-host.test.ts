@@ -379,7 +379,8 @@ describe('native harness through the real host', () => {
     expect((await resolve(need)).status).toBe(200);
     expect((await untilRun(runId, 'completed')).state).toBe('completed');
     // A run whose file is really gone still leaves the lookup.
-    await fs.rm(runFile(runId));
+    // A scanner can still hold the freshly written file on Windows.
+    await fs.rm(runFile(runId), { recursive: true, maxRetries: 5 });
     expect(await host().list(projectId)).toEqual([]);
     await expect(host().runs.get(runId)).rejects.toThrow(/Unknown run/);
   });

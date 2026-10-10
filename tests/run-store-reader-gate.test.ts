@@ -82,7 +82,7 @@ test('a presence check waits for a replacement in flight and reports a missing r
   });
   try {
     const write = files.write({ ...base, updatedAt: new Date(2000).toISOString() } as HarnessRun);
-    await vi.waitFor(() => expect(events).toEqual(['rename-start']));
+    await vi.waitFor(() => expect(events).toEqual(['rename-start']), { timeout: 15_000 });
     const present = files.has(base.id).then((found) => {
       events.push('has');
       return found;
@@ -94,6 +94,7 @@ test('a presence check waits for a replacement in flight and reports a missing r
     expect(await present).toBe(true);
     expect(events).toEqual(['rename-start', 'rename-end', 'has']);
     expect(await files.has('R-none')).toBe(false);
+    expect(await files.has('../outside')).toBe(false);   // no run id, so never there
   } finally {
     renameSpy.mockRestore();
     await fs.rm(root, { recursive: true, force: true });

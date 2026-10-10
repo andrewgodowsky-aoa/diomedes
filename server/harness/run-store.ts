@@ -178,6 +178,8 @@ export class FileRunStore implements RunStore {
    * store's own replacement of the file.
    */
   async has(runId: string) {
+    // A name that is not a run id names no run this store wrote.
+    if (!RUN_ID.test(runId)) return false;
     const file = this.file(runId);
     try {
       await reading(file, () => fs.access(file));
