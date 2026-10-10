@@ -9,7 +9,7 @@ import type { HarnessRun } from '../shared/harness.js';
  * DIO-292: lanes are per kind of run, so a message that moves lanes brings the other lane's last
  * exchange along, read from that lane's durable run.
  */
-const run = (turns: { prompt: string; answer: string }[]) =>
+const run = (turns: { prompt: string | null; answer: string | null }[]) =>
   ({
     id: 'run-ask',
     steps: turns.map((turn, n) => ({
@@ -23,6 +23,43 @@ const ISSUED = `sm.${'a'.repeat(32)}`;
 const EARLIER = 'Earlier in this thread:\n\nPerson: How many napkins were short?\n\nDiomedes: Six were short.';
 
 describe('the last answer of another lane', () => {
+  test('reads only the last exchange of a long answered lane', () => {
+    let stepReads = 0;
+    let promptReads = 0;
+    const previous = run(Array.from({ length: 10_000 }, (_, index) => ({ prompt: `Question ${index}`, answer: `Answer ${index}` })));
+    for (const step of previous.steps) {
+      const input = step.intent.input as { prompt: string };
+      const prompt = input.prompt;
+      Object.defineProperty(input, 'prompt', {
+        get: () => {
+          promptReads += 1;
+          return prompt;
+        },
+      });
+    }
+    previous.steps = new Proxy(previous.steps, {
+      get: (target, key, receiver) => {
+        if (typeof key === 'string' && /^\d+$/.test(key)) stepReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expect(laneRecap(previous)).toBe('Earlier in this thread:\n\nPerson: Question 9999\n\nDiomedes: Answer 9999');
+    expect({ stepReads, promptReads }).toEqual({ stepReads: 1, promptReads: 1 });
+  });
+
+  test('skips exchanges with no lines and keeps an answer without a prompt', () => {
+    const previous = run([{ prompt: 'Old question', answer: 'Old answer' }, { prompt: null, answer: 'Only an answer' }, { prompt: null, answer: null }]);
+    previous.steps.push(
+      { ...previous.steps[0], state: 'failed' },
+      { ...previous.steps[0], intent: { ...previous.steps[0].intent, stepId: 'phase:x' } },
+    );
+    expect(laneRecap(previous)).toBe('Earlier in this thread:\n\nDiomedes: Only an answer');
+  });
+
+  test.each([null, '', '```diomedes-decision\n{}\n```'])('does not fall back past the latest exchange without a spoken answer: %s', (answer) => {
+    expect(laneRecap(run([{ prompt: 'Old question', answer: 'Old answer' }, { prompt: 'Latest question', answer }]))).toBeNull();
+  });
+
   test('only the last exchange comes along, without its decision block', () => {
     const recap = laneRecap(
       run([

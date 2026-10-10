@@ -1,6 +1,6 @@
 import type { HarnessRun } from '../shared/harness.js';
 import { withoutFraming } from './agent-framing.js';
-import { answeredTurns, cutHistory } from './harness/conversation-history.js';
+import { cutHistory, recentAnsweredTurns } from './harness/conversation-history.js';
 import { withoutTrailer } from './interaction-turn.js';
 
 /** At most this many characters of the other lane's last exchange come along. */
@@ -28,7 +28,7 @@ export function spokenPrompt(prompt: string): string {
  */
 export function laneRecap(previous: HarnessRun | null): string | null {
   if (!previous) return null;
-  const last = answeredTurns([previous]).at(-1);
+  const last = recentAnsweredTurns([previous], 1)[0];
   if (!last?.answer) return null;
   const lines = [...(last.prompt === null ? [] : [`Person: ${spokenPrompt(last.prompt)}`]), `Diomedes: ${last.answer}`];
   return `${OPEN}${cutHistory([{ runId: previous.id, text: lines.join('\n\n') }], RECAP_CHARS).text}`;

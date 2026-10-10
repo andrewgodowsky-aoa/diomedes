@@ -9,15 +9,17 @@ import {
   CONVERSATION_CAPABILITY_IDS,
   MAX_HISTORY_CHARS,
   MAX_HISTORY_TURNS,
+  answeredTurns,
   boundedHistory,
   carriedRun,
   conversationHistory,
+  cutHistory,
 } from '../server/harness/conversation-history';
 import { CLAUDE_SESSION_CAPABILITY } from '../server/harness/claude-session-run';
 import { MODEL_CONVERSATION_CAPABILITY } from '../server/harness/model-session-run';
 import { HarnessError } from '../server/harness/policy';
 
-const turn = (key: string, prompt: string, answer: string | null, state = 'succeeded') => ({
+const turn = (key: string, prompt: string | null, answer: string | null, state = 'succeeded') => ({
   intent: { stepId: `turn:${key}`, input: { prompt } },
   output: { response: answer === null ? null : { text: answer } },
   state,
@@ -35,6 +37,58 @@ const numbered = (prefix: string, count: number) =>
   Array.from({ length: count }, (_, index) => turn(`${prefix}${index + 1}`, `${prefix}${index + 1} asks`, `${prefix}${index + 1} said`));
 
 describe('the history a conversation turn is given', () => {
+  test('reads only the last 12 exchanges of a long answered run', () => {
+    let stepReads = 0;
+    let promptReads = 0;
+    const steps = numbered('message-', 10_000);
+    for (const step of steps) {
+      const prompt = step.intent.input.prompt;
+      Object.defineProperty(step.intent.input, 'prompt', {
+        get: () => {
+          promptReads += 1;
+          return prompt;
+        },
+      });
+    }
+    const history = boundedHistory([run(new Proxy(steps, {
+      get: (target, key, receiver) => {
+        if (typeof key === 'string' && /^\d+$/.test(key)) stepReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    }))]);
+    expect(history.text).toBe(
+      numbered('message-', 10_000).slice(-MAX_HISTORY_TURNS)
+        .map((step) => `Person: ${step.intent.input.prompt}\n\nDiomedes: ${step.output.response!.text}`)
+        .join('\n\n'),
+    );
+    expect(history.messages).toEqual(new Map([['model-run', MAX_HISTORY_TURNS]]));
+    expect({ stepReads, promptReads }).toEqual({ stepReads: MAX_HISTORY_TURNS, promptReads: MAX_HISTORY_TURNS });
+  });
+
+  test('matches the full reader across excluded, empty and framed exchanges and character cuts', () => {
+    for (const answer of ['short answer', `\u{1F35E}`.repeat(MAX_HISTORY_CHARS)]) {
+      const runs = [
+        run(numbered('C', 20), { id: 'carried-run' }),
+        run([
+          ...numbered('O', 8),
+          turn('framed', '[[diomedes agent=Explorer]] Locate the material.\n\nWhere is it?', `${answer}\n\n\`\`\`diomedes-decision\n{}\n\`\`\``),
+          turn('prompt-only', 'Still a recorded question', null),
+          turn('answer-only', null, 'Only an answer'),
+          turn('no-lines', null, null),
+          turn('blank', '', ''),
+          turn('failed', 'Not kept', 'Not kept', 'failed'),
+          { intent: { stepId: 'phase:x', input: { prompt: 'Not a turn' } }, output: { response: { text: 'Not kept' } }, state: 'succeeded' },
+        ], { id: 'own-run' }),
+      ];
+      for (const exclude of [undefined, 'turn:framed', 'turn:answer-only']) {
+        const all = answeredTurns(runs, exclude);
+        expect(all.map((item) => item.index)).toEqual(Array.from({ length: all.length }, (_, i) => i + 1));
+        expect(all[0].stepId).toBe('turn:C1');
+        expect(boundedHistory(runs, exclude)).toEqual(cutHistory(all.slice(-MAX_HISTORY_TURNS), MAX_HISTORY_CHARS));
+      }
+    }
+  });
+
   test('the carried run comes first, and the last 12 messages across both are kept', () => {
     expect(MAX_HISTORY_TURNS).toBe(12);
     const history = conversationHistory([run(numbered('C', 10)), run(numbered('O', 5))]);

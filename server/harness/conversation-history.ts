@@ -9,7 +9,7 @@
  * `model-session-run.ts`), so a lineage "Update this conversation" started can carry the recent
  * messages of the lineage it retired, whichever driver answered them (artifacts v2, frozen item 3).
  */
-import type { HarnessRun } from '../../shared/harness.js';
+import type { HarnessRun, StepRecord } from '../../shared/harness.js';
 import { withoutFraming } from '../agent-framing.js';
 import type { RunService } from './run-service.js';
 
@@ -50,7 +50,7 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * cut never splits a character: a surrogate pair it would halve is left out whole.
  */
 export function boundedHistory(runs: readonly HarnessRun[], exclude?: string): BoundedHistory {
-  return cutHistory(answeredTurns(runs, exclude).slice(-MAX_HISTORY_TURNS), MAX_HISTORY_CHARS);
+  return cutHistory(recentAnsweredTurns(runs, MAX_HISTORY_TURNS, exclude), MAX_HISTORY_CHARS);
 }
 
 /** One answered message of a conversation, as history gives it. */
@@ -71,27 +71,46 @@ export function answeredTurns(runs: readonly HarnessRun[], exclude?: string): An
   const turns: AnsweredTurn[] = [];
   for (const run of runs)
     for (const step of run.steps) {
-      if (!step.intent.stepId.startsWith('turn:') || step.intent.stepId === exclude || step.state !== 'succeeded') continue;
-      const lines: string[] = [];
-      const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
-      const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
-      const answer = typeof response?.text === 'string' ? spoken(response.text) : null;
-      // What the person said: the role line an Agent's message opens with is the host's (DIO-292),
-      // and on Auto's own lane a later message would otherwise read it as the person's words.
-      if (typeof prompt === 'string') lines.push(`Person: ${withoutFraming(prompt)}`);
-      if (answer !== null) lines.push(`Diomedes: ${answer}`);
-      // One block per message, joined as the lines always were: each line, then a blank line.
-      if (lines.length)
-        turns.push({
-          runId: run.id,
-          stepId: step.intent.stepId,
-          index: turns.length + 1,
-          prompt: typeof prompt === 'string' ? prompt : null,
-          answer,
-          text: lines.join('\n\n'),
-        });
+      const turn = answeredTurn(run.id, step, exclude);
+      if (turn) turns.push({ ...turn, index: turns.length + 1 });
     }
   return turns;
+}
+
+/**
+ * The last `limit` answered messages, oldest first, except `exclude`. Stop reading steps once
+ * the tail is filled; full-history indexes belong to `answeredTurns` and need no scan here.
+ */
+export function recentAnsweredTurns(runs: readonly HarnessRun[], limit: number, exclude?: string): Omit<AnsweredTurn, 'index'>[] {
+  const turns: Omit<AnsweredTurn, 'index'>[] = [];
+  for (let r = runs.length - 1; r >= 0 && turns.length < limit; r -= 1) {
+    const run = runs[r];
+    for (let s = run.steps.length - 1; s >= 0 && turns.length < limit; s -= 1) {
+      const turn = answeredTurn(run.id, run.steps[s], exclude);
+      if (turn) turns.push(turn);
+    }
+  }
+  return turns.reverse();
+}
+
+function answeredTurn(runId: string, step: StepRecord, exclude?: string): Omit<AnsweredTurn, 'index'> | null {
+  if (!step.intent.stepId.startsWith('turn:') || step.intent.stepId === exclude || step.state !== 'succeeded') return null;
+  const lines: string[] = [];
+  const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
+  const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
+  const answer = typeof response?.text === 'string' ? spoken(response.text) : null;
+  // What the person said: the role line an Agent's message opens with is the host's (DIO-292),
+  // and on Auto's own lane a later message would otherwise read it as the person's words.
+  if (typeof prompt === 'string') lines.push(`Person: ${withoutFraming(prompt)}`);
+  if (answer !== null) lines.push(`Diomedes: ${answer}`);
+  // One block per message, joined as the lines always were: each line, then a blank line.
+  return lines.length ? {
+    runId,
+    stepId: step.intent.stepId,
+    prompt: typeof prompt === 'string' ? prompt : null,
+    answer,
+    text: lines.join('\n\n'),
+  } : null;
 }
 
 /**
