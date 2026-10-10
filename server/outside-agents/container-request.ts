@@ -28,7 +28,9 @@
  *   allow-list; any other secret-looking or route-changing name is refused.
  * - Only a `.exe` starts: a `.cmd` or `.bat` would go through `cmd.exe`, which
  *   re-reads the command line.
- * - Denials are recorded and blocked, into the run's own folder.
+ * - A denial report (what the box refused, written into the run's folder) is
+ *   asked for only when the plan says so. The box refuses the same things
+ *   without it; see `launchContained` for why a streaming run does not ask.
  */
 import path from 'node:path';
 import { HarnessError } from '../harness/policy.js';
@@ -76,6 +78,8 @@ export interface ContainedAgentPlan {
   readonly env?: Readonly<Record<string, string>>;
   readonly signIn?: { readonly name: SignInVariable; readonly value: string };
   readonly timeoutMs: number;
+  /** Ask the box to record what it refused. Off unless set. */
+  readonly denialReport?: boolean;
 }
 
 /** Where a run's folders are, all under its root. The launcher makes them before the request is sent. */
@@ -101,7 +105,7 @@ export interface ContainerRequest {
     ingress: { default: 'deny'; hostLoopback: 'deny' };
   };
   ui: { disable: false; clipboard: 'none'; allowInputInjection: false };
-  containment: { type: 'processcontainer'; config: { captureDenials: { mode: 'block'; outputPath: string } } };
+  containment?: { type: 'processcontainer'; config: { captureDenials: { mode: 'block'; outputPath: string } } };
   environment: Record<string, string>;
   inheritDefaultEnvironment: false;
   workingDirectory: string;
@@ -228,7 +232,9 @@ export function containerRequest(plan: ContainedAgentPlan): ContainerRequest {
       ingress: { default: 'deny', hostLoopback: 'deny' },
     },
     ui: { disable: false, clipboard: 'none', allowInputInjection: false },
-    containment: { type: 'processcontainer', config: { captureDenials: { mode: 'block', outputPath: layout.denials } } },
+    ...(plan.denialReport
+      ? { containment: { type: 'processcontainer' as const, config: { captureDenials: { mode: 'block' as const, outputPath: layout.denials } } } }
+      : {}),
     environment,
     inheritDefaultEnvironment: false,
     workingDirectory: layout.work,

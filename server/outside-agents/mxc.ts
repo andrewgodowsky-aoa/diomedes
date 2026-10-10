@@ -26,7 +26,11 @@ export interface ContainedProcess {
   readonly stderr: Readable;
   wait(): Promise<{ exitCode: number; timedOut: boolean }>;
   kill(): void;
-  /** The SDK's own record of what the box refused, once the process has settled. */
+  /**
+   * The SDK's own record of what the box refused, once the process has settled. The report file
+   * itself lands beside the requested path with the process id and a hash added
+   * (`denials.<pid>_<hash>.json`), some seconds after exit.
+   */
   denials(): unknown;
 }
 
@@ -84,8 +88,21 @@ export async function loadMxc(sdkDir: string, version: string = process.versions
   };
 }
 
-/** Make a run's folders, then start the plan's agent in its box. */
+/**
+ * Make a run's folders, then start the plan's agent in its box.
+ *
+ * A denial report is refused here. With SDK 1.0.0, a streaming `spawn` that
+ * asks for `captureDenials` crashes the host process (exit 139) when the
+ * contained process settles, after a clean exit or a kill, under Node 24.21.0
+ * in Electron 44.7.0; the report file is complete on disk just before. `run`
+ * with a report, and `spawn` without one, are fine (probed 2026-10-10). The
+ * box refuses the same things either way: the report is evidence, not the
+ * enforcement. A native crash here would end the whole host, which is also why
+ * the launcher belongs in a process the app can lose.
+ */
 export async function launchContained(port: ContainmentPort, plan: ContainedAgentPlan): Promise<{ request: ContainerRequest; process: ContainedProcess }> {
+  if (plan.denialReport)
+    throw refuseOutside('containment_unavailable', 'A denial report crashes a streaming box with this containment component, so it is not requested.');
   const request = containerRequest(plan);
   const layout = runLayout(request.filesystem.readwritePaths[0]!);
   for (const folder of [layout.home, layout.local, layout.roaming, layout.temp, layout.work]) await fs.mkdir(folder, { recursive: true });

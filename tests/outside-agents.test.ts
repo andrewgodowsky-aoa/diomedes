@@ -49,7 +49,7 @@ describe('the box request', () => {
       ingress: { default: 'deny', hostLoopback: 'deny' },
     });
     expect(request.ui).toEqual({ disable: false, clipboard: 'none', allowInputInjection: false });
-    expect(request.containment).toEqual({ type: 'processcontainer', config: { captureDenials: { mode: 'block', outputPath: `${root}\\denials.json` } } });
+    expect(request).not.toHaveProperty('containment');
     expect(request.inheritDefaultEnvironment).toBe(false);
     expect(request.workingDirectory).toBe(`${root}\\work`);
     expect(request.command).toBe('C:\\Users\\pat\\.local\\bin\\claude.exe --print');
@@ -63,6 +63,14 @@ describe('the box request', () => {
       CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-test',
     });
     for (const name of Object.keys(request.environment)) expect(name).not.toMatch(/^(ANTHROPIC|OPENAI)_/);
+  });
+
+  test('a denial report is asked for only when the plan says so, into the run folder', () => {
+    const root = 'C:\\Users\\pat\\AppData\\Local\\Nectovia\\runs\\r1';
+    expect(containerRequest(plan({ denialReport: true })).containment).toEqual({
+      type: 'processcontainer',
+      config: { captureDenials: { mode: 'block', outputPath: `${root}\\denials.json` } },
+    });
   });
 
   test('no egress rule means no allow list at all', () => {
@@ -127,6 +135,12 @@ describe('starting the box', () => {
   test('an old Node, another platform or a missing component is refused, never run outside a box', async () => {
     await expect(loadMxc(os.tmpdir(), '24.20.0')).rejects.toMatchObject({ code: 'containment_unavailable' });
     await expect(loadMxc(path.join(os.tmpdir(), 'no-such-mxc-sdk'), '24.21.0')).rejects.toMatchObject({ code: 'containment_unavailable' });
+  });
+
+  test('the streaming launcher refuses a denial report, which crashes the host on SDK 1.0.0, and starts nothing', async () => {
+    const spawn = vi.fn();
+    await expect(launchContained({ spawn } as ContainmentPort, plan({ denialReport: true }))).rejects.toMatchObject({ code: 'containment_unavailable' });
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   test.skipIf(process.platform !== 'win32')('the run folders exist before the request is sent, and the port gets the checked request', async () => {
