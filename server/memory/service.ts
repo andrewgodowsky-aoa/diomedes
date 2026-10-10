@@ -63,15 +63,37 @@ export class MemoryService {
     return parse(memoryEpochsSchema, this.options.currentEpochs(key(scope)));
   }
 
-  private admit(scope: MemoryLedgerScope, tx: MemoryTransaction): void {
+  private admittedEpochs(scope: MemoryLedgerScope, saved: MemoryEpochs | null): MemoryEpochs {
     const current = this.current(scope);
     if (!sameEpochs(scope, current)) throw new MemoryLedgerError('revoked_epoch');
-    const saved = tx.epochs();
     if (saved && (saved.identityGeneration > current.identityGeneration ||
       saved.accessEpoch > current.accessEpoch || saved.deletionEpoch > current.deletionEpoch)) {
       throw new MemoryLedgerError('revoked_epoch');
     }
+    return current;
+  }
+
+  private admit(scope: MemoryLedgerScope, tx: MemoryTransaction): void {
+    const saved = tx.epochs();
+    const current = this.admittedEpochs(scope, saved);
     if (!saved || !sameEpochs(saved, current)) tx.advanceEpochs(current);
+  }
+
+  private admitRead(scope: MemoryLedgerScope): MemoryLedgerSnapshot | null {
+    const saved = this.store.snapshot(key(scope), 0);
+    const current = this.admittedEpochs(scope, saved?.epochs ?? null);
+    if (!saved || !sameEpochs(saved.epochs, current)) {
+      this.store.transaction(key(scope), tx => this.admit(scope, tx));
+      return null;
+    }
+    return saved;
+  }
+
+  private assertReadEpochs(scope: MemoryLedgerScope): void {
+    const saved = this.store.snapshot(key(scope), 0);
+    if (!saved || !sameEpochs(scope, saved.epochs) || !sameEpochs(scope, this.current(scope))) {
+      throw new MemoryLedgerError('revoked_epoch');
+    }
   }
 
   /** Persist a host suppression frontier. This method never establishes grants. */
@@ -197,11 +219,12 @@ export class MemoryService {
     if (throughSequence !== undefined && (!Number.isSafeInteger(throughSequence) || throughSequence < 0)) {
       throw new MemoryLedgerError('invalid_memory');
     }
-    this.store.transaction(key(scope), tx => this.admit(scope, tx));
-    const snapshot = this.store.snapshot(key(scope), throughSequence);
-    if (!snapshot || !sameEpochs(scope, snapshot.epochs) || !sameEpochs(scope, this.current(scope))) {
+    const admission = this.admitRead(scope);
+    const snapshot = throughSequence === 0 && admission ? admission : this.store.snapshot(key(scope), throughSequence);
+    if (!snapshot || !sameEpochs(scope, snapshot.epochs)) {
       throw new MemoryLedgerError('revoked_epoch');
     }
+    this.assertReadEpochs(scope);
     const entries = snapshot.entries.filter(entry => sameEpochs(entry.epochs, snapshot.epochs));
     return { ...snapshot, entries, suppression: { omittedEntries: snapshot.entries.length - entries.length }, afterRecordedAtEntries: 0 };
   }
@@ -307,7 +330,7 @@ export class MemoryService {
     this.snapshot(scope, 0);
     const events = this.store.outbox(key(scope), afterSequence, limit);
     if (events.some(event => !sameEpochs(event.epochs, scope))) throw new MemoryLedgerError('revoked_epoch');
-    if (!sameEpochs(scope, this.current(scope))) throw new MemoryLedgerError('revoked_epoch');
+    this.assertReadEpochs(scope);
     return events;
   }
   acknowledge(scope: MemoryLedgerScope, consumerId: string, throughSequence: number): void {
@@ -316,6 +339,8 @@ export class MemoryService {
   }
   acknowledged(scope: MemoryLedgerScope, consumerId: string): number {
     this.snapshot(scope, 0);
-    return this.store.acknowledged(key(scope), consumerId);
+    const sequence = this.store.acknowledged(key(scope), consumerId);
+    this.assertReadEpochs(scope);
+    return sequence;
   }
 }
