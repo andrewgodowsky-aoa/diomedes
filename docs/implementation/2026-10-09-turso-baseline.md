@@ -3,7 +3,7 @@
 Owner request: October 9, 2026. Program NC-TS-2026-10-09.1, packet TS00, prompt `prompts/TS00_IMPLEMENT.md`.
 Owner issue: DIO-227. Program issue: DIO-317, under epic DIO-226. Architecture: GitHub issue 262.
 Owner: Andrew. Builder: Claude Opus 5.5.
-Branch: feature/turso-baseline, based on 92bc57bd678865390f17291beb382642769e73e5, which was origin/main when this was written.
+Branch: feature/turso-baseline, first based on 92bc57bd678865390f17291beb382642769e73e5, which was origin/main when the patch was written. The accepted commit reached main at 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c on 10 October, and this record's follow-up is based there.
 App worktree: F:/Diomedes/diomedes-wt/turso-baseline.
 
 The package proposed `docs/implementation/turso-baseline.md`. This record takes the folder's dated form, which 252 of its 256 entries use, so it sorts beside the records it builds on.
@@ -26,9 +26,9 @@ The patch adds one test file, its fixtures, the evidence in `evidence/turso-qual
 |---|---|---|
 | App base | 92bc57bd678865390f17291beb382642769e73e5 | origin/main. The merge of PR 249, the Expert tier, at 2026-10-09T10:49:59Z. Re-checked at 14:20:35Z. |
 | Latest release | v0.2.4 at 2229babf233628e976b9238653f5bdc4aa102dc3 | Published 2026-10-07T06:39:19Z, experimental and unsigned. In main's history. Does not contain the Expert merge. |
-| W00 | PR 241, feature/memory-context-contracts at 144d8927eaf84bb10ccbceb095f4ed4b028421c8 | Open. Last updated 2026-10-07T05:01:26Z. |
-| W01 | feature/memory-ledger at d05a6b10d71199631ec254d5eec8e9ff9e737aad | On origin, 4 commits ahead of main, no PR, worktree locked. No gates or PR until PR 241 merges. |
-| W01 schema | blob d4b93eb5ab210065ec266201a3860e2b0e072899, `server/memory/schema.ts` | Read from git, since W01 is not on main. |
+| W00 | PR 241, feature/memory-context-contracts at 144d8927eaf84bb10ccbceb095f4ed4b028421c8 | Open when measured. In main since 6b38ffc on 10 October, and PR 241 shows merged. |
+| W01 | feature/memory-ledger at d05a6b10d71199631ec254d5eec8e9ff9e737aad | On origin with no PR when measured. In main since 6b38ffc. Main's `server/memory/local-store.ts` and `schema.ts` are still the blobs measured here. |
+| W01 schema | blob d4b93eb5ab210065ec266201a3860e2b0e072899, `server/memory/schema.ts` | Read from git while W01 was not on main. Main holds the same blob. |
 | Turso | tursodatabase/turso v0.8.2 at 5c168be5ef6a32ac966daf5983502a4f694b37ad, v0.4.4 at dc7781a52b888e323bb12e76c2793d3bab5f9106 | v0.8.2 was tagged 2026-10-06. It is npm's latest for `@tursodatabase/database` and `@tursodatabase/sync`. 0.8.3-pre.1 is a prerelease. |
 | AgentFS | tursodatabase/agentfs v0.6.4 at 3a5ed2b88e5d5a5f9b2c7fe02d012b50fd19e3c0 | Released 2026-03-25. npm's latest `agentfs-sdk`. |
 | Serverless | `@tursodatabase/serverless` 0.2.4, registry gitHead 7838c3e73baaa88e1a73c153609f439a3f3cb7ef | Pulled in by sync-common's `^0.2.2`. |
@@ -104,7 +104,7 @@ A behavior row observes an effect: a refusal, a wait, a file, a row count or an 
 | same-engine-schema-reference | behavior | proven | proven | unverified |
 | fts5-module, not required | behavior | proven | unsupported | unsupported |
 
-Only proven counts. The verdict for node:sqlite is conformant, with all 31 required protections proven. Both Turso versions get retain-sqlite: 7 not proven on 0.8.2 and 17 on 0.4.4.
+Only proven counts. The verdict for node:sqlite is conformant, with all 31 required protections proven. Both Turso versions get retain-sqlite: 7 not proven on 0.8.2 and 17 on 0.4.4. The integration's AUDIT-06 has since tightened how same-engine-schema-reference is judged (Verification, On main). The rows above come from runs before it.
 
 - **foreign_key_check.** On 0.8.2 it returns no row while an orphan exists. COMPAT.md line 239 lists it as unsupported, yet the engine accepts the statement and answers nothing. W01's last open check reads that silence as clean, so on Turso it passes without checking anything. 0.4.4 refuses the pragma as unknown.
 - **Settings that read back nothing.** 0.8.2 accepts trusted_schema, journal_size_limit and wal_autocheckpoint, then returns no row when they are read (COMPAT.md lines 284, 254 and 290). W01 sets all three and never reads them back.
@@ -185,6 +185,16 @@ Redistribution is separate from compatibility. It is in `artifact-manifest.json`
 
 ## Next eligible owner checkpoint
 
+**Update, 10 October.** W00 and W01 reached main at 6b38ffc through the performance-audit integration, so the PR 241 blocker below is gone. TS01 (DIO-228) and TS02 (DIO-229) now depend only on TS00, which is in main.
+
+- W01's `local-store.ts` and `schema.ts` on main are the blobs measured here, so the protections above still describe main.
+- TS02's seams, `server/memory/service.ts` and `shared/memory-ledger.ts`, are on main.
+- TS01's Turso adapter would meet the 7 protections that 0.8.2 leaves unproven. So it can record them as blockers and keep SQLite.
+- W01's own worktree is locked with its tests deferred, and no coordination claim covers the memory files.
+- TS05 was accepted and is in main with three repairs. TS07 still waits: PR 259 is open, and the bought-credit-regression lane has no PR.
+
+The rest of this section is as measured on 9 October.
+
 In `work-items.json`, TS05 and TS07 depend only on TS00. TS01 and TS06 need W01's store, and W01 waits on W00's PR 241. TS02 also depends only on TS00 in `work-items.json`. This record still groups it with the packets that wait for W01. The files it extends, `server/memory/service.ts` and `shared/memory-ledger.ts`, exist only on W01, not on main or in PR 241. TS03, TS04, TS08 and TS09 follow from those. Neither TS05 nor TS07 runs its gates or goes to review until TS00's gates and independent review pass. TS05's code was started while this review waited for the coordination heavy slot (see the build ledger). Merging TS00 is a separate publication step. `source-baseline.json` records the claims, PR heads and observation time behind each point below.
 
 - **TS07 under DIO-128 waits for the live funding lane.** The bought-credit-regression candidate holds every production file TS07 names. That candidate is uncommitted on feature/bought-credit-regression, based on 92bc57b. Its claims cover `shared/access.ts`, `server/accounts/agent-gate.ts`, `routing-session.ts` and `session.ts`. They also cover `server/engines/service.ts` and `nectovia.ts`, and the control plane's `managed-inference.ts`, `routing.ts` and `contract.ts`. That lane took the heavy slot for its final gates at 14:40Z. Open PRs 244, 198 and 182 change the same funding code and tests.
@@ -197,7 +207,7 @@ In `work-items.json`, TS05 and TS07 depend only on TS00. TS01 and TS06 need W01'
 
 | Proof | Why it is blocked | What clears it |
 |---|---|---|
-| W01's LocalMemoryStore opened offline | W01 is not on main, and it gets no gates or PR until PR 241 merges. TS-004's lookup ran on a test table instead. | PR 241 merges, then TS01 runs the offline open against the real store. |
+| W01's LocalMemoryStore opened offline | TS-004's lookup ran on a test table, because W01 was not on main. W01 is in main since 10 October. | TS01 runs the offline open against the real store. |
 | Windows run isolation, agentfs-cli 0.6.4 | The CLI was not downloaded or run. | Andrew approves downloading `agentfs-x86_64-pc-windows-msvc.zip` (7,000,593 bytes, with its .sha256) and running it in an isolated folder. |
 | `agentfs-sdk` redistribution | No license text upstream. | The maintainers publish it. |
 | Cloud canonical documents | Both connectors refused them. | Read access for this account, or a fresh export under DIO-222. |
@@ -241,6 +251,12 @@ The independent review accepted this patch in two phases. The first read it and 
 
 After the review, only this record and the build ledger changed.
 
+**On main.** The performance-audit integration fast-forwarded main to 6b38ffc at 03:01Z on 10 October. It took 7c40ce5 as a prerequisite and added AUDIT-06 (d7b1033) to this packet's test and fixture. AUDIT-06 makes same-engine-schema-reference require a complete reference catalog: the twelve named objects the probe schema makes, each with its type, its table and its SQL. Its note is `docs/implementation/2026-10-09-performance-audit/06-schema-proof.md`.
+
+- Its worker ran the file without the three `NCTS_` variables. No run of the real-engine cases on main's code is recorded, and no evidence made by one. The recorded rows come from runs before the repair.
+- Running those cases on main and making the evidence again is the next check.
+- This packet's reviewer has not reviewed AUDIT-06.
+
 ## Publication boundary
 
-Authored, implemented, tested and independently reviewed. Committed locally on feature/turso-baseline, not pushed. Not integrated into main, not deployed, not released. TS00 is not DONE until the accepted patch is merged into main.
+Authored, implemented, tested and independently reviewed: accepted at 7c40ce5. Pushed as PR 264, which shows merged: the performance-audit integration took 7c40ce5 into main at 6b38ffc on 10 October, with AUDIT-06 on its test. Not deployed: Workers Builds skipped the merge. Not released. Not marked DONE here, because AUDIT-06 has had no review in this packet and no run of the real-engine cases on main's code is recorded.

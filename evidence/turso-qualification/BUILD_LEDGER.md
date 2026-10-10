@@ -13,13 +13,13 @@ Program NC-TS-2026-10-09.1, Turso and AgentFS qualification. One entry per packe
 | Builder | Claude Opus 5.5 |
 | Branch | feature/turso-baseline |
 | Worktree | F:/Diomedes/diomedes-wt/turso-baseline |
-| Base | 92bc57bd678865390f17291beb382642769e73e5, origin/main at 2026-10-09T14:20:35Z |
+| Base | 92bc57bd678865390f17291beb382642769e73e5, origin/main at 2026-10-09T14:20:35Z. The follow-up is based on 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c. |
 | Record | `docs/implementation/2026-10-09-turso-baseline.md` |
 | Evidence | `evidence/turso-qualification/ts00/`, described in its README |
 
 ### Files in the patch
 
-All new. No production file, dependency or lockfile changes.
+All new. No production file, dependency or lockfile changes. All reached main at 6b38ffc. AUDIT-06 then changed `tests/turso-contract-baseline.test.ts` and `tests/fixtures/turso-qualification/qualification.ts`.
 
 - `tests/turso-contract-baseline.test.ts`
 - `tests/fixtures/turso-qualification/`: `probe-engine.ts`, `qualification.ts`, `offline.ts`, `retention.ts`, `run-engine-probes.ts`
@@ -60,6 +60,9 @@ All new. No production file, dependency or lockfile changes.
 29. **The optional notes.** O1: the review traced 3.47.0 to a version number in the file header. Turso stamps it there when it writes: 3047000, at bytes 92 and 96. A Turso 0.4.4 file from TS05's probe holds the same two values. The record's TS-001 and TS-007 paragraphs now say so. O2: a real-engine run leaves one 4,096-byte `tursodb-ephemeral-` file in the temporary folder. It is recorded in the record, not fixed, because a fix would change the reviewed runner. The follow-up points the runner's child processes at the run's scratch folder.
 30. **TS05 started early, at about 18:25Z.** While Phase 2 waited for the slot, TS05's code was written in its own worktree. That was ahead of the record's checkpoint line, which said TS05 would not start until this review passed. No TS05 gate, slot or review ran before Phase 2 returned. The checkpoint line now states the rule that held: TS05's gates and review wait for TS00's.
 31. **Gated local commit after the review.** Code and evidence are the reviewed candidate's bytes. Only the record and this ledger differ from it, and the commit carries no trailer.
+32. **Pushed, 00:29Z on 10 October.** With Andrew's approval, feature/turso-baseline went to origin at 7c40ce5 and opened as PR 264.
+33. **In main, 03:01Z.** The performance-audit integration fast-forwarded main to 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c. It took 7c40ce5 as a prerequisite, with W00, W01 and TS05's candidate, and added AUDIT-06 (d7b1033) to this packet's test and fixture. PR 264 shows merged. Workers Builds skipped the merge.
+34. **The follow-up, from 03:44Z.** This branch fast-forwarded to 6b38ffc, under claim claim_mv1uooyu_787afec7. The record now states the integration, AUDIT-06 and the next packets as main holds them. The real-engine cases on main's code wait until the machine is free for test work.
 
 ### Results
 
@@ -94,15 +97,15 @@ Playwright rewrote two committed screenshots under `evidence/screenshots/`. Both
 
 ### Review
 
-Phase 1 (static) returned at 14:56:33Z on candidate cf59fbc081376bc30723da3d27759d1d1891c4fa, with the corrections listed in steps 13 to 19. Phase 2 runs the gates, the mutations and the reproductions in a scratch worktree, under the slot. Its candidate is the gated tree with these records updated: `refs/review/turso-baseline-ts00` at 6e83c85c3d9c2d4e1d0bdc7a1448808514e4c15c, tree 93e684af6202b61315e9c40d3e610e6ac90a608a. The patch digest, `git diff --binary 92bc57b 6e83c85c | sha256sum`, is 390f14fd420db4cc7dfdb21da6359de1d30d0eb16c050dd2ca8a99d6a52a386c. Phase 2 ran from 18:55:39Z to 19:06:28Z and accepted it (steps 28 and 29). The reviewer did not build this patch.
+Phase 1 (static) returned at 14:56:33Z on candidate cf59fbc081376bc30723da3d27759d1d1891c4fa, with the corrections listed in steps 13 to 19. Phase 2 runs the gates, the mutations and the reproductions in a scratch worktree, under the slot. Its candidate is the gated tree with these records updated: `refs/review/turso-baseline-ts00` at 6e83c85c3d9c2d4e1d0bdc7a1448808514e4c15c, tree 93e684af6202b61315e9c40d3e610e6ac90a608a. The patch digest, `git diff --binary 92bc57b 6e83c85c | sha256sum`, is 390f14fd420db4cc7dfdb21da6359de1d30d0eb16c050dd2ca8a99d6a52a386c. Phase 2 ran from 18:55:39Z to 19:06:28Z and accepted it (steps 28 and 29). The reviewer did not build this patch. The integration's AUDIT-06 changed the test afterwards, and this review has not seen it.
 
 ### State
 
-Authored, implemented, tested and independently reviewed: accepted. Committed locally on feature/turso-baseline, not pushed. Not integrated into main, not deployed, not released. Not DONE.
+Authored, implemented, tested and independently reviewed: accepted. Pushed as PR 264. Integrated into main at 6b38ffc, with AUDIT-06 on its test (step 33). Not deployed, not released. Not marked DONE: the record's Publication boundary gives the reasons.
 
 ### Next
 
-1. Pushing feature/turso-baseline and opening its PR need Andrew's approval for this patch.
-2. Linear: DIO-317 has been In Progress since 14:38:05Z, with a start comment. Comment the TS00 results on DIO-227 and DIO-317. Owner statuses stay as they are. DIO-318 tracks the h14 stall.
-3. Next packets: TS05 under DIO-31 is being written on feature/agentfs-workspaces, with its own ledger there. It can be written but not shipped. TS07 under DIO-128 waits for the funding candidate and PR 259 to reach main. PR 241 is the program blocker.
+1. When the machine is free for test work: the TS00 file on main's code with the three `NCTS_` variables, under the slot. Then the nine runner-made evidence files made again and compared with main's blobs (`git show origin/main:<path>`). Compare with the blobs, not this worktree's copies: the runner writes LF, and a checkout here writes CRLF.
+2. A review of AUDIT-06, with that run as its evidence.
+3. Next packets: TS01 under DIO-228 and TS02 under DIO-229 are eligible (the record's update of 10 October). TS07 under DIO-128 waits for the funding candidate and PR 259. DIO-318 tracks the h14 stall.
 4. O2's follow-up, in a later patch that touches the runner.
