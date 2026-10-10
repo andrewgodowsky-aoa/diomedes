@@ -1228,7 +1228,16 @@ export class AgentFsWorkspaces {
     const walked = await this.walkDelta(handle, lease.limits);
     const dropped = [...walked.dropped];
     const entries: WorkspaceOutput[] = [];
+    let deltaBytes = 0;
     for (const file of walked.files) {
+      const bytes = await handle.fs.readFile(toDelta(file.path));
+      // Match the write budget: every plain-file copy counts, even if it is unchanged or cannot be returned.
+      deltaBytes += bytes.byteLength;
+      if (deltaBytes > lease.limits.maxDeltaBytes)
+        throw new WorkspaceRefused(
+          'workspace_budget',
+          `This workspace holds more than ${megabytes(lease.limits.maxDeltaBytes)} of file changes, so nothing was handed back.`,
+        );
       let relative: string;
       try {
         relative = relativeName(file.path);
@@ -1249,11 +1258,10 @@ export class AgentFsWorkspaces {
         dropped.push({ path: relative, reason: 'A file and a folder would have the same name in the project.' });
         continue;
       }
-      if (file.size > lease.limits.maxFileBytes) {
+      if (file.size > lease.limits.maxFileBytes || bytes.byteLength > lease.limits.maxFileBytes) {
         dropped.push({ path: relative, reason: 'Larger than a workspace file may be.' });
         continue;
       }
-      const bytes = await handle.fs.readFile(toDelta(relative));
       const sha = sha256(bytes);
       const before = pinned.get(relative) ?? null;
       if (before?.sha === sha) continue;
@@ -1497,7 +1505,9 @@ export class AgentFsWorkspaces {
    * pinned file is there with its size and sha, the delta files match, and the
    * delta holds exactly the files it listed. A checkpoint carries the limits it
    * was made under, and they are not trusted here: this host's apply, and a
-   * checkpoint larger than they allow is refused before anything is copied.
+   * checkpoint larger than they allow is refused before its owner or lease is
+   * published. The physical copy is bounded before the database is opened to
+   * verify the logical file bytes.
    */
   async importCheckpoint(source: string, job: { readonly projectId: string; readonly jobId: string; readonly owner: string }): Promise<WorkspaceLease> {
     let parsed: z.infer<typeof checkpointSchema>;
@@ -1606,7 +1616,17 @@ export class AgentFsWorkspaces {
         try {
           const walked = await this.walkDelta(handle, here.limits);
           const found: { path: string; sha: string }[] = [];
-          for (const file of walked.files) found.push({ path: file.path, sha: sha256(await handle.fs.readFile(toDelta(file.path))) });
+          let deltaBytes = 0;
+          for (const file of walked.files) {
+            const bytes = await handle.fs.readFile(toDelta(file.path));
+            deltaBytes += bytes.byteLength;
+            if (deltaBytes > here.limits.maxDeltaBytes)
+              throw new WorkspaceRefused(
+                'workspace_budget',
+                `This checkpoint holds more than ${megabytes(here.limits.maxDeltaBytes)} of file changes, so it was not opened on this host.`,
+              );
+            found.push({ path: file.path, sha: sha256(bytes) });
+          }
           if (canonical(found) !== canonical(parsed.delta.entries))
             throw new WorkspaceRefused('checkpoint_incomplete', 'This checkpoint’s database does not hold the changes it lists.');
         } finally {

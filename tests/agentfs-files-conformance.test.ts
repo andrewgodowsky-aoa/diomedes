@@ -962,6 +962,135 @@ function conformance(load: () => Promise<AgentFsSdk>) {
     await fs.writeFile(file, JSON.stringify(record));
   }
 
+  describe('AUDIT-03: logical delta bytes are checked at host boundaries', () => {
+    /** Database size metadata need not describe the bytes a read really returns. */
+    const understateDeltaSizes = () => {
+      const open = sdk.open.bind(sdk);
+      vi.spyOn(sdk, 'open').mockImplementation(async (options) => {
+        const handle = await open(options);
+        const lstat = handle.fs.lstat.bind(handle.fs);
+        vi.spyOn(handle.fs, 'lstat').mockImplementation(async (file) => {
+          const stat = await lstat(file);
+          return {
+            size: 0,
+            isFile: () => stat.isFile(),
+            isDirectory: () => stat.isDirectory(),
+            isSymbolicLink: () => stat.isSymbolicLink(),
+          };
+        });
+        vi.spyOn(handle.fs, 'statfs').mockResolvedValue({ inodes: 1, bytesUsed: 0 });
+        return handle;
+      });
+    };
+
+    test('a delta at exactly its byte limit can be proposed and promoted', async () => {
+      const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxDeltaBytes: 64 } });
+      const handle = await direct(lease);
+      await handle.fs.writeFile('/Menu/A.md', 'a'.repeat(32));
+      await handle.fs.writeFile('/Menu/B.md', 'b'.repeat(32));
+      await handle.close();
+      const { digest, outputs } = await workspaces.proposeOutputs(lease);
+      expect(outputs.entries.map(({ path, bytes }) => ({ path, bytes }))).toEqual([
+        { path: 'Menu/A.md', bytes: 32 },
+        { path: 'Menu/B.md', bytes: 32 },
+      ]);
+      expect(outputs.dropped).toEqual([]);
+      expect((await workspaces.promote(lease, request(digest))).applied.map((file) => file.path)).toEqual(['Menu/A.md', 'Menu/B.md']);
+      expect(await read('Menu/A.md')).toBe('a'.repeat(32));
+      expect(await read('Menu/B.md')).toBe('b'.repeat(32));
+    });
+
+    test.each([
+      { label: 'changed pinned full bytes', path: '/Menu/Prices.md', text: SOUP_7 },
+      { label: 'unchanged pinned bytes', path: '/Menu/Prices.md', text: PRICES },
+      { label: 'out-of-scope bytes', path: '/Staff/Extra.md', text: SOUP_7 },
+    ])('the aggregate budget counts $label before output filtering', async ({ path: extra, text }) => {
+      // A one-byte edit to Prices would fit as a diff, but its whole-file copy does not.
+      const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxDeltaBytes: 33 } });
+      await edit(lease, { 'Menu/Note.md': 'n'.repeat(32) });
+      const { digest } = await workspaces.proposeOutputs(lease);
+      const before = projectState();
+      const written = vi.spyOn(store, 'writeRecorded');
+      const handle = await direct(lease);
+      await handle.fs.writeFile(extra, text);
+      await handle.close();
+      await expect(workspaces.proposeOutputs(lease)).rejects.toMatchObject({ code: 'workspace_budget' });
+      await expect(workspaces.promote(lease, request(digest))).rejects.toMatchObject({ code: 'workspace_budget' });
+      expect(written).not.toHaveBeenCalled();
+      expect(projectState()).toEqual(before);
+      expect(await read('Menu/Prices.md')).toBe(PRICES);
+      await expect(fs.lstat(path.join(folder, 'Menu', 'Note.md'))).rejects.toThrow();
+      expect((await workspaces.read(projectId, 'Rjob-a'))?.state).toBe('open');
+    });
+
+    test('understated SDK size metadata cannot hide an oversized delta from proposal or promotion', async () => {
+      const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxDeltaBytes: 64 } });
+      await edit(lease, { 'Menu/A.md': 'a'.repeat(32) });
+      const { digest } = await workspaces.proposeOutputs(lease);
+      const handle = await direct(lease);
+      await handle.fs.writeFile('/Menu/B.md', 'b'.repeat(33));
+      await handle.close();
+      understateDeltaSizes();
+      const before = projectState();
+      const written = vi.spyOn(store, 'writeRecorded');
+      await expect(workspaces.proposeOutputs(lease)).rejects.toMatchObject({ code: 'workspace_budget' });
+      await expect(workspaces.promote(lease, request(digest))).rejects.toMatchObject({ code: 'workspace_budget' });
+      expect(written).not.toHaveBeenCalled();
+      expect(projectState()).toEqual(before);
+      expect(recorded()).toEqual([]);
+    });
+
+    test('actual bytes preserve the per-file limit when the SDK understates a file size', async () => {
+      const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxFileBytes: 64, maxDeltaBytes: 128 } });
+      const handle = await direct(lease);
+      await handle.fs.writeFile('/Menu/Big.md', 'b'.repeat(65));
+      await handle.close();
+      understateDeltaSizes();
+      const { digest, outputs } = await workspaces.proposeOutputs(lease);
+      expect(outputs.entries).toEqual([]);
+      expect(outputs.dropped).toEqual([{ path: 'Menu/Big.md', reason: 'Larger than a workspace file may be.' }]);
+      expect(await workspaces.promote(lease, request(digest))).toMatchObject({ applied: [] });
+      expect(recorded()).toEqual([]);
+      await expect(fs.lstat(path.join(folder, 'Menu', 'Big.md'))).rejects.toThrow();
+    });
+
+    test('import accepts exactly the host byte limit and refuses one extra byte before publishing an owner', async () => {
+      const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxDeltaBytes: WORKSPACE_LIMITS.maxDeltaBytes + 1 } });
+      const handle = await direct(lease);
+      const text = 'x'.repeat(1024 * 1024);
+      for (let i = 0; i < 8; i++) await handle.fs.writeFile(`/Menu/Part-${i}.md`, text);
+      await handle.close();
+      const atLimit = path.join(base, 'at-limit');
+      await workspaces.exportCheckpoint(lease, atLimit);
+      const larger = await direct(lease);
+      await larger.fs.writeFile('/Staff/Extra.md', 'x');
+      await larger.close();
+      const tooLarge = path.join(base, 'too-large');
+      await workspaces.exportCheckpoint(lease, tooLarge);
+      await rewriteCheckpoint(tooLarge, (record) => {
+        record.lease.limits = { ...WORKSPACE_LIMITS, maxDeltaBytes: 1024 ** 4, maxDeltaDiskBytes: 1024 ** 4 };
+      });
+      understateDeltaSizes();
+      const receiver = host('host-b');
+      const moved = await receiver.importCheckpoint(atLimit, job());
+      expect(moved.limits).toEqual(WORKSPACE_LIMITS);
+      const accepted = await receiver.proposeOutputs(moved);
+      expect(accepted.outputs.entries.map((file) => file.bytes)).toEqual(Array(8).fill(1024 * 1024));
+      expect(accepted.outputs.dropped).toEqual([]);
+      const refused = host('host-c');
+      const before = projectState();
+      await expect(refused.importCheckpoint(tooLarge, job())).rejects.toMatchObject({ code: 'workspace_budget' });
+      expect(await refused.assignment(projectId, 'Rjob-a')).toBeNull();
+      expect(await refused.read(projectId, 'Rjob-a')).toBeNull();
+      await expect(fs.lstat(refused.dir(projectId, 'Rjob-a'))).rejects.toThrow();
+      expect(projectState()).toEqual(before);
+      // Refusal on a host with an existing workspace must preserve that workspace.
+      await expect(receiver.importCheckpoint(tooLarge, job())).rejects.toMatchObject({ code: 'checkpoint_destination_used' });
+      expect(await receiver.read(projectId, 'Rjob-a')).toEqual(moved);
+      expect((await receiver.proposeOutputs(moved)).digest).toBe(accepted.digest);
+    });
+  });
+
   describe('a lease opens only the workspace it was given', () => {
     test('a lease for a workspace that was made again opens, hands back, copies and removes nothing of the new one', async () => {
       const old = await materialize('Rjob-a');
@@ -1207,7 +1336,7 @@ function conformance(load: () => Promise<AgentFsSdk>) {
       expect(await other.importCheckpoint(out, job('worker-b'))).toMatchObject({ assignmentFence: 'Rjob-a#1' });
     });
 
-    test('a checkpoint opens under this host’s limits, and one larger than they allow is refused before anything is copied', async () => {
+    test('a checkpoint uses this host\'s limits, and oversized base metadata is refused before copying', async () => {
       const lease = await materialize('Rjob-a', ['Menu'], { limits: { maxDeltaBytes: 300 * 1024 } });
       await edit(lease, { 'Menu/Prices.md': SOUP_7 });
       const out = path.join(base, 'checkpoint');
