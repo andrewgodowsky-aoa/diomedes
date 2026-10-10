@@ -74,7 +74,7 @@ The preview tool's documented inputs do not include a general interaction-testin
 
 ### Capabilities that are separate work
 
-T3's full MCP Apps hosting PR 16236 was still open at the fresh check. The shipped theme and link bridge uses some MCP Apps message names, but that should not be confused with a complete host for arbitrary third-party application tool calls. Nectovia can preserve a compatible message boundary while evaluating full application hosting separately. [R18, R19]
+T3's full MCP Apps hosting PR 16236 was still open at the fresh check; it merged later on 2026-10-07 (commit 4d976d1) and first shipped in v0.0.46-nightly.20261007.2787, rechecked 2026-10-09. The shipped theme and link bridge uses some MCP Apps message names, but that should not be confused with a complete host for arbitrary third-party application tool calls. Nectovia can preserve a compatible message boundary while evaluating full application hosting separately. [R18, R19]
 
 The preview browser's isolation and public-network handling are distinct from the client iframe's resource policy. Nectovia must apply its own source grants and network restrictions to each environment. It should not inherit a policy that permits public access merely because generated HTML requests it.
 

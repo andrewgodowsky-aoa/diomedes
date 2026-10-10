@@ -295,7 +295,7 @@ Rechecked through the official pingdotgg/t3code repository on 7 October 2026, ap
 | [#16196: MCP Apps bridge names](https://github.com/pingdotgg/t3code/pull/16196) | Merged into the feature branch before launch; 87a7ca49e93e90cb8541d9d9917d0c50593991ed | Theme/link compatibility is present without full third-party app hosting. |
 | [#16283: live size correction](https://github.com/pingdotgg/t3code/pull/16283) | Merged 6 October 2026; 64275ae39653379e63f49f87be021c190fd20e81 | Account for real client sizing and historical embedded-bootstrap versions. |
 | [#16234: opt-in visual beta](https://github.com/pingdotgg/t3code/pull/16234) | Open, unmerged | Do not cite the default-off setting as shipped behavior. |
-| [#16236: full MCP Apps hosting](https://github.com/pingdotgg/t3code/pull/16236) | Open, unmerged | Treat full app hosting as separate work; it is not a prerequisite for native Nectovia reports. |
+| [#16236: full MCP Apps hosting](https://github.com/pingdotgg/t3code/pull/16236) | Open when written; merged 2026-10-07 (4d976d1), rechecked 2026-10-09 | Treat full app hosting as separate work; it is not a prerequisite for native Nectovia reports. |
 
 The first containing release verified during this investigation was [v0.0.46-nightly.20261005.2702](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261005.2702), published 5 October 2026 at 23:58:57 UTC as a prerelease. Merged code and a nightly release do not establish stable-channel availability.
 
