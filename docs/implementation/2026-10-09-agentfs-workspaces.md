@@ -3,7 +3,7 @@
 Owner request: October 9, 2026. Program NC-TS-2026-10-09.1, packet TS05, prompt `prompts/TS05_IMPLEMENT.md`.
 Owner issue: DIO-31, Core Files. Program issue: DIO-317, under epic DIO-226. Architecture: GitHub issue 262.
 Owner: Andrew. Builder: Claude Opus 5.5.
-Branch: feature/agentfs-workspaces, based on 92bc57bd678865390f17291beb382642769e73e5, which was origin/main when this was written.
+Branch: feature/agentfs-workspaces, first based on 92bc57bd678865390f17291beb382642769e73e5, which was origin/main when the patch was written. The reviewed candidate reached main at 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c on 10 October, and the follow-up in this record is based there.
 App worktree: F:/Diomedes/diomedes-wt/agentfs-workspaces.
 Operations page: `docs/operations/agentfs-workspaces.md`. Build ledger: `evidence/agentfs-workspaces/BUILD_LEDGER.md`.
 
@@ -23,15 +23,16 @@ The patch adds one module, one test file, one test fixture, an operations page, 
 
 | What | Exact ref | State |
 |---|---|---|
-| App base | 92bc57bd678865390f17291beb382642769e73e5 | origin/main, the merge of PR 249. Re-checked at 00:06:12Z on 10 October, unchanged. |
-| TS00 | 7c40ce5ff7b52d8c93e245d13c7d08a44e44a56e on feature/turso-baseline | Accepted by its independent review and committed locally, not pushed. This branch does not contain it. TS05 reuses its measurements, not its code. |
+| App base | 92bc57bd678865390f17291beb382642769e73e5 | origin/main, the merge of PR 249, until 10 October. |
+| Main now | 6b38ffc88d8bd64509b5bd987cb1b4c980d58b5c | The performance-audit integration fast-forwarded main here at 03:01Z on 10 October. It carries this patch's reviewed candidate with three repairs on top (Verification, On main). |
+| TS00 | 7c40ce5ff7b52d8c93e245d13c7d08a44e44a56e | Accepted by its independent review. In main since 6b38ffc, with the integration's AUDIT-06 (d7b1033) on its test. TS05 reuses its measurements, not its code. |
 | AgentFS | `agentfs-sdk` 0.6.4 (tursodatabase/agentfs v0.6.4 at 3a5ed2b) on `@tursodatabase/database` 0.4.4 (turso v0.4.4 at dc7781a) | TS00's probe install, outside this repository. Never a dependency here. |
-| Sandbox wiring | PR 248, feature/local-agent-repair-verification at 7cd70ac | Open, last updated 2026-10-06. It changes `server/sandbox/sandbox.ts`, both `native-loop.ts` files and `server/native-loop-routes.ts`. |
+| Sandbox wiring | PR 248, feature/local-agent-repair-verification at 7cd70ac | Open, with merge conflicts, last updated 2026-10-06. It changes `server/sandbox/sandbox.ts`, both `native-loop.ts` files and `server/native-loop-routes.ts`. |
 | Change sets | `server/sandbox/change-sets.ts` | Claimed by the app-wording lane. TS05 reads it and edits nothing. |
-| W00 | PR 241 at 144d892 | Open. It blocks seven of the program's packets. TS05 does not depend on it. |
+| W00 | PR 241 at 144d892 | In main since 6b38ffc. TS05 does not depend on it. |
 | Runtime | Node v22.23.2 on win32-x64 | |
 
-Coordination claim claim_mv19iu1z_7a0fd19c (node DIO-31.TS05, from 17:52:04Z) covers the new paths. No open PR touches them.
+Coordination claim claim_mv19iu1z_7a0fd19c (node DIO-31.TS05, from 17:52:04Z) covered the new paths. The integrator recorded an owner-directed transfer of it on 10 October. The follow-up holds claim_mv1ubgrf_7ea0d5a8 (node DIO-31.TS05, from 03:34:12Z on 10 October). No open PR touches these paths.
 
 **The smallest missing piece.** Nothing in the repository held a sub-task's files over a pinned base with one fenced writer, and nothing tested AgentFS's behavior. TS00 measured the SDK's file operations on Windows, its license block and its engine's protections. It did not run a workspace.
 
@@ -45,7 +46,7 @@ Coordination claim claim_mv19iu1z_7a0fd19c (node DIO-31.TS05, from 17:52:04Z) co
 - The binding's native file must match the sha256 in TS00's artifact manifest.
 - A native file beside the engine's loader is refused, because that loader tries it before the binding.
 - Only win32-x64 was qualified, so another platform is refused before anything is read.
-- The engine's loader reads this process's environment. So `NAPI_RS_NATIVE_LIBRARY_PATH` or `NAPI_RS_FORCE_WASI` set there refuses the load, whatever a caller passes.
+- The engine's loader reads this process's environment. So `NAPI_RS_NATIVE_LIBRARY_PATH` or `NAPI_RS_FORCE_WASI` set there refuses the load, whatever a caller passes. Before AUDIT-02, a caller's environment that named either variable as `undefined` hid this process's value from the check. Each environment is now checked on its own, and an empty string counts as set.
 
 The JavaScript is checked by version and the native file by hash, which is less than TS00's file-by-file pin of its probe install. The SDK is typed by shape, so the repository never imports it.
 
@@ -57,7 +58,7 @@ The JavaScript is checked by version and the native file by hash, which is less 
 
 **Pinning.** Each file in scope is read once, kept under its sha256 and listed in `base.json`. The hash of `base.json`'s exact bytes is the base reference. A read of a pinned file is checked against its hash.
 
-- Who may read the scope is read before the bytes and again after them. A change in between refuses the workspace with `workspace_source_changed`, so a lease records the generation its bytes were read under (S5).
+- Who may read the scope is read before the bytes and again after them. A change in between refuses the workspace with `workspace_source_changed`, so a lease records the generation its bytes were read under (S5). Until AUDIT-01, the lease kept a third read, taken after that check. So a change in the gap could bind bytes read under one generation to the next (Phase 2's O3). The lease now keeps the generation checked around the bytes. When the path guard leaves files out, the smaller set's generation is read before the final check.
 - A file the path guard refuses, such as a link or a private name, is left out. Any other failure to read a file stops the workspace, so no file goes missing from a base unseen (O6).
 - The new database is bound to its project, job and base reference in its own key-value store (S3).
 
@@ -72,6 +73,8 @@ One set of tools may write at a time. In this process a writer is held from befo
 **Tools.** `list_project_files`, `read_project_file`, `write_file` and `propose_file`, with the copy sandbox's names and answers. Paths go through `relativeName` and the scope. A pinned file the route may not read stays hidden. Each write reserves its cost first, as the Limits section of the operations page describes.
 
 **Hand-back.** `proposeOutputs` lists what changed against the base and returns the digest of that list. Changes and dropped names are listed in the code-unit order of their names. A locale's order can differ between hosts, and the digest covers the order, so every host lists them the same way (O5).
+
+Listing also counts every plain file in the database by its actual bytes against the workspace's change budget. That includes unchanged copies of pinned files and files outside the scope. Past the budget, listing and hand-back refuse with `workspace_budget` before any write. So bytes written into the database around the tools cannot pass the tools' budget (AUDIT-03).
 
 `promote` runs under the Store's lock and makes every check before its first write. It needs the current fence, a closed writer and an intact base. The digest and the bytes must match what was listed, and the source generation must match what was pinned. Each change then goes through `Store.writeRecorded` with the pinned sha as the expected version.
 
@@ -103,7 +106,7 @@ O4 also suggested running the pre-write checks before taking the lock, so the lo
 
 The import then reserves disk space and copies each file through the same check again, so what lands is what was checked (O7). It opens the copy under a new database name, and checks that the database holds exactly the changes the checkpoint lists. Last, under the Store's lock, it checks the owner and the folder again. It writes the job's owner when this host has none, then the lease. If the lease cannot be written, an owner made for it is removed, since it would refuse the job's next owner. A refused or failed import leaves nothing of itself.
 
-**Decision: an import takes this host's limits.** A checkpoint carries the limits it was made under, and the receiving host does not adopt them. An opened checkpoint gets this host's limits, and one larger than they allow is refused before anything is read or copied. Limits bound this host's disk and the work it runs, so they are this host's to set. A checkpoint is a file anyone can edit, so it cannot raise them for itself.
+**Decision: an import takes this host's limits.** A checkpoint carries the limits it was made under, and the receiving host does not adopt them. An opened checkpoint gets this host's limits, and one larger than they allow is refused before anything is read or copied. Limits bound this host's disk and the work it runs, so they are this host's to set. A checkpoint is a file anyone can edit, so it cannot raise them for itself. An import also counts the database's files by their actual bytes against this host's change budget. It does so while it checks their hashes, before it publishes an owner or a lease (AUDIT-03).
 
 Phase 1 also offered the tighter of each pair. That would keep a job's own smaller budget from its first host. It needs each limit taken in its own safe direction, since more free-disk headroom is the safer one. That choice belongs to the wiring, where the receiving loop can name a job's limits.
 
@@ -111,7 +114,7 @@ Two imports for one job at once in one process would copy into the same folder. 
 
 Checkpoints are not signed, so an import checks completeness and integrity, not who made it.
 
-**Disposing.** `dispose(lease)` removes the workspace a lease names: its database, its pinned files and its lease. The job's owner stays. It runs under the Store's lock, and a lease for a workspace made again since removes nothing (`workspace_replaced`, S1).
+**Disposing.** `dispose(lease)` removes the workspace a lease names: its database, its pinned files and its lease. The job's owner stays. It runs under the Store's lock, and a lease for a workspace made again since removes nothing (`workspace_replaced`, S1). A lease whose job has moved to a newer owner also removes nothing. It is refused with the same `workspace_replaced`, where the other methods say `workspace_stale_assignment` (Phase 2's O2, open).
 
 **Tool log.** `observations` returns each call's name, status and times, marked `trust: 'observation'`. It never returns arguments, results or errors, and reading it changes nothing.
 
@@ -165,6 +168,8 @@ Round 2 added tests for the rest of Phase 1's findings:
 - A write the Store fails partway makes the Store recover, and a retry records each change once. A write whose record names other bytes stops the hand-back without that recovery.
 - The loader refuses overrides, an unqualified platform, another version of any package Node would load, a stray native file and a native file with another hash.
 
+The integration added a regression for each of its three repairs, AUDIT-01 to AUDIT-03, described above. Its workers ran them on the stand-in only.
+
 ## Blocked proofs
 
 | Proof | Why it is blocked | What clears it |
@@ -190,7 +195,8 @@ Checkpoints made by an earlier draft of this patch, with a fixed database name, 
 
 - **O2, taking over a stale writer lock.** Within one process, a second writer opened at the same moment could take over the first's lock. That was found after round 2's mutation stage, and is fixed as "One owner and one writer" above describes. Across processes it stays open. Two processes taking over one stale lock at once can both believe they hold it. A partly written lock reads as live, and a reused process id can make a dead lock look live. Each case fails closed: a hand-back refuses while any writer looks live, and each write checks its lease. The Store serializes writes within one process only, so a second process on one data folder is outside what this patch claims. A takeover by atomic rename would close the race when the wiring needs it.
 - **O4, checks before the lock.** Described under the Store's lock above.
-- **E8, memory across many workspaces.** Not measured in round 2. Phase 2's plan measures 200 cycles of making and disposing a workspace on the real SDK.
+- **E8, memory across many workspaces.** Measured in Phase 2 (Q11, under Verification). After warm-up, memory grew by a few kilobytes a cycle, which shows no leak.
+- **Phase 2's O1 and O2.** No test covers the re-read check in `promote`, and `dispose` reports a newer owner with another code than the other methods use. Both are optional and go to a follow-up patch.
 
 ## Pillar impact
 
@@ -331,6 +337,26 @@ The tree and the worktree's status were the same after each run as before it. Th
 
 The tree and the worktree's status were the same after the run as before it. The candidate given to Phase 2 is this tree with this section and the ledger filled in. `git diff --stat` between the two names only this record and the ledger, and no test reads either.
 
+### Phase 2
+
+**Phase 2 review, from about 00:08Z to 03:14Z on 10 October, on candidate 9ea1870dc57d48a3a88fa37765af49432850e068.** Its digest, the sha256 of `git diff --binary 92bc57b 9ea1870`, is e26b6438851610b2f517e73d233b6509d8803854295c6eae780bbe19348c74d5. The same reviewer as Phase 1 ran it in a worktree of its own, under the heavy slot, and paused between 00:46Z and 02:14Z. It changed no file of the patch.
+
+- tsc passed. The TS05 file on the stand-in: 63 passed and 65 skipped, of 128. On the real SDK: 128 of 128 passed.
+- Its reproductions: on the stand-in, 16 passed and 15 skipped; on the real SDK, 30 passed and 1 skipped. P1 to P3 retry a hand-back after a failed write and race two hand-backs. Q1 to Q10 reproduce each of Phase 1's findings S1 to S7, and each passed. Q11 made and disposed of a workspace 200 times on the real SDK. After warm-up, memory grew by a few kilobytes a cycle, which shows no leak (E8).
+- All 54 of the builder's mutations were caught on both SDKs. So were 11 of the reviewer's own 13, Va to Vl. Ve survived and changes nothing: it removes an early owner check in `importCheckpoint`, and the same check runs again under the Store's lock. Vi1 survived because no test covers the re-read check in `promote` (O1).
+- Verdict: accept, with three optional notes. O1: a test whose database returns other bytes on a second read, expecting `workspace_outputs_changed`. O2: `dispose` names a newer owner `workspace_replaced`, where the other methods say `workspace_stale_assignment`. O3: `pinBase` kept a generation read after its check, which AUDIT-01 had already fixed on main.
+- Not rerun by the reviewer: the full unit suite, the build and Playwright. The candidate differs from the gated tree 9e4a888a only in this record and the ledger.
+
+### On main
+
+The performance-audit integration fast-forwarded main to 6b38ffc at 03:01Z on 10 October. It took 9ea1870 as a prerequisite and added three repairs to this module and its tests. AUDIT-01 (b42c85e) keeps the generation checked around pinned bytes. AUDIT-02 (23daef9) checks the loader's two environments apart. AUDIT-03 (55227d5) applies the change budget at listing, hand-back and import. Each repair's note, under `docs/implementation/2026-10-09-performance-audit/`, gives its reason and its failing and passing runs.
+
+- The integration's record says its parent ran tsc, the full unit suite, the build and the three browser specs on the combined candidate before the fast-forward. It gives no counts, and this record restates none.
+- The integrator reviewed the repairs. This packet's reviewer has not.
+- Each repair's worker ran the TS05 file without `NCTS_TURSO_NODE_MODULES`, and no run of its real-SDK block on main's code is recorded. That run comes first in the ledger's next steps.
+
 ## Publication boundary
 
-Authored, implemented and gated. Phase 1 of the independent review asked for corrections, and they are made and gated. Phase 2 has not returned. Not committed, not integrated into main, not deployed, not released. TS05 can be written but not shipped until the license text exists and PR 248 lands. It is not DONE until an accepted patch is merged into main.
+Authored, implemented and gated on tree 9e4a888a. Independently reviewed: Phase 1 asked for corrections, which are made and gated, and Phase 2 accepted candidate 9ea1870. Integrated into main at 6b38ffc through the performance-audit integration, with three repairs that its integrator reviewed and this packet's reviewer has not. Not deployed: Workers Builds skipped the merge. Not released.
+
+Not DONE, for four reasons. The repairs on top have had no review in this packet, and no run of the real-SDK block on main's code is recorded. O1 and O2 are open, and the proofs under Blocked proofs remain. TS05 cannot ship until the SDK's license text exists, and the loop cannot use it until PR 248 lands.
