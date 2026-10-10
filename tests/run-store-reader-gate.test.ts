@@ -57,3 +57,46 @@ test('a record replacement waits for reads in flight and holds back new ones', a
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+// DIO-318: a listing can miss a file while the folder's files are replaced, and the
+// host then asks `has` whether the run is really gone. That answer waits for a
+// replacement in flight, so it never lands inside one.
+test('a presence check waits for a replacement in flight and reports a missing record', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-run-store-has-'));
+  const files = new FileRunStore(root);
+  const base = {
+    v: 1, id: 'R-has', tenantId: 'fixture', projectId: 'fixture', state: 'queued',
+    steps: [], events: [], updatedAt: new Date(1000).toISOString(),
+  } as unknown as HarnessRun;
+  await files.create(base);
+
+  const events: string[] = [];
+  const rename = fs.rename.bind(fs);
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  const renameSpy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+    events.push('rename-start');
+    await held;
+    await rename(from, to);
+    events.push('rename-end');
+  });
+  try {
+    const write = files.write({ ...base, updatedAt: new Date(2000).toISOString() } as HarnessRun);
+    await vi.waitFor(() => expect(events).toEqual(['rename-start']), { timeout: 15_000 });
+    const present = files.has(base.id).then((found) => {
+      events.push('has');
+      return found;
+    });
+    await delay(50);                       // an ungated check would have answered by now
+    expect(events).toEqual(['rename-start']);
+    release();
+    await write;
+    expect(await present).toBe(true);
+    expect(events).toEqual(['rename-start', 'rename-end', 'has']);
+    expect(await files.has('R-none')).toBe(false);
+    expect(await files.has('../outside')).toBe(false);   // no run id, so never there
+  } finally {
+    renameSpy.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

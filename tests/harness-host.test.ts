@@ -362,6 +362,29 @@ describe('native harness through the real host', () => {
     });
   });
 
+  test('a listing that misses a saved run file cannot erase its lookup', async () => {
+    // DIO-318: Windows can leave a file out of a directory listing while files in
+    // the folder are being replaced. A drive reads its run through the lookup and
+    // never lists again, so one listing that missed the run left it stuck running.
+    const need = await ready();
+    const runId = need.harness!.runId;
+    const list = FileRunStore.prototype.list;
+    vi.spyOn(FileRunStore.prototype, 'list').mockImplementationOnce(async function (
+      this: FileRunStore,
+    ) {
+      return (await list.call(this)).filter((id) => id !== runId);
+    });
+    await host().list(projectId);
+    await expect(host().runs.get(runId)).resolves.toMatchObject({ id: runId });
+    expect((await resolve(need)).status).toBe(200);
+    expect((await untilRun(runId, 'completed')).state).toBe('completed');
+    // A run whose file is really gone still leaves the lookup.
+    // A scanner can still hold the freshly written file on Windows.
+    await fs.rm(runFile(runId), { recursive: true, maxRetries: 5 });
+    expect(await host().list(projectId)).toEqual([]);
+    await expect(host().runs.get(runId)).rejects.toThrow(/Unknown run/);
+  });
+
   test('duplicate run ids are refused without breaking unrelated project startup', async () => {
     const need = await ready();
     const other = await store().locked(() => store().createProject('Duplicate fixture'));

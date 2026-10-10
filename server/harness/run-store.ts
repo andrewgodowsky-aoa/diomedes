@@ -170,4 +170,23 @@ export class FileRunStore implements RunStore {
       throw error;
     }
   }
+  /**
+   * Whether a run's file is there. On Windows a directory listing can leave out
+   * a file that exists while files in the folder are being replaced (DIO-318,
+   * seen under load), so the host asks this before it forgets a run a listing
+   * missed. The check waits in the read gate, so it never lands inside this
+   * store's own replacement of the file.
+   */
+  async has(runId: string) {
+    // A name that is not a run id names no run this store wrote.
+    if (!RUN_ID.test(runId)) return false;
+    const file = this.file(runId);
+    try {
+      await reading(file, () => fs.access(file));
+      return true;
+    } catch (error) {
+      if (absent(error)) return false;
+      throw error;
+    }
+  }
 }
