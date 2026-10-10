@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemoryLedgerCommand, MemoryLedgerScope } from '../shared/memory-ledger.js';
 import {
   command, conflictCommand, entityCommand, epochs, keyOf, openFixture, scopeA, scopeB,
   scopeOtherWorkspace, scopeWest, source, T0, T1, T2, T3, T4, type LedgerFixture,
 } from './fixtures/memory-ledger/fixture.js';
 
-// Authoring is not RED/GREEN evidence. All W01 execution is deferred by the owner.
+// Authored assertions alone do not establish runtime qualification.
 let fixture: LedgerFixture;
 beforeEach(async () => { fixture = await openFixture(); });
 afterEach(async () => { if (fixture) await fixture.dispose(); });
@@ -228,6 +228,72 @@ describe('W01 scoped immutable ledger', () => {
 });
 
 describe('W01 temporal selection and source lineage', () => {
+  it.each([undefined, T1])('AUDIT-09 bounds record identity reads with recordedAt %s', recordedAt => {
+    const count = 64;
+    for (let index = 0; index < count; index++) {
+      fixture.service.commit(scopeA, command(scopeA, { id: `claim-${index}` }));
+    }
+    fixture.setTime(T3);
+    for (let index = 0; index < count; index++) {
+      fixture.service.commit(scopeA, command(scopeA, {
+        id: `claim-${index}`, revision: 2, body: 'Later correction.',
+      }));
+    }
+    const snapshot = fixture.store.snapshot.bind(fixture.store);
+    let identityReads = 0;
+    vi.spyOn(fixture.store, 'snapshot').mockImplementation((...args) => {
+      const result = snapshot(...args);
+      if (!result) return result;
+      return { ...result, entries: result.entries.map(entry => new Proxy(entry, {
+        get(target, property, receiver) {
+          if (property === 'id') identityReads++;
+          return Reflect.get(target, property, receiver);
+        },
+      })) };
+    });
+
+    const result = fixture.service.read(scopeA, { validAt: T2, recordedAt });
+    const reads = identityReads;
+    expect(result.records).toHaveLength(count);
+    expect(result.records.map(view => view.record.revision)).toEqual(Array(count).fill(recordedAt === undefined ? 2 : 1));
+    expect(result.records.map(view => view.recordedTo)).toEqual(Array(count).fill(recordedAt === undefined ? null : T3));
+    expect(result.snapshot.entries).toHaveLength(recordedAt === undefined ? count * 2 : count);
+    expect(result.snapshot.afterRecordedAtEntries).toBe(recordedAt === undefined ? 0 : count);
+    // Count property reads after the real adapter returns, independent of clock or SQLite speed.
+    expect(reads).toBeLessThanOrEqual(count * 2 * 4);
+  });
+
+  it('AUDIT-09 bounds complete successor history by sequence while retaining later-recorded closure', () => {
+    const first = fixture.service.commit(scopeA, command(scopeA, { validFrom: null, validTo: null }));
+    fixture.service.commit(scopeA, entityCommand('claim', 'Same ID, different kind.'));
+    fixture.setTime(T2);
+    const future = fixture.service.commit(scopeA, command(scopeA, {
+      revision: 2, body: 'Future policy.', validFrom: T3, validTo: T4,
+    }, { changeMode: 'effective-from' }));
+    fixture.setTime(T3);
+    fixture.service.commit(scopeA, command(scopeA, {
+      revision: 3, lifecycle: 'retracted', validFrom: T0, validTo: T4,
+    }));
+
+    const early = fixture.service.read(scopeA, { validAt: T2, recordedAt: T1 });
+    expect(early.records).toHaveLength(1);
+    expect(early.records[0]).toMatchObject({ entry: first.entry, temporal: 'unknown', recordedTo: T3 });
+    expect(early.snapshot.entries.map(entry => entry.kind)).toEqual(['record', 'entity']);
+    expect(early.snapshot.afterRecordedAtEntries).toBe(2);
+    expect(JSON.stringify(early)).not.toContain('Future policy.');
+    expect(fixture.service.read(scopeA, { validAt: T3, recordedAt: T1 }).records[0].recordedTo).toBe(T2);
+    expect(fixture.service.read(scopeA, { validAt: T3, recordedAt: T2 }).records[0])
+      .toMatchObject({ entry: future.entry, temporal: 'applicable', recordedTo: T3 });
+    expect(fixture.service.read(scopeA, { validAt: T3 }).records).toEqual([]);
+
+    expect(fixture.service.read(scopeA, { validAt: T3, recordedAt: T1, throughSequence: first.entry.sequence }).records[0])
+      .toMatchObject({ entry: first.entry, recordedTo: null });
+    expect(fixture.service.read(scopeA, { validAt: T2, recordedAt: T1, throughSequence: future.entry.sequence }).records[0].recordedTo)
+      .toBeNull();
+    expect(fixture.service.read(scopeA, { validAt: T3, recordedAt: T1, throughSequence: future.entry.sequence }).records[0].recordedTo)
+      .toBe(T2);
+  });
+
   it('M03 preserves the operative revision after learning a future-effective replacement', () => {
     fixture.service.commit(scopeA, command(scopeA, { body: 'Current SOP.', validFrom: T0, validTo: T3 }));
     fixture.setTime(T2);

@@ -235,11 +235,12 @@ export class MemoryService {
     const validAt = parse(memoryInstantSchema, query.validAt);
     const knownAt = query.recordedAt === undefined ? undefined : parse(memoryInstantSchema, query.recordedAt);
     const complete = this.snapshot(scope, query.throughSequence);
-    const knownEntries = complete.entries.filter(entry => knownAt === undefined || entry.recordedAt <= knownAt);
+    const knownEntries = knownAt === undefined ? complete.entries : complete.entries.filter(entry => entry.recordedAt <= knownAt);
     const snapshot = { ...complete, entries: knownEntries, afterRecordedAtEntries: complete.entries.length - knownEntries.length };
     const grouped = new Map<string, MemoryLedgerEntry[]>();
-    for (const entry of snapshot.entries) {
-      if (entry.payload.kind !== 'record' || (knownAt !== undefined && entry.recordedAt > knownAt)) continue;
+    // Later-recorded revisions may close an earlier view, even when its snapshot omits them.
+    for (const entry of complete.entries) {
+      if (entry.payload.kind !== 'record') continue;
       const revisions = grouped.get(entry.id) ?? [];
       revisions.push(entry);
       grouped.set(entry.id, revisions);
@@ -247,17 +248,22 @@ export class MemoryService {
     const records: MemoryRecordView[] = [];
     for (const revisions of grouped.values()) {
       revisions.sort((a, b) => a.revision - b.revision);
-      const selected = [...revisions].reverse().find(entry => {
-        if (entry.payload.kind !== 'record') return false;
+      let selected: MemoryLedgerEntry | undefined;
+      for (let index = revisions.length - 1; index >= 0; index--) {
+        const entry = revisions[index];
+        if (entry.payload.kind !== 'record' || (knownAt !== undefined && entry.recordedAt > knownAt)) continue;
         const { record, changeMode } = entry.payload.value;
-        return changeMode === 'replace' || (record.validFrom !== null && record.validFrom <= validAt);
-      });
+        if (changeMode === 'replace' || (record.validFrom !== null && record.validFrom <= validAt)) {
+          selected = entry;
+          break;
+        }
+      }
       if (!selected || selected.payload.kind !== 'record') continue;
       const record = selected.payload.value.record;
       if (record.lifecycle === 'retracted' || (record.validFrom !== null && validAt < record.validFrom) ||
         (record.validTo !== null && validAt >= record.validTo)) continue;
-      const next = complete.entries.filter(entry => entry.id === selected.id && entry.kind === 'record')
-        .sort((a, b) => a.revision - b.revision).find(entry => entry.revision > selected.revision && entry.payload.kind === 'record' &&
+      const selectedRevision = selected.revision;
+      const next = revisions.find(entry => entry.kind === 'record' && entry.revision > selectedRevision && entry.payload.kind === 'record' &&
         (entry.payload.value.changeMode === 'replace' ||
           (entry.payload.value.record.validFrom !== null && entry.payload.value.record.validFrom <= validAt)));
       records.push({
