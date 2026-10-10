@@ -24,6 +24,7 @@ import { CODING_TOOLS_SECTION, codingToolsOffered } from './coding-tools-view';
 import { ReadConnectors } from './ReadConnectors';
 import { LocalModelFolder } from './LocalModelFolder';
 import { AgentProfiles } from './console/AgentProfiles';
+import { PluginSettings } from './console/PluginSettings';
 import { AccountSettings } from './AccountSettings';
 import { TriggerRules } from './console/TriggerRules';
 import { PersonalUsage, UsageCenter, usageCenterTarget } from './console/UsageCenter';
@@ -297,6 +298,7 @@ export function SettingsPage({
     'About',
     'Design Center',
     'Agent profiles',
+    'Plugins',
     'App updates',
     "What's new",
     'Rules',
@@ -340,6 +342,7 @@ export function SettingsPage({
               </div>
             )}
             {section === 'Agent profiles' && <AgentProfiles />}
+            {section === 'Plugins' && <PluginSettings />}
             {section === CODING_TOOLS_SECTION && codingTools && codingToolsHere && (
               <CodingTools view={codingTools} onSaved={setCodingTools} />
             )}

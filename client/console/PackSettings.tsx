@@ -7,7 +7,10 @@ import {
   type PackActivation,
 } from '../../shared/capability-packs';
 import { contributionSummary, type PackManifest } from '../../shared/pack-manifest';
+import type { ContributionRecord } from '../../shared/pack-contributions';
+import { pluginInventory } from '../../shared/plugin-inventory';
 import { shortcutHint } from '../keyboard';
+import './plugins.css';
 
 interface InstalledPack {
   id: string;
@@ -57,32 +60,72 @@ type Dependency = { id: string; name: string; version: string };
  *
  * Every pack's requested permissions are shown as requests - a pack declares
  * what it would use and Trust decides at use, so nothing here changes
- * authority (`AGENTS.md` decision 14). It lives inside the existing
- * task-permissions dialog rather than opening a settings surface of its own.
+ * authority (`AGENTS.md` decision 14). Settings > Plugins and the existing
+ * task-permissions dialog both use this same lifecycle view.
  * Every state it shows is read back from the pack store and the Project's own
  * activation records after each action; nothing is assumed to have worked.
  */
-export function PackSettings({ projectId, onChange }: { projectId: string; onChange?(): void }) {
+export function PackSettings({
+  projectId,
+  onChange,
+  heading = 'Capabilities',
+}: {
+  projectId: string;
+  onChange?(): void;
+  heading?: string;
+}) {
   const [view, setView] = useState<PacksView | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [folder, setFolder] = useState('');
   const [inspected, setInspected] = useState<{ path: string; manifest: PackManifest } | null>(null);
+  const [records, setRecords] = useState<ContributionRecord[] | null>(null);
+  const [recordsError, setRecordsError] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const [readError, setReadError] = useState('');
   const base = `/projects/${projectId}/packs`;
 
   useEffect(() => {
     let current = true;
-    api<PacksView>(base).then(
+    const controller = new AbortController();
+    setView(null);
+    setReadError('');
+    api<PacksView>(base, 'GET', undefined, controller.signal).then(
       (loaded) => current && setView(loaded),
       (failure: unknown) =>
         current &&
-        setError(failure instanceof Error ? failure.message : 'Capabilities could not be read.'),
+        setReadError(
+          failure instanceof Error ? failure.message : 'Capabilities could not be read.',
+        ),
     );
     return () => {
       current = false;
+      controller.abort();
     };
-  }, [base]);
+  }, [base, refresh]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRecords(null);
+    setRecordsError('');
+    void api<{ records: ContributionRecord[] }>(
+      `${base}/contributions`,
+      'GET',
+      undefined,
+      controller.signal,
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) setRecords(result.records);
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted)
+          setRecordsError(
+            failure instanceof Error ? failure.message : 'Load records could not be read.',
+          );
+      });
+    return () => controller.abort();
+  }, [base, view]);
 
   /**
    * Run one action and read the whole view back. A refusal that asks for more
@@ -111,9 +154,20 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
       else setError(failure instanceof Error ? failure.message : 'That could not be changed.');
     } finally {
       try {
-        setView(await api<PacksView>(base));
-      } catch {
-        // The error above, if any, is the one worth reading.
+        const loaded = await api<PacksView>(base);
+        setView(loaded);
+        if (loaded.storeProblem) {
+          setPending(null);
+          setInspected(null);
+        }
+        setReadError('');
+      } catch (failure) {
+        setView(null);
+        setPending(null);
+        setInspected(null);
+        setReadError(
+          failure instanceof Error ? failure.message : 'The updated plugin list could not be read.',
+        );
       }
       setBusy('');
     }
@@ -161,6 +215,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
   async function inspect() {
     setBusy('folder');
     setError('');
+    setPending(null);
     setInspected(null);
     try {
       const result = await api<{ manifest: PackManifest }>('/packs/inspect', 'POST', {
@@ -172,7 +227,9 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
         failure instanceof ApiError && Array.isArray(failure.data.problems)
           ? ` ${(failure.data.problems as string[]).join(' ')}`
           : '';
-      setError(`${failure instanceof Error ? failure.message : 'That folder could not be read.'}${problems}`);
+      setError(
+        `${failure instanceof Error ? failure.message : 'That folder could not be read.'}${problems}`,
+      );
     } finally {
       setBusy('');
     }
@@ -210,9 +267,92 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
   const installedIds = new Set(view?.installed.map((pack) => pack.id));
   const finished = view?.operations.filter((op) => op.phase !== 'started') ?? [];
 
+  const details = (manifest: PackManifest, installed: boolean) => {
+    const inventory = pluginInventory(manifest, records ?? []);
+    return (
+      <details className="plugin-details">
+        <summary>Components and provenance</summary>
+        <dl>
+          <dt>Package</dt>
+          <dd>{manifest.id}</dd>
+          <dt>Version</dt>
+          <dd>{manifest.version}</dd>
+          <dt>Publisher</dt>
+          <dd>{manifest.publisher.name} (declared)</dd>
+          <dt>Content digest</dt>
+          <dd className="mono">{manifest.digest}</dd>
+        </dl>
+        <p className="caption">
+          The digest checks content integrity. Publisher identity and independent review are not
+          verified here.
+        </p>
+        {inventory.components.length ? (
+          <ul className="pack-points" aria-label="Declared components">
+            {inventory.components.map((item) => (
+              <li key={item.key}>
+                {item.label}: {item.name}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No components declared.</p>
+        )}
+        {installed && (
+          <>
+            <p className="pack-label">Recent recorded loads</p>
+            {recordsError ? (
+              <p role="alert">{recordsError}</p>
+            ) : records === null ? (
+              <p role="status">Reading load records...</p>
+            ) : inventory.recentLoads.length ? (
+              <ul className="pack-points">
+                {inventory.recentLoads.map((record) => (
+                  <li key={record.id}>
+                    {record.name ?? record.contributionId} · {record.packVersion} ·{' '}
+                    {record.reason ?? 'loaded'}
+                    {record.runKey && <span className="mono"> · {record.runKey}</span>}
+                    {record.kind && record.contributionId && (
+                      <div className="mono">
+                        {record.packId}/{record.kind}/{record.contributionId}
+                      </div>
+                    )}
+                    {record.digest && <div className="mono">{record.digest}</div>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No loads in the recent project records.</p>
+            )}
+            <p className="caption">
+              A load records reading a component, not permission to act or a successful result.
+            </p>
+          </>
+        )}
+      </details>
+    );
+  };
+
+  if (!view || view.storeProblem)
+    return (
+      <section className="pack-settings" aria-label={heading}>
+        <h3>{heading}</h3>
+        {readError || view?.storeProblem ? (
+          <>
+            <p role="alert">{readError || view?.storeProblem}</p>
+            <button type="button" className="verb" onClick={() => setRefresh((value) => value + 1)}>
+              Try again
+            </button>
+          </>
+        ) : (
+          <p role="status">Reading plugins...</p>
+        )}
+        {error && <p role="alert">{error}</p>}
+      </section>
+    );
+
   return (
-    <section className="pack-settings" aria-label="Capabilities">
-      <h3>Capabilities</h3>
+    <section className="pack-settings" aria-label={heading}>
+      <h3>{heading}</h3>
       <p>Turning a pack on grants nothing; Trust still decides.</p>
       {view?.storeProblem && <p role="alert">{view.storeProblem}</p>}
       {view?.installed.map((pack) => {
@@ -237,9 +377,18 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
             {manifest && (
               <p className="mono lc pack-contributes">{contributionSummary(manifest)}</p>
             )}
+            {manifest && (
+              <p className="pack-label">
+                Installed · {on ? 'Active in this project' : 'Inactive in this project'}
+              </p>
+            )}
             {pack.runtime === 'declared' && (
               <p>Its contributions are recorded; this build does not run them yet.</p>
             )}
+            {pack.runtime === 'wired' && !pack.damaged && (
+              <p>Built-in runtime support. Each use follows the task's permissions.</p>
+            )}
+            {manifest && details(manifest, true)}
             {skills > 0 && (
               <p>
                 {skills} playbooks, found with {shortcutHint('K')}
@@ -252,7 +401,9 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
               </p>
             )}
             {elsewhere.length > 0 && (
-              <p className="pack-where">On in {elsewhere.map((project) => project.name).join(', ')}.</p>
+              <p className="pack-where">
+                On in {elsewhere.map((project) => project.name).join(', ')}.
+              </p>
             )}
             <div className="pack-actions">
               <button
@@ -343,7 +494,11 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
                   className="verb"
                   disabled={Boolean(busy)}
                   onClick={() =>
-                    void install({ kind: 'bundled', packId: manifest.id }, manifest.name, manifest.id)
+                    void install(
+                      { kind: 'bundled', packId: manifest.id },
+                      manifest.name,
+                      manifest.id,
+                    )
                   }
                 >
                   {busy === manifest.id ? 'Installing...' : 'Install'}
@@ -360,9 +515,11 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
           aria-label="Pack folder"
           placeholder="Full path to a folder with diomedes-pack.json"
           value={folder}
+          disabled={Boolean(busy)}
           onChange={(event) => {
             setFolder(event.target.value);
             setInspected(null);
+            setPending(null);
           }}
         />
         <button
@@ -385,6 +542,7 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
             <span className="mono lc">{inspected.manifest.digest.slice(0, 19)}</span>
           </p>
           <p>{inspected.manifest.description}</p>
+          {details(inspected.manifest, false)}
           {requests(inspected.manifest)}
           <div className="pack-actions">
             <button
