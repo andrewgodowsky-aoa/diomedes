@@ -28,6 +28,7 @@ import type { TextRequest, TextResponse } from '../engines/contract.js';
 import type { StreamSinks } from '../engines/model-api-core.js';
 import type { ManagedAdmission } from '../engines/nectovia.js';
 import { EngineError } from '../engines/process.js';
+import { recordedExternalReadAllowed } from '../engines/turn-scope.js';
 import { localHarnessPrincipal } from './bridge.js';
 import type { InteractionPhase } from './claude-session-run.js';
 import { SOURCE_TOOLS, sourceSha, sourceTools } from './capabilities/conversation-sources.js';
@@ -950,7 +951,7 @@ export class ModelSessionRuns {
               // Which rules this turn was sent under, as evidence: shas and paths, never a body.
               ...(input.rules ? { rules: input.rules.record } : {}),
               // What this turn could read, as evidence. Never a path or a connector's command.
-              ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
+              ...(input.readScope ? { read: readScopeRecord(input.readScope, childId) } : {}),
               // Which playbooks were offered as an index (P04). Loads are recorded on the Project.
               ...(input.playbooks ? { playbooks: [...input.playbooks.ids] } : {}),
               // Which earlier messages went, which were summarised and the summary itself, when the
@@ -1340,7 +1341,7 @@ export function modelApiDispatchAuthorizer(
 ) {
   return async (
     run: HarnessRun,
-    intent: { destination: string; kind?: string; name?: string | null },
+    intent: { destination: string; kind?: string; name?: string | null; input?: unknown },
     phase: 'dispatch' | 'result',
   ) => {
     if (!(MODEL_SESSION_CAPABILITIES as readonly string[]).includes(run.capabilityId))
@@ -1349,12 +1350,15 @@ export function modelApiDispatchAuthorizer(
     if (intent.kind !== 'model') {
       const read = (run.input as { read?: { web?: unknown; connectors?: unknown } } | null)?.read;
       const allowed =
+        intent.kind === 'tool' &&
         run.capabilityId === MODEL_TURN_CAPABILITY.id &&
         typeof intent.name === 'string' &&
         run.capabilityTools.includes(intent.name) &&
         ((intent.name === 'fetch_page' && read?.web === true) ||
           (intent.name === 'connector_read' && Array.isArray(read?.connectors) && read.connectors.length > 0));
       if (!allowed) throw new HarnessError('egress_denied', 'This turn was not given that read access.');
+      const current = recordedExternalReadAllowed(run.projectId, read, intent.name!, intent.input, run.id, (run.input as { route?: unknown } | null)?.route);
+      if (!current.ok) throw new HarnessError('egress_denied', current.reason);
     }
     const input = run.input as { route?: unknown; accountRoute?: unknown } | null;
     const route = input?.route;

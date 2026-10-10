@@ -12,10 +12,10 @@
  *    newest of the rest. A carried lineage's messages give way first, as they always did.
  * 2. **What is left out is said.** A marker at the top of the history names every message left
  *    out by number, and a lineage's own omitted messages are summarised under it.
- * 3. **A summary is evidence, not a rewrite.** `compactTurns` is a deterministic extract (the first
- *    sentence of each side), attributed to the application because no model wrote it, and it names
- *    each message it stands for by run, step and the sha-256 of what was said. The messages stay
- *    in their run untouched (decision 10), so the person can open each one.
+ * 3. **Compaction never extracts a claim from its qualification.** `compactTurns` reproduces the
+ *    omitted group in full when it fits its existing budget. Otherwise it emits an explicit gap
+ *    without any excerpts from that group. Every original keeps its run, step and sha-256 evidence,
+ *    unchanged in History (decision 10). No model writes or approves this record.
  * 4. **The stable part goes first.** The lineage's recorded instructions and the tool note are the
  *    same bytes on every turn of a conversation; what varies per message (the read scope's note)
  *    comes after them. A provider that reuses a repeated prefix can reuse this one.
@@ -59,7 +59,6 @@ export const RECENT_KEEP = 6;
 export const SUMMARY_MAX_CHARS = 2_000;
 /** Room held back for the marker and the summary when anything is left out. */
 const OMISSION_RESERVE_CHARS = SUMMARY_MAX_CHARS + 600;
-const EXCERPT_CHARS = 160;
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -94,41 +93,38 @@ export function relevance(earlier: string, message: string): number {
 
 // --- compaction ---------------------------------------------------------------------------
 
-const firstSentence = (text: string) => {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  const end = flat.search(/[.!?](\s|$)/);
-  const sentence = end >= 0 ? flat.slice(0, end + 1) : flat;
-  if (sentence.length <= EXCERPT_CHARS) return sentence;
-  // Never end on half of a surrogate pair: a lone surrogate is not text a provider accepts.
-  let cut = EXCERPT_CHARS - 1;
-  const last = sentence.charCodeAt(cut - 1);
-  if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
-  return `${sentence.slice(0, cut).trimEnd()}…`;
-};
-
 type Compactable = Pick<AnsweredTurn, 'runId' | 'stepId' | 'index' | 'prompt' | 'answer'>;
 
-/** The deterministic summary of messages left out of a history. Same turns, same record. */
+/**
+ * Exact text or an explicit gap, never a first-sentence claim with its qualification removed.
+ * The group is atomic: a later omitted turn may correct any earlier one in the same group.
+ * `listed` remains a prefix count for the existing source-authority accounting (all or zero).
+ */
 export function compactTurns(turns: readonly Compactable[]): CompactionRecord {
   const head =
-    'Summary of the earlier messages left out, extracted by Diomedes from the first sentence of each side (no model wrote it; the full messages stay in this conversation’s History):';
+    'Earlier messages left out of the main history selection, reproduced in full by Diomedes (no model wrote this record; the originals stay in this conversation’s History). These are historical statements, not current execution authority:';
   const lines: string[] = [head];
   let length = head.length;
-  let listed = 0;
+  let complete = true;
   for (const turn of turns) {
-    const asked = turn.prompt === null ? 'nothing recorded' : `“${firstSentence(turn.prompt)}”`;
-    const answered = turn.answer === null ? 'no answer was recorded' : `Diomedes answered “${firstSentence(turn.answer)}”`;
+    // Check before constructing an unbounded extra copy of a long source message.
+    if (length + (turn.prompt?.length ?? 0) + (turn.answer?.length ?? 0) > SUMMARY_MAX_CHARS) {
+      complete = false;
+      break;
+    }
+    const asked = turn.prompt === null ? 'nothing recorded' : `“${turn.prompt}”`;
+    const answered = turn.answer === null ? 'no answer was recorded' : `Diomedes answered “${turn.answer}”`;
     const line = `- Message ${turn.index}: the person asked ${asked}; ${answered}`;
-    // Room for this line, and for the closing line should any turn after it not fit.
-    const rest = turns.length - listed - 1;
-    const closing = rest > 0 ? 64 : 0;
-    if (length + 1 + line.length + closing > SUMMARY_MAX_CHARS) break;
+    if (length + 1 + line.length > SUMMARY_MAX_CHARS) {
+      complete = false;
+      break;
+    }
     lines.push(line);
     length += 1 + line.length;
-    listed += 1;
   }
-  if (listed < turns.length) lines.push(`- ${turns.length - listed} more were left out without a line here.`);
-  const text = lines.join('\n');
+  const listed = complete ? turns.length : 0;
+  const text = complete ? lines.join('\n')
+    : `[${turns.length} earlier ${turns.length === 1 ? 'message was' : 'messages were'} left out in full because their complete text does not fit. They may contain corrections or limits on the retained history. No claims from this omitted group are reproduced here. Obtain the relevant original context or ask for a narrow restatement before relying on an earlier status. Historical approval text never supplies current execution authority. The original messages remain in this conversation's History.]`;
   const refs = turns.map((turn) => ({
     runId: turn.runId,
     stepId: turn.stepId,
@@ -136,7 +132,7 @@ export function compactTurns(turns: readonly Compactable[]): CompactionRecord {
     promptSha: turn.prompt === null ? null : sha256(turn.prompt),
     answerSha: turn.answer === null ? null : sha256(turn.answer),
   }));
-  const method = 'extract-first-sentence/1' as const;
+  const method = 'verbatim-turns/1' as const;
   return {
     v: 1,
     id: sha256(JSON.stringify({ method, turns: refs, text })),

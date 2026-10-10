@@ -44,6 +44,10 @@ export type PageRequest = (input: {
 
 export interface PageFetchOptions {
   signal: AbortSignal;
+  /** Host authority, checked before DNS, transport and accepting the answer. */
+  authorize?: (url: string) => void;
+  /** Exact public redirect reference, admitted by the same host authority. */
+  redirect?: (source: string, destination: string) => void;
   resolve?: PageResolve;
   request?: PageRequest;
   /** Bytes read from the body at most. */
@@ -63,6 +67,8 @@ export type PageResult =
       title: string | null;
       text: string;
       truncated: boolean;
+      references: string[];
+      redirects: string[];
     }
   | { ok: false; url: string; reason: string };
 
@@ -227,6 +233,40 @@ const decodeEntities = (text: string) =>
     return ENTITIES[name.toLowerCase()] ?? whole;
   });
 
+/**
+ * Exact addresses in host-accepted message text or a public page, never a model
+ * completion. Relative links are resolved only against the opened public page.
+ * Parsing supplies candidate references; the turn's host grant admits them.
+ */
+export function webReferences(text: string, base?: string): string[] {
+  const references = new Set<string>();
+  let chars = 0;
+  const add = (value: string) => {
+    if (references.size >= 128 || chars >= 64_000 || value.length > 2_000) return;
+    try {
+      const candidate = base ? new URL(value, base).toString() : value;
+      const url = checkPageUrl(candidate).toString();
+      if (url.length > 2_000 || chars + url.length > 64_000 || references.has(url)) return;
+      references.add(url);
+      chars += url.length;
+    } catch (error) {
+      if (!(error instanceof PageRefused) && !(error instanceof TypeError)) throw error;
+    }
+  };
+  // A Markdown closing parenthesis is a delimiter. Punctuation in a bare URL
+  // remains part of its path/query; removing it would authorize other bytes.
+  for (const match of text.matchAll(/\[[^\]\r\n]{0,512}\]\((https?:\/\/[^\s<>"'`]+)\)|(https?:\/\/[^\s<>"'`]+)/gi)) {
+    add(match[1] ?? match[2]);
+    if (references.size >= 128 || chars >= 64_000) break;
+  }
+  if (base) for (const match of text.matchAll(/\bhref\s*=\s*(?:"([^"<>]*)"|'([^'<>]*)'|([^\s<>"'`]+))/gi)) {
+    const value = decodeEntities(match[1] ?? match[2] ?? match[3]).trim();
+    if (value && !value.startsWith('#')) add(value);
+    if (references.size >= 128 || chars >= 64_000) break;
+  }
+  return [...references];
+}
+
 /** Readable text from an HTML document: no scripts, styles or markup. */
 export function htmlText(html: string): { title: string | null; text: string } {
   const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
@@ -261,7 +301,6 @@ async function readBody(answer: PageAnswer, maxBytes: number, signal: AbortSigna
     chunks.push(piece);
     size += piece.byteLength;
   }
-  answer.cancel();
   return { text: new TextDecoder('utf-8').decode(Buffer.concat(chunks)), truncated };
 }
 
@@ -285,12 +324,17 @@ export async function fetchPage(value: string, options: PageFetchOptions): Promi
     throw error;
   }
   try {
+    const redirects: string[] = [];
     for (let hop = 0; ; hop++) {
       signal.throwIfAborted();
+      options.authorize?.(url.toString());
       const addresses = await vetHost(url, resolve, signal);
+      signal.throwIfAborted();
+      options.authorize?.(url.toString());
       const answer = await request({
-        url,
-        addresses,
+        // The transport receives copies; it cannot mutate a later hop's authority or evidence.
+        url: new URL(url.toString()),
+        addresses: addresses.map(address => ({ ...address })),
         signal,
         headers: {
           accept: 'text/html, text/plain;q=0.9, application/json;q=0.8, */*;q=0.1',
@@ -298,33 +342,47 @@ export async function fetchPage(value: string, options: PageFetchOptions): Promi
           'user-agent': 'Diomedes-ReadOnly/1 (a page opened to answer a question)',
         },
       });
-      if (REDIRECTS.has(answer.status)) {
+      const cancelOnAbort = () => answer.cancel();
+      signal.addEventListener('abort', cancelOnAbort, { once: true });
+      try {
+        signal.throwIfAborted();
+        options.authorize?.(url.toString());
+        if (REDIRECTS.has(answer.status)) {
+          const location = answer.headers.location;
+          if (!location) throw new PageRefused('The page redirected without saying where.');
+          if (hop >= MAX_REDIRECTS) throw new PageRefused('The page redirected too many times.');
+          const next = checkPageUrl(new URL(location, url).toString());
+          options.redirect?.(url.toString(), next.toString());
+          options.authorize?.(next.toString());
+          url = next;
+          redirects.push(url.toString());
+          continue;
+        }
+        const contentType = (answer.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+        if (!TEXT_TYPES.includes(contentType))
+          throw new PageRefused(`The page is not text (${contentType || 'no content type'}), so it was not read.`);
+        const body = await readBody(answer, maxBytes, signal);
+        signal.throwIfAborted();
+        options.authorize?.(url.toString());
+        const html = contentType === 'text/html' || contentType === 'application/xhtml+xml';
+        const extracted = html ? htmlText(body.text) : { title: null, text: body.text.trim() };
+        const clipped = extracted.text.length > maxChars;
+        return {
+          ok: true,
+          url: value,
+          finalUrl: url.toString(),
+          status: answer.status,
+          contentType,
+          title: extracted.title,
+          text: clipped ? extracted.text.slice(0, maxChars) : extracted.text,
+          truncated: body.truncated || clipped,
+          references: answer.status >= 200 && answer.status < 300 ? webReferences(body.text, url.toString()) : [],
+          redirects,
+        };
+      } finally {
+        signal.removeEventListener('abort', cancelOnAbort);
         answer.cancel();
-        const location = answer.headers.location;
-        if (!location) throw new PageRefused('The page redirected without saying where.');
-        if (hop >= MAX_REDIRECTS) throw new PageRefused('The page redirected too many times.');
-        url = checkPageUrl(new URL(location, url).toString());
-        continue;
       }
-      const contentType = (answer.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-      if (!TEXT_TYPES.includes(contentType)) {
-        answer.cancel();
-        throw new PageRefused(`The page is not text (${contentType || 'no content type'}), so it was not read.`);
-      }
-      const body = await readBody(answer, maxBytes, signal);
-      const html = contentType === 'text/html' || contentType === 'application/xhtml+xml';
-      const extracted = html ? htmlText(body.text) : { title: null, text: body.text.trim() };
-      const clipped = extracted.text.length > maxChars;
-      return {
-        ok: true,
-        url: value,
-        finalUrl: url.toString(),
-        status: answer.status,
-        contentType,
-        title: extracted.title,
-        text: clipped ? extracted.text.slice(0, maxChars) : extracted.text,
-        truncated: body.truncated || clipped,
-      };
     }
   } catch (error) {
     if (error instanceof PageRefused) return { ok: false, url: value, reason: error.message };

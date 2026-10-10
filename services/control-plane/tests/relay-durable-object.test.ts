@@ -32,12 +32,15 @@ function runtime() {
   const alarms: (number | null)[] = [];
   const autoResponses: { request: string; response: string }[] = [];
   const heard = new Map<HubSocket, Date>();
+  const saved = new Map<string, unknown>();
   const ctx: RelayHubState = {
     acceptWebSocket: (ws) => { accepted.push(ws as FakeSocket); },
     getWebSockets: () => [...accepted],
     setWebSocketAutoResponse: (pair) => { autoResponses.push(pair as { request: string; response: string }); },
     getWebSocketAutoResponseTimestamp: (ws) => heard.get(ws) ?? null,
     storage: {
+      get: async (key) => structuredClone(saved.get(key)),
+      put: async (key, value) => { saved.set(key, structuredClone(value)); },
       setAlarm: async (at) => { alarms.push(at); },
       deleteAlarm: async () => { alarms.push(null); },
     },

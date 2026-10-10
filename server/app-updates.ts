@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { ApiError } from './paths.js';
@@ -30,6 +31,7 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const REDIRECT_LIMIT = 5;
 const METADATA_MAX_BYTES = 256 * 1024;
 const SHA_PATTERN = /^[0-9a-f]{64}$/;
+const UPDATE_STREAM_CHUNK_BYTES = 64 * 1024;
 
 /**
  * Observation of a running download: the bytes received so far, and the size
@@ -48,6 +50,57 @@ export interface UpdateTransport {
     onProgress?: DownloadProgress,
   ) => Promise<{ bytes: Uint8Array; finalUrl: string }>;
   launchInstaller: (artifact: UpdateInstallArtifact) => Promise<void>;
+}
+
+type StreamingDownload = (
+  url: string,
+  expectedSize: number,
+  signal: AbortSignal,
+  onProgress: DownloadProgress,
+  receive: (chunk: Uint8Array) => Promise<void>,
+) => Promise<{ finalUrl: string }>;
+type StreamingUpdateTransport = Omit<UpdateTransport, 'downloadAsset'> & { downloadAsset: StreamingDownload };
+
+type UpdateFileStat = Awaited<ReturnType<typeof fs.lstat>>;
+const sameFile = (left: UpdateFileStat, right: UpdateFileStat): boolean =>
+  left.dev === right.dev && left.ino === right.ino;
+const regularFile = (stat: UpdateFileStat): boolean =>
+  stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1;
+
+async function writeUpdateChunk(handle: Awaited<ReturnType<typeof fs.open>>, chunk: Uint8Array): Promise<void> {
+  for (let offset = 0; offset < chunk.length;) {
+    const part = chunk.subarray(offset, Math.min(chunk.length, offset + UPDATE_STREAM_CHUNK_BYTES));
+    const { bytesWritten } = await handle.write(part);
+    if (bytesWritten <= 0) throw new ApiError(502, 'The update staging file could not be written.');
+    offset += bytesWritten;
+  }
+}
+
+/** Verify from an opened regular file with bounded memory and path continuity. */
+async function hashUpdateFile(file: string, expectedSize: number): Promise<{ bytes: number; sha256: string }> {
+  const before = await fs.lstat(file);
+  if (!regularFile(before) || before.size !== expectedSize)
+    throw new ApiError(502, 'The staged installer changed after verification. Nothing was launched.');
+  const handle = await fs.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = await handle.stat();
+    if (!regularFile(opened) || !sameFile(before, opened) || opened.size !== expectedSize)
+      throw new ApiError(502, 'The staged installer changed after verification. Nothing was launched.');
+    const hash = createHash('sha256');
+    let bytes = 0;
+    for await (const chunk of handle.createReadStream({ autoClose: false, highWaterMark: UPDATE_STREAM_CHUNK_BYTES })) {
+      bytes += chunk.length;
+      if (bytes > expectedSize || bytes > UPDATE_MAX_ASSET_BYTES)
+        throw new ApiError(502, 'The staged installer changed after verification. Nothing was launched.');
+      hash.update(chunk);
+    }
+    const [after, named] = await Promise.all([handle.stat(), fs.lstat(file)]);
+    if (bytes !== expectedSize || !regularFile(after) || !regularFile(named) ||
+        !sameFile(opened, named) || after.size !== expectedSize ||
+        after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs)
+      throw new ApiError(502, 'The staged installer changed after verification. Nothing was launched.');
+    return { bytes, sha256: hash.digest('hex') };
+  } finally { await handle.close(); }
 }
 
 export interface AppUpdateOptions {
@@ -220,9 +273,10 @@ async function productionFetchRelease(signal: AbortSignal | undefined): Promise<
 async function productionDownloadAsset(
   url: string,
   expectedSize: number,
-  signal: AbortSignal | undefined,
-  onProgress?: DownloadProgress,
-): Promise<{ bytes: Uint8Array; finalUrl: string }> {
+  signal: AbortSignal,
+  onProgress: DownloadProgress,
+  receive: (chunk: Uint8Array) => Promise<void>,
+): Promise<{ finalUrl: string }> {
   if (!parseOfficialAssetUrl(url))
     throw new ApiError(502, 'The installer request left the official channel.');
   if (
@@ -261,6 +315,7 @@ async function productionDownloadAsset(
       }
       // Validate before the next fetch; never follow blindly.
       assertTrustedUrl(next);
+      await response.body?.cancel();
       current = next;
       response = null;
       continue;
@@ -291,44 +346,47 @@ async function productionDownloadAsset(
     }
   };
   if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.length !== expectedSize || bytes.length > UPDATE_MAX_ASSET_BYTES)
-      throw new ApiError(
-        502,
-        'The installer size does not match the release record. Nothing was saved.',
-      );
-    observe(bytes.length);
-    return { bytes, finalUrl: current };
+    throw new ApiError(502, 'The installer response had no streaming body. Nothing was saved.');
   }
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const next = await reader.read();
-    if (next.done) break;
-    total += next.value.length;
-    if (total > expectedSize || total > UPDATE_MAX_ASSET_BYTES) {
-      await reader.cancel().catch(() => undefined);
-      throw new ApiError(
-        502,
-        'The installer size does not match the release record. Nothing was saved.',
-      );
+  let complete = false;
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  timeout.addEventListener('abort', abort, { once: true });
+  try {
+    for (;;) {
+      if (timeout.aborted)
+        throw new ApiError(504, 'The installer download timed out. Try again when online.');
+      let next: ReadableStreamReadResult<Uint8Array>;
+      try { next = await reader.read(); }
+      catch {
+        if (timeout.aborted)
+          throw new ApiError(504, 'The installer download timed out. Try again when online.');
+        throw new ApiError(503, 'The installer download was interrupted. Try again.');
+      }
+      if (timeout.aborted)
+        throw new ApiError(504, 'The installer download timed out. Try again when online.');
+      if (next.done) { complete = true; break; }
+      total += next.value.length;
+      if (total > expectedSize || total > UPDATE_MAX_ASSET_BYTES)
+        throw new ApiError(502, 'The installer size does not match the release record. Nothing was saved.');
+      // Backpressure keeps only the current response chunk live. The service
+      // writes it to an exclusive owned file and updates its hash before the
+      // next read; there is no array-buffer fallback in production.
+      await receive(next.value);
+      observe(total);
     }
-    chunks.push(next.value);
-    observe(total);
+  } finally {
+    timeout.removeEventListener('abort', abort);
+    if (!complete) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
   if (total !== expectedSize)
     throw new ApiError(
       502,
       'The installer size does not match the release record. Nothing was saved.',
     );
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return { bytes, finalUrl: current };
+  return { finalUrl: current };
 }
 
 /**
@@ -349,7 +407,7 @@ export class AppUpdateService {
   private readonly packaged: boolean;
   private readonly installed: boolean;
   private readonly isBusy: () => boolean | Promise<boolean>;
-  private readonly transport: UpdateTransport;
+  private readonly transport: StreamingUpdateTransport;
   private checkPhase: 'idle' | 'checking' = 'idle';
   private checkAt: string | null = null;
   private outcome: UpdateCheckOutcome | null = null;
@@ -382,11 +440,19 @@ export class AppUpdateService {
     this.isBusy = options.isBusy;
     this.clock = options.clock ?? Date.now;
     this.releaseNotes = options.releaseNotes ?? bundledReleaseNotes;
+    const injectedDownload = options.transport?.downloadAsset;
     this.transport = {
       fetchRelease: options.transport?.fetchRelease ?? ((signal) => productionFetchRelease(signal)),
-      downloadAsset:
-        options.transport?.downloadAsset ??
-        ((url, size, signal, onProgress) => productionDownloadAsset(url, size, signal, onProgress)),
+      // Existing owned test/desktop injections keep their byte-returning seam.
+      // The default production transport only streams into the supplied sink.
+      downloadAsset: injectedDownload
+        ? async (url, size, signal, onProgress, receive) => {
+            const result = await injectedDownload(url, size, signal, onProgress);
+            assertTrustedFinalUrl(url, result.finalUrl);
+            await receive(result.bytes);
+            return { finalUrl: result.finalUrl };
+          }
+        : productionDownloadAsset,
       launchInstaller: options.transport?.launchInstaller ?? (() => unavailableInstaller()),
     };
   }
@@ -663,86 +729,119 @@ export class AppUpdateService {
     } catch {
       // No clock, no progress: the download itself goes on untouched.
     }
-    const { bytes } = await this.transport.downloadAsset(
-      record.assetUrl,
-      record.assetSize,
-      withTimeout(signal, DOWNLOAD_TIMEOUT_MS),
-      (transferred, total) => {
-        try {
-          if (keep && run === this.progressRun && keep(transferred, total))
-            this.progress = { transferred, total };
-        } catch {
-          // Watching a download never changes it.
-        }
-      },
-    );
-    // A concurrent check invalidates the generation the download started under.
-    if (this.generation !== admittedGeneration || this.record !== record)
-      throw new ApiError(409, 'The release record changed during download. Check again.');
-    if (bytes.length !== record.assetSize)
-      throw new ApiError(
-        502,
-        'The installer size does not match the release record. Nothing was saved.',
-      );
-    if (bytes.length > UPDATE_MAX_ASSET_BYTES)
-      throw new ApiError(502, 'The installer is larger than the supported bound.');
-    const digest = createHash('sha256').update(bytes).digest('hex');
-    if (digest !== record.publishedDigest)
-      throw new ApiError(
-        502,
-        'The installer digest does not match the published digest. Nothing was saved.',
-      );
     const { ownedDir, stagedPath } = this.ownedStagedPath(record.assetName);
     await fs.mkdir(ownedDir, { recursive: true });
     await this.verifyStagingDirectory(ownedDir);
-    // Never overwrite a symlink, hardlink alias or arbitrary file: inspect
-    // first, reuse only an identical verified file, else fail closed.
-    let existing: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+    const partialDir = await fs.mkdtemp(path.join(ownedDir, '.download-'));
+    const partialPath = path.join(partialDir, 'installer.partial');
+    const partialDirectory = await fs.lstat(partialDir);
+    let partial: Awaited<ReturnType<typeof fs.open>> | null = null;
+    let output: Awaited<ReturnType<typeof fs.open>> | null = null;
+    let outputIdentity: UpdateFileStat | null = null;
+    let published = false;
+    const timeout = withTimeout(signal, DOWNLOAD_TIMEOUT_MS);
+    const current = () => {
+      if (timeout.aborted)
+        throw new ApiError(504, 'The installer download timed out. Try again when online.');
+      if (this.generation !== admittedGeneration || this.record !== record)
+        throw new ApiError(409, 'The release record changed during download. Check again.');
+    };
     try {
-      existing = await fs.lstat(stagedPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-    if (existing) {
-      if (existing.isSymbolicLink())
-        throw new ApiError(502, 'The staged installer location is not a regular file.');
-      if (!existing.isFile())
-        throw new ApiError(502, 'The staged installer location is not a regular file.');
-      if (existing.nlink > 1)
-        throw new ApiError(502, 'The staged installer location is not a regular file.');
-      let current: Uint8Array;
-      try {
-        current = await fs.readFile(stagedPath);
-      } catch {
-        throw new ApiError(502, 'The staged installer location is not usable. Check again.');
-      }
-      if (current.length === bytes.length) {
-        const currentDigest = createHash('sha256').update(current).digest('hex');
-        if (currentDigest === digest) {
+      partial = await fs.open(partialPath, 'wx', 0o600);
+      const hash = createHash('sha256');
+      let bytes = 0;
+      const result = await this.transport.downloadAsset(record.assetUrl, record.assetSize, timeout,
+        (transferred, total) => {
+          try {
+            if (keep && run === this.progressRun && keep(transferred, total))
+              this.progress = { transferred, total };
+          } catch { /* Watching a download never changes it. */ }
+        }, async (chunk) => {
+          current();
+          bytes += chunk.length;
+          if (bytes > record.assetSize || bytes > UPDATE_MAX_ASSET_BYTES)
+            throw new ApiError(502, 'The installer size does not match the release record. Nothing was saved.');
+          await writeUpdateChunk(partial!, chunk);
+          hash.update(chunk);
+        });
+      current();
+      assertTrustedFinalUrl(record.assetUrl, result.finalUrl);
+      if (bytes !== record.assetSize)
+        throw new ApiError(502, 'The installer size does not match the release record. Nothing was saved.');
+      const digest = hash.digest('hex');
+      if (digest !== record.publishedDigest)
+        throw new ApiError(502, 'The installer digest does not match the published digest. Nothing was saved.');
+      await partial.close();
+      partial = null;
+      // Re-read the owned partial, so a filesystem write failure or mutation
+      // cannot turn the network hash into a ready installer.
+      if ((await hashUpdateFile(partialPath, record.assetSize)).sha256 !== digest)
+        throw new ApiError(502, 'The staged installer changed during download. Nothing was saved.');
+      await this.verifyStagingDirectory(ownedDir);
+      let existing: UpdateFileStat | null = null;
+      try { existing = await fs.lstat(stagedPath); }
+      catch (error) { if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error; }
+      if (existing) {
+        if (!regularFile(existing))
+          throw new ApiError(502, 'The staged installer location is not a regular file.');
+        if (existing.size === bytes && (await hashUpdateFile(stagedPath, bytes)).sha256 === digest) {
+          current();
           record.stagedPath = stagedPath;
-          record.stagedBytes = bytes.length;
+          record.stagedBytes = bytes;
           record.stagedSha256 = digest;
           return { downloaded: true, version: record.version };
         }
+        const named = await fs.lstat(stagedPath);
+        if (!regularFile(named) || !sameFile(existing, named))
+          throw new ApiError(409, 'The staged installer changed during download. Check again.');
+        await fs.unlink(stagedPath);
       }
-      // An owned regular file that differs is removed before an exclusive
-      // create; anything else fails closed above without an overwrite.
-      await fs.unlink(stagedPath);
+      current();
+      try { output = await fs.open(stagedPath, 'wx', 0o600); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'EEXIST')
+          throw new ApiError(409, 'The staged installer changed during download. Check again.');
+        throw error;
+      }
+      outputIdentity = await output.stat();
+      const source = await fs.open(partialPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      try {
+        let copied = 0;
+        for await (const chunk of source.createReadStream({ autoClose: false, highWaterMark: UPDATE_STREAM_CHUNK_BYTES })) {
+          current();
+          copied += chunk.length;
+          if (copied > bytes || copied > UPDATE_MAX_ASSET_BYTES)
+            throw new ApiError(502, 'The staged installer changed during download. Nothing was saved.');
+          await writeUpdateChunk(output, chunk);
+        }
+      } finally { await source.close(); }
+      await output.close();
+      output = null;
+      const final = await hashUpdateFile(stagedPath, bytes);
+      if (final.sha256 !== digest || !sameFile(outputIdentity, await fs.lstat(stagedPath)))
+        throw new ApiError(502, 'The staged installer changed during download. Nothing was saved.');
+      current();
+      record.stagedPath = stagedPath;
+      record.stagedBytes = bytes;
+      record.stagedSha256 = digest;
+      published = true;
+      return { downloaded: true, version: record.version };
+    } finally {
+      await partial?.close();
+      await output?.close();
+      if (outputIdentity && !published) {
+        let named: UpdateFileStat | null = null;
+        try { named = await fs.lstat(stagedPath); }
+        catch (error) { if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error; }
+        // Cleanup must never delete a replacement file owned by another actor.
+        if (named && regularFile(named) && sameFile(outputIdentity, named)) await fs.unlink(stagedPath);
+      }
+      const scratch = await fs.lstat(partialDir);
+      if (path.dirname(partialDir) !== ownedDir || !path.basename(partialDir).startsWith('.download-') ||
+          scratch.isSymbolicLink() || !scratch.isDirectory() || !sameFile(partialDirectory, scratch))
+        throw new ApiError(502, 'The update staging directory changed. Its files were preserved.');
+      await fs.rm(partialDir, { recursive: true, force: true });
     }
-    try {
-      await fs.writeFile(stagedPath, bytes, { flag: 'wx' });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === 'EEXIST')
-        throw new ApiError(409, 'The staged installer changed during download. Check again.');
-      throw error;
-    }
-    const written = await fs.lstat(stagedPath);
-    if (written.isSymbolicLink() || !written.isFile() || written.nlink > 1)
-      throw new ApiError(502, 'The staged installer location is not a regular file.');
-    record.stagedPath = stagedPath;
-    record.stagedBytes = bytes.length;
-    record.stagedSha256 = digest;
-    return { downloaded: true, version: record.version };
   }
 
   private parseInstallBody(body: unknown): { assetName: string; sha256: string } {
@@ -844,18 +943,14 @@ export class AppUpdateService {
         502,
         'The staged installer changed after verification. Nothing was launched.',
       );
-    let staged: Uint8Array;
+    let staged: { bytes: number; sha256: string };
     try {
-      staged = await fs.readFile(stagedPath);
-    } catch {
+      staged = await hashUpdateFile(stagedPath, record.assetSize);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
       throw new ApiError(409, 'The staged installer is missing. Download it again.');
     }
-    if (staged.length !== record.assetSize)
-      throw new ApiError(
-        502,
-        'The staged installer changed after verification. Nothing was launched.',
-      );
-    const digest = createHash('sha256').update(staged).digest('hex');
+    const digest = staged.sha256;
     if (digest !== record.stagedSha256 || digest !== record.publishedDigest)
       throw new ApiError(
         502,
@@ -885,7 +980,7 @@ export class AppUpdateService {
       const artifact: UpdateInstallArtifact = {
         path: stagedPath,
         sha256: digest,
-        size: staged.length,
+        size: staged.bytes,
         version: record.version,
       };
       try {

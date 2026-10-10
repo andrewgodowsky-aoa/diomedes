@@ -1,0 +1,13 @@
+# Complete omitted-history context
+
+MEM-01 in the security assurance audit showed that first-sentence compaction could retain an approval while dropping its correction or exception. The existing W00 fixtures reproduced nine failures when preservation was required, including three real ModelSessionRuns-to-NativeAgent dispatches using an offline scripted adapter.
+
+New compaction records use `verbatim-turns/1`. The existing 2,000-character compaction allocation and 24,000-character history bound remain. A bounded omitted group is reproduced with complete prompt and answer text. If the whole group cannot fit, none of its claims are extracted: an explicit gap says corrections or limits may be absent and asks for the relevant original context or a narrow restatement before relying on an earlier status. Treating the group atomically prevents an earlier assertion from fitting while its later correction is silently omitted by the compaction itself.
+
+Original run/step identity, exact source hashes, persisted messages, deterministic record IDs and current sharing/source-authority checks remain. `listed` is all or zero, preserving the dispatch driver's existing leading-contributor accounting. Historical `extract-first-sentence/1` records remain readable and unchanged. Remembered approval text never supplies Runtime/Trust execution authority.
+
+This repairs misleading clause extraction. It does not establish unlimited recall, automatic source retrieval, a model's reasoning quality, or safety when an omitted fact is independently missing elsewhere. The existing recency/relevance selection and oversized-newest-message truncation remain separate, disclosed history policies.
+
+The same source repair is mirrored to the Mac fork at base aded0c4ee373f954c7573033cfc553b82ed06754, with the missing W00 baseline fixture and test copied explicitly. Its four focused files also passed 48 / 0 / 0 on Windows. This checks fork compatibility and does not qualify a native macOS runtime or installed app. App TypeScript checking also passed before integration.
+
+Verification at base 13871562fc89aaf6b88fbb027d50a3ebb8d0e087 plus this patch: the original W00 desired-preservation check was 12 passed / 9 failed / 0 skipped; added adversarial compaction checks were 1 passed / 5 failed / 0 skipped before repair. After repair, context-accounting, prior H18 review, W00 and new preservation checks passed 48 / 0 / 0. W00 now requires preservation by default; the legacy environment switch cannot restore the unsafe expected-loss assertions. Logs are under F:/Diomedes/deliverables/security-assurance-repairs/. Independent review and combined app gates are pending.

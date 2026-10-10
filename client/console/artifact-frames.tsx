@@ -137,17 +137,18 @@ function StillFrame({
 
 function DiagramView({ source, title }: { source: string; title: string }) {
   const probe = useRef<HTMLDivElement | null>(null);
+  const renderOwner = useRef<object>({});
   const tokens = useFrameTokens(probe);
   const [result, setResult] = useState<DiagramResult | null>(null);
   useEffect(() => {
     if (!tokens) return;
-    let alive = true;
+    const controller = new AbortController();
     setResult(null);
-    void renderDiagram(source, tokens).then((drawn) => {
-      if (alive) setResult(drawn);
+    void renderDiagram(source, tokens, { signal: controller.signal, owner: renderOwner.current }).then((drawn) => {
+      if (!controller.signal.aborted) setResult(drawn);
     });
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [source, tokens]);
   return (

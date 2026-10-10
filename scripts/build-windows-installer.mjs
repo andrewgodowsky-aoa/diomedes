@@ -129,10 +129,64 @@ async function run(command, args, options = {}) {
   });
 }
 
-async function acquireNsis(toolCache, allowDownload) {
-  const zipPath = path.join(toolCache, `nsis-${tool.version}.zip`);
-  const extractRoot = path.join(toolCache, `nsis-${tool.version}`);
-  const compilerPath = path.join(extractRoot, `nsis-${tool.version}`, 'makensis.exe');
+async function refuseExtractionLinks(extractRoot, zipPath) {
+  for (const target of [zipPath, extractRoot]) {
+    for (let current = path.resolve(target);;) {
+      const entry = await fs.lstat(current);
+      if (entry.isSymbolicLink() || (entry.isFile() && entry.nlink !== 1))
+        throw new Error(`NSIS input is an unexpected link: ${current}.`);
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  async function visit(directory) {
+    for (const child of await fs.readdir(directory)) {
+      const file = path.join(directory, child);
+      const entry = await fs.lstat(file);
+      if (entry.isSymbolicLink() || (entry.isFile() && entry.nlink !== 1))
+        throw new Error(`NSIS extraction is an unexpected link: ${file}.`);
+      if (entry.isDirectory()) await visit(file);
+      else if (!entry.isFile()) throw new Error(`NSIS extraction has an unexpected entry: ${file}.`);
+    }
+  }
+  await visit(extractRoot);
+}
+
+/** Never execute the cached compiler or its DLLs before a complete archive comparison. */
+export async function runVerifiedNsis(installation, args, dependencies = {}) {
+  const execute = dependencies.run ?? run;
+  const pinned = dependencies.tool ?? tool;
+  const compilerPath = path.join(installation.extractRoot, `nsis-${pinned.version}`, 'makensis.exe');
+  if (path.resolve(installation.compilerPath) !== path.resolve(compilerPath))
+    throw new Error('The NSIS compiler left its verified extraction.');
+  await refuseExtractionLinks(installation.extractRoot, installation.zipPath);
+  const verification = await execute('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+    path.join(root, 'scripts/release-support/verify-nsis-extraction.ps1'),
+  ], {
+    env: {
+      ...process.env,
+      DIOMEDES_NSIS_ZIP: installation.zipPath,
+      DIOMEDES_NSIS_DEST: installation.extractRoot,
+      DIOMEDES_NSIS_SHA256: pinned.sha256,
+      DIOMEDES_NSIS_VERSION: pinned.version,
+    },
+  });
+  const extracted = JSON.parse(verification.stdout);
+  if (extracted.archiveSha256 !== pinned.sha256 || !Number.isSafeInteger(extracted.files) || extracted.files <= 0)
+    throw new Error('NSIS extraction verification returned no valid archive comparison.');
+  // No other asynchronous work separates the comparison from this execution.
+  const result = await execute(compilerPath, args, { cwd: path.dirname(compilerPath) });
+  return { ...result, extractedFiles: extracted.files };
+}
+
+export async function acquireNsis(toolCache, allowDownload, dependencies = {}) {
+  const execute = dependencies.run ?? run;
+  const pinned = dependencies.tool ?? tool;
+  const zipPath = path.join(toolCache, `nsis-${pinned.version}.zip`);
+  const extractRoot = path.join(toolCache, `nsis-${pinned.version}`);
+  const compilerPath = path.join(extractRoot, `nsis-${pinned.version}`, 'makensis.exe');
   await fs.mkdir(toolCache, { recursive: true });
 
   if (!(await exists(zipPath))) {
@@ -140,7 +194,7 @@ async function acquireNsis(toolCache, allowDownload) {
       throw new Error(`Portable NSIS is missing at ${zipPath}; omit --no-download to fetch it.`);
     }
     const partialPath = `${zipPath}.partial-${process.pid}`;
-    await run('curl.exe', [
+    await execute('curl.exe', [
       '--fail',
       '--location',
       '--retry',
@@ -149,12 +203,12 @@ async function acquireNsis(toolCache, allowDownload) {
       'Diomedes experimental installer builder',
       '--output',
       partialPath,
-      tool.url,
+      pinned.url,
     ]);
     const downloadedHash = await sha256File(partialPath);
-    if (downloadedHash !== tool.sha256) {
+    if (downloadedHash !== pinned.sha256) {
       throw new Error(
-        `Downloaded NSIS SHA-256 mismatch. Expected ${tool.sha256}, received ${downloadedHash}. ` +
+        `Downloaded NSIS SHA-256 mismatch. Expected ${pinned.sha256}, received ${downloadedHash}. ` +
           `The untrusted partial download remains at ${partialPath}.`,
       );
     }
@@ -162,9 +216,9 @@ async function acquireNsis(toolCache, allowDownload) {
   }
 
   const zipHash = await sha256File(zipPath);
-  if (zipHash !== tool.sha256) {
+  if (zipHash !== pinned.sha256) {
     throw new Error(
-      `NSIS cache SHA-256 mismatch at ${zipPath}. Expected ${tool.sha256}, received ${zipHash}.`,
+      `NSIS cache SHA-256 mismatch at ${zipPath}. Expected ${pinned.sha256}, received ${zipHash}.`,
     );
   }
 
@@ -175,7 +229,7 @@ async function acquireNsis(toolCache, allowDownload) {
           `--tool-cache with a new empty cache path.`,
       );
     }
-    await run(
+    await execute(
       'powershell.exe',
       [
         '-NoProfile',
@@ -193,12 +247,13 @@ async function acquireNsis(toolCache, allowDownload) {
     );
   }
 
-  const versionResult = await run(compilerPath, ['/VERSION'], { cwd: path.dirname(compilerPath) });
+  const installation = { compilerPath, extractRoot, zipPath, zipHash };
+  const versionResult = await runVerifiedNsis(installation, ['/VERSION'], dependencies);
   const compilerVersion = `${versionResult.stdout}${versionResult.stderr}`.trim();
-  if (compilerVersion !== `v${tool.version}`) {
+  if (compilerVersion !== `v${pinned.version}`) {
     throw new Error(`Unexpected NSIS compiler version ${JSON.stringify(compilerVersion)}.`);
   }
-  return { compilerPath, compilerVersion, zipPath, zipHash };
+  return { ...installation, compilerVersion };
 }
 
 async function collectPayload(appDir) {
@@ -568,9 +623,7 @@ async function main() {
     'utf8',
   );
 
-  const compile = await run(nsisTool.compilerPath, ['/V4', '/WX', generatedScript], {
-    cwd: path.dirname(nsisTool.compilerPath),
-  });
+  const compile = await runVerifiedNsis(nsisTool, ['/V4', '/WX', generatedScript]);
   if (!(await exists(outputPath)))
     throw new Error(`NSIS reported success but did not create ${outputPath}.`);
   const postCompilePayload = await collectPayload(appDir);
@@ -612,6 +665,8 @@ async function main() {
       sourceUrl: tool.url,
       archivePath: nsisTool.zipPath,
       archiveSha256: nsisTool.zipHash,
+      extractedFileCount: compile.extractedFiles,
+      extractionVerification: 'all-files-sha256-no-links',
     },
     generatedScript,
     builtAt: new Date().toISOString(),

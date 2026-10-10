@@ -146,17 +146,28 @@ test.each(CONNECTOR_DATA_KINDS)('%s: approve, discover, Ask, Plan and revoke thr
   const tools = await discover(loaded);
   expect(tools.tools.map((tool) => tool.name)).toEqual([fixtures[kind].tool, 'read_private_notes', 'replace_record']);
 
-  // The server advertises these tools, even readOnlyHint, but the owner did not approve them.
-  const answer = await send([
-    { server: kind, tool: 'replace_record' },
-    { server: kind, tool: 'read_private_notes' },
-    { server: kind, tool: fixtures[kind].tool },
-  ]);
+  // Discovery and readOnlyHint confer no approval. Runtime refuses the turn
+  // before a connector starts, so a later valid call in that turn is not reached.
+  const afterDiscovery = await receipts(log);
+  for (const tool of ['replace_record', 'read_private_notes']) {
+    const unapproved = await send([
+      { server: kind, tool },
+      { server: kind, tool: fixtures[kind].tool },
+    ]);
+    expect(unapproved.status, unapproved.text).toBe(409);
+    expect(unapproved.data).toEqual({
+      code: 'ROUTE_REFUSED', error: 'This turn was not given that connector read access.',
+    });
+    expect(seen).toHaveLength(1);
+    expect(observed).toEqual([]);
+    expect(offeredTools()).toContain('connector_read');
+    expect(await receipts(log)).toEqual(afterDiscovery);
+  }
+
+  // A new, authorized Ask still reads the approved tool through production stdio.
+  const answer = await send([{ server: kind, tool: fixtures[kind].tool }]);
   expect(answer.status, answer.text).toBe(200);
-  expect(observed.slice(0, 2)).toEqual([
-    expect.objectContaining({ refused: true, message: expect.stringContaining('not an approved read tool') }),
-    expect.objectContaining({ refused: true, message: expect.stringContaining('not an approved read tool') }),
-  ]);
+  expect(observed).toHaveLength(1);
   const result = observed.at(-1)!;
   expect(result).toMatchObject({ server: kind, tool: fixtures[kind].tool, isError: false, truncated: false });
   expect(JSON.parse(String(result.text))).toEqual({ kind, records: fixtures[kind].records });
@@ -170,12 +181,16 @@ test.each(CONNECTOR_DATA_KINDS)('%s: approve, discover, Ask, Plan and revoke thr
 
   const planned = await send([{ server: kind, tool: fixtures[kind].tool }], 'plan');
   expect(planned.status, planned.text).toBe(200);
+  expect(observed).toHaveLength(1);
+  expect(observed.at(-1)).toMatchObject({ server: kind, tool: fixtures[kind].tool, isError: false, truncated: false });
   expect(JSON.parse(String(observed.at(-1)!.text))).toEqual({ kind, records: fixtures[kind].records });
 
   const removed = await api<ReadConnectorsView>(`/ai/read-connectors/${kind}`, 'DELETE');
   expect(removed.connectors).toEqual([]);
   expect(loadApprovedReadServers(connectorFile())).toEqual([]);
   const beforeRevokedRead = await receipts(log);
+  expect(beforeRevokedRead.filter((row) => row.event === 'tools/call').map((row) => row.params?.name))
+    .toEqual([fixtures[kind].tool, fixtures[kind].tool]);
   expect(beforeRevokedRead.filter((row) => row.event === 'close')).toHaveLength(3);
   // Reuse the same conversation. A model still trying the old tool must be refused.
   const revoked = await send([{ server: kind, tool: fixtures[kind].tool }]);

@@ -16,7 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Json } from '../shared/harness';
 import type { ApprovedMcpServer, ReadScope } from '../server/engines/read-scope';
-import { closeReadGrant, openReadGrant } from '../server/engines/turn-scope';
+import { closeReadGrant, openReadGrant, revokeProjectReadGrants } from '../server/engines/turn-scope';
 import {
   checkPageUrl,
   fetchPage,
@@ -52,6 +52,7 @@ beforeEach(async () => {
   await fs.writeFile(path.join(outside, 'secret.txt'), 'the outside secret\n');
 });
 afterEach(async () => {
+  revokeProjectReadGrants('project-1');
   await fs.rm(path.dirname(root), { recursive: true, force: true });
 });
 
@@ -75,15 +76,18 @@ async function run(tools: ReturnType<typeof readScopeTools>, name: string, input
  * (No model-API route takes a whole-project read today; the tools are checked as if one did.)
  */
 const SHARED = ['notes/menu.md', 'orders.csv', 'logo.png', 'long.txt'];
-const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({
-  root,
-  web: false,
-  access: 'project',
-  files: [],
-  shared: SHARED,
-  grant: openReadGrant('project-1'),
-  ...extra,
-});
+const scope = (extra: Partial<ReadScope> = {}): ReadScope => {
+  const admitted: ReadScope = {
+    projectId: 'project-1',
+    root,
+    web: false,
+    access: 'project',
+    files: [],
+    shared: SHARED,
+    ...extra,
+  };
+  return { ...admitted, grant: extra.grant ?? openReadGrant('project-1', undefined, { scope: admitted }) };
+};
 
 describe('project-folder tools', () => {
   test('list, read and search answer from inside the project; private and binary files are not shown or read', async () => {
@@ -377,7 +381,7 @@ describe('the approved-connector client', () => {
     const calls: string[] = [];
     let opened = 0;
     let closed = 0;
-    const clients = new McpReadClients({ root, web: false, mcp: [pos] }, () => {
+    const clients = new McpReadClients(scope({ access: 'selected', mcp: [pos] }), () => {
       opened += 1;
       const [client, server] = InMemoryTransport.createLinkedPair();
       server.onclose = () => void (closed += 1);
@@ -420,7 +424,7 @@ describe('the approved-connector client', () => {
   test('connector_read through the tool refuses an unapproved tool and trims the answer', async () => {
     const calls: string[] = [];
     const tools = readScopeTools(
-      { root, web: false, mcp: [pos] },
+      scope({ access: 'selected', mcp: [pos] }),
       {
         stop: new AbortController().signal,
         deps: {

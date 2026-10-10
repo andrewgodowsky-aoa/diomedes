@@ -34,6 +34,7 @@ import {
   approvedReadServersSchema,
   READ_CONNECTORS_FILE,
 } from './read-scope.js';
+import { holdConnectorReadGrants } from './turn-scope.js';
 
 const BASE = '/api/ai/read-connectors';
 const MAX_SERVERS = 16;
@@ -126,6 +127,13 @@ export function mountReadConnectorRoutes(
     return { loaded, ignored };
   }
 
+  /** Match the loader's effective authority; display notes and set ordering do not change it. */
+  const approvals = (servers: unknown[]) => new Map(classify(servers).loaded.map(({ entry }) => [
+    entry.name,
+    JSON.stringify({ command: entry.command, args: entry.args,
+      envFrom: [...new Set(entry.envFrom)].sort(), readTools: [...new Set(entry.readTools)].sort() }),
+  ]));
+
   const view = (entry: Entry): ReadConnectorView => ({
     name: entry.name,
     command: entry.command,
@@ -187,7 +195,15 @@ export function mountReadConnectorRoutes(
       const servers = change(state.servers);
       if (servers.length > MAX_SERVERS)
         throw new ApiError(409, `At most ${MAX_SERVERS} connectors can be approved. Remove one first.`);
-      await jsonWrite(file(), approvedReadServersSchema.parse({ version: 1, servers }));
+      const data = approvedReadServersSchema.parse({ version: 1, servers });
+      const before = approvals(state.servers), after = approvals(servers);
+      const changed = [...before].filter(([name, authority]) => after.get(name) !== authority).map(([name]) => name);
+      const release = holdConnectorReadGrants(changed);
+      try {
+        await jsonWrite(file(), data);
+      } finally {
+        release();
+      }
       return build();
     });
 

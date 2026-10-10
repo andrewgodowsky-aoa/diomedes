@@ -3,10 +3,20 @@ import { afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { McpReadClients } from '../server/harness/capabilities/mcp-read-client';
+import { closeReadGrant, openReadGrant } from '../server/engines/turn-scope';
+import type { ApprovedMcpServer, ReadScope } from '../server/engines/read-scope';
 import { connector, discover, fixtureDirectory, fixtureServer, fixtures, receipts } from './fixtures/read-connector-fixtures/helpers';
 
 let root: string | undefined;
+const grants: string[] = [];
+function readClients(approved: ApprovedMcpServer) {
+  const scope: ReadScope = { root: root!, projectId: 'connector-launch-fixture', web: false, mcp: [approved] };
+  const grant = openReadGrant(scope.projectId!, undefined, { scope });
+  grants.push(grant);
+  return new McpReadClients({ ...scope, grant });
+}
 afterEach(async () => {
+  grants.splice(0).forEach(closeReadGrant);
   vi.unstubAllEnvs();
   if (root) await fs.rm(root, { recursive: true, force: true });
   root = undefined;
@@ -39,7 +49,7 @@ test.runIf(process.platform === 'win32').each([
     };
     const listed = await discover(approved);
     expect(listed.tools.map((tool) => tool.name)).toContain(fixtures['read-sales'].tool);
-    const clients = new McpReadClients({ root, web: false, mcp: [approved] });
+    const clients = readClients(approved);
     try {
       const result = await clients.call(approved.name, fixtures['read-sales'].tool, {}, AbortSignal.timeout(5_000));
       expect(result).toMatchObject({ ok: true, isError: false });
@@ -59,7 +69,7 @@ test('a direct Node command is a working shell-free connector configuration', as
   root = await fixtureDirectory();
   const log = path.join(root, 'node-receipt.jsonl');
   const approved = connector('read-inventory', log);
-  const clients = new McpReadClients({ root, web: false, mcp: [approved] });
+  const clients = readClients(approved);
   try {
     const result = await clients.call(approved.name, fixtures['read-inventory'].tool, {}, AbortSignal.timeout(5_000));
     expect(result).toMatchObject({ ok: true, isError: false });

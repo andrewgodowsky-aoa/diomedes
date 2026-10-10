@@ -628,12 +628,17 @@ class FakeSocket implements HubSocket {
 function runtime() {
   const accepted: FakeSocket[] = [];
   const alarms: (number | null)[] = [];
+  const saved = new Map<string, unknown>();
   const ctx: RelayHubState = {
     acceptWebSocket: (ws) => { accepted.push(ws as FakeSocket); },
     getWebSockets: () => [...accepted],
     setWebSocketAutoResponse: () => {},
     getWebSocketAutoResponseTimestamp: () => null,
-    storage: { setAlarm: async (at) => { alarms.push(at); }, deleteAlarm: async () => { alarms.push(null); } },
+    storage: {
+      get: async (key) => structuredClone(saved.get(key)),
+      put: async (key, value) => { saved.set(key, structuredClone(value)); },
+      setAlarm: async (at) => { alarms.push(at); }, deleteAlarm: async () => { alarms.push(null); },
+    },
   };
   return { ctx, accepted, alarms };
 }

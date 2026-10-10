@@ -109,13 +109,14 @@ export interface CompactionRecord {
   /** sha-256 of the method, the turns and the text. */
   id: string;
   kind: 'summary';
-  method: 'extract-first-sentence/1';
+  /** Keep the legacy method readable; new records preserve complete turns or disclose a gap. */
+  method: 'extract-first-sentence/1' | 'verbatim-turns/1';
   /** Truthful attribution: no model wrote this. */
   author: 'diomedes-application';
   turns: (HistoryTurnRef & { promptSha: string | null; answerSha: string | null })[];
   text: string;
   bytes: number;
-  /** How many of `turns` have a line in `text`; the rest are only counted there. Absent on records before 2026-09-24 review C. */
+  /** How many of the leading `turns` appear in `text`. Verbatim groups include all or none. Absent on records before 2026-09-24 review C. */
   listed?: number;
 }
 

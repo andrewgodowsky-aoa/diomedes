@@ -68,7 +68,7 @@ const ASSET = `Diomedes-Experimental-${NEXT}-unsigned-setup.exe`;
 const ASSET_URL = `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/${ASSET}`;
 const SIZE = 1_100_000;
 
-function fixtureBytes(size = SIZE, fill = 7): Uint8Array {
+function fixtureBytes(size = SIZE, fill = 7): Uint8Array<ArrayBuffer> {
   return new Uint8Array(size).fill(fill);
 }
 
@@ -553,6 +553,158 @@ describe('production feed mapping without network', () => {
     });
     expect((await service.check({})).outcome).toBe('available');
     await expect(service.download({})).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe('bounded production update bytes', () => {
+  function streamingService(dir: string, bytes: Uint8Array, response: () => Response) {
+    vi.stubGlobal('fetch', (async () => response()) as typeof fetch);
+    return new AppUpdateService({
+      currentVersion: INSTALLED, dataDir: dir, platform: 'win32', packaged: true, installed: true,
+      isBusy: () => false,
+      transport: { fetchRelease: async () => releasePayload(NEXT, bytes, digestOf(bytes)) },
+    });
+  }
+
+  function heldStream(bytes: Uint8Array) {
+    let send!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { send = controller; controller.enqueue(bytes.subarray(0, 400_000)); },
+    });
+    return { body, release: () => { send.enqueue(bytes.subarray(400_000)); send.close(); } };
+  }
+
+  async function partialFile(dir: string) {
+    let file = '';
+    await vi.waitFor(async () => {
+      const partial = (await fs.readdir(path.join(dir, 'updates'))).find((entry) => entry.startsWith('.download-'));
+      expect(partial).toBeDefined();
+      file = path.join(dir, 'updates', partial!, 'installer.partial');
+      expect((await fs.stat(file)).size).toBe(400_000);
+    });
+    return file;
+  }
+
+  it.each(['truncated', 'oversized', 'wrong-digest'] as const)('removes owned partial bytes after a %s response', async (kind) => {
+    const dir = await tempDir(); dirs.push(dir);
+    const bytes = fixtureBytes();
+    const received = kind === 'truncated' ? bytes.subarray(0, SIZE - 1)
+      : kind === 'oversized' ? fixtureBytes(SIZE + 1) : fixtureBytes(SIZE, 8);
+    const service = streamingService(dir, bytes, () => new Response(received));
+    await service.check({});
+    await expect(service.download({})).rejects.toMatchObject({ status: 502 });
+    expect((await service.status()).download.ready).toBe(false);
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([]);
+  });
+
+  it('cancels a blocked response, cleans only its partial file, and permits a retry', async () => {
+    const dir = await tempDir(); dirs.push(dir);
+    const bytes = fixtureBytes();
+    const held = heldStream(bytes);
+    let retry = false;
+    const service = streamingService(dir, bytes, () => new Response(retry ? bytes : held.body));
+    await service.check({});
+    const controller = new AbortController();
+    const pending = service.download({}, controller.signal).then(() => null, (error: unknown) => error);
+    await partialFile(dir);
+    controller.abort();
+    expect(await pending).toMatchObject({ status: 504 });
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([]);
+    retry = true;
+    await expect(service.download({})).resolves.toEqual({ downloaded: true, version: NEXT });
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([ASSET]);
+  });
+
+  it('cleans obsolete streamed work after a newer release check', async () => {
+    const dir = await tempDir(); dirs.push(dir);
+    const bytes = fixtureBytes();
+    const held = heldStream(bytes);
+    const service = streamingService(dir, bytes, () => new Response(held.body));
+    await service.check({});
+    const pending = service.download({}).then(() => null, (error: unknown) => error);
+    await partialFile(dir);
+    await service.check({});
+    held.release();
+    expect(await pending).toMatchObject({ status: 409 });
+    expect((await service.status()).download.ready).toBe(false);
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([]);
+  });
+
+  it('re-reads disk bytes before publication when the owned partial changed during receipt', async () => {
+    const dir = await tempDir(); dirs.push(dir);
+    const bytes = fixtureBytes();
+    const held = heldStream(bytes);
+    const service = streamingService(dir, bytes, () => new Response(held.body));
+    await service.check({});
+    const pending = service.download({}).then(() => null, (error: unknown) => error);
+    const file = await partialFile(dir);
+    const handle = await fs.open(file, 'r+');
+    try { await handle.write(new Uint8Array([8]), 0, 1, 0); }
+    finally { await handle.close(); }
+    held.release();
+    expect(await pending).toMatchObject({ status: 502 });
+    expect((await service.status()).download.ready).toBe(false);
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([]);
+  });
+
+  it('refuses a non-streaming response without calling an array-buffer fallback', async () => {
+    const dir = await tempDir(); dirs.push(dir);
+    const bytes = fixtureBytes();
+    const arrayBuffer = vi.fn(async () => bytes.buffer);
+    const service = streamingService(dir, bytes, () => ({
+      ok: true, status: 200, body: null, headers: new Headers(), arrayBuffer,
+    }) as unknown as Response);
+    await service.check({});
+    await expect(service.download({})).rejects.toMatchObject({ status: 502 });
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([]);
+  });
+
+  it('writes streamed bytes before the response finishes and avoids full-file verification reads', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    const bytes = fixtureBytes();
+    const sha = digestOf(bytes);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(bytes.subarray(0, 400_000));
+        await gate;
+        controller.enqueue(bytes.subarray(400_000));
+        controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', (async () => new Response(body)) as typeof fetch);
+    const launched: unknown[] = [];
+    const service = new AppUpdateService({
+      currentVersion: INSTALLED, dataDir: dir, platform: 'win32', packaged: true, installed: true,
+      isBusy: () => false,
+      transport: {
+        fetchRelease: async () => releasePayload(NEXT, bytes, sha),
+        launchInstaller: async (artifact) => { launched.push(artifact); },
+      },
+    });
+    await service.check({});
+    const read = vi.spyOn(fs, 'readFile');
+    const pending = service.download({});
+    const observed = await vi.waitFor(async () => {
+        const entries = await fs.readdir(path.join(dir, 'updates'));
+        const partial = entries.find((entry) => entry.startsWith('.download-'));
+        expect(partial).toBeDefined();
+        const stat = await fs.stat(path.join(dir, 'updates', partial!, 'installer.partial'));
+        expect(stat.size).toBe(400_000);
+      }).then(() => null, (error: unknown) => error);
+    release();
+    try {
+      await pending;
+      expect(observed).toBeNull();
+      await service.install({ assetName: ASSET, sha256: sha });
+      expect(launched).toHaveLength(1);
+      expect(read.mock.calls.filter(([file]) => String(file).includes('/updates/') || String(file).includes('\\updates\\')))
+        .toEqual([]);
+    } finally { read.mockRestore(); }
+    expect(await fs.readdir(path.join(dir, 'updates'))).toEqual([ASSET]);
   });
 });
 

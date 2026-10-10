@@ -2488,9 +2488,9 @@ export async function createApp(options: AppOptions) {
       const candidate = structuredClone(state);
       const policy = changeCloudSharing(candidate, body(req));
       state.cloudSharing = policy;
-      await store.persist(state);
-      // A turn admitted under the old sharing, even one still queued, reads nothing more.
+      // End the old authority before persistence yields to a retained read.
       revokeProjectReadGrants(projectId);
+      await store.persist(state);
       return policy;
     }),
   );
@@ -4345,32 +4345,51 @@ export async function createApp(options: AppOptions) {
     mode: string,
     turn: {
       route: Route;
+      /** Original accepted message, before Agent framing, recap, rules or sources. */
+      text: string;
       access?: unknown;
       documents: readonly { path: string }[];
       /** The Agent's read tools, where this turn has no kept session (DIO-292). */
       tools?: readonly string[];
     },
   ): Promise<{ readScope?: ReadScope }> => {
-    const access = parseReadAccess(turn.access);
+    const requested = {
+      ...turn,
+      documents: turn.documents.map(document => ({ path: document.path })),
+      tools: turn.tools ? [...turn.tools] : undefined,
+    };
+    const access = parseReadAccess(requested.access);
     if (mode !== 'ask' && mode !== 'plan') {
       if (access === 'project')
         throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
       return {};
     }
     const state = store.state(projectId);
-    if (access === 'project' && !(cloudSharing(state).routes as string[]).includes(turn.route))
+    const folder = state.project.folder;
+    const initialPolicy = cloudSharing(state);
+    if (access === 'project' && !(initialPolicy.routes as string[]).includes(requested.route))
       // Listing the folder shows every file name to the route, so it needs the route's grant
       // even where a typed message alone does not (Home).
       throw new ApiError(403, 'Cloud sharing for this route is off in this project.', {
         code: 'cloud_sharing_denied',
       });
     // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
-    const root = await safeAbsolute(state.project.folder).catch(() => null);
+    const root = await safeAbsolute(folder).catch(() => null);
     if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) {
       if (access === 'project')
         throw new ApiError(409, 'This project folder is not available. Choose the documents to include instead.');
       return {};
     }
+    // Store recovery and writes can replace its state object while the path
+    // checks await. A turn prepared under changed consent must be sent again.
+    const currentPolicy = () => {
+      const current = store.state(projectId);
+      const policy = cloudSharing(current);
+      if (current.project.folder !== folder || JSON.stringify(policy) !== JSON.stringify(initialPolicy))
+        throw new ApiError(409, 'Read access changed while preparing this message. Send it again.');
+      return policy;
+    };
+    const policy = currentPolicy();
     let mcp: ReadScope['mcp'];
     try {
       mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
@@ -4380,19 +4399,25 @@ export async function createApp(options: AppOptions) {
         'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
       );
     }
-    const policy = cloudSharing(state);
     const readScope = await buildTurnReadScope({
       projectId,
       mode,
       root,
-      route: turn.route,
+      route: requested.route,
       access,
-      documents: turn.documents,
+      documents: requested.documents,
+      text: requested.text,
       web: true,
       mcp,
-      shared: (policy.routes as string[]).includes(turn.route) ? policy.documents : [],
+      shared: (policy.routes as string[]).includes(requested.route) ? policy.documents : [],
     });
-    const narrowed = turn.tools ? narrowForAgent(readScope ?? undefined, turn.tools) : readScope;
+    try {
+      currentPolicy();
+    } catch (error) {
+      closeReadGrant(readScope?.grant);
+      throw error;
+    }
+    const narrowed = requested.tools ? narrowForAgent(readScope ?? undefined, requested.tools) : readScope;
     return narrowed ? { readScope: narrowed } : {};
   };
   /** A route with no read scope: a whole-project read asked of it is refused, not dropped. */
@@ -4863,6 +4888,7 @@ export async function createApp(options: AppOptions) {
           accountRoute,
           ...(await readScopeFor(projectId, command.mode, {
             route: engine,
+            text: command.text,
             access: command.readAccess,
             documents,
           })),
@@ -5575,6 +5601,7 @@ export async function createApp(options: AppOptions) {
           // kept session keeps the scope its lane opened with.
           ...(await readScopeFor(projectId, rides && modelRoute ? messageKind : command.mode, {
             route: conversationRoute,
+            text: command.text,
             access: command.readAccess,
             documents,
             // The Agent's own read tools, where the route keeps no session of its own (DIO-292).
@@ -6769,6 +6796,7 @@ export async function createApp(options: AppOptions) {
           requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const readScope = await readScopeFor(projectId, mode, {
             route: serviceRoute,
+            text,
             access: readAccess,
             documents: prepared.documents,
             // One request, no kept session: the Agent reads with its own tools (DIO-292).
@@ -6858,6 +6886,7 @@ export async function createApp(options: AppOptions) {
             onDelta,
             ...(await readScopeFor(projectId, mode, {
               route: 'codex',
+              text,
               access: readAccess,
               documents: prepared.documents,
               ...(agent ? { tools: agent.tools } : {}),

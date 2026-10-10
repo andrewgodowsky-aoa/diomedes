@@ -4,7 +4,7 @@
  * Settings approves is exactly what a read turn gets. Nothing here starts a
  * connector or reaches a provider.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,11 +13,14 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { loadApprovedReadServers } from '../server/engines/read-scope';
+import { buildTurnReadScope, externalReadAllowed, openReadGrant, readGrantLive, readGrantSignal, revokeProjectReadGrants } from '../server/engines/turn-scope';
+import * as storeModule from '../server/store';
 import { CONNECTOR_DATA_KINDS, type ReadConnectorsView } from '../shared/read-connectors';
 import { SMALL_BUSINESS_PACK } from '../shared/capability-packs';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const TOKEN_VALUE = 'test-only-pos-token-value-never-stored';
+const PROJECT = 'read-connector-route-fixture';
 
 let root: string;
 let app: Awaited<ReturnType<typeof createApp>>;
@@ -41,6 +44,8 @@ beforeEach(async () => {
   file = path.join(root, 'data', 'read-connectors.json');
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
+  revokeProjectReadGrants(PROJECT);
   if (server) {
     await app.locals.close();
     server.closeAllConnections();
@@ -69,6 +74,19 @@ const pos = {
   provides: ['read-sales'],
   consent: true,
 };
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+async function grantFor(names = ['pos']) {
+  return (await buildTurnReadScope({
+    projectId: PROJECT, mode: 'ask', root, route: 'openrouter', documents: [],
+    mcp: loadApprovedReadServers(file).filter(server => names.includes(server.name)),
+    text: 'Read https://public.example.test/manual',
+  }))!;
+}
 
 describe('approved read connectors', () => {
   test('a new install lists none, and an approved connector reaches the read turn exactly', async () => {
@@ -150,6 +168,96 @@ describe('approved read connectors', () => {
     expect(removed.json().connectors).toEqual([]);
     expect(loadApprovedReadServers(file)).toEqual([]);
     expect((await call('/pos', 'DELETE')).status).toBe(404);
+  });
+
+  test('display-only changes, set ordering and unrelated additions preserve live grants', async () => {
+    await call('', 'POST', pos);
+    // The loader treats repeated tool/variable names as sets, including hand-edited files.
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+    saved.servers[0].readTools.push('list_orders');
+    saved.servers[0].envFrom.push('POS_TOKEN');
+    await fs.writeFile(file, JSON.stringify(saved));
+    const scope = await grantFor();
+    const signal = readGrantSignal(scope);
+    const updated = await call('/pos', 'PUT', {
+      ...pos, readTools: [...pos.readTools].reverse(), note: 'Front counter', provides: ['read-inventory'],
+    });
+    expect(updated.status, updated.text).toBe(200);
+    expect((await call('', 'POST', { ...pos, name: 'books' })).status).toBe(200);
+    expect(readGrantLive(scope.grant)).toBe(true);
+    expect(signal.aborted).toBe(false);
+    expect(externalReadAllowed(scope, 'connector_read', { server: 'pos', tool: 'list_orders' })).toEqual({ ok: true });
+  });
+
+  test.each(['PUT', 'DELETE'])('%s revokes the changed connector before persistence and blocks admission during its write', async method => {
+    await call('', 'POST', pos);
+    await call('', 'POST', { ...pos, name: 'books' });
+    const scope = await grantFor(), unrelated = await grantFor(['books']);
+    const signal = readGrantSignal(scope);
+    const started = deferred(), release = deferred();
+    const write = storeModule.jsonWrite;
+    vi.spyOn(storeModule, 'jsonWrite').mockImplementationOnce(async (target, object) => {
+      started.resolve();
+      await release.promise;
+      await write(target, object);
+    });
+    const saving = call('/pos', method, method === 'PUT' ? { ...pos, readTools: ['daily_sales'] } : undefined);
+    await started.promise;
+    expect(readGrantLive(scope.grant)).toBe(false);
+    expect(signal.aborted).toBe(true);
+    expect(readGrantLive(unrelated.grant)).toBe(true);
+    // The old on-disk entry is still readable during the atomic write, but cannot mint authority.
+    expect(loadApprovedReadServers(file).find(server => server.name === 'pos')?.readTools).toContain('list_orders');
+    expect(() => openReadGrant(PROJECT, undefined, { scope })).toThrow('Read access changed');
+    await expect(grantFor()).rejects.toMatchObject({ status: 409 });
+    release.resolve();
+    const saved = await saving;
+    expect(saved.status, saved.text).toBe(200);
+    expect(readGrantLive(scope.grant)).toBe(false);
+    const fresh = await grantFor();
+    expect(externalReadAllowed(fresh, 'connector_read', { server: 'pos', tool: 'list_orders' })).toMatchObject({ ok: false });
+    if (method === 'PUT')
+      expect(externalReadAllowed(fresh, 'connector_read', { server: 'pos', tool: 'daily_sales' })).toEqual({ ok: true });
+    expect(readGrantLive(unrelated.grant)).toBe(true);
+  });
+
+  test('a failed approval write never revives old grants and releases admission for a new turn', async () => {
+    await call('', 'POST', pos);
+    const scope = await grantFor();
+    const started = deferred(), release = deferred();
+    vi.spyOn(storeModule, 'jsonWrite').mockImplementationOnce(async () => {
+      started.resolve();
+      await release.promise;
+      throw new Error('fixture approval write refused');
+    });
+    const saving = call('/pos', 'DELETE');
+    await started.promise;
+    expect(readGrantLive(scope.grant)).toBe(false);
+    await expect(grantFor()).rejects.toMatchObject({ status: 409 });
+    release.resolve();
+    expect((await saving).status).toBe(500);
+    expect(loadApprovedReadServers(file).map(server => server.name)).toEqual(['pos']);
+    expect(readGrantLive(scope.grant)).toBe(false);
+    const fresh = await grantFor();
+    expect(externalReadAllowed(fresh, 'connector_read', { server: 'pos', tool: 'list_orders' })).toEqual({ ok: true });
+  });
+
+  test('approval changes cancel a scope whose filesystem preparation started earlier', async () => {
+    await call('', 'POST', pos);
+    const started = deferred(), release = deferred();
+    const realpath = fs.realpath.bind(fs);
+    vi.spyOn(fs, 'realpath').mockImplementationOnce((async (...args: Parameters<typeof fs.realpath>) => {
+      started.resolve();
+      await release.promise;
+      return realpath(...args);
+    }) as typeof fs.realpath);
+    const preparing = grantFor();
+    const caught = preparing.catch(error => error);
+    await started.promise;
+    const removed = await call('/pos', 'DELETE');
+    expect(removed.status, removed.text).toBe(200);
+    release.resolve();
+    expect(await caught).toMatchObject({ status: 409 });
   });
 
   test('a malformed file is reported and never written over', async () => {

@@ -18,7 +18,9 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { approvedMcpTool, serverEnvironment, type ApprovedMcpServer, type ReadScope } from '../../engines/read-scope.js';
+import { approvedMcpTool, serverEnvironment, snapshotReadScope, type ApprovedMcpServer, type ReadScope } from '../../engines/read-scope.js';
+import { externalReadAllowed, readGrantSignal } from '../../engines/turn-scope.js';
+import { copy, HarnessError } from '../policy.js';
 
 /** Opens a transport to one approved server. Tests substitute an in-memory pair. */
 export type McpTransportFactory = (server: ApprovedMcpServer) => Transport;
@@ -67,23 +69,38 @@ function resultText(result: Record<string, unknown>): string {
 
 export class McpReadClients {
   private readonly clients = new Map<string, Promise<Client>>();
+  private readonly liveClients = new Set<Client>();
+  private readonly scope: ReadScope;
+  private readonly grantStop: AbortSignal;
+  private readonly ended = new AbortController();
+  private readonly onRevoke = () => { void this.close(); };
   private closed = false;
   constructor(
-    private readonly scope: ReadScope,
+    scope: ReadScope,
     private readonly transport: McpTransportFactory = stdioTransport,
     private readonly maxChars = 24_000,
-  ) {}
+  ) {
+    this.scope = snapshotReadScope(scope);
+    this.grantStop = readGrantSignal(this.scope);
+    this.grantStop.addEventListener('abort', this.onRevoke, { once: true });
+  }
 
   private client(server: ApprovedMcpServer, signal: AbortSignal): Promise<Client> {
     let pending = this.clients.get(server.name);
     if (!pending) {
       pending = (async () => {
+        signal.throwIfAborted();
         const client = new Client({ name: 'diomedes-read', version: '1' }, { capabilities: {} });
+        this.liveClients.add(client);
         try {
-          await client.connect(this.transport(server), { signal, timeout: CONNECT_TIMEOUT_MS });
+          const transport = this.transport(server);
+          signal.throwIfAborted();
+          await client.connect(transport, { signal, timeout: CONNECT_TIMEOUT_MS });
+          signal.throwIfAborted();
         } catch (error) {
           // A half-started server is ended here, not left running beside the turn.
           await client.close().catch(() => undefined);
+          this.liveClients.delete(client);
           throw error;
         }
         return client;
@@ -98,6 +115,8 @@ export class McpReadClients {
   async call(serverName: string, tool: string, args: Record<string, unknown>, signal: AbortSignal): Promise<McpReadResult> {
     signal.throwIfAborted();
     if (this.closed) return { ok: false, server: serverName, tool, reason: 'The connector session has ended.' };
+    const allowed = externalReadAllowed(this.scope, 'connector_read', { server: serverName, tool });
+    if (!allowed.ok) return { ok: false, server: serverName, tool, reason: allowed.reason };
     const server = approvedMcpTool(this.scope, serverName, tool);
     if (!server)
       return {
@@ -106,12 +125,28 @@ export class McpReadClients {
         tool,
         reason: `${serverName} (${tool}) is not an approved read tool. Only the tools the owner approved can be called.`,
       };
+    let admittedArgs: Record<string, unknown>;
+    try { admittedArgs = copy(args); }
+    catch (error) {
+      if (error instanceof HarnessError && error.code === 'not_json')
+        return { ok: false, server: serverName, tool, reason: 'Connector arguments must be plain JSON.' };
+      throw error;
+    }
+    if (JSON.stringify(admittedArgs).length > 4_000)
+      return { ok: false, server: serverName, tool, reason: 'The arguments for that call are too large.' };
+    const stop = AbortSignal.any([signal, this.grantStop, this.ended.signal]);
     try {
-      const client = await this.client(server, signal);
-      const result = (await client.callTool({ name: tool, arguments: args }, undefined, {
-        signal,
+      const client = await this.client(server, stop);
+      stop.throwIfAborted();
+      const dispatch = externalReadAllowed(this.scope, 'connector_read', { server: serverName, tool });
+      if (!dispatch.ok) return { ok: false, server: serverName, tool, reason: dispatch.reason };
+      const result = (await client.callTool({ name: tool, arguments: admittedArgs }, undefined, {
+        signal: stop,
         timeout: CALL_TIMEOUT_MS,
       })) as Record<string, unknown>;
+      stop.throwIfAborted();
+      const current = externalReadAllowed(this.scope, 'connector_read', { server: serverName, tool });
+      if (!current.ok) return { ok: false, server: serverName, tool, reason: current.reason };
       const text = resultText(result);
       const truncated = text.length > this.maxChars;
       return {
@@ -124,6 +159,9 @@ export class McpReadClients {
       };
     } catch (error) {
       if (signal.aborted) throw signal.reason ?? error;
+      const current = externalReadAllowed(this.scope, 'connector_read', { server: serverName, tool });
+      if (!current.ok) return { ok: false, server: serverName, tool, reason: current.reason };
+      if (this.closed) return { ok: false, server: serverName, tool, reason: 'The connector session has ended.' };
       return { ok: false, server: serverName, tool, reason: `${serverName} could not answer this call.` };
     }
   }
@@ -131,12 +169,17 @@ export class McpReadClients {
   /** Closes every client this turn opened, which ends each server process. Safe to call twice. */
   async close(): Promise<void> {
     this.closed = true;
+    this.ended.abort(new Error('The connector session has ended.'));
+    this.grantStop.removeEventListener('abort', this.onRevoke);
     const pending = [...this.clients.values()];
     this.clients.clear();
-    await Promise.allSettled(
-      pending.map(async (client) => {
+    const live = [...this.liveClients];
+    this.liveClients.clear();
+    await Promise.allSettled([
+      ...live.map(client => client.close()),
+      ...pending.map(async (client) => {
         await (await client).close();
       }),
-    );
+    ]);
   }
 }
